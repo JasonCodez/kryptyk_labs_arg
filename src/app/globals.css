@@ -24,3 +24,97 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Override user preferences for specific rarity colors */
+.rarity-text-common {
+  color: #CCCCCC !important;
+}
+
+.rarity-text-uncommon {
+  color: #4CAF50 !important;
+}
+
+.rarity-text-rare {
+  color: #3891A6 !important;
+}
+
+.rarity-text-epic {
+  color: #3891A6 !important;
+}
+
+.rarity-text-legendary {
+  color: #FFC107 !important;
+}
+
+/* Achievement notification animations */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Star rating colors - using !important to override any competing rules */
+.star-filled {
+  color: #FDE74C !important;
+  font-weight: 700 !important;
+  display: inline-block !important;
+}
+
+.star-empty {
+  color: #4A5F61 !important;
+  font-weight: 700 !important;
+  display: inline-block !important;
+}
+
+.star-half-overlay {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  overflow: hidden !important;
+  width: 50% !important;
+  color: #FDE74C !important;
+  font-weight: 700 !important;
+  display: inline-block !important;
+}
+
+/* High-specificity overrides targeting the theme attributes to defeat user preference rules that use !important */
+[data-theme-brightness="dark"] .star-filled,
+[data-theme-brightness="medium"] .star-filled,
+[data-theme-brightness="light"] .star-filled,
+[data-color-contrast="high"] .star-filled {
+  color: #FDE74C !important;
+}
+
+[data-theme-brightness="dark"] .star-half-overlay,
+[data-theme-brightness="medium"] .star-half-overlay,
+[data-theme-brightness="light"] .star-half-overlay,
+[data-color-contrast="high"] .star-half-overlay {
+  color: #FDE74C !important;
+}
+
+[data-theme-brightness="dark"] .star-empty,
+[data-theme-brightness="medium"] .star-empty,
+[data-theme-brightness="light"] .star-empty {
+  color: #4A5F61 !important;
+}
+
+/* Global overrides to remove purple/pink palette and replace with teal/yellow equivalents */
+.bg-purple-600 { background-color: #3891A6 !important; }
+.hover\:bg-purple-700:hover { background-color: #2a7f8f !important; }
+.focus\:ring-purple-500:focus { --tw-ring-color: #3891A6 !important; box-shadow: 0 0 0 2px rgba(56,145,166,0.35) !important; }
+.from-purple-500 { --tw-gradient-from: #3891A6 !important; }
+.to-pink-500 { --tw-gradient-to: #FDE74C !important; }
+.hover\:from-purple-600:hover { --tw-gradient-from: #2a7f8f !important; }
+.hover\:to-pink-600:hover { --tw-gradient-to: #FDE74C !important; }
+.text-purple-400 { color: #3891A6 !important; }
+.text-purple-200 { color: #9BD1D6 !important; }
+.text-purple-500 { color: #3891A6 !important; }
+.border-purple-500 { border-color: #3891A6 !important; }
+.focus\:border-purple-500:focus { border-color: #3891A6 !important; }

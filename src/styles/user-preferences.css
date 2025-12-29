@@ -1,0 +1,434 @@
+/* User Preferences Styling */
+
+:root {
+  /* Theme brightness variables */
+  --color-bg-primary: #0f172a;
+  --color-text-primary: #f1f5f9;
+  --color-border: #334155;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+  
+  /* Font size multiplier */
+  --font-size-multiplier: 1;
+  
+  /* Spacing multiplier */
+  --spacing-multiplier: 1;
+  
+  /* Animation duration */
+  --animation-duration: 0.3s;
+  
+  /* Border width */
+  --border-width: 1px;
+}
+
+/* Apply theme brightness */
+[data-theme-brightness="light"] {
+  --color-bg-primary: #ffffff;
+  --color-text-primary: #000000;
+  --color-border: #d1d5db;
+  --color-bg-secondary: #f0f4f8;
+  --color-bg-tertiary: #e0e7f1;
+}
+
+[data-theme-brightness="medium"] {
+  --color-bg-primary: #f8f9fa;
+  --color-text-primary: #1a1a1a;
+  --color-border: #cbd5e0;
+  --color-bg-secondary: #eceff4;
+  --color-bg-tertiary: #dfe7f0;
+}
+
+[data-theme-brightness="dark"] {
+  --color-bg-primary: #0f172a;
+  --color-text-primary: #e2e8f0;
+  --color-border: #475569;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+}
+
+/* Apply theme to body and main elements */
+html {
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+}
+
+body {
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+  transition: background-color var(--animation-duration), color var(--animation-duration);
+}
+
+main {
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Apply font size */
+[data-font-size="small"] {
+  --font-size-multiplier: 0.875;
+}
+
+[data-font-size="medium"] {
+  --font-size-multiplier: 1;
+}
+
+[data-font-size="large"] {
+  --font-size-multiplier: 1.125;
+}
+
+[data-font-size="extra-large"] {
+  --font-size-multiplier: 1.25;
+}
+
+/* Apply spacing mode */
+[data-spacing-mode="compact"] {
+  --spacing-multiplier: 0.75;
+}
+
+[data-spacing-mode="comfortable"] {
+  --spacing-multiplier: 1;
+}
+
+[data-spacing-mode="spacious"] {
+  --spacing-multiplier: 1.5;
+}
+
+/* Reduce animations */
+[data-reduce-animations="true"] * {
+  animation-duration: 0.05s !important;
+  transition-duration: 0.05s !important;
+}
+
+/* High contrast mode */
+[data-color-contrast="high"] {
+  --color-text-primary: #000000;
+  --border-width: 2px;
+}
+
+[data-color-contrast="high"][data-theme-brightness="dark"] {
+  --color-text-primary: #ffffff;
+}
+
+/* Apply dynamic font sizing */
+body {
+  font-size: calc(1rem * var(--font-size-multiplier));
+  color: var(--color-text-primary) !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--color-text-primary) !important;
+}
+
+h1 {
+  font-size: calc(2rem * var(--font-size-multiplier));
+}
+
+h2 {
+  font-size: calc(1.5rem * var(--font-size-multiplier));
+}
+
+h3 {
+  font-size: calc(1.25rem * var(--font-size-multiplier));
+}
+
+h4 {
+  font-size: calc(1.1rem * var(--font-size-multiplier));
+}
+
+p, span, div, label, a {
+  color: var(--color-text-primary) !important;
+}
+
+/* Override Tailwind text color classes */
+[class*="text-gray"] {
+  color: var(--color-text-primary) !important;
+}
+
+[class*="text-white"] {
+  color: var(--color-text-primary) !important;
+}
+
+[class*="text-black"] {
+  color: var(--color-text-primary) !important;
+}
+
+[class*="text-red"] {
+  color: var(--color-text-primary) !important;
+}
+
+[class*="text-blue"] {
+  color: var(--color-text-primary) !important;
+}
+
+[class*="text-green"] {
+  color: var(--color-text-primary) !important;
+}
+
+[class*="text-slate"] {
+  color: var(--color-text-primary) !important;
+}
+
+/* Ensure backgrounds follow theme */
+[class*="bg-white"],
+[class*="bg-gray"],
+[class*="bg-slate"],
+[class*="bg-stone"],
+[class*="dark:bg"] {
+  background-color: var(--color-bg-secondary) !important;
+}
+
+/* Navigation and header backgrounds */
+nav, header {
+  background-color: var(--color-bg-secondary) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Main content area */
+main, section, article {
+  background-color: var(--color-bg-primary) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Cards and panels */
+[class*="rounded-lg"],
+[class*="rounded-md"],
+[class*="border"] {
+  background-color: var(--color-bg-secondary) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Apply dynamic spacing */
+.p-1 {
+  padding: calc(0.25rem * var(--spacing-multiplier));
+}
+
+.p-2 {
+  padding: calc(0.5rem * var(--spacing-multiplier));
+}
+
+.p-3 {
+  padding: calc(0.75rem * var(--spacing-multiplier));
+}
+
+.p-4 {
+  padding: calc(1rem * var(--spacing-multiplier));
+}
+
+.p-6 {
+  padding: calc(1.5rem * var(--spacing-multiplier));
+}
+
+.p-8 {
+  padding: calc(2rem * var(--spacing-multiplier));
+}
+
+.px-4 {
+  padding-left: calc(1rem * var(--spacing-multiplier));
+  padding-right: calc(1rem * var(--spacing-multiplier));
+}
+
+.px-8 {
+  padding-left: calc(2rem * var(--spacing-multiplier));
+  padding-right: calc(2rem * var(--spacing-multiplier));
+}
+
+.py-2 {
+  padding-top: calc(0.5rem * var(--spacing-multiplier));
+  padding-bottom: calc(0.5rem * var(--spacing-multiplier));
+}
+
+.py-4 {
+  padding-top: calc(1rem * var(--spacing-multiplier));
+  padding-bottom: calc(1rem * var(--spacing-multiplier));
+}
+
+.gap-2 {
+  gap: calc(0.5rem * var(--spacing-multiplier));
+}
+
+.gap-3 {
+  gap: calc(0.75rem * var(--spacing-multiplier));
+}
+
+.gap-4 {
+  gap: calc(1rem * var(--spacing-multiplier));
+}
+
+.gap-6 {
+  gap: calc(1.5rem * var(--spacing-multiplier));
+}
+
+.mb-2 {
+  margin-bottom: calc(0.5rem * var(--spacing-multiplier));
+}
+
+.mb-3 {
+  margin-bottom: calc(0.75rem * var(--spacing-multiplier));
+}
+
+.mb-4 {
+  margin-bottom: calc(1rem * var(--spacing-multiplier));
+}
+
+.mb-6 {
+  margin-bottom: calc(1.5rem * var(--spacing-multiplier));
+}
+
+.mt-1 {
+  margin-top: calc(0.25rem * var(--spacing-multiplier));
+}
+
+.mt-2 {
+  margin-top: calc(0.5rem * var(--spacing-multiplier));
+}
+
+.mt-3 {
+  margin-top: calc(0.75rem * var(--spacing-multiplier));
+}
+
+.mt-4 {
+  margin-top: calc(1rem * var(--spacing-multiplier));
+}
+
+.my-1 {
+  margin-top: calc(0.25rem * var(--spacing-multiplier));
+  margin-bottom: calc(0.25rem * var(--spacing-multiplier));
+}
+
+.my-2 {
+  margin-top: calc(0.5rem * var(--spacing-multiplier));
+  margin-bottom: calc(0.5rem * var(--spacing-multiplier));
+}
+
+.my-3 {
+  margin-top: calc(0.75rem * var(--spacing-multiplier));
+  margin-bottom: calc(0.75rem * var(--spacing-multiplier));
+}
+
+/* Component styling with theme */
+button {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  border: var(--border-width) solid var(--color-border);
+  transition: all var(--animation-duration);
+}
+
+button:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+/* Toggle button styling - ensure good contrast */
+button[class*="inline-flex"][class*="rounded-full"] {
+  background-color: #4b5563 !important;
+  border: 2px solid #6b7684 !important;
+}
+
+button[class*="inline-flex"][class*="rounded-full"]:hover {
+  background-color: #5a6977 !important;
+}
+
+/* Active toggles (green) */
+button[class*="bg-green"] {
+  background-color: #22c55e !important;
+  border: 2px solid #16a34a !important;
+}
+
+button[class*="bg-green"]:hover {
+  background-color: #16a34a !important;
+}
+
+input, select, textarea {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  border: var(--border-width) solid var(--color-border);
+  transition: all var(--animation-duration);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-text-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-text-primary), 0.1);
+}
+
+/* Cards and containers */
+.bg-white {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+.border {
+  border-color: var(--color-border);
+}
+
+/* Apply animations */
+* {
+  transition-duration: var(--animation-duration);
+}
+
+/* Smooth transitions */
+.transition-all {
+  transition-property: all;
+  transition-duration: var(--animation-duration);
+  transition-timing-function: ease-in-out;
+}
+
+.transition-colors {
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--animation-duration);
+  transition-timing-function: ease-in-out;
+}
+
+.transition-transform {
+  transition-property: transform;
+  transition-duration: var(--animation-duration);
+  transition-timing-function: ease-in-out;
+}
+
+/* Accessibility focus styles */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: calc(2px * var(--font-size-multiplier)) solid var(--color-text-primary);
+  outline-offset: calc(2px * var(--font-size-multiplier));
+}
+
+/* Ensure star elements keep intended visual colors despite broad text overrides */
+/* These rules are placed at the end to override `p, span, div, label, a { color: var(--color-text-primary) !important }` */
+:root [data-theme-brightness="dark"] .star-filled,
+[data-theme-brightness="dark"] .star-filled,
+:root .star-filled,
+span.star-filled {
+  color: #FDE74C !important;
+  filter: drop-shadow(0 0 4px rgba(253,231,76,0.25)) !important;
+}
+:root [data-theme-brightness="dark"] .star-half-overlay,
+[data-theme-brightness="dark"] .star-half-overlay,
+:root .star-half-overlay,
+span.star-half-overlay {
+  color: #FDE74C !important;
+}
+:root [data-theme-brightness="dark"] .star-empty,
+[data-theme-brightness="dark"] .star-empty,
+:root .star-empty,
+span.star-empty {
+  color: #4A5F61 !important;
+}
+
+/* Ensure rarity text and badges keep intended colors despite broad text overrides */
+/* Individual rarity text (used in breakdown lists) */
+.rarity-text-common { color: #CCCCCC !important; }
+.rarity-text-uncommon { color: #4CAF50 !important; }
+.rarity-text-rare { color: #3891A6 !important; }
+.rarity-text-epic { color: #7C3AED !important; }
+.rarity-text-legendary { color: #FFC107 !important; }
+
+/* Badges (override broader .rounded / .border rules that set background/color) */
+.rarity-badge.rarity-common { background-color: rgba(200,200,200,0.12) !important; color: #CCCCCC !important; border-color: #CCCCCC !important; }
+.rarity-badge.rarity-uncommon { background-color: rgba(76,175,80,0.12) !important; color: #4CAF50 !important; border-color: #4CAF50 !important; }
+.rarity-badge.rarity-rare { background-color: rgba(56,145,166,0.12) !important; color: #3891A6 !important; border-color: #3891A6 !important; }
+.rarity-badge.rarity-epic { background-color: rgba(124,58,237,0.08) !important; color: #7C3AED !important; border-color: #7C3AED !important; }
+.rarity-badge.rarity-legendary { background-color: rgba(255,193,7,0.12) !important; color: #FFC107 !important; border-color: #FFC107 !important; }
+
