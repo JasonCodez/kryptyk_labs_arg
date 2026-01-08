@@ -121,7 +121,7 @@ async function getUserEngagementStats() {
     take: 5,
   });
 
-  return users.map((u) => ({
+  return users.map((u: any) => ({
     userId: u.id,
     userName: u.name || u.email || "Unknown",
     puzzlesSolved: u.solvedPuzzles.length,
