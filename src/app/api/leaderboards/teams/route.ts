@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     // Calculate team rankings
     const entries = await Promise.all(
-      teams.map(async (team) => {
+      teams.map(async (team: { id: string; name?: string | null }) => {
         // Get team members
         const members = await prisma.teamMember.findMany({
           where: { teamId: team.id },
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
         return {
           teamId: team.id,
           teamName: team.name,
-          totalPoints: allProgress.reduce((sum: number, p) => sum + p.pointsEarned, 0),
+          totalPoints: allProgress.reduce((sum: number, p: { pointsEarned?: number | null }) => sum + (p.pointsEarned || 0), 0),
           totalPuzzlesSolved: allProgress.length,
           memberCount: members.length,
           rank: 0,
