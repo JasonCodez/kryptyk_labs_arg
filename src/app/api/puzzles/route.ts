@@ -122,11 +122,11 @@ export async function GET(request: NextRequest) {
     // Filter by status if specified
     let filtered = puzzles;
     if (status === "solved") {
-      filtered = puzzles.filter((p) => p.userProgress.length > 0 && p.userProgress[0].solved);
+      filtered = puzzles.filter((p: { userProgress: { solved?: boolean }[] }) => p.userProgress.length > 0 && p.userProgress[0].solved);
     } else if (status === "in-progress") {
-      filtered = puzzles.filter((p) => p.userProgress.length > 0 && !p.userProgress[0].solved && p.userProgress[0].attempts > 0);
+      filtered = puzzles.filter((p: { userProgress: { solved?: boolean; attempts?: number }[] }) => p.userProgress.length > 0 && !p.userProgress[0].solved && ((p.userProgress[0].attempts ?? 0) > 0));
     } else if (status === "unsolved") {
-      filtered = puzzles.filter((p) => p.userProgress.length === 0 || (!p.userProgress[0].solved && p.userProgress[0].attempts === 0));
+      filtered = puzzles.filter((p: { userProgress: { solved?: boolean; attempts?: number }[] }) => p.userProgress.length === 0 || (!p.userProgress[0].solved && ((p.userProgress[0].attempts ?? 0) === 0)));
     }
 
     return NextResponse.json(puzzlesWithPoints);
