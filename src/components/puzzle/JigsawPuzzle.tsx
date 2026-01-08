@@ -644,6 +644,32 @@ export default function JigsawPuzzleSVGWithTray({
     completedRef.current = false;
     startTimeRef.current = Date.now();
   }, [rows, cols, imageUrl]);
+
+  // When layout changes between stacked and side-by-side, move existing pieces
+  // so that pieces that were in the tray remain in the tray area relative to the
+  // new layout. This prevents pieces spawning off-screen when breakpoint flips.
+  const prevIsStackedRef = useRef<boolean>(isStacked);
+  React.useEffect(() => {
+    const prevIsStacked = prevIsStackedRef.current;
+    if (prevIsStacked === isStacked) return;
+
+    const oldTrayLeft = prevIsStacked ? 0 : boardLeft + boardWidth;
+    const oldTrayTop = prevIsStacked ? boardTop + boardHeight : boardTop;
+
+    const newTrayLeft = isStacked ? 0 : boardLeft + boardWidth;
+    const newTrayTop = isStacked ? boardTop + boardHeight : boardTop;
+
+    const dx = newTrayLeft - oldTrayLeft;
+    const dy = newTrayTop - oldTrayTop;
+
+    if (dx === 0 && dy === 0) {
+      prevIsStackedRef.current = isStacked;
+      return;
+    }
+
+    setPieces((prev) => prev.map((p) => ({ ...p, pos: { x: p.pos.x + dx, y: p.pos.y + dy } })));
+    prevIsStackedRef.current = isStacked;
+  }, [isStacked, boardLeft, boardTop, boardWidth, boardHeight]);
   // Track which group is currently being dragged (for consistent re-render)
   const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
 
