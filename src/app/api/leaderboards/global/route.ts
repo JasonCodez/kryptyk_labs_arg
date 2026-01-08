@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
           userName: user.name,
           email: user.email || "",
           puzzlesSolved: progress.length,
-          totalPoints: progress.reduce((sum, p) => sum + (p.pointsEarned || 0), 0),
+          totalPoints: progress.reduce((sum: number, p: { pointsEarned?: number | null }) => sum + (p.pointsEarned || 0), 0),
           rank: 0,
         };
       })
