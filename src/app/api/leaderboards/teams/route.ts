@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     let userTeamRank = null;
     if (userTeams.length > 0) {
-      userTeamRank = entries.find((e) => e.teamId === userTeams[0].id) || null;
+      userTeamRank = entries.find((e: { teamId: string }) => e.teamId === userTeams[0].id) || null;
     }
 
     return NextResponse.json({

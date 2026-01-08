@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     // Count successful referrals (where referee solved first puzzle)
     const successfulReferrals = referrals.filter(
-      (r) => r.refereeFirstPuzzleSolvedAt !== null
+      (r: { refereeFirstPuzzleSolvedAt?: string | Date | null }) => r.refereeFirstPuzzleSolvedAt !== null
     ).length;
 
     return NextResponse.json({

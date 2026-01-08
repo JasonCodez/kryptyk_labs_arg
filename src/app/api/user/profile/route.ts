@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       orderBy: { _sum: { pointsEarned: "desc" } },
     });
 
-    const userRank = rank.findIndex((r) => r.userId === user.id) + 1;
+    const userRank = rank.findIndex((r: { userId: string }) => r.userId === user.id) + 1;
 
     return NextResponse.json({
       ...user,
@@ -99,7 +99,7 @@ export async function PUT(request: NextRequest) {
       orderBy: { _sum: { pointsEarned: "desc" } },
     });
 
-    const userRank = rank.findIndex((r) => r.userId === user.id) + 1;
+    const userRank = rank.findIndex((r: { userId: string }) => r.userId === user.id) + 1;
 
     return NextResponse.json({
       ...user,

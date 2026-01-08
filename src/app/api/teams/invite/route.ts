@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if inviting user is a member of the team
-    const isMember = team.members.some((m) => m.userId === invitingUser.id);
+    const isMember = team.members.some((m: { userId: string }) => m.userId === invitingUser.id);
     if (!isMember) {
       return NextResponse.json(
         { error: "You must be a member of the team to invite others" },
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is already a member
-    const alreadyMember = team.members.some((m) => m.userId === userId);
+    const alreadyMember = team.members.some((m: { userId: string }) => m.userId === userId);
     if (alreadyMember) {
       return NextResponse.json(
         { error: "User is already a member of this team" },

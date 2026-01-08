@@ -45,7 +45,7 @@ export async function GET(
 
     // Check if user is member of this team
     const isMember = team.members.some(
-      (m) => m.user.email === session.user?.email
+      (m: { user: { email?: string | null } | null }) => m.user?.email === session.user?.email
     );
 
     if (!isMember && !team.isPublic) {

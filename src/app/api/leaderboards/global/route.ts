@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Find user's rank
-    const userRank = entries.find((e) => e.email === session.user?.email) || null;
+    const userRank = entries.find((e: { email?: string }) => e.email === session.user?.email) || null;
 
     return NextResponse.json({
       entries: entries.slice(0, 100), // Top 100

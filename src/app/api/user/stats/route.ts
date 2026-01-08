@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       orderBy: { _sum: { pointsEarned: "desc" } },
     });
 
-    const userRank = allUsers.findIndex((u) => u.userId === user.id) + 1;
+    const userRank = allUsers.findIndex((u: { userId: string }) => u.userId === user.id) + 1;
 
     return NextResponse.json({
       totalPuzzlesSolved: solvedCount,

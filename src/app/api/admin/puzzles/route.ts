@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         );
       }
       // Validate all parts have answers
-      if ((parts as MultiPartInput[]).some((p) => !p?.answer)) {
+      if ((parts as MultiPartInput[]).some((p: MultiPartInput) => !p?.answer)) {
         return NextResponse.json(
           { error: "All puzzle steps must have answers" },
           { status: 400 }
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
         },
         parts: isMultiPart
           ? {
-              create: (parts as MultiPartInput[]).map((part, index: number) => ({
+              create: (parts as MultiPartInput[]).map((part: MultiPartInput, index: number) => ({
                 title: part.title || `Part ${index + 1}`,
                 description: part.content || '',
                 content: part.content || '',
@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
 
       const totalPoints =
         isMultiPart && Array.isArray(parts)
-          ? (parts as MultiPartInput[]).reduce((sum, p) => sum + (p.points || 50), 0)
+          ? (parts as MultiPartInput[]).reduce((sum: number, p: MultiPartInput) => sum + (p.points || 50), 0)
           : (pointsReward || 100);
 
       await notifyPuzzleRelease(allUsers.map((u: { id: string }) => u.id), {

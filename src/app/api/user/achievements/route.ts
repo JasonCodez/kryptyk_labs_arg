@@ -40,10 +40,10 @@ export async function GET(request: NextRequest) {
       select: { solved: true, attempts: true, puzzleId: true, pointsEarned: true, solvedAt: true },
     });
 
-    const puzzlesSolved = userPuzzleProgress.filter(p => p.solved).length;
-    const totalAttempts = userPuzzleProgress.reduce((sum, p) => sum + p.attempts, 0);
-    const firstTrySolves = userPuzzleProgress.filter(p => p.solved && p.attempts === 1).length;
-    const totalPointsEarned = userPuzzleProgress.reduce((sum, p) => sum + (p.pointsEarned || 0), 0);
+    const puzzlesSolved = userPuzzleProgress.filter((p: { solved?: boolean }) => !!p.solved).length;
+    const totalAttempts = userPuzzleProgress.reduce((sum: number, p: { attempts?: number }) => sum + (p.attempts || 0), 0);
+    const firstTrySolves = userPuzzleProgress.filter((p: { solved?: boolean; attempts?: number }) => p.solved && p.attempts === 1).length;
+    const totalPointsEarned = userPuzzleProgress.reduce((sum: number, p: { pointsEarned?: number | null }) => sum + (p.pointsEarned || 0), 0);
 
     // Calculate current streak from solved puzzles
     let currentStreak = 0;
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
       userAchievements.map((ua: { achievementId: string }) => ua.achievementId)
     );
 
-    const achievements = allAchievements.map((achievement) => {
+    const achievements = allAchievements.map((achievement: { id: string; conditionType: string; conditionValue?: number | null; name?: string | null; rarity?: string }) => {
       // Calculate progress towards achievement
       let currentProgress = 0;
       let progressPercentage = 0;
@@ -170,7 +170,7 @@ export async function GET(request: NextRequest) {
         ...achievement,
         unlocked: unlockedIds.has(achievement.id),
         unlockedAt: userAchievements.find(
-          (ua) => ua.achievementId === achievement.id
+          (ua: { achievementId: string; unlockedAt?: Date | null }) => ua.achievementId === achievement.id
         )?.unlockedAt,
         currentProgress,
         progressPercentage: unlockedIds.has(achievement.id) ? 100 : progressPercentage,
@@ -179,32 +179,32 @@ export async function GET(request: NextRequest) {
 
     // Count by rarity - total and unlocked
     const rarityCount = {
-      common: allAchievements.filter((a) => a.rarity === "common").length,
+      common: allAchievements.filter((a: { rarity?: string }) => a.rarity === "common").length,
       uncommon: allAchievements.filter(
-        (a) => a.rarity === "uncommon"
+        (a: { rarity?: string }) => a.rarity === "uncommon"
       ).length,
-      rare: allAchievements.filter((a) => a.rarity === "rare")
+      rare: allAchievements.filter((a: { rarity?: string }) => a.rarity === "rare")
         .length,
-      epic: allAchievements.filter((a) => a.rarity === "epic")
+      epic: allAchievements.filter((a: { rarity?: string }) => a.rarity === "epic")
         .length,
       legendary: allAchievements.filter(
-        (a) => a.rarity === "legendary"
+        (a: { rarity?: string }) => a.rarity === "legendary"
       ).length,
     };
 
     const rarityUnlockedCount = {
       common: achievements.filter(
-        (a) => a.rarity === "common" && a.unlocked
+        (a: { rarity?: string; unlocked?: boolean }) => a.rarity === "common" && a.unlocked
       ).length,
       uncommon: achievements.filter(
-        (a) => a.rarity === "uncommon" && a.unlocked
+        (a: { rarity?: string; unlocked?: boolean }) => a.rarity === "uncommon" && a.unlocked
       ).length,
-      rare: achievements.filter((a) => a.rarity === "rare" && a.unlocked)
+      rare: achievements.filter((a: { rarity?: string; unlocked?: boolean }) => a.rarity === "rare" && a.unlocked)
         .length,
-      epic: achievements.filter((a) => a.rarity === "epic" && a.unlocked)
+      epic: achievements.filter((a: { rarity?: string; unlocked?: boolean }) => a.rarity === "epic" && a.unlocked)
         .length,
       legendary: achievements.filter(
-        (a) => a.rarity === "legendary" && a.unlocked
+        (a: { rarity?: string; unlocked?: boolean }) => a.rarity === "legendary" && a.unlocked
       ).length,
     };
 

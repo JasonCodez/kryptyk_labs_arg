@@ -74,11 +74,11 @@ export async function GET(request: NextRequest) {
       image: user.image,
       createdAt: user.createdAt,
       stats: {
-        puzzlesSolved: user.solvedPuzzles.filter((p) => p.pointsEarned).length,
-        totalPoints: user.solvedPuzzles.reduce(
-          (sum, p) => sum + (p.pointsEarned || 0),
-          0
-        ),
+        puzzlesSolved: user.solvedPuzzles.filter((p: { pointsEarned?: number | null }) => !!p.pointsEarned).length,
+          totalPoints: user.solvedPuzzles.reduce(
+            (sum: number, p: { pointsEarned?: number | null }) => sum + (p.pointsEarned || 0),
+            0
+          ),
         achievementsCount: user.achievements.length,
         teamsCount: user.teams.length,
         followers: user.followers.length,
