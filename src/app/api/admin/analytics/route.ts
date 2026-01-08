@@ -134,7 +134,7 @@ async function getDifficultyBreakdown() {
     _count: true,
   });
 
-  return breakdown.map((b) => ({
+  return breakdown.map((b: any) => ({
     difficulty: b.difficulty,
     count: b._count,
   }));
