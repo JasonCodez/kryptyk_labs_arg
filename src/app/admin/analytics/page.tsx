@@ -58,11 +58,29 @@ interface AnalyticsData {
   }>;
 }
 
+interface PuzzleReview {
+  id: string;
+  rating: number;
+  review: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  puzzle: {
+    id: string;
+    title: string;
+    difficulty: string;
+  };
+}
+
 export default function AdminAnalyticsPage() {
   const { data: session, status } = useSession();
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [reviews, setReviews] = useState<PuzzleReview[]>([]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -77,16 +95,25 @@ export default function AdminAnalyticsPage() {
 
   const checkAdminAndFetchData = async () => {
     try {
-      const response = await fetch("/api/admin/analytics");
-      if (response.ok) {
-        const data = await response.json();
+      const [analyticsRes, reviewsRes] = await Promise.all([
+        fetch("/api/admin/analytics"),
+        fetch("/api/admin/reviews"),
+      ]);
+
+      if (analyticsRes.ok) {
+        const data = await analyticsRes.json();
         setAnalytics(data);
         setIsAdmin(true);
-      } else if (response.status === 403) {
+      } else if (analyticsRes.status === 403) {
         redirect("/dashboard");
       }
+
+      if (reviewsRes.ok) {
+        const reviewsData = await reviewsRes.json();
+        setReviews(reviewsData.reviews);
+      }
     } catch (error) {
-      console.error("Failed to fetch analytics:", error);
+      console.error("Failed to fetch data:", error);
     } finally {
       setLoading(false);
     }
@@ -466,6 +493,78 @@ export default function AdminAnalyticsPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* User Reviews (Admin Only) */}
+          <div
+            className="rounded-lg p-6 border"
+            style={{
+              backgroundColor: "rgba(56, 145, 166, 0.08)",
+              borderColor: "#3891A6",
+            }}
+          >
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              💬 User Puzzle Reviews
+            </h2>
+            {reviews.length === 0 ? (
+              <p style={{ color: "#DDDBF1" }} className="text-center py-6">
+                No user reviews yet
+              </p>
+            ) : (
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {reviews.map((review) => (
+                  <div
+                    key={review.id}
+                    className="p-4 rounded border"
+                    style={{
+                      backgroundColor: "rgba(0, 0, 0, 0.3)",
+                      borderColor: "rgba(253, 231, 76, 0.3)",
+                    }}
+                  >
+                    {/* Review Header */}
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <p className="text-white font-bold">
+                          {review.puzzle.title}
+                        </p>
+                        <p style={{ color: "#DDDBF1" }} className="text-sm">
+                          By {review.user.name || review.user.email}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p style={{ color: "#FDE74C" }} className="font-bold">
+                          {"⭐".repeat(review.rating)}
+                        </p>
+                        <p style={{ color: "#AB9F9D" }} className="text-xs">
+                          {review.rating}/5
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Review Text */}
+                    <p
+                      className="text-sm mb-2 p-3 rounded"
+                      style={{
+                        backgroundColor: "rgba(56, 145, 166, 0.05)",
+                        color: "#DDDBF1",
+                      }}
+                    >
+                      "{review.review}"
+                    </p>
+
+                    {/* Review Meta */}
+                    <div className="flex items-center justify-between text-xs">
+                      <p style={{ color: "#AB9F9D" }}>
+                        Difficulty: <span style={{ color: "#FDE74C" }}>{review.puzzle.difficulty}</span>
+                      </p>
+                      <p style={{ color: "#AB9F9D" }}>
+                        {new Date(review.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Back to Admin */}

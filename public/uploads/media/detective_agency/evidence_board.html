@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Evidence Board - Case #123</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #2c3e50;
+            font-family: Arial, sans-serif;
+        }
+        .board {
+            background: #8b6f47;
+            padding: 30px;
+            max-width: 900px;
+            margin: 0 auto;
+            border: 8px solid #5d4e37;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .title {
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .evidence-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .evidence-card {
+            background: #fff9e6;
+            padding: 15px;
+            border: 2px solid #333;
+            box-shadow: -2px 2px 5px rgba(0,0,0,0.3);
+            transform: rotate(-2deg);
+            position: relative;
+        }
+        .evidence-card:nth-child(2) {
+            transform: rotate(1deg);
+        }
+        .evidence-card:nth-child(3) {
+            transform: rotate(-1deg);
+        }
+        .evidence-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-bottom: 2px solid #8b0000;
+            padding-bottom: 5px;
+            color: #8b0000;
+        }
+        .evidence-card p {
+            margin: 0;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #333;
+        }
+        .evidence-number {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #d32f2f;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .connections {
+            margin: 30px 0;
+            padding: 20px;
+            background: rgba(0,0,0,0.2);
+            border: 2px dashed #fff;
+        }
+        .connections h3 {
+            color: #fff;
+            margin-top: 0;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .connection-line {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 10px 0;
+            color: #fff;
+            font-size: 12px;
+        }
+        .arrow {
+            color: #ffd700;
+            font-size: 16px;
+        }
+        .suspect-section {
+            background: #d32f2f;
+            color: white;
+            padding: 20px;
+            margin-top: 20px;
+            border: 3px solid #8b0000;
+        }
+        .suspect-section h2 {
+            margin-top: 0;
+            font-size: 16px;
+            text-transform: uppercase;
+            border-bottom: 2px solid white;
+            padding-bottom: 10px;
+        }
+        .suspect-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .info-item {
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .info-item strong {
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+        .motive-section {
+            background: #ffd700;
+            color: #333;
+            padding: 15px;
+            margin-top: 15px;
+            border: 2px solid #8b0000;
+            font-weight: bold;
+            text-align: center;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .pin {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: red;
+            border-radius: 50% 50% 0;
+            transform: rotate(-45deg);
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="board">
+        <div style="position: absolute; top: 20px; left: 30px; width: 20px; height: 20px; background: red; border-radius: 50% 50% 0; transform: rotate(-45deg); opacity: 0.7;"></div>
+        <div style="position: absolute; top: 80px; right: 40px; width: 20px; height: 20px; background: red; border-radius: 50% 50% 0; transform: rotate(-45deg); opacity: 0.7;"></div>
+        <div style="position: absolute; bottom: 100px; left: 50px; width: 20px; height: 20px; background: red; border-radius: 50% 50% 0; transform: rotate(-45deg); opacity: 0.7;"></div>
+
+        <div class="title">DETECTIVE AGENCY - CASE #123</div>
+
+        <div class="evidence-container">
+            <div class="evidence-card">
+                <div class="evidence-number">1</div>
+                <h3>Blood Evidence</h3>
+                <p><strong>Type:</strong> AB-Negative (Rare)</p>
+                <p><strong>Location:</strong> Crime Scene Floor</p>
+                <p><strong>Match:</strong> Victim</p>
+                <p><strong>Significance:</strong> Confirms struggle occurred</p>
+            </div>
+
+            <div class="evidence-card">
+                <div class="evidence-number">2</div>
+                <h3>Fingerprints</h3>
+                <p><strong>Type:</strong> Whorl Pattern</p>
+                <p><strong>Location:</strong> Door Handle (Interior)</p>
+                <p><strong>Match:</strong> POSITIVE - Suspect Database</p>
+                <p><strong>Confidence:</strong> 99.97%</p>
+            </div>
+
+            <div class="evidence-card">
+                <div class="evidence-number">3</div>
+                <h3>Witness Statement</h3>
+                <p><strong>Witness:</strong> Mrs. Jennifer Hayes</p>
+                <p><strong>Time:</strong> 9:00 PM</p>
+                <p><strong>Location:</strong> Corner Store</p>
+                <p><strong>Claim:</strong> Saw suspect at scene</p>
+            </div>
+        </div>
+
+        <div class="connections">
+            <h3>Evidence Chain:</h3>
+            <div class="connection-line">
+                <span>Victim at crime scene</span>
+                <span class="arrow">→</span>
+                <span>AB-negative blood found</span>
+            </div>
+            <div class="connection-line">
+                <span>Suspect visits crime scene</span>
+                <span class="arrow">→</span>
+                <span>Fingerprints on door handle</span>
+            </div>
+            <div class="connection-line">
+                <span>Alibi broken by witness</span>
+                <span class="arrow">→</span>
+                <span>Suspect was at location at 9 PM</span>
+            </div>
+        </div>
+
+        <div class="suspect-section">
+            <h2>Primary Suspect Profile</h2>
+            <div class="suspect-info">
+                <div class="info-item">
+                    <strong>Name:</strong> [REDACTED FOR CONFIDENTIALITY]<br/>
+                    <strong>Age:</strong> 35<br/>
+                    <strong>History:</strong> Previous disputes with victim
+                </div>
+                <div class="info-item">
+                    <strong>Alibi Status:</strong> BROKEN<br/>
+                    <strong>Physical Evidence:</strong> POSITIVE<br/>
+                    <strong>Witness:</strong> CONFIRMED SIGHTING
+                </div>
+            </div>
+            
+            <div class="motive-section">
+                ❓ MOTIVE: ?
+                <p style="font-size: 11px; margin-top: 10px;">Personal dispute? Financial gain? Revenge?</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

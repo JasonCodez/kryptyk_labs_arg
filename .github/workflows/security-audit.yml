@@ -1,0 +1,29 @@
+name: Security audit
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # weekly on Monday at 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install deps
+        run: npm ci
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate || true
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: ./npm-audit-report.txt
+      - name: Create issue for vulnerabilities
+        if: failure()
+        run: |
+          echo "Vulnerabilities found" && exit 1

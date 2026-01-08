@@ -18,6 +18,7 @@ interface Puzzle {
   pointsReward?: number;
   createdAt?: string;
   completionCount?: number;
+  attemptCount?: number;
   category: {
     id: string;
     name: string;
@@ -55,7 +56,7 @@ const RARITY_COLORS: Record<string, { bg: string; text: string; border: string }
   common: { bg: "rgba(200, 200, 200, 0.1)", text: "#CCCCCC", border: "#CCCCCC" },
   uncommon: { bg: "rgba(76, 175, 80, 0.1)", text: "#4CAF50", border: "#4CAF50" },
   rare: { bg: "rgba(56, 145, 166, 0.1)", text: "#3891A6", border: "#3891A6" },
-  epic: { bg: "rgba(56, 145, 166, 0.1)", text: "#3891A6", border: "#3891A6" },
+  epic: { bg: "rgba(124, 58, 237, 0.08)", text: "#7C3AED", border: "#7C3AED" },
   legendary: { bg: "rgba(255, 193, 7, 0.1)", text: "#FFC107", border: "#FFC107" },
 };
 
@@ -237,19 +238,21 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
         {/* Search and Filters */}
         <div className="mb-12">
           {/* FilterBar Component */}
-          <FilterBar
-            onSearch={setSearchQuery}
-            onDifficultyChange={setSelectedDifficulty}
-            onStatusChange={setSelectedStatus}
-            onSortChange={(by, order) => {
-              setSortBy(by);
-              setSortOrder(order);
-            }}
-            currentSearch={searchQuery}
-            currentDifficulty={selectedDifficulty}
-            currentStatus={selectedStatus}
-            currentSort={{ by: sortBy, order: sortOrder }}
-          />
+          <div>
+            <FilterBar
+              onSearch={setSearchQuery}
+              onDifficultyChange={setSelectedDifficulty}
+              onStatusChange={setSelectedStatus}
+              onSortChange={(by, order) => {
+                setSortBy(by);
+                setSortOrder(order);
+              }}
+              currentSearch={searchQuery}
+              currentDifficulty={selectedDifficulty}
+              currentStatus={selectedStatus}
+              currentSort={{ by: sortBy, order: sortOrder }}
+            />
+          </div>
 
           {/* Category Filters */}
           <div className="mt-6 mb-8">
@@ -331,7 +334,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPuzzles.map((puzzle) => {
+            {filteredPuzzles.map((puzzle, idx) => {
               const progress = puzzle.userProgress?.[0];
               const status = progress?.solved ? "solved" : progress?.attempts ? "in-progress" : "unsolved";
               const statusConfig: Record<string, { color: string; label: string }> = {
@@ -340,7 +343,59 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                 unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
               };
 
-              return (
+              return status === 'solved' ? (
+                <div
+                  key={puzzle.id}
+                  className="group rounded-lg border p-6 transition-all duration-300"
+                  style={{
+                    backgroundColor: 'rgba(56, 145, 166, 0.08)',
+                    borderColor: '#3891A6',
+                    borderWidth: '1px',
+                    opacity: 0.6,
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  <div className="mb-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="text-xl font-bold text-white flex-1">{puzzle.title}</h3>
+                      <div className="flex gap-2 flex-col items-end">
+                        <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
+                          #{puzzle.order}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✓ Puzzle Complete</p>
+                  </div>
+                  <p className="text-sm mb-3" style={{ color: '#DDDBF1' }}>{puzzle.description}</p>
+                  <div className="flex gap-2 flex-wrap mb-2">
+                    <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
+                      {puzzle.category?.name || 'General'}
+                    </span>
+                    <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
+                      {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
+                    </span>
+                    <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
+                      {statusConfig[status].label}
+                    </span>
+                  </div>
+                  <div className="mb-2">
+                    <StarRating 
+                      rating={ratingStats[puzzle.id]?.averageRating ?? 0}
+                      size="sm"
+                      ratingCount={ratingStats[puzzle.id]?.ratingCount}
+                      showText={ratingStats[puzzle.id]?.averageRating > 0}
+                    />
+                    {!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0 && (
+                      <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
+                    )}
+                  </div>
+                  {puzzle.pointsReward && (
+                    <div style={{ color: '#FDE74C' }} className="text-xs font-semibold mb-2">
+                      ⭐ {puzzle.pointsReward} points
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <Link
                   key={puzzle.id}
                   href={`/puzzles/${puzzle.id}`}
@@ -389,16 +444,24 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                       </div>
                     )}
                   </div>
-                  <div className="mt-4 pt-4 flex justify-between items-end" style={{ borderTopColor: 'rgba(56, 145, 166, 0.2)', borderTopWidth: '1px' }}>
-                    <span className="text-sm font-semibold transition-all" style={{ color: '#3891A6' }}>
-                      {status === 'solved' ? 'View →' : 'Solve Now →'}
+                  <div className="mt-4 pt-4 space-y-2" style={{ borderTopColor: 'rgba(56, 145, 166, 0.2)', borderTopWidth: '1px' }}>
+                    <span className="text-sm font-semibold transition-all block" style={{ color: '#3891A6' }}>
+                      Solve Now →
                     </span>
-                    <span style={{ color: '#DDDBF1' }} className="text-xs text-right">
-                      <span className="font-semibold" style={{ color: '#FDE74C' }}>
-                        {totalUsers > 0 ? Math.round((puzzle.completionCount || 0) / totalUsers * 100) : 0}%
-                      </span>
-                      {' of users have completed'}
-                    </span>
+                    <div className="space-y-1 text-xs">
+                      <div style={{ color: '#DDDBF1' }}>
+                        <span className="font-semibold" style={{ color: '#FDE74C' }}>
+                          {totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0}%
+                        </span>
+                        {' have attempted'}
+                      </div>
+                      <div style={{ color: '#DDDBF1' }}>
+                        <span className="font-semibold" style={{ color: '#38D399' }}>
+                          {(puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0}%
+                        </span>
+                        {' of attempted completed'}
+                      </div>
+                    </div>
                   </div>
                 </Link>
               );
@@ -415,7 +478,78 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                 unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
               };
 
-              return (
+              return status === 'solved' ? (
+                <div
+                  key={puzzle.id}
+                  className="group rounded-lg border p-4 transition-all duration-300 block"
+                  style={{
+                    backgroundColor: 'rgba(56, 145, 166, 0.08)',
+                    borderColor: '#3891A6',
+                    borderWidth: '1px',
+                    opacity: 0.6,
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
+                          #{puzzle.order}
+                        </span>
+                        <h3 className="text-lg font-bold text-white truncate">{puzzle.title}</h3>
+                        <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(56, 201, 153, 0.2)', color: '#38D399' }}>
+                          ✓ Complete
+                        </span>
+                      </div>
+                      <p className="text-sm mb-2 line-clamp-2" style={{ color: '#DDDBF1' }}>{puzzle.description}</p>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
+                          {puzzle.category?.name || 'General'}
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded capitalize font-medium whitespace-nowrap" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
+                          {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded font-medium whitespace-nowrap" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
+                          {statusConfig[status].label}
+                        </span>
+                        {puzzle.pointsReward && (
+                          <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
+                            ⭐ {puzzle.pointsReward} points
+                          </span>
+                        )}
+                      </div>
+                      <div className="mb-2">
+                        <StarRating 
+                          rating={ratingStats[puzzle.id]?.averageRating ?? 0}
+                          size="sm"
+                          ratingCount={ratingStats[puzzle.id]?.ratingCount}
+                          showText={ratingStats[puzzle.id]?.averageRating > 0}
+                        />
+                        {!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0 && (
+                          <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
+                        )}
+                      </div>
+                      <div className="text-xs mt-2 space-y-1" style={{ color: '#DDDBF1' }}>
+                        <div>
+                          <span className="font-semibold" style={{ color: '#FDE74C' }}>
+                            {totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0}%
+                          </span>
+                          {' have attempted'}
+                        </div>
+                        <div>
+                          <span className="font-semibold" style={{ color: '#38D399' }}>
+                            {(puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0}%
+                          </span>
+                          {' of attempted completed'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ color: '#AB9F9D' }} className="text-lg font-semibold flex-shrink-0">
+                      -
+                    </div>
+                  </div>
+                </div>
+              ) : (
                 <Link
                   key={puzzle.id}
                   href={`/puzzles/${puzzle.id}`}

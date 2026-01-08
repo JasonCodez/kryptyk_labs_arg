@@ -48,30 +48,56 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create or update rating
-    const puzzleRating = await prisma.puzzleRating.upsert({
+    // Check if user has already rated this puzzle
+    const existingRating = await prisma.puzzleRating.findUnique({
       where: {
         puzzleId_userId: {
           puzzleId,
           userId: user.id,
         },
       },
-      update: {
-        rating,
-        review: review || null,
-        updatedAt: new Date(),
-      },
-      create: {
-        puzzleId,
-        userId: user.id,
-        rating,
-        review: review || null,
-      },
     });
+
+    let puzzleRating;
+    let pointsAwarded = 0;
+    if (!existingRating) {
+      // First time rating: create and award points
+      puzzleRating = await prisma.puzzleRating.create({
+        data: {
+          puzzleId,
+          userId: user.id,
+          rating,
+          review: review || null,
+        },
+      });
+      // Award 5 points in GlobalLeaderboard
+      await prisma.globalLeaderboard.upsert({
+        where: { userId: user.id },
+        update: { totalPoints: { increment: 5 } },
+        create: { userId: user.id, totalPoints: 5 },
+      });
+      pointsAwarded = 5;
+    } else {
+      // Update existing rating, no points
+      puzzleRating = await prisma.puzzleRating.update({
+        where: {
+          puzzleId_userId: {
+            puzzleId,
+            userId: user.id,
+          },
+        },
+        data: {
+          rating,
+          review: review || null,
+          updatedAt: new Date(),
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
       rating: puzzleRating,
+      pointsAwarded,
     });
   } catch (error) {
     console.error("Error submitting puzzle rating:", error);

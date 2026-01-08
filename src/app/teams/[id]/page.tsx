@@ -182,10 +182,7 @@ export default function TeamDetailPage() {
                     )}
                     <div>
                       <p className="text-white font-semibold">
-                        {member.user.name || member.user.email}
-                      </p>
-                      <p className="text-slate-400 text-sm">
-                        {member.user.email}
+                        {member.user.name || "Member"}
                       </p>
                     </div>
                   </div>

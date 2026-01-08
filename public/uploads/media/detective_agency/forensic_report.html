@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Forensic Analysis Report - Case #123</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .report {
+            background: white;
+            padding: 40px;
+            max-width: 900px;
+            margin: 0 auto;
+            border: 2px solid #333;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 3px double #333;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 2px;
+        }
+        .header p {
+            margin: 5px 0;
+            font-size: 12px;
+            color: #666;
+        }
+        .section {
+            margin: 20px 0;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 14px;
+            text-transform: uppercase;
+            border-left: 4px solid #d32f2f;
+            padding-left: 10px;
+            margin-bottom: 10px;
+        }
+        .field {
+            margin: 8px 0;
+            display: flex;
+        }
+        .label {
+            font-weight: bold;
+            width: 150px;
+            min-width: 150px;
+        }
+        .value {
+            flex: 1;
+            word-break: break-word;
+        }
+        .highlight {
+            background: yellow;
+            padding: 2px 4px;
+            font-weight: bold;
+        }
+        .evidence-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .evidence-table th,
+        .evidence-table td {
+            border: 1px solid #999;
+            padding: 8px;
+            text-align: left;
+            font-size: 12px;
+        }
+        .evidence-table th {
+            background: #e0e0e0;
+            font-weight: bold;
+        }
+        .match {
+            color: #d32f2f;
+            font-weight: bold;
+        }
+        .stamp {
+            text-align: right;
+            margin-top: 30px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="report">
+        <div class="header">
+            <h1>FORENSIC LABORATORY</h1>
+            <p>OFFICIAL ANALYSIS REPORT</p>
+            <p>Department of Criminal Investigation</p>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Case Information</div>
+            <div class="field">
+                <div class="label">Case Number:</div>
+                <div class="value">2026-001234</div>
+            </div>
+            <div class="field">
+                <div class="label">Date of Analysis:</div>
+                <div class="value">January 1, 2026</div>
+            </div>
+            <div class="field">
+                <div class="label">Analyzed By:</div>
+                <div class="value">Dr. Patricia Morgan, Lead Forensic Analyst</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Evidence Summary</div>
+            <table class="evidence-table">
+                <tr>
+                    <th>Evidence ID</th>
+                    <th>Type</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                </tr>
+                <tr>
+                    <td>EV-001</td>
+                    <td>Blood Sample</td>
+                    <td>Crime Scene</td>
+                    <td>Analyzed</td>
+                </tr>
+                <tr>
+                    <td>EV-002</td>
+                    <td>Fingerprints</td>
+                    <td>Door Handle</td>
+                    <td>Matched</td>
+                </tr>
+                <tr>
+                    <td>EV-003</td>
+                    <td>Fibers</td>
+                    <td>Victim's Clothing</td>
+                    <td>Analyzed</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Blood Type Analysis</div>
+            <div class="field">
+                <div class="label">Sample ID:</div>
+                <div class="value">BL-001-123</div>
+            </div>
+            <div class="field">
+                <div class="label">Blood Type:</div>
+                <div class="value"><span class="highlight">AB-NEGATIVE</span> (Rare)</div>
+            </div>
+            <div class="field">
+                <div class="label">Volume:</div>
+                <div class="value">~50mL</div>
+            </div>
+            <div class="field">
+                <div class="label">DNA Match:</div>
+                <div class="value">Victim (Confirmed)</div>
+            </div>
+            <div class="field">
+                <div class="label">Rarity:</div>
+                <div class="value">1 in 67 individuals (0.6% population)</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Fingerprint Analysis</div>
+            <div class="field">
+                <div class="label">Analysis Method:</div>
+                <div class="value">Automated Fingerprint Identification System (AFIS)</div>
+            </div>
+            <div class="field">
+                <div class="label">Location Found:</div>
+                <div class="value">Door handle (interior)</div>
+            </div>
+            <div class="field">
+                <div class="label">Quality Rating:</div>
+                <div class="value">Excellent - 12 point match</div>
+            </div>
+            <div class="field">
+                <div class="label">Database Match:</div>
+                <div class="value"><span class="match">POSITIVE MATCH - Suspect in Case #123</span></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Conclusions</div>
+            <div class="field">
+                <div class="value">Physical evidence strongly suggests the presence of the suspect at the crime scene at time of incident. Blood type AB-negative is rare and matches victim. Fingerprints found at critical entry point indicate recent contact.</div>
+            </div>
+        </div>
+
+        <div class="stamp">
+            <p>Report Generated: January 1, 2026</p>
+            <p>This is an official forensic analysis document.</p>
+        </div>
+    </div>
+</body>
+</html>

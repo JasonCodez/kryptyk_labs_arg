@@ -13,7 +13,11 @@ import TimeTracker from "@/components/puzzle/TimeTracker";
 import AttemptStats from "@/components/puzzle/AttemptStats";
 import CompletionPercentage from "@/components/puzzle/CompletionPercentage";
 import ImageViewer from "@/components/ImageViewer";
+import SudokuGrid from "@/components/puzzle/SudokuGrid";
+import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
 import PuzzleCompletionRatingModal from "@/components/puzzle/PuzzleCompletionRatingModal";
+import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
+import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 
 interface Puzzle {
   id: string;
@@ -21,8 +25,21 @@ interface Puzzle {
   description: string;
   content: string;
   difficulty: string;
+  puzzleType?: string;
   category: {
     name: string;
+  };
+  sudoku?: {
+    puzzleGrid: string;
+    solutionGrid: string;
+    difficulty: string;
+  };
+  jigsaw?: {
+    imageUrl: string | null;
+    gridRows: number;
+    gridCols: number;
+    snapTolerance: number;
+    rotationEnabled: boolean;
   };
   media?: PuzzleMedia[];
 }
@@ -129,10 +146,13 @@ export default function PuzzleDetailPage() {
   const [hints, setHints] = useState<HintWithStats[]>([]);
   const [progress, setProgress] = useState<PuzzleProgress | null>(null);
   const [answer, setAnswer] = useState("");
+  const [sudokuGrid, setSudokuGrid] = useState<(number | null)[][]>([]);
+  const [sudokuGridForSubmit, setSudokuGridForSubmit] = useState<number[][]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [showSolvedMessage, setShowSolvedMessage] = useState(false);
   const [showHints, setShowHints] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showProgress, setShowProgress] = useState(true);
@@ -140,6 +160,44 @@ export default function PuzzleDetailPage() {
   const [revealedHints, setRevealedHints] = useState<Set<string>>(new Set());
   const [revealingHint, setRevealingHint] = useState<string | null>(null);
   const [usedHintIds, setUsedHintIds] = useState<string[]>([]);
+
+  const jigsawPlayable: JigsawPuzzleType | null = (() => {
+    if (!puzzle || puzzle.puzzleType !== 'jigsaw') return null;
+    if (!puzzle.jigsaw?.imageUrl) return null;
+
+    const mappedDifficulty = (() => {
+      const d = (puzzle.difficulty || '').toLowerCase();
+      if (d === 'easy' || d === 'medium' || d === 'hard') return d;
+      return 'hard';
+    })();
+
+    const pieceCount = puzzle.jigsaw.gridRows * puzzle.jigsaw.gridCols;
+
+    // The jigsaw component only relies on `puzzle.data` at runtime; we fill extra fields to satisfy the type.
+    return {
+      id: puzzle.id,
+      title: puzzle.title,
+      description: puzzle.description,
+      type: 'jigsaw',
+      difficulty: mappedDifficulty,
+      category: puzzle.category?.name || 'general',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      isActive: true,
+      pointsReward: 100,
+      imageUrl: puzzle.jigsaw.imageUrl,
+      pieceCount,
+      aspectRatio: 1,
+      data: {
+        imageUrl: puzzle.jigsaw.imageUrl,
+        pieceCount,
+        gridRows: puzzle.jigsaw.gridRows,
+        gridCols: puzzle.jigsaw.gridCols,
+        rotationEnabled: puzzle.jigsaw.rotationEnabled,
+        snapTolerance: puzzle.jigsaw.snapTolerance,
+      },
+    } as unknown as JigsawPuzzleType;
+  })();
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -163,6 +221,18 @@ export default function PuzzleDetailPage() {
 
     if (puzzleId) fetchPuzzle();
   }, [puzzleId, status, router]);
+
+  // Initialize Sudoku grid when puzzle loads
+  useEffect(() => {
+    if (puzzle?.puzzleType === 'sudoku' && puzzle.sudoku) {
+      try {
+        const gridData = JSON.parse(puzzle.sudoku.puzzleGrid);
+        setSudokuGrid(gridData);
+      } catch (err) {
+        console.error("Failed to parse Sudoku grid:", err);
+      }
+    }
+  }, [puzzle]);
 
   // Fetch hints separately to get stats and history
   useEffect(() => {
@@ -275,8 +345,111 @@ export default function PuzzleDetailPage() {
     console.log(`Hint ${hintId} rated as ${wasHelpful ? "helpful" : "not helpful"}`);
   };
 
+  const handleSudokuSubmit = async (submittedGrid: number[][]) => {
+        setSuccess(true);
+        setShowSolvedMessage(true);
+        // Log successful attempt
+        try {
+          await fetch(`/api/puzzles/${puzzleId}/progress`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "attempt_success" }),
+          });
+        } catch (err) {
+          console.error("Failed to log success:", err);
+        }
+
+        // Refresh progress
+        try {
+          const progressResponse = await fetch(`/api/puzzles/${puzzleId}/progress`);
+          if (progressResponse.ok) {
+            const updatedProgress = await progressResponse.json();
+            setProgress(updatedProgress);
+          }
+        } catch (err) {
+          console.error("Failed to refresh progress:", err);
+        }
+
+        // Show solved message, then rating modal after delay
+        setTimeout(() => {
+          setShowSolvedMessage(false);
+          setShowRatingModal(true);
+        }, 1500);
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Failed to validate Sudoku");
+        }
+
+        const data = await response.json();
+        if (!data.isCorrect) {
+          setError("Sudoku is not completely or correctly solved. Please check for errors.");
+          setSubmitting(false);
+          return;
+        }
+
+        setSuccess(true);
+        
+        // Submit for points (using a dummy answer string for Sudoku)
+        try {
+          const submitResponse = await fetch("/api/puzzles/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              puzzleId, 
+              answer: "SUDOKU_SOLVED" 
+            }),
+          });
+
+          if (!submitResponse.ok) {
+            console.error("Failed to submit puzzle for points");
+          }
+        } catch (err) {
+          console.error("Failed to submit Sudoku for points:", err);
+        }
+        
+        // Log successful attempt
+        try {
+          await fetch(`/api/puzzles/${puzzleId}/progress`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "attempt_success" }),
+          });
+        } catch (err) {
+          console.error("Failed to log success:", err);
+        }
+
+        // Refresh progress
+        try {
+          const progressResponse = await fetch(`/api/puzzles/${puzzleId}/progress`);
+          if (progressResponse.ok) {
+            const updatedProgress = await progressResponse.json();
+            setProgress(updatedProgress);
+          }
+        } catch (err) {
+          console.error("Failed to refresh progress:", err);
+        }
+
+        setShowRatingModal(true);
+      }
+    } catch (err) {
+      setError("An error occurred. Please try again.");
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Skip if this is a Sudoku puzzle
+    if (puzzle?.puzzleType === 'sudoku' || puzzle?.puzzleType === 'jigsaw') {
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     setSuccess(false);
@@ -293,10 +466,10 @@ export default function PuzzleDetailPage() {
         console.error("Failed to log attempt:", err);
       }
 
-      const response = await fetch("/api/puzzles/submit", {
+      const response = await fetch(`/api/puzzles/${puzzleId}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ puzzleId, answer }),
+        body: JSON.stringify({ answer }),
       });
 
       const data = await response.json();
@@ -306,7 +479,7 @@ export default function PuzzleDetailPage() {
         return;
       }
 
-      if (data.isCorrect) {
+      if (data.correct) {
         setSuccess(true);
         setAnswer("");
 
@@ -412,8 +585,8 @@ export default function PuzzleDetailPage() {
         </div>
       </nav>
 
-      <div className="p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="p-8 flex-1">
+        <div className="w-full">
           <div
             className="border rounded-lg p-8 mb-8"
             style={{ backgroundColor: "rgba(253, 231, 76, 0.08)", borderColor: "#FDE74C" }}
@@ -452,7 +625,7 @@ export default function PuzzleDetailPage() {
               </div>
             </div>
 
-            {puzzle.media && puzzle.media.length > 0 && (
+            {puzzle.puzzleType !== 'jigsaw' && puzzle.media && puzzle.media.length > 0 && (
               <div
                 className="mb-8 p-6 rounded-lg border"
                 style={{ backgroundColor: "rgba(56, 145, 166, 0.1)", borderColor: "#3891A6" }}
@@ -465,7 +638,7 @@ export default function PuzzleDetailPage() {
                       className="rounded-lg overflow-hidden border transition-colors"
                       style={{ backgroundColor: "rgba(76, 91, 92, 0.5)", borderColor: "#FDE74C" }}
                     >
-                      {media.type === "image" && (
+                      {media.type === "image" && puzzle.puzzleType !== 'jigsaw' && (
                         <ImageViewer
                           src={media.url}
                           alt={media.title || "Puzzle image"}
@@ -538,12 +711,13 @@ export default function PuzzleDetailPage() {
               </div>
             )}
 
-            {success && (
+
+            {showSolvedMessage && (
               <div
-                className="mb-6 p-4 rounded-lg border text-white"
-                style={{ backgroundColor: "rgba(253, 231, 76, 0.2)", borderColor: "#FDE74C" }}
+                className="mb-6 p-4 rounded-lg border text-white text-center text-lg font-semibold"
+                style={{ backgroundColor: "rgba(56, 211, 153, 0.15)", borderColor: "#38D399" }}
               >
-                ✓ Correct! Please rate this puzzle below.
+                🎉 Puzzle Solved! Excellent work!
               </div>
             )}
 
@@ -561,8 +735,35 @@ export default function PuzzleDetailPage() {
               />
             )}
 
-            <form onSubmit={handleSubmit} className="mb-8">
-              <label className="block text-white font-semibold mb-3">Your Answer</label>
+            {puzzle?.puzzleType === 'jigsaw' ? (
+              <div className="mb-8">
+                {!jigsawPlayable ? (
+                  <div
+                    className="p-4 rounded-lg border text-white"
+                    style={{ backgroundColor: "rgba(171, 159, 157, 0.2)", borderColor: "#AB9F9D" }}
+                  >
+                    This jigsaw puzzle is missing its image. Upload an image in the admin puzzle creator.
+                  </div>
+                ) : (
+                  <div 
+                    className="h-[calc(100vh-16rem)] min-h-[820px] rounded-xl overflow-hidden border border-gray-700 bg-gray-900"
+                    style={{
+                      height: 'calc(100vh - 16rem)',
+                      minHeight: '820px',
+                      display: 'flex',
+                    }}
+                  >
+                    <JigsawPuzzle
+                      imageUrl={jigsawPlayable.imageUrl}
+                      rows={jigsawPlayable.data.gridRows}
+                      cols={jigsawPlayable.data.gridCols}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="mb-8">
+                <label className="block text-white font-semibold mb-3">Your Answer</label>
               
               {progress?.solved && (
                 <div
@@ -572,27 +773,58 @@ export default function PuzzleDetailPage() {
                   ✓ You have already solved this puzzle! Visit the puzzles page to try another one.
                 </div>
               )}
-              
-              <textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                disabled={submitting || success || progress?.solved}
-                placeholder={progress?.solved ? "This puzzle has been solved." : "Enter your answer here..."}
-                className="w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none disabled:opacity-50"
-                style={{ backgroundColor: "#2a3a3b", borderWidth: "2px", borderColor: "#FDE74C" }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#3891A6")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "#FDE74C")}
-                rows={4}
-              />
-              <button
-                type="submit"
-                disabled={submitting || success || !answer.trim() || progress?.solved}
-                className="mt-4 px-6 py-2 rounded-lg text-white font-semibold transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: "#AB9F9D" }}
-              >
-                {submitting ? "Submitting..." : progress?.solved ? "Puzzle Solved ✓" : "Submit Answer"}
-              </button>
-            </form>
+
+              {puzzle?.puzzleType === 'escape_room' ? (
+                <div className="mb-4">
+                  <EscapeRoomPuzzle 
+                    puzzleId={puzzleId}
+                    onComplete={() => {
+                      setSuccess(true);
+                      setShowRatingModal(true);
+                    }}
+                  />
+                </div>
+              ) : puzzle?.puzzleType === 'sudoku' ? (
+                <div className="mb-4">
+                  {sudokuGrid.length > 0 && (
+                    <SudokuGrid 
+                      puzzle={sudokuGrid as number[][]}
+                      onSubmit={(submittedGrid: number[][]) => {
+                        setSudokuGridForSubmit(submittedGrid);
+                        // Submit the form after grid is set
+                        setTimeout(() => {
+                          handleSudokuSubmit(submittedGrid);
+                        }, 0);
+                      }}
+                      disabled={submitting || success || progress?.solved}
+                    />
+                  )}
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    disabled={submitting || success || progress?.solved}
+                    placeholder={progress?.solved ? "This puzzle has been solved." : "Enter your answer here..."}
+                    className="w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none disabled:opacity-50"
+                    style={{ backgroundColor: "#2a3a3b", borderWidth: "2px", borderColor: "#FDE74C" }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#3891A6")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#FDE74C")}
+                    rows={4}
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting || success || !answer.trim() || progress?.solved}
+                    className="mt-4 px-6 py-2 rounded-lg text-white font-semibold transition-colors hover:opacity-90 disabled:opacity-50"
+                    style={{ backgroundColor: "#AB9F9D" }}
+                  >
+                    {submitting ? "Submitting..." : progress?.solved ? "Puzzle Solved ✓" : "Submit Answer"}
+                  </button>
+                </>
+              )}
+              </form>
+            )}
 
             {/* Hints Section */}
             <div style={{ borderTopColor: "#3891A6", borderTopWidth: "1px", paddingTop: "2rem" }}>

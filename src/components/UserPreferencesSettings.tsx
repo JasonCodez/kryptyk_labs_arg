@@ -86,29 +86,17 @@ export default function UserPreferencesSettings() {
   const applyThemeVariables = (prefs: UserPreferences) => {
     const root = document.documentElement;
 
-    // Theme brightness colors
-    const brightnessVars = {
-      light: {
-        bg: "#f9fafb",
-        text: "#1f2937",
-        border: "#e5e7eb",
-      },
-      medium: {
-        bg: "#f3f4f6",
-        text: "#111827",
-        border: "#d1d5db",
-      },
-      dark: {
-        bg: "#0f172a",
-        text: "#f1f5f9",
-        border: "#334155",
-      },
+    // FORCE DARK THEME - never apply light or medium theme colors
+    // This prevents the site from turning white when visiting settings
+    const enforcedDark = {
+      bg: "#020202",
+      text: "#DDDBF1",
+      border: "#3891A6",
     };
 
-    const brightness = brightnessVars[prefs.themeBrightness];
-    root.style.setProperty("--color-bg-primary", brightness.bg);
-    root.style.setProperty("--color-text-primary", brightness.text);
-    root.style.setProperty("--color-border", brightness.border);
+    root.style.setProperty("--color-bg-primary", enforcedDark.bg);
+    root.style.setProperty("--color-text-primary", enforcedDark.text);
+    root.style.setProperty("--color-border", enforcedDark.border);
 
     // Font size multipliers
     const fontSizeMultipliers = {
@@ -137,11 +125,12 @@ export default function UserPreferencesSettings() {
     const animationDuration = prefs.reduceAnimations ? "0.05s" : "0.3s";
     root.style.setProperty("--animation-duration", animationDuration);
 
-    // Color contrast
+    // Color contrast - always use dark theme text
     if (prefs.colorContrast === "high") {
-      root.style.setProperty("--color-text-primary", brightness.text === "#1f2937" ? "#000000" : "#ffffff");
+      root.style.setProperty("--color-text-primary", "#ffffff");
       root.style.setProperty("--border-width", "2px");
     } else {
+      root.style.setProperty("--color-text-primary", enforcedDark.text);
       root.style.setProperty("--border-width", "1px");
     }
   };
@@ -213,21 +202,21 @@ export default function UserPreferencesSettings() {
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-800 dark:text-red-200">
+        <div style={{ backgroundColor: 'rgba(220, 38, 38, 0.2)', borderColor: '#DC2626' }} className="border rounded-lg p-4 text-red-300">
           {error}
         </div>
       )}
 
       {/* Success Message */}
       {success && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 text-green-800 dark:text-green-200">
+        <div style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)', borderColor: '#22C55E' }} className="border rounded-lg p-4 text-green-300">
           ✓ Preferences saved successfully
         </div>
       )}
 
       {/* Font Size */}
-      <section className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+      <section style={{ backgroundColor: 'rgba(56, 145, 166, 0.1)', borderColor: '#3891A6' }} className="rounded-lg border p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">
           Font Size
         </h3>
         <div className="space-y-3">
@@ -235,22 +224,22 @@ export default function UserPreferencesSettings() {
             <button
               key={option.value}
               onClick={() => handlePreferenceChange("fontSize", option.value)}
-              className={`w-full p-4 rounded-lg border-2 text-left transition-all flex items-center justify-between ${
-                preferences.fontSize === option.value
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                  : "border-gray-200 dark:border-gray-800 hover:border-gray-300"
-              }`}
+              style={{
+                borderColor: preferences.fontSize === option.value ? '#FDE74C' : '#3891A6',
+                backgroundColor: preferences.fontSize === option.value ? 'rgba(253, 231, 76, 0.1)' : 'rgba(56, 145, 166, 0.05)',
+              }}
+              className={`w-full p-4 rounded-lg border-2 text-left transition-all flex items-center justify-between`}
             >
               <div>
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-white">
                   {option.label}
                 </div>
-                <div className={`text-gray-600 dark:text-gray-400 mt-1 ${option.className}`}>
+                <div className={`text-gray-300 mt-1 ${option.className}`}>
                   Sample Text
                 </div>
               </div>
               {preferences.fontSize === option.value && (
-                <div className="text-blue-500">✓</div>
+                <div style={{ color: '#FDE74C' }}>✓</div>
               )}
             </button>
           ))}
@@ -258,8 +247,8 @@ export default function UserPreferencesSettings() {
       </section>
 
       {/* Spacing Mode */}
-      <section className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+      <section style={{ backgroundColor: 'rgba(56, 145, 166, 0.1)', borderColor: '#3891A6' }} className="rounded-lg border p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">
           Spacing Mode
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -269,16 +258,16 @@ export default function UserPreferencesSettings() {
               onClick={() =>
                 handlePreferenceChange("spacingMode", option.value)
               }
-              className={`p-4 rounded-lg border-2 text-left transition-all ${
-                preferences.spacingMode === option.value
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                  : "border-gray-200 dark:border-gray-800 hover:border-gray-300"
-              }`}
+              style={{
+                borderColor: preferences.spacingMode === option.value ? '#FDE74C' : '#3891A6',
+                backgroundColor: preferences.spacingMode === option.value ? 'rgba(253, 231, 76, 0.1)' : 'rgba(56, 145, 166, 0.05)',
+              }}
+              className={`p-4 rounded-lg border-2 text-left transition-all`}
             >
-              <div className="font-medium text-gray-900 dark:text-white">
+              <div className="font-medium text-white">
                 {option.label}
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              <div className="text-sm text-gray-300 mt-1">
                 {option.description}
               </div>
               {/* Visual representation */}
@@ -286,7 +275,8 @@ export default function UserPreferencesSettings() {
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className={`h-2 bg-gray-400 rounded ${
+                    style={{ backgroundColor: '#3891A6' }}
+                    className={`h-2 rounded ${
                       option.value === "compact"
                         ? "my-1"
                         : option.value === "comfortable"
@@ -302,18 +292,18 @@ export default function UserPreferencesSettings() {
       </section>
 
       {/* Additional Options */}
-      <section className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+      <section style={{ backgroundColor: 'rgba(56, 145, 166, 0.1)', borderColor: '#3891A6' }} className="rounded-lg border p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">
           Accessibility
         </h3>
         <div className="space-y-4">
           {/* Reduce Animations */}
-          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div style={{ backgroundColor: 'rgba(56, 145, 166, 0.15)' }} className="flex items-center justify-between p-4 rounded-lg">
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">
+              <div className="font-medium text-white">
                 Reduce Animations
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-gray-300">
                 Minimize motion effects for reduced motion preference
               </div>
             </div>
@@ -356,12 +346,12 @@ export default function UserPreferencesSettings() {
           </div>
 
           {/* Color Contrast */}
-          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div style={{ backgroundColor: 'rgba(56, 145, 166, 0.15)' }} className="flex items-center justify-between p-4 rounded-lg">
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">
+              <div className="font-medium text-white">
                 High Contrast
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-gray-300">
                 Increase contrast for better visibility
               </div>
             </div>
@@ -410,7 +400,11 @@ export default function UserPreferencesSettings() {
         <button
           onClick={savePreferences}
           disabled={saving}
-          className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
+          style={{
+            backgroundColor: saving ? '#666666' : '#FDE74C',
+            color: saving ? '#999999' : '#020202'
+          }}
+          className="px-6 py-3 text-white font-medium rounded-lg transition-colors hover:opacity-90 disabled:cursor-not-allowed"
         >
           {saving ? "Saving..." : "Save Preferences"}
         </button>
@@ -419,7 +413,8 @@ export default function UserPreferencesSettings() {
             fetchPreferences();
             setError(null);
           }}
-          className="px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-lg transition-colors"
+          style={{ backgroundColor: 'rgba(56, 145, 166, 0.2)', color: '#ffffff' }}
+          className="px-6 py-3 font-medium rounded-lg transition-colors hover:opacity-90"
         >
           Reset
         </button>

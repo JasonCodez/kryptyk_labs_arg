@@ -169,7 +169,7 @@ export default function ImageViewer({ src, alt, title }: ImageViewerProps) {
             {/* Image Container */}
             <div
               ref={containerRef}
-              className="flex-1 overflow-hidden bg-black relative"
+              className="flex-1 overflow-auto bg-black relative flex items-start justify-center"
               onMouseMove={handleMouseMove}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}

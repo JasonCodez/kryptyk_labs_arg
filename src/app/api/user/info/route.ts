@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { role: true, image: true },
+      select: { id: true, role: true, image: true },
     });
 
     if (!user) {
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ role: user.role, image: user.image });
+    return NextResponse.json({ id: user.id, role: user.role, image: user.image });
   } catch (error) {
     console.error("Error fetching user info:", error);
     return NextResponse.json(

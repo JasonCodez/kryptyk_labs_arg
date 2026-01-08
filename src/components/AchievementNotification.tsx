@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { motion } from "framer-motion";
 
 interface AchievementNotificationProps {
   achievement: {
@@ -32,15 +33,30 @@ export default function AchievementNotification({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
       {/* Backdrop */}
-      <div
+      <motion.div
         className="absolute inset-0 bg-black opacity-75"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.75 }}
       />
 
       {/* Modal */}
-      <div
+      <motion.div
+        initial={{ scale: 0, opacity: 0, rotate: -10, y: -50 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0, y: 0 }}
+        exit={{ scale: 0, opacity: 0, rotate: 10, y: 50 }}
+        transition={{
+          type: "spring",
+          stiffness: 150,
+          damping: 20,
+        }}
         className="relative bg-black border-2 rounded-lg p-8 max-w-md w-full shadow-2xl animate-pulse-slow"
         style={{
           borderColor: color.border,
@@ -124,7 +140,7 @@ export default function AchievementNotification({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

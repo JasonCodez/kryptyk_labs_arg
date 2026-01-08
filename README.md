@@ -198,6 +198,9 @@ TypeScript types are auto-generated from the schema in `src/generated/prisma/`
 3. Test thoroughly
 4. Submit a pull request
 
+### Deleting or decommissioning features
+If you plan to remove or decommission a feature, follow the project removal guidelines: see `.github/REMOVAL_GUIDELINES.md` and use the PR checklist in `.github/PULL_REQUEST_TEMPLATE.md` to ensure a safe, reversible cleanup.
+
 ## License
 
 MIT

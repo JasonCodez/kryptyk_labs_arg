@@ -1,17 +1,17 @@
 "use client";
 
 import { SessionProvider } from "next-auth/react";
-import { useUserPreferences } from "@/lib/useUserPreferences";
+import dynamic from "next/dynamic";
 
-function PreferenceInitializer({ children }: { children: React.ReactNode }) {
-  useUserPreferences();
-  return children;
-}
+const Navbar = dynamic(() => import("@/components/Navbar"), { ssr: false });
+
+// TourLauncher removed — tutorial feature disabled
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <PreferenceInitializer>{children}</PreferenceInitializer>
+      <Navbar />
+      {children}
     </SessionProvider>
   );
 }

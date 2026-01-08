@@ -85,25 +85,42 @@ export async function GET(request: NextRequest) {
             attempts: true,
           },
         },
-        _count: {
-          select: {
-            userProgress: {
-              where: { solved: true },
-            },
-          },
-        },
       },
       orderBy,
       take: limit,
       skip,
     });
 
+    // Fetch completion and attempt counts separately
+    const puzzleStats = await Promise.all(
+      puzzles.map(async (p) => {
+        const stats = await prisma.userPuzzleProgress.aggregate({
+          where: { puzzleId: p.id },
+          _count: true,
+        });
+        const completedCount = await prisma.userPuzzleProgress.count({
+          where: { puzzleId: p.id, solved: true },
+        });
+        return {
+          puzzleId: p.id,
+          totalAttempts: stats._count,
+          completedCount: completedCount,
+        };
+      })
+    );
+
+    const statsMap = new Map(puzzleStats.map((s) => [s.puzzleId, s]));
+
     // Map solutions points and completion count to puzzle
-    const puzzlesWithPoints = puzzles.map((p) => ({
-      ...p,
-      pointsReward: p.solutions[0]?.points || 100,
-      completionCount: p._count.userProgress,
-    }));
+    const puzzlesWithPoints = puzzles.map((p) => {
+      const stats = statsMap.get(p.id);
+      return {
+        ...p,
+        pointsReward: p.solutions[0]?.points || 100,
+        completionCount: stats?.completedCount || 0,
+        attemptCount: stats?.totalAttempts || 0,
+      };
+    });
 
     // Filter by status if specified
     let filtered = puzzles;

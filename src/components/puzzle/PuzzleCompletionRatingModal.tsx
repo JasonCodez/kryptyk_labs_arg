@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion } from "framer-motion";
 import { RatingInput } from "./RatingInput";
 
 interface PuzzleCompletionRatingModalProps {
@@ -30,12 +31,19 @@ export default function PuzzleCompletionRatingModal({
   return (
     <>
       {/* Modal Overlay */}
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm"
         onClick={onClose}
       >
         {/* Modal Content */}
-        <div
+        <motion.div
+          initial={{ scale: 0.5, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.5, opacity: 0, y: 20 }}
+          transition={{ type: "spring", stiffness: 200, damping: 25 }}
           className="bg-gray-900 rounded-lg border p-8 w-full max-w-md mx-4 shadow-2xl"
           style={{
             backgroundColor: "rgba(2, 2, 2, 0.95)",
@@ -107,8 +115,8 @@ export default function PuzzleCompletionRatingModal({
               Continue
             </button>
           )}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </>
   );
 }

@@ -51,15 +51,13 @@ export default function TeamLeaderboards() {
   };
 
   const getRankColor = (rank: number) => {
-    if (rank === 1) return "bg-gradient-to-r from-yellow-100 to-yellow-50";
-    if (rank === 2) return "bg-gradient-to-r from-gray-100 to-gray-50";
-    if (rank === 3) return "bg-gradient-to-r from-orange-100 to-orange-50";
-    return "hover:bg-gray-50";
+    // All rows black background, no gradients or hover
+    return "bg-black";
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen pt-20" style={{ backgroundColor: '#020202' }}>
+      <div className="min-h-screen pt-20" style={{ backgroundColor: '#000' }}>
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-center py-12">
             <p style={{ color: '#FDE74C' }} className="text-lg">Loading team leaderboards...</p>
@@ -71,9 +69,9 @@ export default function TeamLeaderboards() {
 
   if (error) {
     return (
-      <div className="min-h-screen pt-20" style={{ backgroundColor: '#020202' }}>
+      <div className="min-h-screen pt-20" style={{ backgroundColor: '#000' }}>
         <div className="container mx-auto px-4">
-          <div className="border rounded-lg p-4 text-white" style={{ backgroundColor: 'rgba(171, 159, 157, 0.2)', borderColor: '#AB9F9D' }}>
+          <div className="border rounded-lg p-4 text-white" style={{ backgroundColor: '#111', borderColor: '#AB9F9D' }}>
             {error}
           </div>
         </div>
@@ -82,7 +80,7 @@ export default function TeamLeaderboards() {
   }
 
   return (
-    <div style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }} className="min-h-screen">
+    <div style={{ backgroundColor: '#000' }} className="min-h-screen">
       {/* Header with Logo */}
       <nav className="backdrop-blur-md" style={{ borderBottomColor: '#3891A6', borderBottomWidth: '1px', backgroundColor: 'rgba(76, 91, 92, 0.7)' }}>
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
@@ -102,11 +100,11 @@ export default function TeamLeaderboards() {
         </div>
 
         {/* Global Rankings Table */}
-        <div className="bg-slate-800/50 backdrop-blur rounded-lg overflow-hidden mb-8 border" style={{ borderColor: '#3891A6' }}>
+        <div className="bg-black rounded-lg overflow-hidden mb-8 border" style={{ borderColor: '#3891A6' }}>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-slate-900/50 border-b" style={{ borderColor: '#3891A6' }}>
+                <tr className="bg-black border-b" style={{ borderColor: '#3891A6' }}>
                   <th className="px-6 py-4 text-left text-sm font-semibold" style={{ color: '#3891A6' }}>
                     Rank
                   </th>
@@ -167,7 +165,7 @@ export default function TeamLeaderboards() {
 
         {/* User's Team Rank Card */}
         {userTeamRank && (
-          <div className="backdrop-blur rounded-lg p-6 border" style={{ backgroundColor: 'rgba(56, 145, 166, 0.15)', borderColor: '#3891A6' }}>
+          <div className="rounded-lg p-6 border" style={{ backgroundColor: '#111', borderColor: '#3891A6' }}>
             <h2 className="text-lg font-semibold text-white mb-4">Your Team's Rank</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>

@@ -117,7 +117,8 @@ export function RatingInput({
           value={review}
           onChange={(e) => setReview(e.target.value)}
           placeholder="Share your thoughts about this puzzle..."
-          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
+          style={{ backgroundColor: "rgba(56, 145, 166, 0.1)" }}
           rows={3}
           maxLength={500}
           disabled={isSubmitting}

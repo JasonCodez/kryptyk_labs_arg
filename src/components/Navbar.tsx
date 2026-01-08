@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
 
 interface UserInfo {
+  id: string;
   role: string;
   image?: string | null;
 }
@@ -28,13 +29,22 @@ export default function Navbar() {
       const response = await fetch("/api/user/info");
       if (response.ok) {
         const data = await response.json();
+        console.log("User info fetched:", data);
         setUserInfo(data);
+      } else {
+        console.error("Failed to fetch user info:", response.status, response.statusText);
       }
     } catch (error) {
       console.error("Failed to fetch user info:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const getUserId = () => {
+    const id = userInfo?.id || (session?.user as any)?.id || "";
+    console.log("getUserId:", { userInfoId: userInfo?.id, sessionId: (session?.user as any)?.id, finalId: id });
+    return id;
   };
 
   const handleSignOut = async () => {
@@ -142,11 +152,11 @@ export default function Navbar() {
               </p>
             </div>
             <Link
-              href="/settings"
+              href={`/profile/${getUserId()}`}
               className="px-3 py-2 rounded text-white text-sm transition hover:opacity-90"
               style={{ backgroundColor: "rgba(56, 145, 166, 0.6)" }}
             >
-              Settings
+              Profile
             </Link>
             <button
               onClick={handleSignOut}
@@ -158,7 +168,7 @@ export default function Navbar() {
           </div>
         ) : (
           // Unauthenticated user - show sign in/register buttons
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <Link
               href="/auth/signin"
               className="px-3 py-2 rounded text-white text-sm transition hover:opacity-90"

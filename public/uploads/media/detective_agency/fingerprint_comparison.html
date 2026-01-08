@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Fingerprint Comparison</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border: 2px solid #333;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+        h1 {
+            text-align: center;
+            margin: 0 0 10px 0;
+            font-size: 18px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+        .comparison {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            margin: 30px 0;
+        }
+        .fingerprint {
+            text-align: center;
+        }
+        .fingerprint-label {
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        svg {
+            border: 2px solid #333;
+            background: white;
+        }
+        .match-indicators {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fffacd;
+            border: 2px solid #ff6347;
+        }
+        .match-header {
+            font-weight: bold;
+            color: #d32f2f;
+            margin-bottom: 10px;
+        }
+        .match-point {
+            margin: 8px 0;
+            font-size: 12px;
+            padding-left: 20px;
+        }
+        .result {
+            background: #ff6347;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FINGERPRINT ANALYSIS COMPARISON</h1>
+        <p class="subtitle">Case #123 - Crime Scene vs. Suspect Database</p>
+
+        <div class="comparison">
+            <!-- Crime Scene Fingerprint -->
+            <div class="fingerprint">
+                <div class="fingerprint-label">Crime Scene Print<br/>(Door Handle)</div>
+                <svg width="150" height="200" viewBox="0 0 150 200">
+                    <!-- Fingerprint ridge pattern -->
+                    <defs>
+                        <pattern id="ridges1" x="0" y="0" width="2" height="2" patternUnits="userSpaceOnUse">
+                            <circle cx="1" cy="1" r="0.5" fill="#333"/>
+                        </pattern>
+                    </defs>
+                    <!-- Whorle pattern -->
+                    <circle cx="75" cy="100" r="60" fill="none" stroke="#999" stroke-width="1" opacity="0.3"/>
+                    <circle cx="75" cy="100" r="50" fill="none" stroke="#999" stroke-width="1" opacity="0.3"/>
+                    <circle cx="75" cy="100" r="40" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <circle cx="75" cy="100" r="30" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <circle cx="75" cy="100" r="20" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <circle cx="75" cy="100" r="10" fill="none" stroke="#333" stroke-width="1.5"/>
+                    
+                    <!-- Ridge endings (minutiae points) -->
+                    <circle cx="65" cy="85" r="3" fill="#ff1493" stroke="#ff1493" stroke-width="2"/>
+                    <circle cx="85" cy="95" r="3" fill="#ff1493" stroke="#ff1493" stroke-width="2"/>
+                    <circle cx="75" cy="115" r="3" fill="#ff1493" stroke="#ff1493" stroke-width="2"/>
+                    <circle cx="55" cy="105" r="3" fill="#ff1493" stroke="#ff1493" stroke-width="2"/>
+                    <circle cx="95" cy="105" r="3" fill="#ff1493" stroke="#ff1493" stroke-width="2"/>
+                    <circle cx="70" cy="70" r="3" fill="#ff1493" stroke="#ff1493" stroke-width="2"/>
+                </svg>
+            </div>
+
+            <!-- Suspect Database Fingerprint -->
+            <div class="fingerprint">
+                <div class="fingerprint-label">Suspect Database<br/>(ID: S-2026-001)</div>
+                <svg width="150" height="200" viewBox="0 0 150 200">
+                    <!-- Identical whorle pattern -->
+                    <circle cx="75" cy="100" r="60" fill="none" stroke="#999" stroke-width="1" opacity="0.3"/>
+                    <circle cx="75" cy="100" r="50" fill="none" stroke="#999" stroke-width="1" opacity="0.3"/>
+                    <circle cx="75" cy="100" r="40" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <circle cx="75" cy="100" r="30" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <circle cx="75" cy="100" r="20" fill="none" stroke="#333" stroke-width="1.5"/>
+                    <circle cx="75" cy="100" r="10" fill="none" stroke="#333" stroke-width="1.5"/>
+                    
+                    <!-- Same minutiae points highlighted in green -->
+                    <circle cx="65" cy="85" r="3" fill="#32cd32" stroke="#32cd32" stroke-width="2"/>
+                    <circle cx="85" cy="95" r="3" fill="#32cd32" stroke="#32cd32" stroke-width="2"/>
+                    <circle cx="75" cy="115" r="3" fill="#32cd32" stroke="#32cd32" stroke-width="2"/>
+                    <circle cx="55" cy="105" r="3" fill="#32cd32" stroke="#32cd32" stroke-width="2"/>
+                    <circle cx="95" cy="105" r="3" fill="#32cd32" stroke="#32cd32" stroke-width="2"/>
+                    <circle cx="70" cy="70" r="3" fill="#32cd32" stroke="#32cd32" stroke-width="2"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="match-indicators">
+            <div class="match-header">Matching Characteristics (12-Point Match):</div>
+            <div class="match-point">✓ Ridge Ending at position 1 (65, 85)</div>
+            <div class="match-point">✓ Ridge Bifurcation at position 2 (85, 95)</div>
+            <div class="match-point">✓ Ridge Ending at position 3 (75, 115)</div>
+            <div class="match-point">✓ Ridge Ending at position 4 (55, 105)</div>
+            <div class="match-point">✓ Ridge Ending at position 5 (95, 105)</div>
+            <div class="match-point">✓ Ridge Ending at position 6 (70, 70)</div>
+            <div class="match-point">✓ Pattern Type: WHORL (Identical)</div>
+            <div class="match-point">✓ Core Position: Centered (Identical)</div>
+            <div class="match-point">✓ Delta Point: Bottom Left (Identical)</div>
+            <div class="match-point">✓ Ridge Count: 27-28 (Identical)</div>
+            <div class="match-point">✓ Flow Pattern: Circular (Identical)</div>
+            <div class="match-point">✓ Overall Orientation: Perfect Match</div>
+        </div>
+
+        <div class="result">
+            ✓ POSITIVE MATCH - SUSPECT CONFIRMED AT CRIME SCENE
+        </div>
+
+        <p style="text-align: center; color: #666; font-size: 11px; margin-top: 20px;">
+            Analysis Method: AFIS (Automated Fingerprint Identification System)<br/>
+            Confidence Level: 99.97%
+        </p>
+    </div>
+</body>
+</html>

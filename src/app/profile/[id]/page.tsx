@@ -70,21 +70,42 @@ export default function PublicProfilePage() {
   const [selectedTeam, setSelectedTeam] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState("");
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
 
   useEffect(() => {
-    fetchProfile();
+    if (userId) {
+      fetchProfile();
+    }
   }, [userId]);
 
   const fetchProfile = async () => {
+    if (!userId) {
+      setError("User ID is missing");
+      setLoading(false);
+      console.error("userId is empty or undefined");
+      return;
+    }
+
     try {
+      console.log("Fetching profile for userId:", userId);
       const response = await fetch(`/api/users/${userId}`);
-      if (!response.ok) throw new Error("Failed to fetch profile");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch profile`);
+      }
       const data = await response.json();
       setProfile(data);
       setIsFollowing(data.social.isFollowing);
+      setError("");
     } catch (err) {
-      setError("Failed to load profile");
-      console.error(err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to load profile";
+      setError(errorMessage);
+      console.error("Profile fetch error:", { userId, error: err });
     } finally {
       setLoading(false);
     }
@@ -164,6 +185,97 @@ export default function PublicProfilePage() {
     }
   };
 
+  const handleUpdateName = async () => {
+    if (!newName.trim()) {
+      setNameError("Name cannot be empty");
+      return;
+    }
+
+    if (newName.trim().length > 50) {
+      setNameError("Name must be 50 characters or less");
+      return;
+    }
+
+    setNameSaving(true);
+    setNameError("");
+
+    try {
+      const response = await fetch("/api/user/update-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to update name");
+      }
+
+      // Update local profile
+      if (profile) {
+        setProfile({ ...profile, name: newName.trim() });
+      }
+      setIsEditingName(false);
+      setNewName("");
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : "Failed to update name");
+    } finally {
+      setNameSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setAvatarError("Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed");
+      setTimeout(() => setAvatarError(""), 5000);
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setAvatarError("File too large. Maximum size is 5MB");
+      setTimeout(() => setAvatarError(""), 5000);
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+
+      const response = await fetch("/api/user/upload-avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Update local profile state
+        if (profile) {
+          setProfile({ ...profile, image: data.imageUrl });
+        }
+      } else {
+        setAvatarError(data.error || "Failed to upload avatar");
+        setTimeout(() => setAvatarError(""), 5000);
+      }
+    } catch (err) {
+      setAvatarError("An error occurred while uploading your avatar");
+      setTimeout(() => setAvatarError(""), 5000);
+      console.error("Avatar upload error:", err);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#020202' }}>
@@ -205,25 +317,115 @@ export default function PublicProfilePage() {
         <div className="border rounded-lg p-8 mb-8" style={{ backgroundColor: 'rgba(56, 145, 166, 0.1)', borderColor: '#3891A6' }}>
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-6">
-              {profile.image ? (
-                <img
-                  src={profile.image}
-                  alt={profile.name}
-                  className="w-24 h-24 rounded-full object-cover border-4"
-                  style={{ borderColor: '#3891A6' }}
-                />
-              ) : (
-                <div
-                  className="w-24 h-24 rounded-full flex items-center justify-center text-4xl border-4"
-                  style={{ backgroundColor: 'rgba(56, 145, 166, 0.2)', borderColor: '#3891A6' }}
-                >
-                  👤
+              <div className="relative">
+                {profile.image ? (
+                  <img
+                    src={profile.image}
+                    alt={profile.name}
+                    className="w-24 h-24 rounded-full object-cover border-4"
+                    style={{ borderColor: '#3891A6' }}
+                  />
+                ) : (
+                  <div
+                    className="w-24 h-24 rounded-full flex items-center justify-center text-4xl border-4"
+                    style={{ backgroundColor: 'rgba(56, 145, 166, 0.2)', borderColor: '#3891A6' }}
+                  >
+                    👤
+                  </div>
+                )}
+                {isOwnProfile && (
+                  <>
+                    <label
+                      htmlFor="avatar-upload"
+                      className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer border-2 border-white transition-opacity hover:opacity-80"
+                      style={{ backgroundColor: '#3891A6' }}
+                      title="Upload avatar"
+                    >
+                      {avatarUploading ? (
+                        <span className="text-white text-xs">...</span>
+                      ) : (
+                        <span className="text-white text-lg">📷</span>
+                      )}
+                    </label>
+                    <input
+                      id="avatar-upload"
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
+                      disabled={avatarUploading}
+                    />
+                  </>
+                )}
+              </div>
+              {avatarError && (
+                <div className="px-3 py-2 rounded text-sm max-w-xs" style={{ backgroundColor: '#EF4444', color: 'white' }}>
+                  {avatarError}
                 </div>
               )}
               <div>
-                <h1 className="text-4xl font-bold text-white mb-2">
-                  {profile.name || "Anonymous Player"}
-                </h1>
+                {isOwnProfile && !isEditingName ? (
+                  <div className="flex items-center gap-3 mb-2">
+                    <h1 className="text-4xl font-bold text-white">
+                      {profile.name || "Anonymous Player"}
+                    </h1>
+                    <button
+                      onClick={() => {
+                        setIsEditingName(true);
+                        setNewName(profile.name || "");
+                        setNameError("");
+                      }}
+                      className="px-3 py-1 rounded text-sm font-medium transition-colors"
+                      style={{ backgroundColor: '#3891A6', color: 'white' }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                ) : isOwnProfile && isEditingName ? (
+                  <div className="mb-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        maxLength={50}
+                        className="px-3 py-2 rounded border text-white text-2xl font-bold"
+                        style={{
+                          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                          borderColor: '#3891A6',
+                        }}
+                        placeholder="Enter your name"
+                      />
+                      <button
+                        onClick={handleUpdateName}
+                        disabled={nameSaving}
+                        className="px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: '#4CAF50', color: 'white' }}
+                      >
+                        {nameSaving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsEditingName(false);
+                          setNewName("");
+                          setNameError("");
+                        }}
+                        disabled={nameSaving}
+                        className="px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: '#AB9F9D', color: 'white' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {nameError && (
+                      <p className="text-sm" style={{ color: '#EF4444' }}>{nameError}</p>
+                    )}
+                  </div>
+                ) : (
+                  <h1 className="text-4xl font-bold text-white mb-2">
+                    {profile.name || "Anonymous Player"}
+                  </h1>
+                )}
                 <div className="flex items-center gap-4" style={{ color: '#DDDBF1' }}>
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />

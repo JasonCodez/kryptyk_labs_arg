@@ -8,6 +8,8 @@ export async function GET(
   try {
     const { id: puzzleId } = await params;
 
+    console.log(`[PUZZLE FETCH] Fetching puzzle: ${puzzleId}`);
+
     const puzzle = await prisma.puzzle.findUnique({
       where: { id: puzzleId },
       include: {
@@ -44,15 +46,34 @@ export async function GET(
           },
           orderBy: { order: "asc" },
         },
+        sudoku: {
+          select: {
+            puzzleGrid: true,
+            solutionGrid: true,
+            difficulty: true,
+          },
+        },
+        jigsaw: {
+          select: {
+            imageUrl: true,
+            gridRows: true,
+            gridCols: true,
+            snapTolerance: true,
+            rotationEnabled: true,
+          },
+        },
       },
     });
 
     if (!puzzle) {
+      console.log(`[PUZZLE FETCH] Puzzle not found: ${puzzleId}`);
       return NextResponse.json(
         { error: "Puzzle not found" },
         { status: 404 }
       );
     }
+
+    console.log(`[PUZZLE FETCH] Puzzle fetched, jigsaw:`, puzzle.jigsaw);
 
     return NextResponse.json(puzzle);
   } catch (error) {

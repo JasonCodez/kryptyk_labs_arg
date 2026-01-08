@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     // Verify puzzle exists
     const puzzle = await prisma.puzzle.findUnique({
       where: { id: puzzleId },
-      select: { id: true },
+      select: { id: true, puzzleType: true },
     });
 
     if (!puzzle) {
@@ -102,9 +102,12 @@ export async function POST(request: NextRequest) {
     const mimeType = getMimeType(file);
     const mediaType = getMediaType(mimeType);
 
+    console.log(`[MEDIA UPLOAD] File received: ${file.name}, mime: ${mimeType}, mediaType: ${mediaType}`);
+
     // Validate file type
     const allowedMimes = Object.values(ALLOWED_TYPES).flat();
     if (!allowedMimes.includes(mimeType)) {
+      console.log(`[MEDIA UPLOAD] File type not allowed: ${mimeType}`);
       return NextResponse.json(
         { error: `File type not allowed: ${mimeType}` },
         { status: 400 }
@@ -140,11 +143,63 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log(`[MEDIA UPLOAD] Media created: ${media.id}, type: ${mediaType}, url: ${media.url}`);
+
+    // If this is a jigsaw puzzle, auto-wire the first uploaded image as the puzzle image.
+    if (puzzle.puzzleType === 'jigsaw' && mediaType === 'image') {
+      console.log(`[MEDIA UPLOAD] Processing jigsaw image for puzzle: ${puzzleId}`);
+      console.log(`[MEDIA UPLOAD] Setting imageUrl to: ${media.url}`);
+      
+      try {
+        // First check if jigsaw exists
+        const existingJigsaw = await prisma.jigsawPuzzle.findUnique({
+          where: { puzzleId },
+        });
+        console.log(`[MEDIA UPLOAD] Existing jigsaw record:`, JSON.stringify(existingJigsaw, null, 2));
+
+        if (!existingJigsaw) {
+          console.log(`[MEDIA UPLOAD] Jigsaw record not found, creating...`);
+          const createdJigsaw = await prisma.jigsawPuzzle.create({
+            data: {
+              puzzleId,
+              imageUrl: media.url,
+              gridRows: 3,
+              gridCols: 4,
+              snapTolerance: 12,
+              rotationEnabled: false,
+            },
+          });
+          console.log(`[MEDIA UPLOAD] Created jigsaw with imageUrl:`, createdJigsaw.imageUrl);
+        } else {
+          console.log(`[MEDIA UPLOAD] Jigsaw exists, updating imageUrl...`);
+          const updatedJigsaw = await prisma.jigsawPuzzle.update({
+            where: { puzzleId },
+            data: {
+              imageUrl: media.url,
+            },
+          });
+          console.log(`[MEDIA UPLOAD] Updated jigsaw, imageUrl now:`, updatedJigsaw.imageUrl);
+        }
+
+        // Verify it was updated
+        const verifyJigsaw = await prisma.jigsawPuzzle.findUnique({
+          where: { puzzleId },
+        });
+        console.log(`[MEDIA UPLOAD] Verification - jigsaw imageUrl: ${verifyJigsaw?.imageUrl}`);
+      } catch (err) {
+        console.error('[MEDIA UPLOAD] Failed to update jigsaw imageUrl:', err);
+        throw err; // Re-throw to notify client
+      }
+    } else {
+      console.log(`[MEDIA UPLOAD] Skipping jigsaw update: puzzleType=${puzzle.puzzleType}, mediaType=${mediaType}`);
+    }
+
     return NextResponse.json(media, { status: 201 });
   } catch (error) {
     console.error("Error uploading file:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to upload file";
     return NextResponse.json(
-      { error: "Failed to upload file" },
+      { error: errorMessage },
       { status: 500 }
     );
   }
@@ -191,14 +246,18 @@ export async function DELETE(request: NextRequest) {
 
     // Delete file from filesystem
     try {
-      const fileName = media.url.split("/").pop();
-      const filePath = join(process.cwd(), "public", "uploads", "media", fileName || "");
-      const fs = await import("fs").then((m) => m.promises);
-      await fs.unlink(filePath).catch(() => {
-        // File might not exist, that's okay
-      });
-    } catch (err) {
-      console.error("Error deleting file:", err);
+      if (media && media.url) {
+        const fileName = media.url.split("/").pop();
+        const filePath = join(process.cwd(), "public", "uploads", "media", fileName || "");
+        const fs = await import("fs").then((m) => m.promises);
+        await fs.unlink(filePath).catch(() => {
+          // File might not exist, that's okay
+        });
+      } else {
+        console.warn('Media has no URL, skipping filesystem delete');
+      }
+    } catch (fileError) {
+      console.error("Error deleting file:", fileError);
     }
 
     return NextResponse.json({ success: true });

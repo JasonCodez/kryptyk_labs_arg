@@ -176,16 +176,6 @@ export default function Dashboard() {
           </Link>
 
           <Link
-            href="/settings"
-            className="border rounded-lg p-8 transition transform hover:scale-105 hover:shadow-lg"
-            style={{ backgroundColor: 'rgba(56, 145, 166, 0.15)', borderColor: '#3891A6' }}
-          >
-            <div className="text-4xl mb-4">⚙️</div>
-            <h3 className="text-xl font-bold text-white mb-2">Settings</h3>
-            <p style={{ color: '#DDDBF1' }}>Manage your account and preferences</p>
-          </Link>
-
-          <Link
             href="/dashboard/activity"
             className="border rounded-lg p-8 transition transform hover:scale-105 hover:shadow-lg"
             style={{ backgroundColor: 'rgba(253, 231, 76, 0.1)', borderColor: '#FDE74C' }}
