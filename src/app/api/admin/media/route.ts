@@ -60,12 +60,13 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const puzzleId = formData.get("puzzleId") as string;
+    const file = formData.get("file") as File | null;
+    const puzzleId = formData.get("puzzleId") as string | null;
+    const externalUrl = (formData.get("url") as string) || null;
 
-    if (!file) {
+    if (!file && !externalUrl) {
       return NextResponse.json(
-        { error: "No file provided" },
+        { error: "No file or URL provided" },
         { status: 400 }
       );
     }
@@ -90,54 +91,118 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size
-    const buffer = await file.arrayBuffer();
-    if (buffer.byteLength > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB` },
-        { status: 400 }
-      );
+    // We'll support two modes:
+    // 1) a direct file upload (form `file`)
+    // 2) an external URL (form `url`) — we fetch the remote resource, validate it,
+    //    and store the external URL in the DB (no disk write).
+
+    let buffer: ArrayBuffer | null = null;
+    let mimeType = "application/octet-stream";
+    let mediaType = "file";
+    let fileName = "";
+    let fileSize = 0;
+    let mediaUrl = "";
+
+    if (file) {
+      // File upload path (existing behavior)
+      buffer = await file.arrayBuffer();
+      if (buffer.byteLength > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { error: `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB` },
+          { status: 400 }
+        );
+      }
+
+      mimeType = getMimeType(file);
+      mediaType = getMediaType(mimeType);
+
+      console.log(`[MEDIA UPLOAD] File received: ${file.name}, mime: ${mimeType}, mediaType: ${mediaType}`);
+
+      // Validate file type
+      const allowedMimes = Object.values(ALLOWED_TYPES).flat();
+      if (!allowedMimes.includes(mimeType)) {
+        console.log(`[MEDIA UPLOAD] File type not allowed: ${mimeType}`);
+        return NextResponse.json(
+          { error: `File type not allowed: ${mimeType}` },
+          { status: 400 }
+        );
+      }
+
+      // Create upload directory if it doesn't exist
+      const uploadDir = join(process.cwd(), "public", "uploads", "media");
+      if (!existsSync(uploadDir)) {
+        await mkdir(uploadDir, { recursive: true });
+      }
+
+      // Generate unique filename and save to disk
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 8);
+      const ext = file.name.substring(file.name.lastIndexOf(".")) || ".bin";
+      const uniqueFileName = `${puzzleId}-${timestamp}-${random}${ext}`;
+      const filePath = join(uploadDir, uniqueFileName);
+
+      await writeFile(filePath, Buffer.from(buffer));
+
+      fileName = file.name;
+      fileSize = buffer.byteLength;
+      mediaUrl = `/uploads/media/${uniqueFileName}`;
+    } else if (externalUrl) {
+      // External URL path — fetch the remote resource and validate
+      try {
+        new URL(externalUrl);
+      } catch (err) {
+        return NextResponse.json({ error: "Invalid URL provided" }, { status: 400 });
+      }
+
+      const res = await fetch(externalUrl);
+      if (!res.ok) {
+        return NextResponse.json({ error: "Failed to fetch external URL" }, { status: 400 });
+      }
+
+      const arr = await res.arrayBuffer();
+      buffer = arr;
+      fileSize = arr.byteLength;
+      if (fileSize > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { error: `Remote file too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB` },
+          { status: 400 }
+        );
+      }
+
+      mimeType = (res.headers.get("content-type") || "application/octet-stream").split(";")[0];
+      mediaType = getMediaType(mimeType);
+
+      // Validate file type
+      const allowedMimes = Object.values(ALLOWED_TYPES).flat();
+      if (!allowedMimes.includes(mimeType)) {
+        console.log(`[MEDIA UPLOAD] External URL file type not allowed: ${mimeType}`);
+        return NextResponse.json(
+          { error: `File type not allowed: ${mimeType}` },
+          { status: 400 }
+        );
+      }
+
+      // Attempt to infer filename from URL
+      try {
+        const parsed = new URL(externalUrl);
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        fileName = parts.length ? decodeURIComponent(parts[parts.length - 1]) : parsed.hostname;
+      } catch (e) {
+        fileName = externalUrl;
+      }
+
+      mediaUrl = externalUrl; // store external URL directly (no disk write)
+      console.log(`[MEDIA UPLOAD] External URL used: ${mediaUrl}, mime: ${mimeType}, size: ${fileSize}`);
     }
-
-    const mimeType = getMimeType(file);
-    const mediaType = getMediaType(mimeType);
-
-    console.log(`[MEDIA UPLOAD] File received: ${file.name}, mime: ${mimeType}, mediaType: ${mediaType}`);
-
-    // Validate file type
-    const allowedMimes = Object.values(ALLOWED_TYPES).flat();
-    if (!allowedMimes.includes(mimeType)) {
-      console.log(`[MEDIA UPLOAD] File type not allowed: ${mimeType}`);
-      return NextResponse.json(
-        { error: `File type not allowed: ${mimeType}` },
-        { status: 400 }
-      );
-    }
-
-    // Create upload directory if it doesn't exist
-    const uploadDir = join(process.cwd(), "public", "uploads", "media");
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    const ext = file.name.substring(file.name.lastIndexOf(".")) || ".bin";
-    const fileName = `${puzzleId}-${timestamp}-${random}${ext}`;
-    const filePath = join(uploadDir, fileName);
-
-    // Save file
-    await writeFile(filePath, Buffer.from(buffer));
 
     // Store media metadata in database
     const media = await prisma.puzzleMedia.create({
       data: {
         puzzleId,
         type: mediaType,
-        url: `/uploads/media/${fileName}`,
-        fileName: file.name,
-        fileSize: buffer.byteLength,
+        url: mediaUrl,
+        fileName: fileName || (file ? file.name : ""),
+        fileSize: fileSize,
         mimeType,
         uploadedBy: user.id,
       },
