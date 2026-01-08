@@ -95,12 +95,14 @@ async function getPuzzleStats() {
     take: 5,
   });
 
-  return puzzles.map((p: any) => ({
-    id: p.id,
-    title: p.title,
-    difficulty: p.difficulty,
-    solves: p.userProgress.length,
-  }));
+  return puzzles.map(
+    (p: { id: string; title: string; difficulty: string | null; userProgress: { id: string }[] }) => ({
+      id: p.id,
+      title: p.title,
+      difficulty: p.difficulty,
+      solves: p.userProgress.length,
+    })
+  );
 }
 
 async function getUserEngagementStats() {
@@ -121,11 +123,13 @@ async function getUserEngagementStats() {
     take: 5,
   });
 
-  return users.map((u: any) => ({
-    userId: u.id,
-    userName: u.name || u.email || "Unknown",
-    puzzlesSolved: u.solvedPuzzles.length,
-  }));
+  return users.map(
+    (u: { id: string; name: string | null; email: string; solvedPuzzles: { id: string }[] }) => ({
+      userId: u.id,
+      userName: u.name || u.email || "Unknown",
+      puzzlesSolved: u.solvedPuzzles.length,
+    })
+  );
 }
 
 async function getDifficultyBreakdown() {
@@ -134,7 +138,7 @@ async function getDifficultyBreakdown() {
     _count: true,
   });
 
-  return breakdown.map((b: any) => ({
+  return breakdown.map((b: { difficulty: string | null; _count: number }) => ({
     difficulty: b.difficulty,
     count: b._count,
   }));
@@ -147,14 +151,14 @@ async function getCategoryStats() {
   });
 
   const categoryIds = stats
-    .map((s: any) => s.categoryId)
+    .map((s: { categoryId: string | null; _count: number }) => s.categoryId)
     .filter((id) => id !== null) as string[];
   const categories = await prisma.puzzleCategory.findMany({
     where: { id: { in: categoryIds } },
     select: { id: true, name: true },
   });
 
-  return stats.map((s) => {
+  return stats.map((s: { categoryId: string | null; _count: number }) => {
     const category = categories.find((c) => c.id === s.categoryId);
     return {
       categoryId: s.categoryId,
@@ -183,12 +187,14 @@ async function getTopSolvers() {
     take: 10,
   });
 
-  return topSolvers.map((u) => ({
-    userId: u.id,
-    userName: u.name || u.email,
-    userImage: u.image,
-    puzzlesSolved: u.solvedPuzzles.length,
-  }));
+  return topSolvers.map(
+    (u: { id: string; name: string | null; email: string; image: string | null; solvedPuzzles: { id: string }[] }) => ({
+      userId: u.id,
+      userName: u.name || u.email,
+      userImage: u.image,
+      puzzlesSolved: u.solvedPuzzles.length,
+    })
+  );
 }
 
 async function getRecentActivity() {
@@ -210,10 +216,17 @@ async function getRecentActivity() {
     take: 10,
   });
 
-  return recentSolves.map((s) => ({
-    id: s.id,
-    userName: s.user.name || s.user.email,
-    puzzleTitle: s.puzzle.title,
-    solvedAt: s.solvedAt,
-  }));
+  return recentSolves.map(
+    (s: {
+      id: string;
+      user: { name?: string | null; email: string };
+      puzzle: { title: string };
+      solvedAt: Date;
+    }) => ({
+      id: s.id,
+      userName: s.user.name || s.user.email,
+      puzzleTitle: s.puzzle.title,
+      solvedAt: s.solvedAt,
+    })
+  );
 }
