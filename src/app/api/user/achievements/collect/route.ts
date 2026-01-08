@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       // Calculate current streak
       let currentStreak = 0;
       if (userPuzzleProgress.some((p: any) => p.solved)) {
-        const solvedDates = userPuzzleProgress
+        const solvedDates: string[] = userPuzzleProgress
           .filter((p: { solved?: boolean; solvedAt?: string | Date | null }) => p.solved && p.solvedAt)
           .map((p: { solvedAt?: string | Date | null }) => new Date(p.solvedAt!).toDateString())
           .sort()
