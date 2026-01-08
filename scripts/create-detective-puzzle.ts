@@ -203,7 +203,7 @@ async function createDetectivePuzzle() {
     console.log("✅ Detective Agency Mystery puzzle created successfully!");
     console.log(`Puzzle ID: ${puzzle.puzzleId}`);
     console.log("Stages created:");
-    puzzle.stages.forEach((stage, idx) => {
+    puzzle.stages.forEach((stage: any, idx: number) => {
       console.log(`\n  📍 Stage ${stage.order}: ${stage.title}`);
       try {
         const parsed = JSON.parse(stage.puzzleData);
