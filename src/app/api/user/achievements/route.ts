@@ -48,14 +48,13 @@ export async function GET(request: NextRequest) {
     // Calculate current streak from solved puzzles
     let currentStreak = 0;
     if (userPuzzleProgress.some((p: any) => p.solved)) {
-      const solvedDates = userPuzzleProgress
+      const solvedDates: string[] = userPuzzleProgress
         .filter((p: { solved?: boolean; solvedAt?: string | Date | null }) => p.solved && p.solvedAt)
         .map((p: { solvedAt?: string | Date | null }) => new Date(p.solvedAt!).toDateString())
         .sort()
         .reverse();
-
       // Get unique dates and check for consecutive days
-      const uniqueDates = [...new Set(solvedDates)].map((d: string) => new Date(d));
+      const uniqueDates = Array.from(new Set(solvedDates)).map((d) => new Date(d));
       
       if (uniqueDates.length > 0) {
         // Start from most recent date
