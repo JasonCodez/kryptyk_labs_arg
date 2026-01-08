@@ -11,7 +11,7 @@ async function main() {
   });
 
   console.log(`Found ${puzzles.length} escape room puzzles:\n`);
-  puzzles.forEach((puzzle) => {
+  puzzles.forEach((puzzle: any) => {
     console.log(`Puzzle ID: ${puzzle.puzzleId}`);
     console.log(`Title: ${puzzle.puzzle?.title || "N/A"}`);
     console.log(`Stages: ${puzzle.stages.length}`);
