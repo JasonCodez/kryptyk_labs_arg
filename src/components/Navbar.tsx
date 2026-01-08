@@ -71,13 +71,11 @@ export default function Navbar() {
 
   const handleSignOut = async () => {
     try {
-      // Call custom logout endpoint to clear session
-      await fetch("/api/auth/logout");
+      // Use NextAuth client signOut to properly clear cookies and session
+      await signOut({ callbackUrl: '/auth/signin?logout=true' });
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error('Logout error:', error);
     }
-    // Redirect to signin page
-    window.location.href = "/auth/signin?logout=true";
   };
 
   return (
