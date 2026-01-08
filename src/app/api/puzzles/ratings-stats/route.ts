@@ -40,11 +40,11 @@ export async function GET(req: NextRequest) {
 
     // Calculate distribution
     const distribution = {
-      1: ratings.filter(r => r.rating === 1).length,
-      2: ratings.filter(r => r.rating === 2).length,
-      3: ratings.filter(r => r.rating === 3).length,
-      4: ratings.filter(r => r.rating === 4).length,
-      5: ratings.filter(r => r.rating === 5).length,
+      1: ratings.filter((r: { rating: number }) => r.rating === 1).length,
+      2: ratings.filter((r: { rating: number }) => r.rating === 2).length,
+      3: ratings.filter((r: { rating: number }) => r.rating === 3).length,
+      4: ratings.filter((r: { rating: number }) => r.rating === 4).length,
+      5: ratings.filter((r: { rating: number }) => r.rating === 5).length,
     };
 
     return NextResponse.json({
