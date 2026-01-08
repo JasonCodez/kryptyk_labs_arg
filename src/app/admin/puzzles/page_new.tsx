@@ -63,7 +63,6 @@ export default function AdminPuzzlesPage() {
   const [puzzleId, setPuzzleId] = useState<string | null>(null);
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
-  const [jigsawImage, setJigsawImage] = useState<File | null>(null);
   const [jigsawImagePreview, setJigsawImagePreview] = useState<string>("");
   const [jigsawImageUrl, setJigsawImageUrl] = useState<string>("");
   const [formData, setFormData] = useState<PuzzleFormData>({
@@ -155,23 +154,7 @@ export default function AdminPuzzlesPage() {
     }));
   };
 
-  const handleJigsawImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.currentTarget.files?.[0];
-    if (!file) return;
-
-    console.log(`[JIGSAW IMAGE] File selected: ${file.name}, size: ${file.size}, type: ${file.type}`);
-
-    setJigsawImage(file);
-
-    // Create preview
-    const reader = new FileReader();
-    reader.onload = () => {
-      const preview = reader.result as string;
-      setJigsawImagePreview(preview);
-      console.log(`[JIGSAW IMAGE] Preview created`);
-    };
-    reader.readAsDataURL(file);
-  };
+  // File uploads removed — images are provided via external URL only
 
   const handleJigsawImageUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setJigsawImageUrl(e.target.value);
@@ -182,7 +165,6 @@ export default function AdminPuzzlesPage() {
     try {
       // Validate URL
       new URL(jigsawImageUrl);
-      setJigsawImage(null);
       setJigsawImagePreview(jigsawImageUrl);
     } catch (err) {
       setFormError("Invalid image URL");
@@ -307,10 +289,10 @@ export default function AdminPuzzlesPage() {
     setFormSuccess("");
 
     try {
-      // Check if jigsaw puzzle has an image
+      // Check if jigsaw puzzle has an image (URL required)
       if (formData.puzzleType === 'jigsaw') {
-        if (!jigsawImage) {
-          setFormError("Jigsaw puzzles require an image. Please upload an image before creating.");
+        if (!jigsawImageUrl && !jigsawImagePreview) {
+          setFormError("Jigsaw puzzles require an image. Please provide an external image URL before creating.");
           setSubmitting(false);
           return;
         }
@@ -353,37 +335,8 @@ export default function AdminPuzzlesPage() {
       console.log("[SUBMIT] Puzzle created:", createdPuzzle);
       setPuzzleId(createdPuzzle.id);
 
-      // Upload jigsaw image if present
-      if (formData.puzzleType === 'jigsaw' && jigsawImage) {
-        try {
-          console.log("[SUBMIT] Uploading jigsaw image:", jigsawImage.name);
-          
-          const formDataUpload = new FormData();
-          formDataUpload.append("file", jigsawImage);
-          formDataUpload.append("puzzleId", createdPuzzle.id);
-          formDataUpload.append("mediaType", "image");
-
-          console.log("[SUBMIT] Posting to /api/admin/media");
-          const uploadResponse = await fetch("/api/admin/media", {
-            method: "POST",
-            body: formDataUpload,
-          });
-
-          if (!uploadResponse.ok) {
-            const errorData = await uploadResponse.json().catch(() => ({ error: `HTTP ${uploadResponse.status}` }));
-            throw new Error(errorData.error || `Upload failed with status ${uploadResponse.status}`);
-          }
-
-          const uploadedMedia = await uploadResponse.json();
-          console.log("[SUBMIT] Jigsaw image uploaded successfully:", uploadedMedia);
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          console.error("[SUBMIT] Failed to upload jigsaw image:", errorMsg);
-          setFormError(`Failed to upload jigsaw image: ${errorMsg}`);
-        }
-      }
-      // If a jigsaw image URL was provided instead of a file, post the URL to the media API
-      else if (formData.puzzleType === 'jigsaw' && jigsawImageUrl) {
+      // If a jigsaw image URL was provided, post the URL to the media API
+      if (formData.puzzleType === 'jigsaw' && jigsawImageUrl) {
         try {
           console.log("[SUBMIT] Posting jigsaw image URL to /api/admin/media:", jigsawImageUrl);
           const formDataUpload = new FormData();
@@ -532,7 +485,6 @@ export default function AdminPuzzlesPage() {
           puzzleData: {},
         });
         setMediaFiles([]);
-        setJigsawImage(null);
         setJigsawImagePreview("");
         setPuzzleId(null);
       }, 3000);
@@ -700,25 +652,24 @@ export default function AdminPuzzlesPage() {
                   {/* Jigsaw image upload and live preview (only for jigsaw puzzles) */}
                   {formData.puzzleType === 'jigsaw' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-2">Jigsaw Image {jigsawImage ? <span className="text-xs text-green-300">(selected)</span> : <span className="text-xs text-gray-400">(required)</span>}</label>
+                      <label className="block text-sm font-semibold text-gray-300 mb-2">Jigsaw Image {jigsawImagePreview ? <span className="text-xs text-green-300">(selected)</span> : <span className="text-xs text-gray-400">(required)</span>}</label>
                       <div className="flex items-center gap-3">
-                        <input type="file" accept="image/*" onChange={handleJigsawImageChange} />
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
-                            placeholder="Or paste an external image URL"
+                            placeholder="Paste an external image URL"
                             value={jigsawImageUrl}
                             onChange={handleJigsawImageUrlChange}
                             className="px-3 py-2 rounded bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
                             style={{ minWidth: 320 }}
                           />
                           <button type="button" onClick={handleUseJigsawUrl} className="px-3 py-1 rounded bg-blue-600 text-white text-sm">Use URL</button>
-                          <button type="button" onClick={() => { setJigsawImageUrl(''); setJigsawImagePreview(''); setJigsawImage(null); }} className="px-3 py-1 rounded bg-red-700 text-white text-sm">Clear</button>
+                          <button type="button" onClick={() => { setJigsawImageUrl(''); setJigsawImagePreview(''); }} className="px-3 py-1 rounded bg-red-700 text-white text-sm">Clear</button>
                         </div>
                         {jigsawImagePreview && (
                           <div className="flex items-center gap-2">
                             <img src={jigsawImagePreview} alt="preview" style={{ maxHeight: 80, maxWidth: 160, objectFit: 'contain', background: '#111', borderRadius: 4 }} />
-                            <button type="button" onClick={() => { setJigsawImage(null); setJigsawImagePreview(''); }} className="px-3 py-1 rounded bg-red-700 text-white text-sm">Clear</button>
+                            <button type="button" onClick={() => { setJigsawImagePreview(''); }} className="px-3 py-1 rounded bg-red-700 text-white text-sm">Clear</button>
                           </div>
                         )}
                       </div>
