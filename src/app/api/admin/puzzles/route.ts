@@ -264,7 +264,7 @@ export async function POST(request: NextRequest) {
           ? (parts as MultiPartInput[]).reduce((sum, p) => sum + (p.points || 50), 0)
           : (pointsReward || 100);
 
-      await notifyPuzzleRelease(allUsers.map(u => u.id), {
+      await notifyPuzzleRelease(allUsers.map((u: { id: string }) => u.id), {
         puzzleId: puzzle.id,
         puzzleTitle: puzzle.title,
         difficulty: puzzle.difficulty || "MEDIUM",

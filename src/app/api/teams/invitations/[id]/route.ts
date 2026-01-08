@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
       if (team) {
         await notifyTeamUpdate(
-          teamMembers.map(m => m.userId),
+          teamMembers.map((m: { userId: string }) => m.userId),
           {
             teamId: invitation.teamId,
             teamName: team.name,

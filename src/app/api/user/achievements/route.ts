@@ -49,13 +49,13 @@ export async function GET(request: NextRequest) {
     let currentStreak = 0;
     if (userPuzzleProgress.some(p => p.solved)) {
       const solvedDates = userPuzzleProgress
-        .filter(p => p.solved && p.solvedAt)
-        .map(p => new Date(p.solvedAt!).toDateString())
+        .filter((p: { solved?: boolean; solvedAt?: string | Date | null }) => p.solved && p.solvedAt)
+        .map((p: { solvedAt?: string | Date | null }) => new Date(p.solvedAt!).toDateString())
         .sort()
         .reverse();
 
       // Get unique dates and check for consecutive days
-      const uniqueDates = [...new Set(solvedDates)].map(d => new Date(d));
+      const uniqueDates = [...new Set(solvedDates)].map((d: string) => new Date(d));
       
       if (uniqueDates.length > 0) {
         // Start from most recent date
