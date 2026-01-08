@@ -1140,8 +1140,6 @@ export default function JigsawPuzzleSVGWithTray({
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    const MIN_VIEWPORT = 400; // don't shrink preview smaller than this viewport width
-
     const update = () => {
       const wrapperW = wrapper.clientWidth || 0;
       setWrapperWidth(wrapperW || null);
@@ -1150,13 +1148,11 @@ export default function JigsawPuzzleSVGWithTray({
       const wouldStack = wrapperW > 0 ? wrapperW < 1200 : false;
       setIsStacked(wouldStack);
 
-      const vw = typeof window !== 'undefined' ? window.innerWidth : wrapperW;
-      // allow scaling down normally, but do not shrink beyond MIN_VIEWPORT
-      const effectiveW = Math.max(wrapperW, Math.min(vw, MIN_VIEWPORT));
-
       const effectiveStageWidth = wouldStack ? Math.max(boardWidth, trayWidth) : boardWidth + trayWidth;
-      if (!effectiveW || !effectiveStageWidth) return;
-      const next = Math.min(1, effectiveW / effectiveStageWidth);
+      if (!wrapperW || !effectiveStageWidth) return;
+
+      // Simple, robust scale: fit stage to wrapper width, never scale above 1
+      const next = Math.min(1, wrapperW / effectiveStageWidth);
       setScale(next);
     };
 
