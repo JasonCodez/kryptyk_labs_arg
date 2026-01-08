@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     // Validate team size doesn't exceed number of parts
     // Max team size = number of parts (each member solves one part)
     const maxTeamSize = puzzle.parts.length;
-    const uniqueMembers = new Set(assignments.map((a: any) => a.assignedToUserId));
+    const uniqueMembers = new Set(assignments.map((a: { assignedToUserId: string }) => a.assignedToUserId));
     if (uniqueMembers.size > maxTeamSize) {
       return NextResponse.json(
         { error: `This puzzle has ${maxTeamSize} parts. Maximum ${maxTeamSize} unique team members allowed (one per part). You tried to assign ${uniqueMembers.size} members.` },
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify all team members exist
-    const teamMemberIds = assignments.map((a: any) => a.assignedToUserId);
+    const teamMemberIds = assignments.map((a: { assignedToUserId: string }) => a.assignedToUserId);
     const members = await prisma.teamMember.findMany({
       where: { teamId, userId: { in: teamMemberIds } },
     });
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
     // Create new assignments
     const createdAssignments = await Promise.all(
-      assignments.map((assignment: any) =>
+      assignments.map((assignment: { partId: string; assignedToUserId: string }) =>
         prisma.teamPuzzlePartAssignment.create({
           data: {
             teamId,

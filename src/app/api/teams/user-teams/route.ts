@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    const formattedTeams = teams.map((team) => ({
+    const formattedTeams = teams.map((team: { id: string; name: string; _count: { members: number } }) => ({
       id: team.id,
       name: team.name,
       memberCount: team._count.members,

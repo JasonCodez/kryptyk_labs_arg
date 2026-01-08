@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         const allUsers = await prisma.user.findMany({
           select: { id: true },
         });
-        const userIds = allUsers.map((u) => u.id);
+        const userIds = allUsers.map((u: { id: string }) => u.id);
 
         await notifyPuzzleRelease(userIds, {
           puzzleId: data.puzzleId,
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Team not found" }, { status: 404 });
         }
 
-        const userIds = team.members.map((m) => m.userId);
+        const userIds = team.members.map((m: { userId: string }) => m.userId);
 
         await notifyTeamUpdate(userIds, {
           teamId,

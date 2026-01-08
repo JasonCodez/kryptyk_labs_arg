@@ -169,14 +169,14 @@ export async function POST(req: NextRequest) {
 
         await prisma.teamPuzzleCompletion.create({
           data: {
-            teamId,
-            puzzleId,
-            totalPointsEarned: totalPoints,
-          },
-        });
-
-        // Award achievements and points to all team members
-        const teamMembers = await prisma.teamMember.findMany({
+          const solvedPartIds = new Set(
+            (
+              await prisma.teamPuzzlePartSubmission.findMany({
+                where: { teamId, puzzleId, isCorrect: true },
+                distinct: ["partId"],
+              })
+            ).map((s: { partId: string }) => s.partId)
+          );
           where: { teamId },
           select: { userId: true },
         });

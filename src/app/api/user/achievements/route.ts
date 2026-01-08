@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
     });
 
     const unlockedIds = new Set(
-      userAchievements.map((ua) => ua.achievementId)
+      userAchievements.map((ua: { achievementId: string }) => ua.achievementId)
     );
 
     const achievements = allAchievements.map((achievement) => {

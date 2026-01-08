@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'asc' },
     });
 
-    const formattedMessages = messages.map((msg) => ({
+    const formattedMessages = messages.map((msg: { id: string; userId: string; user?: { name?: string | null; email?: string | null }; message: string; createdAt: Date }) => ({
       id: msg.id,
       userId: msg.userId,
       userName: msg.user?.name || msg.user?.email || 'Unknown',

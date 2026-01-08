@@ -38,7 +38,7 @@ export async function GET(
     }
 
     // Transform hints to include stats and user's history
-    const hintsWithStats = puzzle.hints.map((hint) => ({
+    const hintsWithStats = puzzle.hints.map((hint: any) => ({
       ...hint,
       stats: {
         totalUsages: hint.totalUsages,

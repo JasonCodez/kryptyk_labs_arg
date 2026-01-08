@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch completion and attempt counts separately
     const puzzleStats = await Promise.all(
-      puzzles.map(async (p) => {
+      puzzles.map(async (p: { id: string }) => {
         const stats = await prisma.userPuzzleProgress.aggregate({
           where: { puzzleId: p.id },
           _count: true,
@@ -109,10 +109,10 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    const statsMap = new Map(puzzleStats.map((s) => [s.puzzleId, s]));
+    const statsMap = new Map(puzzleStats.map((s: { puzzleId: string }) => [s.puzzleId, s]));
 
     // Map solutions points and completion count to puzzle
-    const puzzlesWithPoints = puzzles.map((p) => {
+    const puzzlesWithPoints = puzzles.map((p: any) => {
       const stats = statsMap.get(p.id);
       return {
         ...p,

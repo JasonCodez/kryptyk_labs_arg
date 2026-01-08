@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const categoriesWithCount = categories.map((cat) => ({
+    const categoriesWithCount = categories.map((cat: { id: string; name: string; description?: string | null; color?: string | null; icon?: string | null; _count: { puzzles: number } }) => ({
       id: cat.id,
       name: cat.name,
       description: cat.description,

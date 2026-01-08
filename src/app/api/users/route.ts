@@ -57,7 +57,17 @@ export async function GET(request: NextRequest) {
     });
 
     // Format the response
-    const formattedUsers = users.map((user) => ({
+    const formattedUsers = users.map((user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+      createdAt: Date;
+      achievements: { id: string }[];
+      teams: { id: string }[];
+      followers: { id: string }[];
+      solvedPuzzles: { id: string; pointsEarned?: number }[];
+    }) => ({
       id: user.id,
       name: user.name,
       email: user.email,
