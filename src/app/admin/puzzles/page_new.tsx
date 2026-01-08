@@ -576,7 +576,7 @@ export default function AdminPuzzlesPage() {
 
           <div className="grid md:grid-cols-3 gap-8 mb-12">
             {/* Form */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <form
                 onSubmit={handleSubmit}
                 className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-lg p-6 space-y-6"
@@ -805,64 +805,7 @@ export default function AdminPuzzlesPage() {
                 </form>
             </div>
 
-            {/* Media Manager */}
-            <div className="md:col-span-1">
-              <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-lg p-6 space-y-4 sticky top-24">
-                <h3 className="text-lg font-semibold text-white">📸 Media Manager</h3>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-300 mb-2">
-                    Upload Media
-                  </label>
-                  <label className="block cursor-pointer">
-                    <div className="w-full px-4 py-3 rounded-lg bg-slate-700/50 border-2 border-dashed border-slate-600 hover:border-blue-400 text-gray-400 hover:text-gray-300 text-center transition">
-                      📁 Click to select files or drag & drop
-                    </div>
-                    <input
-                      type="file"
-                      multiple
-                      onChange={handleMediaUpload}
-                      disabled={uploadingMedia}
-                      className="hidden"
-                      accept="image/*,video/*,audio/*"
-                    />
-                  </label>
-                </div>
-
-                {uploadingMedia && (
-                  <p className="text-yellow-300 text-sm">⏳ Uploading...</p>
-                )}
-
-                {!uploadingMedia && mediaFiles.length === 0 && (
-                  <p className="text-gray-500 text-sm">📂 No media uploaded yet</p>
-                )}
-
-                {mediaFiles.length > 0 && (
-                  <div className="space-y-3">
-                    <p className="text-sm text-green-300 font-semibold">✓ {mediaFiles.length} file(s) ready</p>
-                    {mediaFiles.map((media) => (
-                      <div
-                        key={media.id}
-                        className="bg-slate-700/50 p-3 rounded-lg border border-slate-600 hover:border-slate-500 transition"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm text-gray-300 truncate block">{media.fileName}</span>
-                            <p className="text-xs text-gray-500 mt-1">{media.type} • {(media.fileSize / 1024).toFixed(1)}KB</p>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteMedia(media.id)}
-                            className="text-red-300 hover:text-red-400 text-sm ml-2 flex-shrink-0"
-                            title="Delete this media"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* Media Manager removed per request */}
           </div> {/* End grid */}
         </div>
       </div>

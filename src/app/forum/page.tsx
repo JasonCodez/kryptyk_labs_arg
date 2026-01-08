@@ -179,11 +179,24 @@ export default function ForumPage() {
                             className="w-6 h-6 rounded-full"
                           />
                         )}
-                        <Link href={`/profile/${post.author.id}`}>
-                          <span style={{ color: '#FDE74C' }} className="text-xs font-semibold hover:opacity-80 cursor-pointer transition-opacity">
-                            {post.author.name}
-                          </span>
-                        </Link>
+                        <span
+                          style={{ color: '#FDE74C' }}
+                          className="text-xs font-semibold hover:opacity-80 cursor-pointer transition-opacity"
+                          onClick={e => {
+                            e.stopPropagation();
+                            window.location.href = `/profile/${post.author.id}`;
+                          }}
+                          role="link"
+                          tabIndex={0}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              window.location.href = `/profile/${post.author.id}`;
+                            }
+                          }}
+                        >
+                          {post.author.name}
+                        </span>
                       </div>
 
                       {post.puzzle && (

@@ -118,3 +118,14 @@ body {
 .text-purple-500 { color: #3891A6 !important; }
 .border-purple-500 { border-color: #3891A6 !important; }
 .focus\:border-purple-500:focus { border-color: #3891A6 !important; }
+
+/* Explicit navbar breakpoint overrides (debugging fallback) */
+@media (min-width: 1032px) {
+  .hamburger-button { display: none !important; }
+  .desktop-nav { display: flex !important; }
+}
+
+@media (max-width: 1031px) {
+  .hamburger-button { display: flex !important; }
+  .desktop-nav { display: none !important; }
+}

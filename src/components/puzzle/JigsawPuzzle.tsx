@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
@@ -544,6 +546,8 @@ export default function JigsawPuzzleSVGWithTray({
   onComplete,
 }: JigsawPuzzleSVGWithTrayProps) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState<number>(1);
 
   const pieceW = boardWidth / cols;
   const pieceH = boardHeight / rows;
@@ -958,15 +962,44 @@ export default function JigsawPuzzleSVGWithTray({
 
   const activeGroup = draggingGroupId;
 
+  // Keep the stage scaled to fit its wrapper to avoid overflow in editors
+  React.useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    const MIN_VIEWPORT = 400; // don't shrink preview smaller than this viewport width
+
+    const update = () => {
+      const wrapperW = wrapper.clientWidth || 0;
+      const vw = typeof window !== 'undefined' ? window.innerWidth : wrapperW;
+      // allow scaling down normally, but do not shrink beyond MIN_VIEWPORT
+      const effectiveW = Math.max(wrapperW, Math.min(vw, MIN_VIEWPORT));
+      if (!effectiveW) return;
+      const next = Math.min(1, effectiveW / stageWidth);
+      setScale(next);
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(wrapper);
+    window.addEventListener('resize', update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [stageWidth]);
+
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", width: stageWidth }}>
+    <div ref={wrapperRef} style={{ position: 'relative', fontFamily: "system-ui, sans-serif", width: '100%', height: Math.round(stageHeight * scale), overflow: 'hidden', maxWidth: '100%' }}>
       <div
         ref={stageRef}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        style={{
-          position: "relative",
+          style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
           width: stageWidth,
           height: stageHeight,
           borderRadius: 18,
@@ -975,6 +1008,11 @@ export default function JigsawPuzzleSVGWithTray({
           border: "1px solid rgba(255,255,255,0.14)",
           userSelect: "none",
           touchAction: "none",
+          transformOrigin: 'top left',
+          transform: `scale(${scale})`,
+          // center scaled content within wrapper
+          display: 'block',
+          marginLeft: 0,
         }}
       >
         {/* BOARD */}
