@@ -249,7 +249,7 @@ export async function DELETE(request: NextRequest) {
       if (media && media.url) {
         const fileName = media.url.split("/").pop();
         const filePath = join(process.cwd(), "public", "uploads", "media", fileName || "");
-        const fs = await import("fs").then((m) => m.promises);
+        const fs = await import("fs").then((m: any) => m.promises);
         await fs.unlink(filePath).catch(() => {
           // File might not exist, that's okay
         });

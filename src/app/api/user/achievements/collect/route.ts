@@ -110,7 +110,10 @@ export async function POST(request: NextRequest) {
         where: { userId: user.id },
         select: { pointsEarned: true },
       });
-      const totalPoints = userPuzzleProgress.reduce((sum, p) => sum + (p.pointsEarned || 0), 0);
+      const totalPoints = userPuzzleProgress.reduce(
+        (sum: number, p: { pointsEarned?: number | null }) => sum + (p.pointsEarned || 0),
+        0
+      );
       
       if (totalPoints < (achievement.conditionValue || 1)) {
         return NextResponse.json(
@@ -129,7 +132,7 @@ export async function POST(request: NextRequest) {
 
       // Calculate current streak
       let currentStreak = 0;
-      if (userPuzzleProgress.some(p => p.solved)) {
+      if (userPuzzleProgress.some((p: any) => p.solved)) {
         const solvedDates = userPuzzleProgress
           .filter((p: { solved?: boolean; solvedAt?: string | Date | null }) => p.solved && p.solvedAt)
           .map((p: { solvedAt?: string | Date | null }) => new Date(p.solvedAt!).toDateString())

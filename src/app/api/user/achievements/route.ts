@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
     // Calculate current streak from solved puzzles
     let currentStreak = 0;
-    if (userPuzzleProgress.some(p => p.solved)) {
+    if (userPuzzleProgress.some((p: any) => p.solved)) {
       const solvedDates = userPuzzleProgress
         .filter((p: { solved?: boolean; solvedAt?: string | Date | null }) => p.solved && p.solvedAt)
         .map((p: { solvedAt?: string | Date | null }) => new Date(p.solvedAt!).toDateString())

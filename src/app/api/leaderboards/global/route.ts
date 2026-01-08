@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     entries.sort((a, b) => b.totalPoints - a.totalPoints);
 
     // Re-rank after sorting
-    entries.forEach((entry, index) => {
+    entries.forEach((entry: any, index: any) => {
       entry.rank = index + 1;
     });
 
