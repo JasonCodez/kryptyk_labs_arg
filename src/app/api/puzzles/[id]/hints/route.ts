@@ -127,7 +127,7 @@ export async function POST(
         select: { teamId: true },
       });
 
-      const teamIds = userTeams.map((tm) => tm.teamId);
+      const teamIds = userTeams.map((tm: { teamId: string }) => tm.teamId);
 
       // Count team usage (any team member)
       const teamMembers = await prisma.teamMember.findMany({
@@ -135,7 +135,7 @@ export async function POST(
         select: { userId: true },
       });
 
-      const teamMemberIds = teamMembers.map((tm) => tm.userId);
+      const teamMemberIds = teamMembers.map((tm: { userId: string }) => tm.userId);
 
       const teamUsageCount = await prisma.hintHistory.count({
         where: {
