@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export async function GET(
   request: NextRequest,
@@ -83,7 +84,9 @@ export async function GET(
       try {
         const extra = await prisma.sudokuPuzzle.findUnique({
           where: { puzzleId: puzzle.id },
-          select: { timeLimitSeconds: true },
+          // cast the select to Prisma's generated select type to avoid
+          // errors when the local generated client is missing newer fields
+          select: { timeLimitSeconds: true } as Prisma.SudokuPuzzleSelect<Prisma.DefaultArgs>,
         });
         outPayload = { ...puzzle, sudoku: { ...puzzle.sudoku, timeLimitSeconds: extra?.timeLimitSeconds ?? null } };
       } catch (e) {
