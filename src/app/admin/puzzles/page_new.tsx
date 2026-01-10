@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PuzzleTypeFields from "@/components/admin/PuzzleTypeFields";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
+import SudokuGenerator from "@/components/puzzle/SudokuGenerator";
 
 interface PuzzleFormData {
   title: string;
@@ -41,6 +42,7 @@ interface MediaFile {
 
 const PUZZLE_TYPES = [
   { value: 'general', label: 'General Riddle' },
+  { value: 'sudoku', label: 'Sudoku' },
   { value: 'jigsaw', label: 'Jigsaw Puzzle' },
   { value: 'cipher', label: 'Cipher' },
   { value: 'text_extraction', label: 'Text Extraction' },
@@ -65,6 +67,8 @@ export default function AdminPuzzlesPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [jigsawImagePreview, setJigsawImagePreview] = useState<string>("");
   const [jigsawImageUrl, setJigsawImageUrl] = useState<string>("");
+  const [sudokuDifficulty, setSudokuDifficulty] = useState<'easy' | 'medium' | 'hard' | 'expert' | 'extreme'>('medium');
+  const [sudokuPuzzle, setSudokuPuzzle] = useState<{ puzzle: number[][]; solution: number[][] } | null>(null);
   const [formData, setFormData] = useState<PuzzleFormData>({
     title: "",
     description: "",
@@ -307,15 +311,21 @@ export default function AdminPuzzlesPage() {
         hasContent: !!formData.content,
       });
 
+      const submitBody: any = { ...formData, hints: filteredHints };
+      if (formData.puzzleType === 'sudoku' && sudokuPuzzle) {
+        submitBody.sudokuGrid = sudokuPuzzle.puzzle;
+        submitBody.sudokuSolution = sudokuPuzzle.solution;
+        submitBody.sudokuDifficulty = sudokuDifficulty;
+        // Sudoku answers are entered on the board; don't send a separate correctAnswer
+        delete submitBody.correctAnswer;
+      }
+
       const response = await fetch("/api/admin/puzzles", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ...formData,
-          hints: filteredHints,
-        }),
+        body: JSON.stringify(submitBody),
       }).catch(err => {
         console.error("[SUBMIT] Fetch failed:", err);
         throw new Error(`Network error: ${err.message || 'Failed to connect to server'}`);
@@ -607,10 +617,10 @@ export default function AdminPuzzlesPage() {
                     </select>
                   </div>
 
-                  {/* Title */}
+                  {/* Title (optional for Sudoku) */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-300 mb-2">
-                      Puzzle Title *
+                      Puzzle Title {formData.puzzleType === 'sudoku' ? <span className="text-xs text-gray-400">(optional)</span> : <span>*</span>}
                     </label>
                     <input
                       type="text"
@@ -619,7 +629,7 @@ export default function AdminPuzzlesPage() {
                       onChange={handleInputChange}
                       placeholder="Give your puzzle a captivating title"
                       className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
-                      required
+                      {...(formData.puzzleType === 'sudoku' ? {} : { required: true })}
                     />
                   </div>
 
@@ -640,12 +650,23 @@ export default function AdminPuzzlesPage() {
                   </div>
 
                   {/* Type-Specific Fields */}
-                  {formData.puzzleType !== 'general' && (
+                  {formData.puzzleType !== 'general' && formData.puzzleType !== 'sudoku' && (
                     <PuzzleTypeFields
                       puzzleType={formData.puzzleType}
                       puzzleData={formData.puzzleData}
                       onDataChange={handlePuzzleDataChange}
                     />
+                  )}
+
+                  {/* Sudoku generator (admin) */}
+                  {formData.puzzleType === 'sudoku' && (
+                    <div className="mt-4">
+                      <SudokuGenerator
+                        difficulty={sudokuDifficulty}
+                        onDifficultyChange={setSudokuDifficulty}
+                        onPuzzleGenerated={(puzzle, solution) => setSudokuPuzzle({ puzzle, solution })}
+                      />
+                    </div>
                   )}
 
 
@@ -706,6 +727,7 @@ export default function AdminPuzzlesPage() {
                         className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
                       >
                         <option value="general">General</option>
+                        <option value="sudoku">Sudoku</option>
                         <option value="arg">ARG</option>
                         <option value="puzzle">Puzzle</option>
                         <option value="challenge">Challenge</option>
@@ -730,8 +752,8 @@ export default function AdminPuzzlesPage() {
                     </div>
                   </div>
 
-                  {/* Correct Answer */}
-                  {formData.puzzleType !== 'jigsaw' && (
+                  {/* Correct Answer (not required for Sudoku; answers entered on the board) */}
+                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         Correct Answer *

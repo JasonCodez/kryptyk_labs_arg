@@ -16,6 +16,7 @@ import ImageViewer from "@/components/ImageViewer";
 import SudokuGrid from "@/components/puzzle/SudokuGrid";
 import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
 import PuzzleCompletionRatingModal from "@/components/puzzle/PuzzleCompletionRatingModal";
+import Toasts from '@/components/Toast';
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 
@@ -147,6 +148,7 @@ export default function PuzzleDetailPage() {
   const [progress, setProgress] = useState<PuzzleProgress | null>(null);
   const [answer, setAnswer] = useState("");
   const [sudokuGrid, setSudokuGrid] = useState<(number | null)[][]>([]);
+  const [sudokuSolution, setSudokuSolution] = useState<number[][] | null>(null);
   const [sudokuGridForSubmit, setSudokuGridForSubmit] = useState<number[][]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -157,6 +159,16 @@ export default function PuzzleDetailPage() {
   const [showStats, setShowStats] = useState(false);
   const [showProgress, setShowProgress] = useState(true);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [justAwardedPoints, setJustAwardedPoints] = useState<number | null>(null);
+  const [toasts, setToasts] = useState<Array<{id:string; message:string; type?:string}>>([]);
+
+  const addToast = (message: string, type: 'info'|'success'|'error' = 'info') => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    setToasts((t) => [...t, { id, message, type }]);
+    setTimeout(() => setToasts((t) => t.filter(x => x.id !== id)), 4200);
+  };
+
+  const removeToast = (id: string) => setToasts((t) => t.filter(x => x.id !== id));
   const [revealedHints, setRevealedHints] = useState<Set<string>>(new Set());
   const [revealingHint, setRevealingHint] = useState<string | null>(null);
   const [usedHintIds, setUsedHintIds] = useState<string[]>([]);
@@ -228,6 +240,12 @@ export default function PuzzleDetailPage() {
       try {
         const gridData = JSON.parse(puzzle.sudoku.puzzleGrid);
         setSudokuGrid(gridData);
+        try {
+          const sol = JSON.parse(puzzle.sudoku.solutionGrid);
+          setSudokuSolution(sol);
+        } catch (e) {
+          setSudokuSolution(null);
+        }
       } catch (err) {
         console.error("Failed to parse Sudoku grid:", err);
       }
@@ -346,77 +364,47 @@ export default function PuzzleDetailPage() {
   };
 
   const handleSudokuSubmit = async (submittedGrid: number[][]) => {
-        setSuccess(true);
-        setShowSolvedMessage(true);
-        // Log successful attempt
-        try {
-          await fetch(`/api/puzzles/${puzzleId}/progress`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "attempt_success" }),
-          });
-        } catch (err) {
-          console.error("Failed to log success:", err);
-        }
+    const prevPoints = progress?.pointsEarned || 0;
+    setSuccess(true);
+    setShowSolvedMessage(true);
 
-        // Refresh progress
-        try {
-          const progressResponse = await fetch(`/api/puzzles/${puzzleId}/progress`);
-          if (progressResponse.ok) {
-            const updatedProgress = await progressResponse.json();
-            setProgress(updatedProgress);
-          }
-        } catch (err) {
-          console.error("Failed to refresh progress:", err);
-        }
+    // Show solved message, then rating modal after delay (animation already finished when this is called)
+    setTimeout(() => {
+      setShowSolvedMessage(false);
+      setShowRatingModal(true);
+    }, 1500);
 
-        // Show solved message, then rating modal after delay
-        setTimeout(() => {
-          setShowSolvedMessage(false);
-          setShowRatingModal(true);
-        }, 1500);
+    // Record success and get updated progress (single request)
+    try {
+      const resp = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'attempt_success' }),
+      });
 
-        // Submit for points (using a dummy answer string for Sudoku)
-        try {
-          const submitResponse = await fetch("/api/puzzles/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              puzzleId, 
-              answer: "SUDOKU_SOLVED" 
-            }),
-          });
+      if (resp.ok) {
+        const updated = await resp.json();
+        setProgress(updated);
+        const newPoints = updated?.pointsEarned ?? prevPoints;
+        const pointsAwarded = Math.max(0, newPoints - prevPoints);
+        setJustAwardedPoints(pointsAwarded);
+      } else {
+        console.error('Failed to record Sudoku success');
+      }
+    } catch (err) {
+      console.error('Failed to record Sudoku success:', err);
+    }
 
-          if (!submitResponse.ok) {
-            console.error("Failed to submit puzzle for points");
-          }
-        } catch (err) {
-          console.error("Failed to submit Sudoku for points:", err);
-        }
-        
-        // Log successful attempt
-        try {
-          await fetch(`/api/puzzles/${puzzleId}/progress`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "attempt_success" }),
-          });
-        } catch (err) {
-          console.error("Failed to log success:", err);
-        }
-
-        // Refresh progress
-        try {
-          const progressResponse = await fetch(`/api/puzzles/${puzzleId}/progress`);
-          if (progressResponse.ok) {
-            const updatedProgress = await progressResponse.json();
-            setProgress(updatedProgress);
-          }
-        } catch (err) {
-          console.error("Failed to refresh progress:", err);
-        }
-
-        setShowRatingModal(true);
+    // Also call the submit endpoint for compatibility (will accept SUDOKU_SOLVED)
+    try {
+      await fetch(`/api/puzzles/${puzzleId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer: "SUDOKU_SOLVED" }),
+      });
+    } catch (err) {
+      console.error('Failed to submit Sudoku token:', err);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -709,8 +697,12 @@ export default function PuzzleDetailPage() {
                 onSubmit={() => {
                   router.push("/puzzles");
                 }}
+                initialAwardedPoints={justAwardedPoints}
               />
             )}
+
+            {/* Toasts (inline above puzzle) */}
+            <Toasts toasts={toasts} onRemove={(id) => removeToast(id)} inline />
 
             {puzzle?.puzzleType === 'jigsaw' ? (
               <div className="mb-8">
@@ -792,14 +784,55 @@ export default function PuzzleDetailPage() {
                   {sudokuGrid.length > 0 && (
                     <SudokuGrid 
                       puzzle={sudokuGrid as number[][]}
-                      onSubmit={(submittedGrid: number[][]) => {
-                        setSudokuGridForSubmit(submittedGrid);
-                        // Submit the form after grid is set
-                        setTimeout(() => {
-                          handleSudokuSubmit(submittedGrid);
-                        }, 0);
-                      }}
+                      solution={sudokuSolution ?? undefined}
                       disabled={submitting || success || progress?.solved}
+                      maxAttempts={5}
+                      onAttempt={(attemptNumber, locked) => {
+                        (async () => {
+                          try {
+                            await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action: 'log_attempt' }),
+                            });
+                          } catch (err) {
+                            console.error('Failed to log attempt:', err);
+                          }
+
+                          try {
+                            const r = await fetch(`/api/puzzles/${puzzleId}/progress`);
+                            if (r.ok) {
+                              const updated = await r.json();
+                              setProgress(updated);
+                            }
+                          } catch (err) {
+                            console.error('Failed to refresh progress:', err);
+                          }
+
+                          if (locked) {
+                            addToast('You have exceeded the maximum number of attempts. Puzzle locked.', 'error');
+                            try {
+                              await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'lock_puzzle' }),
+                              });
+                            } catch (err) {
+                              // best-effort
+                            }
+                            // redirect user back to puzzles list after short delay so they see the toast
+                            setTimeout(() => router.push('/puzzles'), 800);
+                          } else {
+                            addToast(`Incorrect. Attempts: ${attemptNumber}/5`, 'error');
+                          }
+                        })();
+                      }}
+                      onValidatedSuccess={(grid) => {
+                        // when SudokuGrid signals validated success, trigger page-level submit flow
+                        setSudokuGridForSubmit(grid);
+                        handleSudokuSubmit(grid);
+                      }}
+                      onNotify={(msg, type) => addToast(msg, type as any)}
                     />
                   )}
                 </div>

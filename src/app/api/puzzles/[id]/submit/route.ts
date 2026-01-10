@@ -21,13 +21,18 @@ export async function POST(request: NextRequest, context: { params: { id: string
 
 		const puzzle = await prisma.puzzle.findUnique({
 			where: { id: puzzleId },
-			select: { riddleAnswer: true },
+			select: { riddleAnswer: true, puzzleType: true, sudoku: { select: { id: true } } },
 		});
 
 		if (!puzzle) {
 			return NextResponse.json({ error: "Puzzle not found" }, { status: 404 });
 		}
+
+		// If puzzle has no riddle answer but is a Sudoku, treat the special 'SUDOKU_SOLVED' token as correct
 		if (!puzzle.riddleAnswer) {
+			if (puzzle.puzzleType === 'sudoku' && answer.trim() === 'SUDOKU_SOLVED') {
+				return NextResponse.json({ correct: true });
+			}
 			return NextResponse.json({ error: "No riddle answer set for this puzzle" }, { status: 400 });
 		}
 

@@ -1,6 +1,6 @@
 // Core types for puzzle system
 
-export type PuzzleType = 'jigsaw' | 'story';
+export type PuzzleType = 'jigsaw' | 'story' | 'sudoku';
 
 export interface PuzzleBase {
   id: string;
@@ -51,6 +51,15 @@ export interface StoryPuzzle extends PuzzleBase {
   scenes: StoryScene[];
   startSceneId: string;
   data: StoryPuzzleData;
+}
+
+// Sudoku Puzzle Types
+export interface SudokuPuzzle extends PuzzleBase {
+  type: 'sudoku';
+  // 9x9 grid, 0 = empty
+  puzzleGrid: number[][];
+  solutionGrid: number[][];
+  difficulty: 'easy' | 'medium' | 'hard' | 'expert' | 'extreme';
 }
 
 export interface StoryPuzzleData {

@@ -149,18 +149,12 @@ export async function notifyAchievementUnlock(userId: string, data: AchievementD
   try {
     const preference = await getUserNotificationPreference(userId);
 
-    if (!preference.emailNotificationsEnabled || !preference.emailOnAchievement) {
-      return;
-    }
-
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true },
     });
 
-    if (!user?.email) return;
-
-    // Create in-app notification
+    // Always create an in-app notification (respecting user's existence)
     const notification = await createNotification({
       userId,
       type: "achievement_unlocked",
@@ -172,28 +166,34 @@ export async function notifyAchievementUnlock(userId: string, data: AchievementD
 
     if (!notification) return;
 
-    // Send email
-    const html = generateAchievementEmail(
-      user.name || user.email,
-      data.achievementName,
-      data.achievementDescription,
-      data.badgeUrl
-    );
+    // Send email only if user has email and preferences allow it
+    if (
+      preference.emailNotificationsEnabled &&
+      preference.emailOnAchievement &&
+      user?.email
+    ) {
+      const html = generateAchievementEmail(
+        user.name || user.email,
+        data.achievementName,
+        data.achievementDescription,
+        data.badgeUrl
+      );
 
-    const emailSent = await sendEmail({
-      to: user.email,
-      subject: `🏆 Achievement Unlocked: ${data.achievementName}`,
-      html,
-    });
-
-    if (emailSent) {
-      await prisma.notification.update({
-        where: { id: notification.id },
-        data: {
-          emailSent: true,
-          emailSentAt: new Date(),
-        },
+      const emailSent = await sendEmail({
+        to: user.email,
+        subject: `🏆 Achievement Unlocked: ${data.achievementName}`,
+        html,
       });
+
+      if (emailSent) {
+        await prisma.notification.update({
+          where: { id: notification.id },
+          data: {
+            emailSent: true,
+            emailSentAt: new Date(),
+          },
+        });
+      }
     }
   } catch (error) {
     console.error(`Failed to notify achievement unlock for user ${userId}:`, error);

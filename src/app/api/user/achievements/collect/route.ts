@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { notifyAchievementUnlock } from "@/lib/notification-service";
 
 export async function POST(request: NextRequest) {
   try {
@@ -206,6 +207,18 @@ export async function POST(request: NextRequest) {
       },
       include: { achievement: true },
     });
+
+    // Notify the user via in-app notification (and email depending on preferences)
+    try {
+      await notifyAchievementUnlock(user.id, {
+        achievementId: userAchievement.achievement.id,
+        achievementName: userAchievement.achievement.name,
+        achievementDescription: userAchievement.achievement.description || "",
+        badgeUrl: userAchievement.achievement.icon || undefined,
+      });
+    } catch (err) {
+      console.error("Failed to send achievement notification:", err);
+    }
 
     return NextResponse.json({
       success: true,

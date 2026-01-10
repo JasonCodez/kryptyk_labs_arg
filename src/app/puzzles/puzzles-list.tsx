@@ -336,14 +336,23 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredPuzzles.map((puzzle, idx) => {
               const progress = puzzle.userProgress?.[0];
-              const status = progress?.solved ? "solved" : progress?.attempts ? "in-progress" : "unsolved";
+              // Treat puzzles with attempts >= 5 and not solved as 'failed'
+              const status = progress?.solved
+                ? "solved"
+                : (progress && (progress.attempts || 0) >= 5)
+                ? "failed"
+                : progress?.attempts
+                ? "in-progress"
+                : "unsolved";
               const statusConfig: Record<string, { color: string; label: string }> = {
                 solved: { color: "#38D399", label: "✓ Solved" },
                 "in-progress": { color: "#FDE74C", label: "~ In Progress" },
+                failed: { color: "#EF4444", label: "✗ Failed" },
                 unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
               };
 
-              return status === 'solved' ? (
+              if (status === 'solved') {
+                return (
                 <div
                   key={puzzle.id}
                   className="group rounded-lg border p-6 transition-all duration-300"
@@ -397,7 +406,57 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                     </div>
                   )}
                 </div>
-              ) : (
+                );
+              }
+
+              if (status === 'failed') {
+                return (
+                  <div
+                    key={puzzle.id}
+                    className="group rounded-lg border p-6 transition-all duration-300"
+                    style={{
+                      backgroundColor: 'rgba(170, 40, 40, 0.06)',
+                      borderColor: '#EF4444',
+                      borderWidth: '1px',
+                      opacity: 0.6,
+                      cursor: 'not-allowed'
+                    }}
+                  >
+                    <div className="mb-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-xl font-bold text-white flex-1">{puzzle.title}</h3>
+                        <div className="flex gap-2 flex-col items-end">
+                          {puzzle.order && puzzle.order > 0 ? (
+                            <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
+                              #{puzzle.order}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✗ Puzzle Failed</p>
+                    </div>
+                    <p className="text-sm mb-3" style={{ color: '#DDDBF1' }}>{puzzle.description}</p>
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
+                        {puzzle.category?.name || 'General'}
+                      </span>
+                      <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
+                        {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
+                      </span>
+                      <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
+                        {statusConfig[status].label}
+                      </span>
+                    </div>
+                    {puzzle.pointsReward && (
+                      <div style={{ color: '#FDE74C' }} className="text-xs font-semibold mb-2">
+                        ⭐ {puzzle.pointsReward} points
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
                 <Link
                   key={puzzle.id}
                   href={`/puzzles/${puzzle.id}`}

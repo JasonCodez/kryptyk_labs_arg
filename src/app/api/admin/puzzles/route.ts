@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
       puzzleData,
     } = body;
 
-    // Validate input - title is required, description and content are optional
-    if (!title) {
+    // Validate input - title is required for most puzzle types but optional for Sudoku
+    if (!title && puzzleType !== 'sudoku') {
       return NextResponse.json(
         { error: "Missing required field: title" },
         { status: 400 }
@@ -149,10 +149,13 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Provide a fallback title for Sudoku puzzles when none is supplied
+    const finalTitle = title || (puzzleType === 'sudoku' ? `Sudoku (${(sudokuDifficulty || 'medium').toString().toUpperCase()})` : 'Untitled Puzzle');
+
     // Create puzzle
     const puzzle = await prisma.puzzle.create({
       data: {
-        title,
+        title: finalTitle,
         description: puzzleDescription,
         content: puzzleContent,
         category: {

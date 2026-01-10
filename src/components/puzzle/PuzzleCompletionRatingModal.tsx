@@ -9,6 +9,7 @@ interface PuzzleCompletionRatingModalProps {
   puzzleTitle: string;
   onClose: () => void;
   onSubmit?: () => void;
+  initialAwardedPoints?: number | null;
 }
 
 export default function PuzzleCompletionRatingModal({
@@ -16,9 +17,10 @@ export default function PuzzleCompletionRatingModal({
   puzzleTitle,
   onClose,
   onSubmit,
+  initialAwardedPoints = null,
 }: PuzzleCompletionRatingModalProps) {
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [awardedPoints, setAwardedPoints] = useState<number | null>(null);
+  const [awardedPoints, setAwardedPoints] = useState<number | null>(initialAwardedPoints ?? null);
 
   const handleRatingSubmitted = () => {
     setIsSubmitted(true);
@@ -73,6 +75,15 @@ export default function PuzzleCompletionRatingModal({
           </div>
 
           {/* Success Message */}
+          { (initialAwardedPoints || awardedPoints) && !isSubmitted && (
+            <div
+              className="mb-4 p-3 rounded-lg border text-center"
+              style={{ backgroundColor: 'rgba(253,231,76,0.06)', borderColor: '#FDE74C' }}
+            >
+              <div style={{ color: '#FDE74C', fontWeight: 700 }}>{`+${initialAwardedPoints ?? awardedPoints} points awarded`}</div>
+            </div>
+          )}
+
           {isSubmitted && (
             <div
               className="mb-6 p-4 rounded-lg border text-white text-center"
