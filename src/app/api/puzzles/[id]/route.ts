@@ -85,8 +85,10 @@ export async function GET(
         const extra = await prisma.sudokuPuzzle.findUnique({
           where: { puzzleId: puzzle.id },
           // cast the select to Prisma's generated select type to avoid
-          // errors when the local generated client is missing newer fields
-          select: { timeLimitSeconds: true } as Prisma.SudokuPuzzleSelect<Prisma.DefaultArgs>,
+          // errors when the local generated client is missing newer fields.
+          // Some Prisma versions don't export `DefaultArgs` — use a safe
+          // double-cast to bypass that mismatch.
+          select: ({ timeLimitSeconds: true } as unknown) as Prisma.SudokuPuzzleSelect<any>,
         });
         outPayload = { ...puzzle, sudoku: { ...puzzle.sudoku, timeLimitSeconds: extra?.timeLimitSeconds ?? null } };
       } catch (e) {
