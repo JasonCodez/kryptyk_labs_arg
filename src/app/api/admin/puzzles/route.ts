@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { notifyPuzzleRelease } from "@/lib/notification-service";
 
 type MultiPartInput = {
@@ -269,7 +270,7 @@ export async function POST(request: NextRequest) {
           try {
             await prisma.sudokuPuzzle.update({
               where: { id: created.id },
-              data: { timeLimitSeconds: Number(timeLimitSeconds) },
+              data: { timeLimitSeconds: Number(timeLimitSeconds) } as Prisma.SudokuPuzzleUpdateInput,
             });
           } catch (updErr) {
             console.warn('[PUZZLE CREATE] Failed to set timeLimitSeconds on sudoku record:', updErr);

@@ -78,7 +78,7 @@ export async function GET(
     // Some Prisma client generations may not include newly added fields
     // (e.g., timeLimitSeconds) in nested select types. Fetch it separately
     // when a sudoku record exists and attach to the payload for the client.
-    let outPayload: any = puzzle;
+    let outPayload = puzzle as (typeof puzzle & { sudoku?: { timeLimitSeconds?: number | null } });
     if (puzzle?.sudoku) {
       try {
         const extra = await prisma.sudokuPuzzle.findUnique({

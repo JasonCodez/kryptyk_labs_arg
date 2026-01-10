@@ -65,8 +65,9 @@ export default function Navbar() {
   };
 
   const getUserId = () => {
-    const id = userInfo?.id || (session?.user as any)?.id || "";
-    console.log("getUserId:", { userInfoId: userInfo?.id, sessionId: (session?.user as any)?.id, finalId: id });
+    const sessionUser = session?.user as { id?: string } | undefined;
+    const id = userInfo?.id || sessionUser?.id || "";
+    console.log("getUserId:", { userInfoId: userInfo?.id, sessionId: sessionUser?.id, finalId: id });
     return id;
   };
 

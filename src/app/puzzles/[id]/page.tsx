@@ -331,8 +331,8 @@ export default function PuzzleDetailPage() {
                   }
 
                   try {
-                    if (sudokuTimerRef.current) {
-                      clearInterval(sudokuTimerRef.current as any);
+                    if (sudokuTimerRef.current != null) {
+                      clearInterval(sudokuTimerRef.current);
                       sudokuTimerRef.current = null;
                     }
                     sudokuStartRef.current = null;
@@ -390,8 +390,8 @@ export default function PuzzleDetailPage() {
                       }
 
                       try {
-                        if (sudokuTimerRef.current) {
-                          clearInterval(sudokuTimerRef.current as any);
+                        if (sudokuTimerRef.current != null) {
+                          clearInterval(sudokuTimerRef.current);
                           sudokuTimerRef.current = null;
                         }
                         sudokuStartRef.current = null;
@@ -613,8 +613,8 @@ export default function PuzzleDetailPage() {
 
     // stop the sudoku timer
     try {
-      if (sudokuTimerRef.current) {
-        clearInterval(sudokuTimerRef.current as any);
+      if (sudokuTimerRef.current != null) {
+        clearInterval(sudokuTimerRef.current);
         sudokuTimerRef.current = null;
       }
       sudokuStartRef.current = null;
@@ -864,8 +864,8 @@ export default function PuzzleDetailPage() {
                     }
 
                     try {
-                      if (sudokuTimerRef.current) {
-                        clearInterval(sudokuTimerRef.current as any);
+                      if (sudokuTimerRef.current != null) {
+                        clearInterval(sudokuTimerRef.current);
                         sudokuTimerRef.current = null;
                       }
                       sudokuStartRef.current = null;

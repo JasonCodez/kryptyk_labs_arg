@@ -28,6 +28,10 @@ interface Puzzle {
     solved: boolean;
     attempts: number;
   }>;
+  // locally-annotated fields
+  failed?: boolean;
+  failedReason?: string | null;
+  completedElapsedSeconds?: number | null;
 }
 
 interface RatingStats {
@@ -208,7 +212,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
             (!p.userProgress[0]?.solved && (p.userProgress[0]?.attempts || 0) === 0)
         );
       } else if (selectedStatus === "failed") {
-        filtered = filtered.filter((p: any) => (p as any).failed === true);
+        filtered = filtered.filter((p) => p.failed === true);
       }
     }
 
@@ -444,9 +448,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                       ⭐ {puzzle.pointsReward} points
                     </div>
                   )}
-                  {(puzzle as any).completedElapsedSeconds != null && (
+                  {puzzle.completedElapsedSeconds != null && (
                     <div className="text-xs mt-2" style={{ color: '#AB9F9D' }}>
-                      Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor(((puzzle as any).completedElapsedSeconds)/60).toString().padStart(2,'0')}:{((puzzle as any).completedElapsedSeconds%60).toString().padStart(2,'0')}</span>
+                      Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor((puzzle.completedElapsedSeconds)/60).toString().padStart(2,'0')}:{(puzzle.completedElapsedSeconds%60).toString().padStart(2,'0')}</span>
                     </div>
                   )}
                 </div>
@@ -478,9 +482,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                         </div>
                       </div>
                       <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✗ Puzzle Failed</p>
-                      {((puzzle as any).failedReason) && (
+                      {puzzle.failedReason && (
                         <p className="text-sm mt-1" style={{ color: '#FFB4B4' }}>
-                          Reason: {((puzzle as any).failedReason === 'time_limit') ? 'Time limit reached' : ((puzzle as any).failedReason === 'max_attempts' ? 'Maximum submissions reached' : ((puzzle as any).failedReason === 'given_up' ? 'Gave up' : 'Failed'))}
+                          Reason: {puzzle.failedReason === 'time_limit' ? 'Time limit reached' : puzzle.failedReason === 'max_attempts' ? 'Maximum submissions reached' : puzzle.failedReason === 'given_up' ? 'Gave up' : 'Failed'}
                         </p>
                       )}
                     </div>
@@ -583,7 +587,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
           <div className="space-y-3">
             {filteredPuzzles.map((puzzle) => {
               const progress = puzzle.userProgress?.[0];
-              const status = progress?.solved ? "solved" : (puzzle as any).failed ? "failed" : progress?.attempts ? "in-progress" : "unsolved";
+              const status = progress?.solved ? "solved" : puzzle.failed ? "failed" : progress?.attempts ? "in-progress" : "unsolved";
               const statusConfig: Record<string, { color: string; label: string }> = {
                 solved: { color: "#38D399", label: "✓ Solved" },
                 "in-progress": { color: "#FDE74C", label: "~ In Progress" },
@@ -617,11 +621,11 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                           </span>
                         </div>
                         <p className="text-sm mb-2 line-clamp-2" style={{ color: '#DDDBF1' }}>{puzzle.description}</p>
-                        {((puzzle as any).failedReason) && (
-                          <p className="text-sm mt-1" style={{ color: '#FFB4B4' }}>
-                            Reason: {((puzzle as any).failedReason === 'time_limit') ? 'Time limit reached' : ((puzzle as any).failedReason === 'max_attempts' ? 'Maximum submissions reached' : ((puzzle as any).failedReason === 'given_up' ? 'Gave up' : 'Failed'))}
-                          </p>
-                        )}
+                        {puzzle.failedReason && (
+                            <p className="text-sm mt-1" style={{ color: '#FFB4B4' }}>
+                              Reason: {puzzle.failedReason === 'time_limit' ? 'Time limit reached' : puzzle.failedReason === 'max_attempts' ? 'Maximum submissions reached' : puzzle.failedReason === 'given_up' ? 'Gave up' : 'Failed'}
+                            </p>
+                          )}
                       </div>
                       <div style={{ color: '#AB9F9D' }} className="text-lg font-semibold flex-shrink-0">
                         -
@@ -698,9 +702,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                           {' of attempted completed'}
                         </div>
                       </div>
-                      {(puzzle as any).completedElapsedSeconds != null && (
+                      {puzzle.completedElapsedSeconds != null && (
                         <div className="text-xs mt-2" style={{ color: '#AB9F9D' }}>
-                          Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor(((puzzle as any).completedElapsedSeconds)/60).toString().padStart(2,'0')}:{((puzzle as any).completedElapsedSeconds%60).toString().padStart(2,'0')}</span>
+                          Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor((puzzle.completedElapsedSeconds)/60).toString().padStart(2,'0')}:{(puzzle.completedElapsedSeconds%60).toString().padStart(2,'0')}</span>
                         </div>
                       )}
                     </div>
