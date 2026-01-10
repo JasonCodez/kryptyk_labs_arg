@@ -252,14 +252,17 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid Sudoku grid or solution (must be 9x9 numbers 0-9)' }, { status: 400 });
       }
       try {
+        const sudokuData = {
+          puzzleId: puzzle.id,
+          puzzleGrid: typeof sudokuGrid === 'string' ? sudokuGrid : JSON.stringify(sudokuGrid),
+          solutionGrid: typeof sudokuSolution === 'string' ? sudokuSolution : JSON.stringify(sudokuSolution),
+          difficulty: sudokuDifficulty || 'medium',
+          // Cast guard: some TS environments may complain about extra properties
+          timeLimitSeconds: typeof timeLimitSeconds !== 'undefined' && timeLimitSeconds !== null ? Number(timeLimitSeconds) : undefined,
+        } as any;
+
         await prisma.sudokuPuzzle.create({
-          data: {
-            puzzleId: puzzle.id,
-            puzzleGrid: typeof sudokuGrid === 'string' ? sudokuGrid : JSON.stringify(sudokuGrid),
-            solutionGrid: typeof sudokuSolution === 'string' ? sudokuSolution : JSON.stringify(sudokuSolution),
-            difficulty: sudokuDifficulty || 'medium',
-            timeLimitSeconds: typeof timeLimitSeconds !== 'undefined' && timeLimitSeconds !== null ? Number(timeLimitSeconds) : undefined,
-          },
+          data: sudokuData,
         });
       } catch (sudokuError) {
         console.error("Error creating Sudoku puzzle record:", sudokuError);
