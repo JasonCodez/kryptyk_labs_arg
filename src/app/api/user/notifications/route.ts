@@ -97,3 +97,37 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// DELETE - Permanently remove notification(s) for the current user
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { notificationIds } = body;
+
+    if (!notificationIds || !Array.isArray(notificationIds) || notificationIds.length === 0) {
+      return NextResponse.json({ error: "No notification IDs provided" }, { status: 400 });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const result = await prisma.notification.deleteMany({
+      where: {
+        id: { in: notificationIds },
+        userId: user.id,
+      },
+    });
+
+    return NextResponse.json({ message: "Notifications deleted", count: result.count });
+  } catch (error) {
+    console.error("Failed to delete notifications:", error);
+    return NextResponse.json({ error: "Failed to delete notifications" }, { status: 500 });
+  }
+}

@@ -12,10 +12,14 @@ export default function NotificationBell() {
   useEffect(() => {
     fetchUnreadCount();
     const interval = setInterval(fetchUnreadCount, 30000); // Refresh every 30s
+
+    const onRead = () => fetchUnreadCount();
+    window.addEventListener("notificationsRead", onRead);
     return () => {
       clearInterval(interval);
       abortRef.current?.abort();
       abortRef.current = null;
+      window.removeEventListener("notificationsRead", onRead);
     };
   }, []);
 
@@ -26,7 +30,7 @@ export default function NotificationBell() {
     abortRef.current = controller;
 
     try {
-      const response = await fetch("/api/user/activity?limit=1&skip=0", {
+      const response = await fetch("/api/user/notifications?limit=1&skip=0&unreadOnly=true", {
         signal: controller.signal,
         headers: {
           Accept: "application/json",
@@ -34,23 +38,12 @@ export default function NotificationBell() {
       });
 
       if (!response.ok) {
-        // Avoid throwing; just degrade gracefully.
-        setUnreadCount(0);
-        return;
-      }
-
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        // Can happen if auth middleware redirects to HTML.
         setUnreadCount(0);
         return;
       }
 
       const data = await response.json();
-      // Count unread notifications from last 24 hours
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const activities = Array.isArray((data as any)?.activities) ? (data as any).activities : [];
-      const unread = activities.filter((a: any) => new Date(a.createdAt) > oneDayAgo).length;
+      const unread = typeof data?.unreadCount === "number" ? data.unreadCount : 0;
       setUnreadCount(unread);
     } catch (error) {
       // Ignore cancellations (common during route changes / fast refresh).

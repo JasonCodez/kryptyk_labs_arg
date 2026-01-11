@@ -39,18 +39,17 @@ export default function TeamsPage() {
   const [invitationCount, setInvitationCount] = useState(0);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/auth/signin");
-      return;
-    }
+    // Allow unauthenticated users to view public teams - do not redirect to sign-in.
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.user?.email) {
+    // Fetch teams for all visitors. Invitations are only fetched for signed-in users.
+    if (status !== "loading") {
       fetchTeams();
-      fetchInvitationCount();
+      if (session?.user?.email) fetchInvitationCount();
     }
-  }, [session?.user?.email]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, session?.user?.email]);
 
   const fetchInvitationCount = async () => {
     try {

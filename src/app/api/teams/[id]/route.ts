@@ -11,13 +11,6 @@ export async function GET(
     const { id: teamId } = await params;
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const team = await prisma.team.findUnique({
       where: { id: teamId },
       include: {
@@ -37,22 +30,40 @@ export async function GET(
     });
 
     if (!team) {
-      return NextResponse.json(
-        { error: "Team not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Check if user is member of this team
+    // If the team is public, allow anyone (including unauthenticated) to view it.
+    if (team.isPublic) {
+      // For public views, strip member emails for privacy when requester isn't a member.
+      if (!session?.user?.email || !team.members.some((m: any) => m.user?.email === session.user?.email)) {
+        const redacted = {
+          ...team,
+          members: team.members.map((m: any) => ({
+            ...m,
+            user: {
+              id: m.user?.id,
+              name: m.user?.name,
+              image: m.user?.image,
+            },
+          })),
+        };
+        return NextResponse.json(redacted);
+      }
+      return NextResponse.json(team);
+    }
+
+    // Private team: only allow members
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const isMember = team.members.some(
       (m: { user: { email?: string | null } | null }) => m.user?.email === session.user?.email
     );
 
-    if (!isMember && !team.isPublic) {
-      return NextResponse.json(
-        { error: "Forbidden" },
-        { status: 403 }
-      );
+    if (!isMember) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     return NextResponse.json(team);

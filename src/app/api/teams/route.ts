@@ -96,54 +96,72 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    // If user is authenticated, return teams they belong to plus any public teams.
+    // If unauthenticated, return only public teams.
+    let teams;
+    if (session?.user?.email) {
+      const user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+      });
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
-    }
-
-    const teams = await prisma.team.findMany({
-      where: {
-        members: {
-          some: {
-            userId: user.id,
-          },
+      teams = await prisma.team.findMany({
+        where: {
+          OR: [
+            { members: { some: { userId: user.id } } },
+            { isPublic: true },
+          ],
         },
-      },
-      include: {
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                image: true,
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
               },
             },
           },
-        },
-        progress: {
-          select: {
-            puzzleId: true,
-            solved: true,
-            pointsEarned: true,
+          progress: {
+            select: {
+              puzzleId: true,
+              solved: true,
+              pointsEarned: true,
+            },
           },
         },
-      },
-    });
+      });
+    } else {
+      teams = await prisma.team.findMany({
+        where: { isPublic: true },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  image: true,
+                },
+              },
+            },
+          },
+          progress: {
+            select: {
+              puzzleId: true,
+              solved: true,
+              pointsEarned: true,
+            },
+          },
+        },
+      });
+    }
 
     return NextResponse.json(teams);
   } catch (error) {

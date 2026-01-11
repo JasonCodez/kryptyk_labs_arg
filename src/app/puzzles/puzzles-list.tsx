@@ -80,6 +80,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [totalUsers, setTotalUsers] = useState(0);
   const [ratingStats, setRatingStats] = useState<Record<string, RatingStats>>({})
+  const [focusedPuzzleId, setFocusedPuzzleId] = useState<string | null>(null);
 
   useEffect(function() {
     if (status === "unauthenticated") {
@@ -92,9 +93,76 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
     }
   }, [status, router]);
 
+  // When arriving via hash (#puzzle-<id>), focus that puzzle card
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash || "";
+    if (hash.startsWith("#puzzle-")) {
+      const id = hash.replace("#puzzle-", "");
+      if (id) {
+        setFocusedPuzzleId(id);
+        // Allow render to complete then scroll + highlight
+        setTimeout(() => {
+          const el = document.getElementById(`puzzle-${id}`);
+          if (el) {
+            try {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+              el.classList.add("ring-4", "ring-yellow-400");
+              // remove highlight after 3s
+              setTimeout(() => {
+                el.classList.remove("ring-4", "ring-yellow-400");
+              }, 3000);
+            } catch (e) {
+              // ignore
+            }
+          }
+        }, 300);
+      }
+    }
+  }, []);
+
+  // Also respond to future hash changes (client-side navigation without remount)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleHash = () => {
+      const hash = window.location.hash || "";
+      if (hash.startsWith("#puzzle-")) {
+        const id = hash.replace("#puzzle-", "");
+        if (id) {
+          setFocusedPuzzleId(id);
+          // Allow render to complete then scroll + highlight
+          setTimeout(() => {
+            const el = document.getElementById(`puzzle-${id}`);
+            if (el) {
+              try {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                el.classList.add("ring-4", "ring-yellow-400");
+                setTimeout(() => {
+                  el.classList.remove("ring-4", "ring-yellow-400");
+                }, 3000);
+              } catch (e) {
+                // ignore
+              }
+            }
+          }, 100);
+        }
+      } else {
+        setFocusedPuzzleId(null);
+      }
+    };
+
+    // run once and subscribe to future hash changes
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, []);
+
   useEffect(() => {
     applyFilters();
   }, [puzzles, selectedCategory, selectedDifficulty, selectedStatus, searchQuery, sortBy, sortOrder]);
+
+  // Which puzzles to display: either focus a single puzzle (via hash) or the filtered list
+  const displayed = focusedPuzzleId ? puzzles.filter((p) => p.id === focusedPuzzleId) : filteredPuzzles;
 
   async function fetchData() {
     try {
@@ -368,14 +436,28 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
         </div>
 
         {/* Puzzles Display */}
-        {filteredPuzzles.length === 0 ? (
+        {focusedPuzzleId && (
+          <div className="mb-4">
+            <button
+              onClick={() => {
+                setFocusedPuzzleId(null);
+                // remove hash from URL
+                try { history.replaceState(null, "", "/puzzles"); } catch (e) {}
+              }}
+              className="px-3 py-1 rounded bg-slate-700 text-white text-sm mb-4"
+            >
+              Show all puzzles
+            </button>
+          </div>
+        )}
+        {displayed.length === 0 ? (
           <div className="text-center py-20">
             <p style={{ color: '#DDDBF1' }} className="text-lg mb-2">No puzzles match your filters</p>
             <p style={{ color: '#AB9F9D' }} className="text-sm">Try adjusting your search or filters</p>
           </div>
-        ) : viewMode === "grid" ? (
+          ) : viewMode === "grid" ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPuzzles.map((puzzle, idx) => {
+            {displayed.map((puzzle, idx) => {
               const progress = puzzle.userProgress?.[0];
               // Treat puzzles with attempts >= 5 and not solved as 'failed'
               const status = progress?.solved
@@ -396,8 +478,10 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
 
               if (status === 'solved') {
                 return (
-                <div
-                  key={puzzle.id}
+                  <Link
+                    id={`puzzle-${puzzle.id}`}
+                    key={puzzle.id}
+                    href={`/puzzles/${puzzle.id}`}
                   className="group rounded-lg border p-6 transition-all duration-300"
                   style={{
                     backgroundColor: 'rgba(56, 145, 166, 0.08)',
@@ -453,13 +537,14 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                       Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor((puzzle.completedElapsedSeconds)/60).toString().padStart(2,'0')}:{(puzzle.completedElapsedSeconds%60).toString().padStart(2,'0')}</span>
                     </div>
                   )}
-                </div>
+                </Link>
                 );
               }
 
               if (status === 'failed') {
                 return (
                   <div
+                    id={`puzzle-${puzzle.id}`}
                     key={puzzle.id}
                     className="group rounded-lg border p-6 transition-all duration-300"
                     style={{
@@ -511,6 +596,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
 
               return (
                 <Link
+                  id={`puzzle-${puzzle.id}`}
                   key={puzzle.id}
                   href={`/puzzles/${puzzle.id}`}
                   className="group rounded-lg border p-6 transition-all duration-300 hover:scale-105"
@@ -585,7 +671,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredPuzzles.map((puzzle) => {
+            {displayed.map((puzzle) => {
               const progress = puzzle.userProgress?.[0];
               const status = progress?.solved ? "solved" : puzzle.failed ? "failed" : progress?.attempts ? "in-progress" : "unsolved";
               const statusConfig: Record<string, { color: string; label: string }> = {
@@ -597,6 +683,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
               if (status === 'failed') {
                 return (
                   <div
+                    id={`puzzle-${puzzle.id}`}
                     key={puzzle.id}
                     className="group rounded-lg border p-4 transition-all duration-300 block"
                     style={{
@@ -637,6 +724,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
 
               return status === 'solved' ? (
                 <div
+                  id={`puzzle-${puzzle.id}`}
                   key={puzzle.id}
                   className="group rounded-lg border p-4 transition-all duration-300 block"
                   style={{
@@ -715,6 +803,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                 </div>
               ) : (
                 <Link
+                  id={`puzzle-${puzzle.id}`}
                   key={puzzle.id}
                   href={`/puzzles/${puzzle.id}`}
                   className="group rounded-lg border p-4 transition-all duration-300 hover:translate-x-2 block"

@@ -209,19 +209,7 @@ export async function notifyTeamUpdate(
   for (const userId of userIds) {
     try {
       const preference = await getUserNotificationPreference(userId);
-
-      if (!preference.emailNotificationsEnabled || !preference.emailOnTeamUpdate) {
-        continue;
-      }
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true, email: true },
-      });
-
-      if (!user?.email) continue;
-
-      // Create in-app notification
+      // Always create an in-app notification (it powers the notification bell)
       const notification = await createNotification({
         userId,
         type: "team_update",
@@ -231,32 +219,58 @@ export async function notifyTeamUpdate(
         relatedId: data.teamId,
       });
 
-      if (!notification) continue;
-
-      // Send email
-      const teamUrl = `${baseUrl}/teams/${data.teamId}`;
-      const html = generateTeamUpdateEmail(
-        user.name || user.email,
-        data.teamName,
-        data.updateTitle,
-        data.updateMessage,
-        teamUrl
-      );
-
-      const emailSent = await sendEmail({
-        to: user.email,
-        subject: `👥 Team Update: ${data.updateTitle}`,
-        html,
-      });
-
-      if (emailSent) {
-        await prisma.notification.update({
-          where: { id: notification.id },
+      // Also create an Activity entry so the activity-based notification bell
+      // and activity feed surface this update. Activity is lightweight and
+      // intended for immediate UI consumption.
+      try {
+        await prisma.activity.create({
           data: {
-            emailSent: true,
-            emailSentAt: new Date(),
+            userId,
+            type: "team_update",
+            title: `Team: ${data.teamName} — ${data.updateTitle}`,
+            description: data.updateMessage,
+            icon: "👥",
+            relatedId: data.teamId,
+            relatedType: "team",
           },
         });
+      } catch (actErr) {
+        console.error(`Failed to create activity for user ${userId}:`, actErr);
+      }
+
+      if (!notification) continue;
+
+      // Send email only if user has email and preferences allow it
+      try {
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+        if (user?.email && preference.emailNotificationsEnabled && preference.emailOnTeamUpdate) {
+          const teamUrl = `${baseUrl}/teams/${data.teamId}`;
+          const html = generateTeamUpdateEmail(
+            user.name || user.email,
+            data.teamName,
+            data.updateTitle,
+            data.updateMessage,
+            teamUrl
+          );
+
+          const emailSent = await sendEmail({
+            to: user.email,
+            subject: `👥 Team Update: ${data.updateTitle}`,
+            html,
+          });
+
+          if (emailSent) {
+            await prisma.notification.update({
+              where: { id: notification.id },
+              data: {
+                emailSent: true,
+                emailSentAt: new Date(),
+              },
+            });
+          }
+        }
+      } catch (emailErr) {
+        console.error(`Failed to send team update email to ${userId}:`, emailErr);
       }
     } catch (error) {
       console.error(`Failed to notify team update for user ${userId}:`, error);

@@ -7,6 +7,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Mail } from "lucide-react";
 import InviteTeamModal from "@/components/teams/InviteTeamModal";
+import ActionModal from "@/components/ActionModal";
+import ConfirmModal from "@/components/ConfirmModal";
 
 interface TeamMember {
   user: {
@@ -44,26 +46,46 @@ export default function TeamDetailPage() {
   const [error, setError] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [applications, setApplications] = useState<any[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState<string | undefined>(undefined);
+  const [modalMessage, setModalMessage] = useState<string | undefined>(undefined);
+  const [modalVariant, setModalVariant] = useState<"success" | "error" | "info">("info");
+  const [inviteStatus, setInviteStatus] = useState<'none' | 'pending' | 'accepted' | 'declined'>('none');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMember, setConfirmMember] = useState<TeamMember | null>(null);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/auth/signin");
-      return;
-    }
-
+    // Allow public viewing; fetch team data regardless of auth status.
     const fetchTeam = async () => {
       try {
         const response = await fetch(`/api/teams/${teamId}`);
         if (!response.ok) throw new Error("Failed to fetch team");
         const data = await response.json();
         setTeam(data);
-        
-        // Find current user's role
-        const userMember = data.members.find(
-          (m: TeamMember) => m.user.email === session?.user?.email
-        );
-        if (userMember) {
-          setUserRole(userMember.role);
+
+        // If signed-in, ask server for membership/role to avoid relying on client-side member email fields.
+        if (session?.user?.email) {
+          try {
+            const m = await fetch(`/api/teams/${teamId}/membership`);
+            if (m.ok) {
+              const jr = await m.json();
+              setUserRole(jr.role);
+            }
+            // fetch invite status for current user
+            try {
+              const s = await fetch(`/api/teams/${teamId}/invite-status`);
+              if (s.ok) {
+                const js = await s.json();
+                setInviteStatus(js.status === 'declined' ? 'none' : (js.status ?? 'none'));
+              }
+            } catch (ie) {
+              console.error('Failed to fetch invite status', ie);
+            }
+          } catch (e) {
+            console.error('Failed to fetch membership role', e);
+          }
         }
       } catch (err) {
         setError("Failed to load team");
@@ -75,6 +97,87 @@ export default function TeamDetailPage() {
 
     if (teamId) fetchTeam();
   }, [teamId, status, router]);
+
+  useEffect(() => {
+    // If user is admin/moderator, fetch pending applications
+    if (userRole && ["admin", "moderator"].includes(userRole) && teamId) {
+      (async () => {
+        try {
+          const res = await fetch(`/api/teams/${teamId}/applications`);
+          if (!res.ok) throw new Error("Failed to fetch applications");
+          const data = await res.json();
+          setApplications(data || []);
+        } catch (err) {
+          console.error("Failed to load applications:", err);
+        }
+      })();
+    }
+  }, [userRole, teamId]);
+
+  // Poll membership role periodically so a promoted member sees the role update without a hard refresh.
+  useEffect(() => {
+    if (!teamId || !session?.user?.email) return;
+
+    let timer: any = null;
+    const poll = async () => {
+      try {
+        const m = await fetch(`/api/teams/${teamId}/membership`);
+        if (!m.ok) return;
+        const js = await m.json();
+        const newRole = js.role ?? null;
+        if (newRole !== userRole) {
+          setUserRole(newRole);
+          // If promoted to admin, refresh full team details so UI updates
+          if (newRole === 'admin') {
+            const t = await fetch(`/api/teams/${teamId}`);
+            if (t.ok) setTeam(await t.json());
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    // Run immediately and then every 10s
+    poll();
+    timer = setInterval(poll, 10000);
+    return () => { if (timer) clearInterval(timer); };
+  }, [teamId, session?.user?.email, userRole]);
+
+  // Poll invite status while pending so UI updates if admin responds
+  useEffect(() => {
+    if (!teamId) return;
+    let timer: any = null;
+    const check = async () => {
+      try {
+        const res = await fetch(`/api/teams/${teamId}/invite-status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.status && data.status !== inviteStatus) {
+          // if declined, allow re-apply by returning to 'none'
+          const newStatus = data.status === 'declined' ? 'none' : data.status;
+          setInviteStatus(newStatus);
+          // if accepted, refresh team and membership
+          if (data.status === 'accepted') {
+            const t = await fetch(`/api/teams/${teamId}`);
+            if (t.ok) setTeam(await t.json());
+            const m = await fetch(`/api/teams/${teamId}/membership`);
+            if (m.ok) setUserRole((await m.json()).role);
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    if (inviteStatus === 'pending') {
+      timer = setInterval(check, 5000);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [inviteStatus, teamId]);
 
   if (status === "loading" || loading) {
     return (
@@ -180,34 +283,211 @@ export default function TeamDetailPage() {
                         👤
                       </div>
                     )}
+
                     <div>
                       <p className="text-white font-semibold">
-                        {member.user.name || "Member"}
+                        <Link href={`/profile/${member.user.id}`} className="hover:underline">
+                          {member.user.name || "Member"}
+                        </Link>
                       </p>
                     </div>
                   </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      member.role === "admin"
-                        ? "bg-teal-500/20 text-teal-300"
-                        : "bg-slate-600/20 text-slate-300"
-                    }`}
-                  >
-                    {member.role === "admin" ? "👑 Admin" : "Member"}
-                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        member.role === "admin"
+                          ? "bg-teal-500/20 text-teal-300"
+                          : "bg-slate-600/20 text-slate-300"
+                      }`}
+                    >
+                      {member.role === "admin" ? "👑 Admin" : "Member"}
+                    </span>
+
+                    {/* Kick button for admins/moderators (can't kick yourself) */}
+                    {userRole && ["admin", "moderator"].includes(userRole) && session?.user?.email !== member.user.email && (
+                      <button
+                        onClick={() => {
+                          setConfirmMember(member);
+                          setConfirmOpen(true);
+                        }}
+                        className="px-3 py-1 rounded bg-red-600 text-white text-sm"
+                      >
+                        Kick
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
+          {/* Pending applications for admins/mods */}
+          {userRole && ["admin", "moderator"].includes(userRole) && (
+            <div id="applications" className="border-t border-teal-500/30 pt-8 mt-8">
+              <h2 className="text-2xl font-bold text-white mb-6">Pending Applications</h2>
+              {applications.length === 0 ? (
+                <p className="text-sm text-teal-200">No pending applications.</p>
+              ) : (
+                <div className="space-y-3">
+                  {applications.map((app) => (
+                    <div key={app.id} className="flex items-center justify-between p-4 rounded-lg bg-slate-900/50 border border-teal-500/30">
+                      <div className="flex items-center gap-4">
+                        {app.user?.image ? (
+                          <img src={app.user.image} alt={app.user.name || 'Applicant'} className="w-10 h-10 rounded-full" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-300">👤</div>
+                        )}
+                        <div>
+                          <p className="text-white font-semibold">{app.user?.name || app.user?.email || 'Applicant'}</p>
+                          <p className="text-xs text-teal-200">Applied {new Date(app.createdAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                                  const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'approve' }),
+                                  });
+                                  if (!res.ok) {
+                                    const txt = await res.text();
+                                    throw new Error(txt || 'Failed to approve applicant');
+                                  }
+                                  setApplications((prev) => prev.filter(a => a.id !== app.id));
+                                  // Optionally refresh team members
+                                  const t = await fetch(`/api/teams/${teamId}`);
+                                  if (t.ok) setTeam(await t.json());
+                                  setModalTitle('Applicant approved');
+                                  setModalMessage('The applicant has been added to the team.');
+                                  setModalVariant('success');
+                                  setModalOpen(true);
+                                } catch (err) {
+                                  console.error(err);
+                                  setModalTitle('Approve failed');
+                                  setModalMessage((err as any)?.message || 'Failed to approve applicant');
+                                  setModalVariant('error');
+                                  setModalOpen(true);
+                                }
+                          }}
+                          className="px-3 py-1 rounded bg-emerald-600 text-black font-semibold"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'deny' }),
+                              });
+                              if (!res.ok) {
+                                const txt = await res.text();
+                                throw new Error(txt || 'Failed to deny applicant');
+                              }
+                              setApplications((prev) => prev.filter(a => a.id !== app.id));
+                              setModalTitle('Applicant denied');
+                              setModalMessage('The applicant has been denied.');
+                              setModalVariant('info');
+                              setModalOpen(true);
+                            } catch (err) {
+                              console.error(err);
+                              setModalTitle('Deny failed');
+                              setModalMessage((err as any)?.message || 'Failed to deny applicant');
+                              setModalVariant('error');
+                              setModalOpen(true);
+                            }
+                          }}
+                          className="px-3 py-1 rounded bg-red-600 text-white font-semibold"
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="border-t border-teal-500/30 pt-8 mt-8">
             <div className="flex gap-3">
-              <Link
-                href="/puzzles"
-                className="flex-1 px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-center transition-colors"
-              >
-                Solve Puzzles as Team
-              </Link>
+              {userRole ? (
+                <Link
+                  href="/puzzles"
+                  className="flex-1 px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-center transition-colors"
+                >
+                  Solve Puzzles as Team
+                </Link>
+              ) : (
+                // Not a member: allow applying to public teams, otherwise prompt to sign in
+                team.isPublic ? (
+                    session?.user?.email ? (
+                      inviteStatus === 'pending' ? (
+                        <button disabled className="flex-1 px-6 py-3 rounded-lg bg-yellow-500 text-black font-semibold text-center transition-colors opacity-70 cursor-not-allowed">
+                          Application submitted!
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            // optimistic UI: mark as pending immediately
+                            setInviteStatus('pending');
+                            try {
+                              const res = await fetch(`/api/teams/${team.id}/apply`, { method: "POST" });
+                              if (res.ok) {
+                                setModalTitle('Application submitted');
+                                setModalMessage('Your application was submitted. Team admins will be notified.');
+                                setModalVariant('success');
+                                setModalOpen(true);
+                                return;
+                              }
+
+                              // Try parse json body for error details
+                              let body: any = null;
+                              try { body = await res.json(); } catch (e) { /* ignore */ }
+
+                              const errorMsg = body?.error || (await res.text().catch(() => null)) || 'Failed to apply';
+
+                              // If server indicates there's already a pending application, treat as pending
+                              if (typeof errorMsg === 'string' && /pending|already/i.test(errorMsg)) {
+                                setInviteStatus('pending');
+                                setModalTitle('Application pending');
+                                setModalMessage('You already have a pending application or invitation.');
+                                setModalVariant('info');
+                                setModalOpen(true);
+                                return;
+                              }
+
+                              throw new Error(errorMsg);
+                            } catch (err: any) {
+                              console.error(err);
+                              // Revert optimistic pending state if apply actually failed
+                              setInviteStatus('none');
+                              setModalTitle('Application failed');
+                              setModalMessage(err?.message || 'Failed to submit application.');
+                              setModalVariant('error');
+                              setModalOpen(true);
+                            }
+                          }}
+                          className="flex-1 px-6 py-3 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-black font-semibold text-center transition-colors"
+                        >
+                          Apply to Join
+                        </button>
+                      )
+                    ) : (
+                    <Link
+                      href="/auth/signin"
+                      className="flex-1 px-6 py-3 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-black font-semibold text-center transition-colors"
+                    >
+                      Sign in to Join
+                    </Link>
+                  )
+                ) : null
+              )}
+
               {userRole && ["admin", "moderator"].includes(userRole) && (
                 <button
                   onClick={() => setShowInviteModal(true)}
@@ -217,6 +497,15 @@ export default function TeamDetailPage() {
                   Invite Members
                 </button>
               )}
+              {userRole && (
+                <button
+                  onClick={() => setConfirmLeaveOpen(true)}
+                  className="px-6 py-3 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold transition-colors"
+                >
+                  Leave Team
+                </button>
+              )}
+
               <button className="px-6 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors">
                 Team Stats
               </button>
@@ -237,6 +526,87 @@ export default function TeamDetailPage() {
           }}
         />
       )}
+      <ConfirmModal
+        isOpen={confirmOpen}
+        title={`Remove member`}
+        message={confirmMember ? `Are you sure you want to remove ${confirmMember.user.name || confirmMember.user.email} from the team?` : ''}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        onCancel={() => { setConfirmOpen(false); setConfirmMember(null); }}
+        onConfirm={async () => {
+          if (!confirmMember) return;
+          setConfirmOpen(false);
+          try {
+            const res = await fetch(`/api/teams/${team.id}/members/${confirmMember.user.id}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+            });
+            if (!res.ok) {
+              let body: any = null;
+              try { body = await res.json(); } catch (_) { /* ignore */ }
+              const txt = body?.error || (await res.text().catch(() => null)) || 'Failed to remove member';
+              throw new Error(txt);
+            }
+            // Refresh team members
+            const t = await fetch(`/api/teams/${teamId}`);
+            if (t.ok) setTeam(await t.json());
+            setModalTitle('Member removed');
+            setModalMessage(`${confirmMember.user.name || confirmMember.user.email} was removed from the team.`);
+            setModalVariant('success');
+            setModalOpen(true);
+          } catch (err) {
+            console.error(err);
+            setModalTitle('Remove failed');
+            setModalMessage((err as any)?.message || 'Failed to remove member');
+            setModalVariant('error');
+            setModalOpen(true);
+          } finally {
+            setConfirmMember(null);
+          }
+        }}
+      />
+      <ConfirmModal
+        isOpen={confirmLeaveOpen}
+        title={`Leave team`}
+        message={`Are you sure you want to leave the team ${team.name}?`}
+        confirmLabel="Leave"
+        cancelLabel="Cancel"
+        onCancel={() => setConfirmLeaveOpen(false)}
+        onConfirm={async () => {
+          setConfirmLeaveOpen(false);
+          try {
+            const res = await fetch(`/api/teams/${team.id}/membership`, { method: 'DELETE' });
+            if (!res.ok) {
+              // Prefer JSON error message when available
+              let body: any = null;
+              try { body = await res.json(); } catch (_) { /* ignore */ }
+              const txt = body?.error || (await res.text().catch(() => null)) || 'Failed to leave team';
+              throw new Error(txt);
+            }
+            setModalTitle('Left team');
+            setModalMessage(`You have left ${team.name}.`);
+            setModalVariant('success');
+            setModalOpen(true);
+            // show the modal briefly, then navigate back to teams list so user sees confirmation
+            setTimeout(() => {
+              try { router.push('/teams'); } catch (e) { /* ignore */ }
+            }, 1200);
+          } catch (err) {
+            console.error(err);
+            setModalTitle('Leave failed');
+            setModalMessage((err as any)?.message || 'Failed to leave team');
+            setModalVariant('error');
+            setModalOpen(true);
+          }
+        }}
+      />
+      <ActionModal
+        isOpen={modalOpen}
+        title={modalTitle}
+        message={modalMessage}
+        variant={modalVariant}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   );
 }
