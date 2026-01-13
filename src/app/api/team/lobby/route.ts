@@ -18,6 +18,8 @@ type LobbyState = {
     status: string; // pending/accepted/declined
     createdAt: number;
   }>;
+  // role assignments for planning: userId -> role name
+  assignments?: Record<string, string>;
   started?: boolean;
   createdAt: number;
 };
