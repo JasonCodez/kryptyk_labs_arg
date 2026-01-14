@@ -1,9 +1,29 @@
 const http = require('http');
 const { Server } = require('socket.io');
 
-const PORT = process.env.SOCKET_PORT || 4000;
+const DEFAULT_PORT = 4000;
+
+function portFromUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.port) return Number(u.port);
+    return u.protocol === 'https:' ? 443 : 80;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Prefer platform PORT (e.g. Render sets PORT), then SOCKET_PORT, then NEXT_PUBLIC_SOCKET_URL, then default
+const PORT = Number(process.env.PORT) || Number(process.env.SOCKET_PORT) || portFromUrl(process.env.NEXT_PUBLIC_SOCKET_URL) || DEFAULT_PORT;
 
 const server = http.createServer(async (req, res) => {
+  // health endpoint for platform health checks
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // simple admin endpoint for server-side emits: POST /notify { userId, notification }
   if (req.method === 'POST' && req.url === '/notify') {
     try {
@@ -35,8 +55,22 @@ const server = http.createServer(async (req, res) => {
   res.end();
 });
 
+function originsFromEnv() {
+  const set = new Set();
+  // add NEXTAUTH_URL (production) and NEXTAUTH_URL_DEVELOPMENT
+  if (process.env.NEXTAUTH_URL) set.add(process.env.NEXTAUTH_URL.replace(/\/$/, ''));
+  if (process.env.NEXTAUTH_URL_DEVELOPMENT) set.add(process.env.NEXTAUTH_URL_DEVELOPMENT.replace(/\/$/, ''));
+  // add NEXT_PUBLIC_SOCKET_URL if present (client uses this)
+  if (process.env.NEXT_PUBLIC_SOCKET_URL) set.add(process.env.NEXT_PUBLIC_SOCKET_URL.replace(/\/$/, ''));
+  // local dev defaults
+  set.add('http://localhost:3000');
+  set.add('http://127.0.0.1:3000');
+  try { set.add(new URL(process.env.NEXTAUTH_URL || '').origin); } catch (e) {}
+  return Array.from(set).filter(Boolean);
+}
+
 const io = new Server(server, {
-  cors: { origin: ['http://localhost:3000'], methods: ['GET', 'POST'] },
+  cors: { origin: originsFromEnv(), methods: ['GET', 'POST'] },
 });
 
 // In-memory lobby state (lightweight sync). Keyed by `${teamId}::${puzzleId}`

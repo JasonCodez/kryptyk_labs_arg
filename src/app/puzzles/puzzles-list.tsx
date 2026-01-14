@@ -28,6 +28,7 @@ interface Puzzle {
     solved: boolean;
     attempts: number;
   }>;
+  isTeamPuzzle?: boolean;
   // locally-annotated fields
   failed?: boolean;
   failedReason?: string | null;
@@ -64,6 +65,21 @@ const RARITY_COLORS: Record<string, { bg: string; text: string; border: string }
   legendary: { bg: "rgba(255, 193, 7, 0.1)", text: "#FFC107", border: "#FFC107" },
 };
 
+const CATEGORY_ICONS: Record<string, string> = {
+  sudoku: "🔢",
+  logic: "🧠",
+  crypto: "🔐",
+  word: "🔤",
+  riddle: "❓",
+  math: "➗",
+  spatial: "📐",
+  pattern: "🔁",
+  memory: "🧩",
+  adventure: "🗺️",
+  mystery: "🕵️‍♂️",
+  stealth: "🕶️",
+};
+
 export default function PuzzlesList({ initialCategory = "all" }: { initialCategory?: string }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -74,13 +90,15 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all");
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedStatus, setSelectedStatus] = useState<string>("unsolved");
   const [sortBy, setSortBy] = useState<string>("order");
   const [sortOrder, setSortOrder] = useState<string>("asc");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [totalUsers, setTotalUsers] = useState(0);
   const [ratingStats, setRatingStats] = useState<Record<string, RatingStats>>({})
   const [focusedPuzzleId, setFocusedPuzzleId] = useState<string | null>(null);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [teamModalMessage, setTeamModalMessage] = useState("");
 
   useEffect(function() {
     if (status === "unauthenticated") {
@@ -233,7 +251,11 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
 
       if (categoriesRes.ok) {
         const categoriesData = await categoriesRes.json();
-        setCategories(categoriesData);
+        const filteredCategories = (categoriesData || []).filter((c: any) => {
+          const name = (c && c.name) ? String(c.name).toLowerCase().trim() : "";
+          return name !== "team test";
+        });
+        setCategories(filteredCategories);
       }
 
       if (usersRes.ok) {
@@ -245,6 +267,36 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handlePuzzleClick(puzzle: Puzzle) {
+    // Non-team puzzles: go to puzzle page
+    if (!puzzle.isTeamPuzzle) {
+      router.push(`/puzzles/${puzzle.id}`);
+      return;
+    }
+
+    // Team puzzle: verify admin membership
+    try {
+      const res = await fetch(`/api/user/team-admin?puzzleId=${puzzle.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isAdmin && data.teamId) {
+          router.push(`/teams/${data.teamId}/lobby?puzzleId=${encodeURIComponent(puzzle.id)}`);
+          return;
+        }
+      }
+      setTeamModalMessage("You must be part of a team and be an admin to start team puzzles.");
+      setShowTeamModal(true);
+    } catch (e) {
+      setTeamModalMessage("Unable to verify team membership. Please try again later.");
+      setShowTeamModal(true);
+    }
+  }
+
+  function closeTeamModal() {
+    setShowTeamModal(false);
+    setTeamModalMessage("");
   }
 
   function applyFilters() {
@@ -273,11 +325,14 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
             (p.userProgress[0].attempts || 0) > 0
         );
       } else if (selectedStatus === "unsolved") {
+        // Exclude puzzles that are marked as failed and only include truly unsolved puzzles
         filtered = filtered.filter(
           (p) =>
-            !p.userProgress ||
-            p.userProgress.length === 0 ||
-            (!p.userProgress[0]?.solved && (p.userProgress[0]?.attempts || 0) === 0)
+            p.failed !== true && (
+              !p.userProgress ||
+              p.userProgress.length === 0 ||
+              (!p.userProgress[0]?.solved && (p.userProgress[0]?.attempts || 0) === 0)
+            )
         );
       } else if (selectedStatus === "failed") {
         filtered = filtered.filter((p) => p.failed === true);
@@ -395,7 +450,8 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                     color: selectedCategory === cat.id ? "#020202" : "#DDDBF1",
                   }}
                 >
-                  {cat.icon} {cat.name}
+                  <span className="mr-2">{cat.icon || CATEGORY_ICONS[cat.name.toLowerCase()] || '🧩'}</span>
+                  {cat.name}
                 </button>
               ))}
             </div>
@@ -494,12 +550,17 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                   <div className="mb-4">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="text-xl font-bold text-white flex-1">{puzzle.title}</h3>
-                      <div className="flex gap-2 flex-col items-end">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                          {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+                        </span>
+                        <div className="flex gap-2 flex-col items-end">
                         {puzzle.order && puzzle.order > 0 ? (
                           <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
                             #{puzzle.order}
                           </span>
                         ) : null}
+                        </div>
                       </div>
                     </div>
                     <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✓ Puzzle Complete</p>
@@ -523,7 +584,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                       ratingCount={ratingStats[puzzle.id]?.ratingCount}
                       showText={ratingStats[puzzle.id]?.averageRating > 0}
                     />
-                    {!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0 && (
+                    {(!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0) && (
                       <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
                     )}
                   </div>
@@ -558,12 +619,17 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                     <div className="mb-4">
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="text-xl font-bold text-white flex-1">{puzzle.title}</h3>
-                        <div className="flex gap-2 flex-col items-end">
-                          {puzzle.order && puzzle.order > 0 ? (
-                            <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                              #{puzzle.order}
-                            </span>
-                          ) : null}
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                            {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+                          </span>
+                          <div className="flex gap-2 flex-col items-end">
+                            {puzzle.order && puzzle.order > 0 ? (
+                              <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
+                                #{puzzle.order}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                       <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✗ Puzzle Failed</p>
@@ -595,26 +661,33 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
               }
 
               return (
-                <Link
+                <div
                   id={`puzzle-${puzzle.id}`}
                   key={puzzle.id}
-                  href={`/puzzles/${puzzle.id}`}
+                  role="button"
+                  onClick={() => handlePuzzleClick(puzzle)}
                   className="group rounded-lg border p-6 transition-all duration-300 hover:scale-105"
                   style={{
                     backgroundColor: 'rgba(56, 145, 166, 0.08)',
                     borderColor: '#3891A6',
-                    borderWidth: '1px'
+                    borderWidth: '1px',
+                    cursor: 'pointer'
                   }}
                 >
                   <div className="mb-4">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="text-xl font-bold text-white flex-1">{puzzle.title}</h3>
-                      <div className="flex gap-2 flex-col items-end">
-                        {puzzle.order && puzzle.order > 0 ? (
-                          <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                            #{puzzle.order}
-                          </span>
-                        ) : null}
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                          {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+                        </span>
+                        <div className="flex gap-2 flex-col items-end">
+                          {puzzle.order && puzzle.order > 0 ? (
+                            <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
+                              #{puzzle.order}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                     <p className="text-sm mb-3" style={{ color: '#DDDBF1' }}>{puzzle.description}</p>
@@ -636,7 +709,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                         ratingCount={ratingStats[puzzle.id]?.ratingCount}
                         showText={ratingStats[puzzle.id]?.averageRating > 0}
                       />
-                      {!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0 && (
+                      {(!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0) && (
                         <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
                       )}
                     </div>
@@ -665,7 +738,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                       </div>
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
@@ -703,6 +776,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                             </span>
                           ) : null}
                           <h3 className="text-lg font-bold text-white truncate">{puzzle.title}</h3>
+                          <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                            {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+                          </span>
                           <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#EF4444' }}>
                             ✗ Failed
                           </span>
@@ -744,6 +820,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                           </span>
                         ) : null}
                         <h3 className="text-lg font-bold text-white truncate">{puzzle.title}</h3>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                          {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+                        </span>
                         <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(56, 201, 153, 0.2)', color: '#38D399' }}>
                           ✓ Complete
                         </span>
@@ -772,7 +851,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                           ratingCount={ratingStats[puzzle.id]?.ratingCount}
                           showText={ratingStats[puzzle.id]?.averageRating > 0}
                         />
-                        {!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0 && (
+                        {(!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0) && (
                           <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
                         )}
                       </div>
@@ -801,16 +880,18 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                     </div>
                   </div>
                 </div>
-              ) : (
-                <Link
+                ) : (
+                <div
                   id={`puzzle-${puzzle.id}`}
                   key={puzzle.id}
-                  href={`/puzzles/${puzzle.id}`}
+                  role="button"
+                  onClick={() => handlePuzzleClick(puzzle)}
                   className="group rounded-lg border p-4 transition-all duration-300 hover:translate-x-2 block"
                   style={{
                     backgroundColor: 'rgba(56, 145, 166, 0.08)',
                     borderColor: '#3891A6',
-                    borderWidth: '1px'
+                    borderWidth: '1px',
+                    cursor: 'pointer'
                   }}
                 >
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -822,6 +903,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                           </span>
                         ) : null}
                         <h3 className="text-lg font-bold text-white truncate">{puzzle.title}</h3>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                          {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+                        </span>
                       </div>
                       <p className="text-sm mb-2 line-clamp-2" style={{ color: '#DDDBF1' }}>{puzzle.description}</p>
                       <div className="flex flex-wrap gap-2 mb-2">
@@ -847,7 +931,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                           ratingCount={ratingStats[puzzle.id]?.ratingCount}
                           showText={ratingStats[puzzle.id]?.averageRating > 0}
                         />
-                        {!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0 && (
+                        {(!ratingStats[puzzle.id] || ratingStats[puzzle.id].averageRating === 0) && (
                           <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
                         )}
                       </div>
@@ -862,12 +946,24 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                       →
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
         )}
       </div>
+      {showTeamModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black opacity-60" onClick={closeTeamModal}></div>
+          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-md mx-4" style={{ border: '1px solid rgba(253, 231, 76, 0.15)' }}>
+            <h3 className="text-lg font-bold text-white mb-2">Team Required</h3>
+            <p style={{ color: '#DDDBF1' }} className="mb-4">{teamModalMessage}</p>
+            <div className="flex justify-end">
+              <button onClick={closeTeamModal} className="px-4 py-2 rounded bg-[#3891A6] text-black font-semibold">OK</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

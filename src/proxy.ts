@@ -36,7 +36,9 @@ export async function proxy(request: NextRequest) {
     "img-src 'self' data:",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "worker-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    // Allow websocket/connect to backend Socket.IO server in development
+    process.env.NODE_ENV === 'production' ? "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com" : "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    process.env.NODE_ENV === 'production' ? "connect-src 'self' https:" : "connect-src 'self' https: ws: http://localhost:4000 ws://localhost:4000",
     "frame-ancestors 'none'",
   ].join('; ');
 

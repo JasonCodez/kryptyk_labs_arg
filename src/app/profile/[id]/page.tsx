@@ -78,6 +78,9 @@ export default function PublicProfilePage() {
   const [nameSaving, setNameSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState("");
+  const [showMyPuzzles, setShowMyPuzzles] = useState(false);
+  const [myPuzzles, setMyPuzzles] = useState<Array<any>>([]);
+  const [myPuzzlesLoading, setMyPuzzlesLoading] = useState(false);
 
   useEffect(() => {
     if (userId) {
@@ -505,6 +508,8 @@ export default function PublicProfilePage() {
             )}
           </div>
 
+          
+
           {/* Stats Grid */}
           <div className="grid justify-items-center grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="rounded-lg p-4 flex flex-col items-center text-center gap-2 w-full" style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}>
@@ -569,6 +574,69 @@ export default function PublicProfilePage() {
             </div>
           </div>
         </div>
+
+        {/* My Puzzles Archive (own profile only) - moved below Social Stats */}
+        {isOwnProfile && (
+          <div className="mb-8">
+            <div className="border rounded-lg p-6" style={{ backgroundColor: 'rgba(2,2,2,0.02)', borderColor: '#3891A6' }}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-white">My Puzzles (Archive)</h3>
+                <button
+                  onClick={async () => {
+                    setShowMyPuzzles(!showMyPuzzles);
+                    if (!showMyPuzzles && myPuzzles.length === 0) {
+                      setMyPuzzlesLoading(true);
+                      try {
+                        const res = await fetch('/api/user/puzzles');
+                        if (res.ok) {
+                          const data = await res.json();
+                          setMyPuzzles(data);
+                        }
+                      } catch (e) {
+                        console.error('Failed to fetch my puzzles:', e);
+                      } finally {
+                        setMyPuzzlesLoading(false);
+                      }
+                    }
+                  }}
+                  className="px-4 py-2 rounded text-sm font-semibold transition hover:opacity-90"
+                  style={{ backgroundColor: '#3891A6', color: 'white' }}
+                >
+                  {showMyPuzzles ? 'Hide' : 'Open'}
+                </button>
+              </div>
+
+              {showMyPuzzles && (
+                <div>
+                  {myPuzzlesLoading ? (
+                    <p className="text-sm" style={{ color: '#AB9F9D' }}>Loading...</p>
+                  ) : myPuzzles.length === 0 ? (
+                    <p className="text-sm" style={{ color: '#AB9F9D' }}>No archived puzzles yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {myPuzzles.map((p) => (
+                        <div key={p.id} className="block border rounded p-3" style={{ borderColor: '#3891A6' }} role="group" aria-disabled="true">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-semibold text-white">{p.title}</h4>
+                              <p className="text-xs" style={{ color: '#AB9F9D' }}>{p.category?.name || 'General'} · {p.difficulty}</p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: p.solved ? 'rgba(56, 201, 153, 0.12)' : 'rgba(239, 68, 68, 0.08)', color: p.solved ? '#38D399' : '#EF4444' }}>
+                                {p.solved ? '✓ Solved' : '✗ Failed'}
+                              </span>
+                              <div className="text-xs mt-1" style={{ color: '#AB9F9D' }}>{p.attempts ?? 0} attempts</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Teams Section */}
         {profile.teams.length > 0 && (
