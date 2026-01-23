@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -1124,7 +1124,7 @@ model ARGPuzzle {
   orderIndex  Int
   puzzleData  Json
   solution    String
-  hints       String[]
+  hints       Json
   isPublished Boolean             @default(false)
   createdBy   String
   createdAt   DateTime            @default(now())
@@ -1181,7 +1181,7 @@ model PuzzleTemplate {
   description String?
   puzzleType  String
   content     Json
-  tags        String[]
+  tags        Json
   difficulty  String
   category    String?
   isPublic    Boolean  @default(true)
