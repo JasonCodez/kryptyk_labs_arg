@@ -484,7 +484,7 @@ import { AssignPuzzleParts } from "@/components/puzzle/AssignPuzzleParts"
 │  └──────────────────┬──────────────────────────┘                 │
 │                     │                                             │
 │  ┌──────────────────▼──────────────────────────┐                 │
-│  │       PostgreSQL Database Tables           │                 │
+│  │       MySQL Database Tables           │                 │
 │  │ ┌──────────────────────────────────────┐   │                 │
 │  │ │ team_puzzle_part_assignments        │   │                 │
 │  │ │ team_puzzle_part_submissions        │   │                 │

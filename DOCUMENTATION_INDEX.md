@@ -286,7 +286,7 @@ Refer: FEATURES.md for ideas
         ┌────────────┴────────────┐
         ↓                         ↓
     ┌─────────────┐          ┌──────────────┐
-    │ PostgreSQL  │          │ File Storage │
+    │ MySQL  │          │ File Storage │
     │ PuzzleMedia │          │  /uploads/   │
     └─────────────┘          └──────────────┘
         │                         │

@@ -25,14 +25,14 @@ A fully-featured Alternate Reality Game (ARG) puzzle platform with multiplayer c
 
 ### 🔐 Security
 - **NextAuth.js**: Secure authentication with email/password and OAuth support
-- **PostgreSQL**: Robust relational database
+- **MySQL**: Robust relational database
 - **Validation**: Input validation with Zod
 
 ## Tech Stack
 
 - **Frontend**: Next.js 14+ with React
 - **Backend**: Next.js API routes
-- **Database**: PostgreSQL with Prisma ORM
+- **Database**: MySQL with Prisma ORM
 - **Authentication**: NextAuth.js
 - **Styling**: Tailwind CSS
 - **Real-time**: Socket.io (ready for implementation)
@@ -74,32 +74,33 @@ The database includes models for:
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- PostgreSQL 12+
-- npm
+### 🔐 Security
+- **NextAuth.js**: Secure authentication with email/password and OAuth support
+- **MySQL**: Robust relational database
+- **Validation**: Input validation with Zod
 
 ### Installation
-
-1. **Install dependencies** (already done):
-   ```bash
+- **Database**: MySQL with Prisma ORM
    npm install
    ```
-
-2. **Configure environment**:
-   - Edit `.env.local` with your PostgreSQL connection string:
+### Prerequisites
+- Node.js 18+
+- MySQL 8+
+- npm
    ```env
-   DATABASE_URL="postgresql://user:password@localhost:5432/kryptyk_labs_arg"
+   DATABASE_URL="mysql://user:password@localhost:3306/kryptyk_labs_arg"
+2. **Configure environment**:
+   - Edit `.env.local` with your MySQL connection string:
+   ```env
+   DATABASE_URL="mysql://user:password@localhost:3306/kryptyk_labs_arg"
    NEXTAUTH_URL="http://localhost:3000"
    NEXTAUTH_SECRET="your-secret-key-change-in-production"
    ```
-
-3. **Set up the database**:
-   ```bash
    npx prisma migrate dev --name init
    ```
    This will create the database schema and generate the Prisma client.
 
-4. **Start the development server**:
+| `DATABASE_URL` | MySQL connection string | Yes |
    ```bash
    npm run dev
    ```
@@ -153,7 +154,7 @@ TypeScript types are auto-generated from the schema in `src/generated/prisma/`
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `DATABASE_URL` | MySQL connection string | Yes |
 | `NEXTAUTH_URL` | Next.js app URL | Yes |
 | `NEXTAUTH_SECRET` | Secret for NextAuth | Yes |
 | `GITHUB_ID` | GitHub OAuth ID | No |
@@ -165,14 +166,14 @@ TypeScript types are auto-generated from the schema in `src/generated/prisma/`
 
 - Database queries use indexed fields for fast lookups
 - Connection pooling configured for production
-- API responses optimized with field selection
+- **MySQL**: Robust relational database
 - Leaderboards can be cached with Redis for large player bases
 
 ## Security Considerations
 
 - Passwords hashed with bcryptjs
 - CSRF protection via NextAuth
-- All inputs validated with Zod
+- **Database**: MySQL with Prisma ORM
 - SQL injection protected via Prisma
 - Rate limiting recommended for endpoints
 
@@ -216,5 +217,5 @@ Create an issue in the repository for questions or problems.
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
+- **MySQL**: Robust relational database
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

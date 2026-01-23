@@ -15,7 +15,7 @@
 ## 📦 DELIVERABLES CHECKLIST
 
 ### Backend ✅
-- [x] PostgreSQL database schema (PuzzleMedia model - 18 fields)
+- [x] MySQL database schema (PuzzleMedia model - 18 fields)
 - [x] Upload API endpoint (`POST /api/admin/media`)
 - [x] Delete API endpoint (`DELETE /api/admin/media`)
 - [x] File storage system (`public/uploads/media/`)

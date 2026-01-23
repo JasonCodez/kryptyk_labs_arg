@@ -112,7 +112,7 @@ File Validation:
 
 ### 6. Database Migration
 - Migration: `20251228125647_add_puzzle_media_model`
-- Applied successfully to PostgreSQL database
+-- Applied successfully to MySQL database
 - Schema now supports media with full metadata
 
 ---

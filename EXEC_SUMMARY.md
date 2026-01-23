@@ -11,7 +11,7 @@
 ## 📦 What You've Received
 
 ### 1. Complete Backend Implementation
-- ✅ PostgreSQL database schema with PuzzleMedia model
+- ✅ MySQL database schema with PuzzleMedia model
 - ✅ Upload API endpoint with full validation
 - ✅ Delete API endpoint with cleanup
 - ✅ File storage system with unique naming
@@ -105,7 +105,7 @@
 
 - **Framework**: Next.js 16.1.1 (Turbopack)
 - **Language**: TypeScript
-- **Database**: PostgreSQL with Prisma 6.19.1
+- **Database**: MySQL with Prisma 6.19.1
 - **Auth**: NextAuth.js (JWT)
 - **Storage**: Local filesystem (`public/uploads/media/`)
 - **UI**: React with Tailwind CSS

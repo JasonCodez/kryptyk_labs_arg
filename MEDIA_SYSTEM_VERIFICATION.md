@@ -8,7 +8,7 @@
 - [x] Relation to Puzzle with cascade delete
 - [x] Indexes on puzzleId and type
 - [x] Migration applied: 20251228125647_add_puzzle_media_model
-- [x] PostgreSQL database synchronized
+[x] MySQL database synchronized
 
 **Files**:
 - `prisma/schema.prisma` - PuzzleMedia model definition
@@ -347,7 +347,7 @@
         └───────────────────────┘
                     +
         ┌───────────────────────┐
-        │     PostgreSQL        │
+      │     MySQL        │
         ├───────────────────────┤
         │   PuzzleMedia table   │
         │ - id, puzzleId, type  │
@@ -384,7 +384,7 @@
         └───────────────────────┘
                     ↓
         ┌───────────────────────┐
-        │     PostgreSQL        │
+      │     MySQL        │
         ├───────────────────────┤
         │ - Puzzle              │
         │ - PuzzleMedia[]       │

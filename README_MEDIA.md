@@ -195,7 +195,7 @@ See [MEDIA_SYSTEM.md](MEDIA_SYSTEM.md) for detailed troubleshooting.
 | **Max File Size** | 500MB |
 | **Supported Formats** | Image, Video, Audio, Document |
 | **Storage Location** | `public/uploads/media/` |
-| **Database** | PostgreSQL with PuzzleMedia table |
+| **Database** | MySQL with PuzzleMedia table |
 | **API Rate** | No limits (can be added) |
 | **Concurrent Uploads** | Unlimited |
 | **Max Media per Puzzle** | Unlimited (practical: ~50) |
@@ -296,7 +296,7 @@ Player experiences:
 ### Tech Stack
 - Next.js 16.1.1 (Turbopack)
 - TypeScript
-- PostgreSQL
+- MySQL
 - Prisma 6.19.1
 - NextAuth.js
 
