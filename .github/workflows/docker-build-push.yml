@@ -33,6 +33,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }},ghcr.io/${{ github.repository }}:latest
+          tags: ghcr.io/JasonCodez/kryptyk_labs_arg:${{ github.sha }},ghcr.io/JasonCodez/kryptyk_labs_arg:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
