@@ -30,7 +30,6 @@ export async function POST(request: NextRequest) {
       where: {
         name: {
           equals: trimmedName,
-          mode: 'insensitive',
         },
         email: {
           not: session.user.email,
