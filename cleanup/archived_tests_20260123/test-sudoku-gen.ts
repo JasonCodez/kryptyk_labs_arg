@@ -1,4 +1,4 @@
-import { generateSudoku } from "../src/lib/sudoku-engine";
+import { generateSudoku } from "../../src/lib/sudoku-engine";
 
 async function run() {
   console.log("Generating extreme puzzle (server would run this)...");
