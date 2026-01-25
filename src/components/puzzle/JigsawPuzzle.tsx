@@ -1602,7 +1602,7 @@ export default function JigsawPuzzleSVGWithTray({
         background: isFullscreen ? 'rgba(0,0,0,0.85)' : undefined,
         fontFamily: "system-ui, sans-serif",
         width: '100%',
-        height: isFullscreen ? '100vh' : Math.round(stageHeight * scale),
+        height: isFullscreen ? '100vh' : '100vh',
         overflow: isFullscreen ? 'hidden' : 'visible',
         maxWidth: '100%',
         ...containerStyle,
