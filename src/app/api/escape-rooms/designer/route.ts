@@ -11,15 +11,17 @@ export async function POST(req: NextRequest) {
     // For now, require a dummy puzzleId (should be replaced with real puzzle linkage)
     const dummyPuzzle = await prisma.puzzle.findFirst();
     if (!dummyPuzzle) return NextResponse.json({ error: 'No puzzle found. Please create a puzzle first.' }, { status: 400 });
+    const createData: any = {
+      roomTitle: title,
+      roomDescription: description,
+      puzzleId: dummyPuzzle.id,
+    };
+    if (typeof minPlayers !== 'undefined' && minPlayers !== null) createData.minTeamSize = Number(minPlayers);
+    if (typeof maxPlayers !== 'undefined' && maxPlayers !== null) createData.maxTeamSize = Number(maxPlayers);
+    if (typeof timeLimit !== 'undefined' && timeLimit !== null) createData.timeLimitSeconds = Number(timeLimit);
+
     const escapeRoom = await prisma.escapeRoomPuzzle.create({
-      data: {
-        roomTitle: title,
-        roomDescription: description,
-        minTeamSize: minPlayers,
-        maxTeamSize: maxPlayers,
-        timeLimitSeconds: timeLimit,
-        puzzleId: dummyPuzzle.id,
-      },
+      data: createData,
     });
     // Create scenes (RoomLayout)
     for (const scene of scenes) {
