@@ -11,15 +11,18 @@ export async function POST(req: NextRequest) {
     if (!puzzleId || !roomTitle || !roomDescription || !minTeamSize || !maxTeamSize) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
+    const createData: any = {
+      puzzleId,
+      roomTitle,
+      roomDescription,
+    };
+
+    if (typeof minTeamSize !== 'undefined' && minTeamSize !== null) createData.minTeamSize = Number(minTeamSize);
+    if (typeof maxTeamSize !== 'undefined' && maxTeamSize !== null) createData.maxTeamSize = Number(maxTeamSize);
+    if (typeof timeLimitSeconds !== 'undefined' && timeLimitSeconds !== null) createData.timeLimitSeconds = Number(timeLimitSeconds);
+
     const escapeRoom = await prisma.escapeRoomPuzzle.create({
-      data: {
-        puzzleId,
-        roomTitle,
-        roomDescription,
-        minTeamSize,
-        maxTeamSize,
-        timeLimitSeconds,
-      },
+      data: createData,
     });
     return NextResponse.json({ escapeRoom }, { status: 201 });
   } catch (error) {
