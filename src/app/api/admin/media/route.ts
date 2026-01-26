@@ -203,9 +203,25 @@ export async function POST(request: NextRequest) {
         fileSize: fileSize,
         mimeType,
         uploadedBy: user.id,
-        temporary: !puzzleId,
       },
     });
+
+    // Some generated Prisma client types may not include the `temporary` field
+    // (for example if the client wasn't regenerated). Set `temporary` in a
+    // follow-up update when there is no `puzzleId` so the DB reflects the
+    // intended transient state without relying on the create input type.
+    if (!puzzleId) {
+      try {
+        await prisma.puzzleMedia.update({
+          where: { id: media.id },
+          data: { temporary: true },
+        });
+        // reflect update in `media` variable for response
+        media.temporary = true as any;
+      } catch (err) {
+        console.warn('[MEDIA UPLOAD] Failed to mark media as temporary:', err);
+      }
+    }
 
     console.log(`[MEDIA UPLOAD] Media created: ${media.id}, type: ${mediaType}, url: ${media.url}`);
 
