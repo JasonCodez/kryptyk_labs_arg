@@ -5,9 +5,18 @@ export async function postToSocket(endpoint: string, body: any) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (process.env.SOCKET_SECRET) headers['x-socket-secret'] = process.env.SOCKET_SECRET;
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      try {
+        const text = await res.text();
+        console.warn('postToSocket non-OK response', { url, status: res.status, text });
+      } catch (e) {
+        console.warn('postToSocket non-OK response', { url, status: res.status });
+      }
+    }
     return res;
   } catch (e) {
-    // swallow errors — callers often treat socket pushes as best-effort
+    // surface a warning so server logs include socket POST failures
+    try { console.warn('postToSocket failed', e); } catch (err) {}
     return null;
   }
 }

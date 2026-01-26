@@ -284,14 +284,15 @@ export async function POST(req: NextRequest) {
         lobby.started = true;
 
         // attempt to notify the socket server so connected clients transition immediately
-        (async () => {
         try {
           const { postToSocket } = await import('@/lib/socket-client');
-          await postToSocket('/emit', { room: `${teamId}::${puzzleId}`, event: 'puzzleStarting', payload: { teamId, puzzleId } });
+          const res = await postToSocket('/emit', { room: `${teamId}::${puzzleId}`, event: 'puzzleStarting', payload: { teamId, puzzleId } });
+          if (!res || !res.ok) {
+            console.warn('lobby start: socket emit failed or returned non-OK', { teamId, puzzleId, status: res?.status });
+          }
         } catch (e) {
-          // ignore socket notify failures (clients will pick up via polling)
+          console.warn('lobby start: postToSocket threw', e);
         }
-        })();
 
         return NextResponse.json({ success: true, lobby });
       } catch (err) {
