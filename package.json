@@ -44,7 +44,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
+    "@playwright/test": "^1.58.0",
     "@tailwindcss/postcss": "^4",
     "@types/crypto-js": "^4.2.2",
     "@types/node": "^20",
@@ -52,7 +52,7 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.1.1",
+    "eslint-config-next": "16.1.4",
     "prisma": "^6.19.1",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
