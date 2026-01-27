@@ -9,3 +9,10 @@ function assertHasAllRarityKeys<T extends Record<Rarity, any>>(obj: T) { return 
 const _assertRarityKeys = assertHasAllRarityKeys(rarityColors);
 
 export {};
+
+// Runtime placeholder so Jest recognizes this file contains a test at runtime.
+describe('rarity type checks (compile-time)', () => {
+	test('type-level assertion placeholder', () => {
+		expect(true).toBe(true);
+	});
+});
