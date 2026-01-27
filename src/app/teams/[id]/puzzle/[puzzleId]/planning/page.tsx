@@ -43,6 +43,26 @@ export default function PlanningPage() {
             assignmentsDirtyRef.current = false;
           }
         });
+        socket.on('participantLeft', (payload: any) => {
+          try {
+            const name = payload?.userName || payload?.userId || 'A player';
+            // redirect back to lobby and show a notice
+            const url = `/teams/${teamId}/lobby?puzzleId=${encodeURIComponent(puzzleId)}&notice=${encodeURIComponent(`${name} left the lobby`)}`;
+            try { router.push(url); } catch (e) { window.location.href = url; }
+          } catch (e) {
+            // ignore
+          }
+        });
+        socket.on('lobbyDestroyed', (payload: any) => {
+          try {
+            // leader left — notify and redirect to dashboard
+            const msg = 'The team leader left the lobby. You will be returned to the dashboard.';
+            try { alert(msg); } catch (e) {}
+            try { router.push('/dashboard'); } catch (e) { window.location.href = '/dashboard'; }
+          } catch (e) {
+            // ignore
+          }
+        });
       } catch (e) {
         // ignore socket errors
       }

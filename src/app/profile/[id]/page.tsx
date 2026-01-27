@@ -5,6 +5,7 @@ import "./profile-actions.css";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import ConfirmModal from '@/components/ConfirmModal';
 import { Rarity, rarityColors } from '@/lib/rarity';
 import {
   UserPlus,
@@ -66,6 +67,8 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserNameChanged, setCurrentUserNameChanged] = useState<boolean>(false);
+  const [showNameChangeConfirm, setShowNameChangeConfirm] = useState<boolean>(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -97,6 +100,7 @@ export default function PublicProfilePage() {
         if (res.ok) {
           const data = await res.json();
           if (data?.id) setCurrentUserId(data.id);
+          setCurrentUserNameChanged(!!data?.nameChanged);
         }
       } catch (err) {
         // ignore silently; ownership will fall back to session if available
@@ -210,14 +214,26 @@ export default function PublicProfilePage() {
   };
 
   const handleUpdateName = async () => {
-    if (!newName.trim()) {
+    const candidate = newName.trim();
+    if (!candidate) {
       setNameError("Name cannot be empty");
       return;
     }
-
-    if (newName.trim().length > 50) {
-      setNameError("Name must be 50 characters or less");
-      return;
+    // Client-side validation: use same rules including banned words
+    try {
+      const { isAllowedDisplayName } = await import('@/lib/display-name-validator');
+      const v = isAllowedDisplayName(candidate);
+      if (!v.ok) {
+        setNameError(v.reason || 'Invalid name');
+        return;
+      }
+    } catch (e) {
+      // fallback to simple regexp if import fails
+      const validRe = /^[A-Za-z0-9]{3,16}$/;
+      if (!validRe.test(candidate)) {
+        setNameError('Name must be 3-16 characters and contain only letters and numbers');
+        return;
+      }
     }
 
     setNameSaving(true);
@@ -239,6 +255,8 @@ export default function PublicProfilePage() {
       if (profile) {
         setProfile({ ...profile, name: newName.trim() });
       }
+      // mark name as changed so edit UI is no longer available
+      setCurrentUserNameChanged(true);
       setIsEditingName(false);
       setNewName("");
     } catch (err) {
@@ -388,16 +406,15 @@ export default function PublicProfilePage() {
                 </div>
               )}
               <div>
-                {isOwnProfile && !isEditingName ? (
+                {isOwnProfile && !isEditingName && !currentUserNameChanged ? (
                   <div className="flex items-center gap-3 mb-2">
                     <h1 className="text-4xl font-bold text-white">
                       {profile.name || "Anonymous Player"}
                     </h1>
                     <button
                       onClick={() => {
-                        setIsEditingName(true);
-                        setNewName(profile.name || "");
-                        setNameError("");
+                        // Show one-time-change confirmation before allowing edit
+                        setShowNameChangeConfirm(true);
                       }}
                       className="px-3 py-1 rounded text-sm font-medium transition-colors"
                       style={{ backgroundColor: '#3891A6', color: 'white' }}
@@ -846,6 +863,22 @@ export default function PublicProfilePage() {
           </div>
         </div>
       )}
+
+      {/* One-time name-change confirmation modal */}
+      <ConfirmModal
+        isOpen={showNameChangeConfirm}
+        title="Change display name"
+        message="You may only change your display name once. Are you sure you want to continue?"
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setShowNameChangeConfirm(false);
+          setIsEditingName(true);
+          setNewName(profile?.name || "");
+          setNameError("");
+        }}
+        onCancel={() => setShowNameChangeConfirm(false)}
+      />
     </div>
   );
 }

@@ -31,6 +31,21 @@ function keyFor(teamId: string, puzzleId: string) {
   return `${teamId}::${puzzleId}`;
 }
 
+async function cleanupPersistentLobbyData(teamId: string, puzzleId: string) {
+  try {
+    // remove persisted lobby chat messages for this lobby
+    await prisma.lobbyMessage.deleteMany({ where: { teamId, puzzleId } });
+  } catch (e) {
+    console.warn('cleanupPersistentLobbyData: failed to delete lobby messages', e);
+  }
+  try {
+    // remove notifications that reference this lobby (relatedId encodes team::puzzle)
+    await prisma.notification.deleteMany({ where: { relatedId: `${teamId}::${puzzleId}` } });
+  } catch (e) {
+    console.warn('cleanupPersistentLobbyData: failed to delete notifications', e);
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -63,8 +78,9 @@ export async function POST(req: NextRequest) {
     if (!teamId || !puzzleId) return NextResponse.json({ error: 'teamId and puzzleId required' }, { status: 400 });
 
     const userEmail = session.user.email as string;
-    const userRecord = await prisma.user.findUnique({ where: { email: userEmail }, select: { id: true } });
+    const userRecord = await prisma.user.findUnique({ where: { email: userEmail }, select: { id: true, name: true } });
     const userId = userRecord?.id || userEmail;
+    const userName = (userRecord as any)?.name || userEmail;
     console.log(`lobby POST resolved userId=${userId}`);
 
     const key = keyFor(teamId, puzzleId);
@@ -146,8 +162,9 @@ export async function POST(req: NextRequest) {
         lobby.participants = lobby.participants.filter((p) => p !== targetUserId);
         if (lobby.ready) delete lobby.ready[targetUserId];
 
-        // If no participants remain, destroy the lobby
+        // If no participants remain, destroy the lobby and clean persistent lobby data
         if (!lobby.participants || lobby.participants.length === 0) {
+          try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
           lobbies.delete(key);
           return NextResponse.json({ success: true, removed: targetUserId, destroyed: true });
         }
@@ -191,7 +208,8 @@ export async function POST(req: NextRequest) {
         try {
           const team = await prisma.team.findUnique({ where: { id: teamId }, select: { createdBy: true } });
           if (team && team.createdBy === userId) {
-            // destroy in-memory lobby
+            // destroy in-memory lobby and clean persistent lobby data
+            try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
             lobbies.delete(key);
             // notify socket server so connected clients can be redirected
             (async () => {
@@ -209,11 +227,22 @@ export async function POST(req: NextRequest) {
           console.warn('leave: failed to check team leader', e);
         }
 
-        // if no participants remain, destroy the lobby
+        // if no participants remain, destroy the lobby and clean persistent lobby data
         if (!lobby.participants || lobby.participants.length === 0) {
+          try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
           lobbies.delete(key);
           return NextResponse.json({ success: true, destroyed: true });
         }
+
+        // notify remaining clients that a participant left so they can return to lobby
+        (async () => {
+          try {
+            const { postToSocket } = await import('@/lib/socket-client');
+            await postToSocket('/emit', { room: key, event: 'participantLeft', payload: { teamId, puzzleId, userId, userName } });
+          } catch (e) {
+            // ignore
+          }
+        })();
 
         return NextResponse.json({ success: true, lobby });
       } catch (e) {
@@ -229,6 +258,7 @@ export async function POST(req: NextRequest) {
         if (!membership || !["admin", "moderator"].includes(membership.role)) {
           return NextResponse.json({ error: 'Only team admins/moderators can destroy the lobby' }, { status: 403 });
         }
+        try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
         lobbies.delete(key);
         return NextResponse.json({ success: true, destroyed: true });
       } catch (e) {

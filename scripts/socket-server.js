@@ -250,9 +250,22 @@ io.on('connection', (socket) => {
     for (const [key, state] of lobbies.entries()) {
       const toRemove = Object.values(state.participants).find((p) => p.socketId === socket.id);
       if (toRemove) {
-        delete state.participants[toRemove.userId];
-        delete state.ready[toRemove.userId];
+        const removed = toRemove;
+        delete state.participants[removed.userId];
+        delete state.ready[removed.userId];
         io.to(key).emit('lobbyState', getState(key));
+        try {
+          const payload = { teamId: key.split('::')[0], puzzleId: key.split('::')[1], userId: removed.userId, userName: removed.name };
+          if (removed.isAdmin) {
+            // admin left -> destroy lobby for others
+            io.to(key).emit('lobbyDestroyed', { teamId: payload.teamId, puzzleId: payload.puzzleId, reason: 'leader_left' });
+            lobbies.delete(key);
+          } else {
+            io.to(key).emit('participantLeft', payload);
+          }
+        } catch (e) {
+          // ignore
+        }
       }
       // cleanup empty lobbies
       if (Object.keys(state.participants).length === 0) lobbies.delete(key);

@@ -499,6 +499,51 @@ export default function PuzzleDetailPage() {
 
   // Start session on mount
   useEffect(() => {
+    // Listen for participantLeft events when viewing a team puzzle; redirect back to lobby with notice
+    try {
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const teamId = params?.get('teamId');
+      if (!teamId) return;
+      (async () => {
+        try {
+          const { io } = await import('socket.io-client');
+          const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000', { transports: ['websocket'] });
+          const handler = (payload: any) => {
+            try {
+              if (!payload) return;
+              if (payload.teamId !== teamId) return;
+              const name = payload.userName || payload.userId || 'A player';
+              const url = `/teams/${teamId}/lobby?puzzleId=${encodeURIComponent(puzzleId)}&notice=${encodeURIComponent(`${name} left the lobby`)}`;
+              try { router.push(url); } catch (e) { window.location.href = url; }
+            } catch (e) {
+              // ignore
+            }
+          };
+          socket.on('participantLeft', handler);
+            const destroyedHandler = (payload: any) => {
+              try {
+                if (!payload) return;
+                if (payload.teamId !== teamId) return;
+                const msg = 'The team leader left the lobby. You will be returned to the dashboard.';
+                try { alert(msg); } catch (e) {}
+                try { router.push('/dashboard'); } catch (e) { window.location.href = '/dashboard'; }
+              } catch (e) {
+                // ignore
+              }
+            };
+            socket.on('lobbyDestroyed', destroyedHandler);
+          // cleanup
+            return () => { try { socket.off('participantLeft', handler); socket.off('lobbyDestroyed', destroyedHandler); socket.disconnect(); } catch (e) {} };
+        } catch (e) {
+          // ignore socket init errors
+        }
+      })();
+    } catch (e) {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puzzleId]);
+  useEffect(() => {
     if (!puzzleId || !session) return;
 
     const startSession = async () => {

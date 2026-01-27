@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       // Find user by display name. Using findFirst because `name` is not enforced unique in Prisma schema,
       // but the product assumes display names are unique.
       const invitedUser = await prisma.user.findFirst({
-        where: { name },
+        where: { name: { equals: name, mode: 'insensitive' } },
       });
 
       if (!invitedUser) {

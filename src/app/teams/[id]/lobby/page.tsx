@@ -222,6 +222,7 @@ export default function TeamLobbyPage() {
     let mounted = true;
     if (!teamId || !puzzleId || !currentUserId) return;
 
+    let beforeUnloadHandler: (() => void) | null = null;
     (async () => {
       try {
         const { io } = await import('socket.io-client');
@@ -268,6 +269,24 @@ export default function TeamLobbyPage() {
           if (!mounted) return;
           openActionModal('error', 'Start Failed', err?.error || 'Failed to start puzzle');
         });
+
+        // beforeunload handler: try to notify server that user left
+        beforeUnloadHandler = () => {
+          try {
+            if (socketRef.current && socketRef.current.connected && currentUserId) {
+              try { socketRef.current.emit('leaveLobby', { teamId, puzzleId, userId: currentUserId }); } catch (e) {}
+            }
+          } catch (e) {
+            // ignore
+          }
+          try {
+            const payload = JSON.stringify({ action: 'leave', teamId, puzzleId });
+            try { navigator.sendBeacon('/api/team/lobby', payload); } catch (e) { /* ignore */ }
+          } catch (e) {
+            // ignore
+          }
+        };
+        try { window.addEventListener('beforeunload', beforeUnloadHandler); } catch (e) { /* ignore */ }
       } catch (e) {
         console.error('Socket setup failed', e);
       }
@@ -275,11 +294,42 @@ export default function TeamLobbyPage() {
 
     return () => {
       mounted = false;
+      try {
+        // inform server we are leaving the lobby (SPA navigation)
+        if (socketRef.current && currentUserId) {
+          try { socketRef.current.emit('leaveLobby', { teamId, puzzleId, userId: currentUserId }); } catch (e) {}
+        }
+        // attempt an async leave request
+        (async () => {
+          try { await fetch('/api/team/lobby', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave', teamId, puzzleId }) }); } catch (e) { /* ignore */ }
+        })();
+      } catch (e) {
+        // ignore
+      }
+      try { if (beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler); } catch (e) {}
       try { socketRef.current?.disconnect(); } catch (e) {}
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, puzzleId, currentUserId, members]);
+
+  // Ensure server gets updated isAdmin flag if members or currentUserId change after socket connected
+  useEffect(() => {
+    try {
+      const member = members.find((m: any) => m.user?.id === currentUserId);
+      const adminFlag = !!member && ["admin", "moderator"].includes(member.role);
+      if (socketRef.current && socketRef.current.connected) {
+        try {
+          socketRef.current.emit('joinLobby', { teamId, puzzleId, userId: currentUserId, name: '', isAdmin: adminFlag });
+        } catch (e) {
+          // ignore
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, currentUserId]);
 
   // Listen for explicit server-side removal events rather than inferring removals from state diffs.
   useEffect(() => {
@@ -315,6 +365,26 @@ export default function TeamLobbyPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, members]);
+
+  // Show notice passed through URL (e.g., ?notice=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const notice = params.get('notice');
+      if (notice) {
+        setActionModalVariant('info');
+        setActionModalTitle('Notice');
+        setActionModalMessage(notice);
+        setActionModalOpen(true);
+        // remove the notice param so it doesn't re-show
+        params.delete('notice');
+        const base = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        history.replaceState({}, '', base);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   // determine if current user is admin/moderator of the team
   const currentMember = members.find((m: any) => m.user?.id === currentUserId);
@@ -395,8 +465,8 @@ export default function TeamLobbyPage() {
         const res = await fetch("/api/team/lobby", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", teamId, puzzleId }) });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) return openActionModal("error", "Start Failed", j?.error || res.statusText);
-        // success -> navigate
-        router.push(`/puzzles/${puzzleId}?teamId=${teamId}`);
+        // success -> navigate to team planning so leader can assign roles
+        router.push(`/teams/${teamId}/puzzle/${puzzleId}/planning`);
       }
       if (confirmAction === "destroy") {
         const res = await fetch("/api/team/lobby", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "destroy", teamId, puzzleId }) });
@@ -410,8 +480,9 @@ export default function TeamLobbyPage() {
         const res = await fetch("/api/team/lobby", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "leave", teamId, puzzleId }) });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) return openActionModal("error", "Leave Failed", j?.error || res.statusText);
-        await fetchLobby();
-        return openActionModal("info", "Left Lobby", "You have left the lobby.");
+        // redirect the user to the dashboard immediately after leaving the lobby
+        try { router.push('/dashboard'); } catch (e) { window.location.href = '/dashboard'; }
+        return;
       }
       if (confirmAction === "invite") {
         try {
@@ -546,41 +617,52 @@ export default function TeamLobbyPage() {
               <div className="text-sm text-gray-400">No participants yet. Click "Create / Join Lobby" to join.</div>
             )}
             
-          {members
-            .filter((m: any) => lobby?.participants?.includes(m.user.id))
-            .map((m: any) => (
-              <div key={m.user.id} className="flex items-center justify-between p-2 bg-slate-800 rounded">
-                <div className="text-white">{m.user.name || m.user.email}</div>
-                <div className="flex items-center gap-3">
-                  <div className="text-sm">
-                    {lobby?.ready && lobby.ready[m.user.id] ? (
-                      <span className="text-emerald-400 font-bold">READY!</span>
-                    ) : (
-                      <span className="text-red-500">Not ready</span>
+          {(() => {
+            const parts = (lobby?.participants || []).map((p: any) => {
+              if (!p) return null;
+              if (typeof p === 'string') return { userId: p, name: undefined };
+              return { userId: p.userId || p.userId, name: p.name || p.userName || undefined };
+            }).filter(Boolean as any);
+
+            return parts.map((part: any) => {
+              const uid = part.userId;
+              const member = members.find((m: any) => m.user?.id === uid);
+              const label = member ? (member.user.name || member.user.email) : (part.name || uid);
+              return (
+                <div key={uid} className="flex items-center justify-between p-2 bg-slate-800 rounded">
+                  <div className="text-white">{label}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm">
+                      {lobby?.ready && lobby.ready[uid] ? (
+                        <span className="text-emerald-400 font-bold">READY!</span>
+                      ) : (
+                        <span className="text-red-500">Not ready</span>
+                      )}
+                    </div>
+                    {isAdmin && uid !== currentUserId && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/team/lobby', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'kick', teamId, puzzleId, targetUserId: uid }) });
+                            const j = await res.json().catch(() => ({}));
+                            if (!res.ok) return openActionModal('error', 'Remove Failed', j?.error || res.statusText);
+                            await fetchLobby();
+                            openActionModal('info', 'Removed', `${label} was removed from the lobby.`);
+                          } catch (err) {
+                            console.error('Remove participant failed', err);
+                            openActionModal('error', 'Remove Failed', 'An unexpected error occurred.');
+                          }
+                        }}
+                        className="px-2 py-1 rounded bg-red-600 text-white text-xs"
+                      >
+                        Remove
+                      </button>
                     )}
                   </div>
-                  {isAdmin && m.user.id !== currentUserId && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          const res = await fetch('/api/team/lobby', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'kick', teamId, puzzleId, targetUserId: m.user.id }) });
-                          const j = await res.json().catch(() => ({}));
-                          if (!res.ok) return openActionModal('error', 'Remove Failed', j?.error || res.statusText);
-                          await fetchLobby();
-                          openActionModal('info', 'Removed', `${m.user.name || m.user.email} was removed from the lobby.`);
-                        } catch (err) {
-                          console.error('Remove participant failed', err);
-                          openActionModal('error', 'Remove Failed', 'An unexpected error occurred.');
-                        }
-                      }}
-                      className="px-2 py-1 rounded bg-red-600 text-white text-xs"
-                    >
-                      Remove
-                    </button>
-                  )}
                 </div>
-              </div>
-            ))}
+              );
+            });
+          })()}
           </div>
 
           {lobby?.invites && lobby.invites.length > 0 && (
