@@ -19,6 +19,7 @@ import PuzzleCompletionRatingModal from "@/components/puzzle/PuzzleCompletionRat
 import Toasts from '@/components/Toast';
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
+import CodeMasterIDE from "@/components/puzzle/CodeMasterIDE";
 
 interface Puzzle {
   id: string;
@@ -27,6 +28,7 @@ interface Puzzle {
   content: string;
   difficulty: string;
   puzzleType?: string;
+  data?: Record<string, unknown>;
   category: {
     name: string;
   };
@@ -153,6 +155,8 @@ const difficultyColors: Record<string, string> = {
 export default function PuzzleDetailPage() {
   // Modal state for Sudoku start overlay
   const [showSudokuStartModal, setShowSudokuStartModal] = useState(false);
+  // Modal state for Sudoku help/info
+  const [showSudokuHelp, setShowSudokuHelp] = useState(false);
   // Track if Sudoku has started
   const [sudokuStarted, setSudokuStarted] = useState(false);
   const { data: session, status } = useSession();
@@ -187,6 +191,7 @@ export default function PuzzleDetailPage() {
   const [sudokuCompletionSeconds, setSudokuCompletionSeconds] = useState<number | null>(null);
   const [timeLimitExceeded, setTimeLimitExceeded] = useState(false);
   const [maxAttemptsExceeded, setMaxAttemptsExceeded] = useState(false);
+  const [sudokuAttemptsUsed, setSudokuAttemptsUsed] = useState<number>(0);
   const [showGiveUpConfirm, setShowGiveUpConfirm] = useState(false);
 
   // --- SUDOKU MODAL STATE ---
@@ -636,7 +641,7 @@ export default function PuzzleDetailPage() {
       const resp = await fetch(`/api/puzzles/${puzzleId}/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'attempt_success', durationSeconds: elapsedSeconds }),
+        body: JSON.stringify({ action: 'attempt_success', durationSeconds: elapsedSeconds, grid: submittedGrid }),
       });
 
       if (resp.ok) {
@@ -646,7 +651,9 @@ export default function PuzzleDetailPage() {
         const pointsAwarded = Math.max(0, newPoints - prevPoints);
         setJustAwardedPoints(pointsAwarded);
       } else {
-        console.error('Failed to record Sudoku success');
+        let bodyText = '';
+        try { bodyText = await resp.text(); } catch (e) { bodyText = '<unreadable response body>'; }
+        console.error('Failed to record Sudoku success', resp.status, bodyText);
       }
     } catch (err) {
       console.error('Failed to record Sudoku success:', err);
@@ -1059,7 +1066,7 @@ export default function PuzzleDetailPage() {
               </div>
             )}
             {/* Main Puzzle Content */}
-            {puzzle.puzzleType !== 'sudoku' && (
+            {puzzle.puzzleType !== 'sudoku' && puzzle.puzzleType !== 'code_master' && (
               <div className="prose prose-invert max-w-none mb-8">
                 <div
                   className="whitespace-pre-wrap rounded-lg p-6 border"
@@ -1188,6 +1195,27 @@ export default function PuzzleDetailPage() {
               />
             )}
 
+            {showSudokuHelp && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+                <div className="max-w-lg w-full bg-gradient-to-br from-[#071016] to-[#09313a] text-white rounded-xl p-6 shadow-2xl border border-[#FDE74C]/20">
+                  <div className="flex items-start justify-between">
+                    <h2 className="text-2xl font-extrabold text-yellow-300">How to play Sudoku</h2>
+                    <button onClick={() => setShowSudokuHelp(false)} className="text-white/80 hover:text-white">✕</button>
+                  </div>
+                  <div className="mt-4 space-y-3 text-sm text-gray-200">
+                    <p><strong>Objective:</strong> Fill the 9×9 grid so each row, column, and 3×3 box contains the digits 1 through 9 exactly once.</p>
+                    <p><strong>Givens:</strong> Numbers shown in bold are pre-filled and cannot be changed.</p>
+                    <p>Click an empty cell and type a digit 1–9. Use the board's Submit button to check your solution, or the board will validate automatically when complete.</p>
+                    <p><strong>Limits:</strong> You have <strong>{puzzle?.sudoku?.timeLimitSeconds ? Math.round((puzzle.sudoku.timeLimitSeconds)/60) : 15} minutes</strong> and <strong>{puzzle?.sudoku?.maxAttempts ?? 5}</strong> attempts.</p>
+                    <p className="text-yellow-200">Tip: Work by scanning rows/columns/boxes and eliminating possibilities. Start with the easiest cells.</p>
+                  </div>
+                  <div className="mt-6 text-right">
+                    <button onClick={() => setShowSudokuHelp(false)} className="px-4 py-2 rounded bg-yellow-300 text-black font-semibold">Got it</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Toasts (inline above puzzle) */}
             <Toasts toasts={toasts} onRemove={(id) => removeToast(id)} inline />
 
@@ -1225,7 +1253,10 @@ export default function PuzzleDetailPage() {
                         This jigsaw puzzle is missing its image. Upload an image in the admin puzzle creator.
                       </div>
                     ) : (
-                      <div className="rounded-none overflow-hidden border border-gray-700 bg-gray-900 w-full">
+                      <div
+                        className="rounded-none overflow-hidden border border-gray-700 bg-gray-900"
+                        style={{ width: "fit-content", margin: "0 auto" }}
+                      >
                         <JigsawPuzzle
                           imageUrl={jigsawPlayable.imageUrl}
                           rows={jigsawPlayable.data.gridRows}
@@ -1348,29 +1379,122 @@ export default function PuzzleDetailPage() {
                           </div>
                         </div>
                       )}
+
+                      {/* Render the interactive Sudoku board after the user starts */}
+                      {sudokuStarted && (
+                        <div className="mb-6">
+                          {/* Compact info bar stacked above the board */}
+                          <div className="mb-1 flex flex-col items-center gap-1 px-2 py-1 rounded bg-[#071016] text-sm">
+                            <div className="text-2xl sm:text-3xl" style={{ color: '#FDE74C', fontWeight: 800, lineHeight: 1 }}>
+                              {(() => {
+                                const limit = puzzle?.sudoku?.timeLimitSeconds ?? 15 * 60;
+                                const rem = Math.max(0, limit - sudokuElapsed);
+                                const mm = Math.floor(rem / 60).toString().padStart(2, '0');
+                                const ss = (rem % 60).toString().padStart(2, '0');
+                                return `Time remaining: ${mm}:${ss}`;
+                              })()}
+                            </div>
+                            {/* small help button */}
+                            <button
+                              type="button"
+                              onClick={() => setShowSudokuHelp(true)}
+                              className="mt-1 text-xs text-[#AB9F9D] hover:text-white underline"
+                            >
+                              How to play
+                            </button>
+                          </div>
+
+                          <SudokuGrid
+                            puzzle={(sudokuOriginal ?? (sudokuGrid as unknown as number[][])) as number[][]}
+                            givens={sudokuOriginal ?? undefined}
+                            solution={sudokuSolution ?? undefined}
+                            onChange={(g) => {
+                              setSudokuGrid(g);
+                              try {
+                                if (typeof window !== 'undefined') {
+                                  localStorage.setItem(`sudoku-progress:${puzzleId}`, JSON.stringify(g));
+                                }
+                              } catch (e) {
+                                // ignore storage errors
+                              }
+                            }}
+                            onValidatedSuccess={(sol) => {
+                              try {
+                                handleSudokuSubmit(sol);
+                              } catch (e) {
+                                console.error('Sudoku success handler failed:', e);
+                              }
+                            }}
+                            disabled={timeLimitExceeded || maxAttemptsExceeded || Boolean(progress?.solved)}
+                            maxAttempts={puzzle?.sudoku?.maxAttempts ?? 5}
+                            onAttempt={(attemptNumber, locked) => {
+                              setSudokuAttemptsUsed(attemptNumber);
+                              if (locked) setMaxAttemptsExceeded(true);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   ) : null}
 
-                  {/* Text answer area */}
-                  <textarea
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    disabled={submitting || success || progress?.solved}
-                    placeholder={progress?.solved ? "This puzzle has been solved." : "Enter your answer here..."}
-                    className="w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none disabled:opacity-50"
-                    style={{ backgroundColor: "#2a3a3b", borderWidth: "2px", borderColor: "#FDE74C" }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#3891A6")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#FDE74C")}
-                    rows={4}
-                  />
-                  <button
-                    type="submit"
-                    disabled={submitting || success || !answer.trim() || progress?.solved}
-                    className="mt-4 px-6 py-2 rounded-lg text-white font-semibold transition-colors hover:opacity-90 disabled:opacity-50"
-                    style={{ backgroundColor: "#AB9F9D" }}
-                  >
-                    {submitting ? "Submitting..." : progress?.solved ? "Puzzle Solved ✓" : "Submit Answer"}
-                  </button>
+                  {/* Code Master IDE */}
+                  {puzzle?.puzzleType === 'code_master' && (
+                    <div className="mb-6 space-y-4">
+                      <div
+                        className="rounded-lg p-5 border"
+                        style={{ backgroundColor: "rgba(56, 145, 166, 0.1)", borderColor: "#3891A6" }}
+                      >
+                        <h2 className="text-lg font-semibold text-white mb-2">Scenario</h2>
+                        <p className="text-sm whitespace-pre-wrap" style={{ color: "#DDDBF1" }}>
+                          {String(puzzle?.data?.scenario || '')}
+                        </p>
+                      </div>
+
+                      <CodeMasterIDE
+                        language={String(puzzle?.data?.language || 'html')}
+                        brokenCode={String(puzzle?.data?.brokenCode || '')}
+                        prefillCss={String(puzzle?.data?.prefillCss || '')}
+                        files={puzzle?.data?.files as Record<string, string> | undefined}
+                        onCodeChange={(combined) => setAnswer(combined)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Text answer area - only show for non-Sudoku puzzles */}
+                  {puzzle?.puzzleType !== 'sudoku' && puzzle?.puzzleType !== 'code_master' && (
+                    <>
+                      <textarea
+                        value={answer}
+                        onChange={(e) => setAnswer(e.target.value)}
+                        disabled={submitting || success || progress?.solved}
+                        placeholder={progress?.solved ? "This puzzle has been solved." : "Enter your answer here..."}
+                        className="w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none disabled:opacity-50"
+                        style={{ backgroundColor: "#2a3a3b", borderWidth: "2px", borderColor: "#FDE74C" }}
+                        onFocus={(e) => (e.currentTarget.style.borderColor = "#3891A6")}
+                        onBlur={(e) => (e.currentTarget.style.borderColor = "#FDE74C")}
+                        rows={4}
+                      />
+                      <button
+                        type="submit"
+                        disabled={submitting || success || !answer.trim() || progress?.solved}
+                        className="mt-4 px-6 py-2 rounded-lg text-white font-semibold transition-colors hover:opacity-90 disabled:opacity-50"
+                        style={{ backgroundColor: "#AB9F9D" }}
+                      >
+                        {submitting ? "Submitting..." : progress?.solved ? "Puzzle Solved ✓" : "Submit Answer"}
+                      </button>
+                    </>
+                  )}
+
+                  {puzzle?.puzzleType === 'code_master' && (
+                    <button
+                      type="submit"
+                      disabled={submitting || success || !answer.trim() || progress?.solved}
+                      className="mt-4 px-6 py-2 rounded-lg text-white font-semibold transition-colors hover:opacity-90 disabled:opacity-50"
+                      style={{ backgroundColor: "#AB9F9D" }}
+                    >
+                      {submitting ? "Submitting..." : progress?.solved ? "Puzzle Solved ✓" : "Submit Fix"}
+                    </button>
+                  )}
                 </form>
               );
             })()}

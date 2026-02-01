@@ -44,6 +44,7 @@ const PUZZLE_TYPES = [
   { value: 'riddle', label: 'Riddle' },
   { value: 'sudoku', label: 'Sudoku' },
   { value: 'jigsaw', label: 'Jigsaw Puzzle' },
+  { value: 'code_master', label: 'Code Master' },
   { value: 'math', label: 'Math' },
   { value: 'arg', label: 'ARG' },
   { value: 'escape_room', label: 'Escape Room' },
@@ -317,16 +318,53 @@ export default function AdminPuzzlesPage() {
       });
 
       // Remove any non-serializable properties from items in puzzleData
-      let cleanedPuzzleData = formData.puzzleData;
-      if (formData.puzzleType === 'escape_room' && formData.puzzleData && Array.isArray(formData.puzzleData.scenes)) {
-        cleanedPuzzleData = {
-          ...formData.puzzleData,
-          scenes: formData.puzzleData.scenes.map((scene: any) => ({
-            ...scene,
-            items: Array.isArray(scene.items) ? scene.items : [],
-            interactiveZones: Array.isArray(scene.interactiveZones) ? scene.interactiveZones : [],
-          })),
-        };
+      let cleanedPuzzleData: any = formData.puzzleData || {};
+      // If the escape-room Designer stored data under `escapeRoomData`, map it into the shape
+      // expected by the puzzle persistence route (puzzleData.rooms -> layouts.hotspots)
+      if (formData.puzzleType === 'escape_room') {
+        const designer = formData.puzzleData?.escapeRoomData || formData.puzzleData;
+        console.log('[SUBMIT] Escape room designer payload:', designer);
+        if (designer && typeof designer === 'object') {
+          const d = designer as any;
+          if (Array.isArray(d.scenes)) {
+            const rooms = d.scenes.map((scene: any) => {
+              const layout = {
+                title: scene.name || null,
+                backgroundUrl: scene.backgroundUrl || null,
+                width: scene.width || null,
+                height: scene.height || null,
+                hotspots: Array.isArray(scene.interactiveZones) ? scene.interactiveZones.map((z: any) => ({
+                  x: Number(z.x) || 0,
+                  y: Number(z.y) || 0,
+                  w: Number(z.width) || Number(z.w) || 32,
+                  h: Number(z.height) || Number(z.h) || 32,
+                  type: z.actionType || 'modal',
+                  targetId: z.collectItemId || null,
+                  meta: z.meta || { label: z.label, modalContent: z.modalContent, linkedPuzzleId: z.linkedPuzzleId, eventId: z.eventId },
+                })) : [],
+              };
+              return { layout, stages: scene.stages || [] };
+            });
+            cleanedPuzzleData = {
+              ...cleanedPuzzleData,
+              rooms,
+              roomTitle: d.title || d.roomTitle || formData.title,
+              roomDescription: d.description || d.roomDescription || formData.description,
+              timeLimitSeconds: d.timeLimit || d.timeLimitSeconds || undefined,
+            };
+          }
+        }
+      } else {
+        if (formData.puzzleData && Array.isArray(formData.puzzleData.scenes)) {
+          cleanedPuzzleData = {
+            ...formData.puzzleData,
+            scenes: formData.puzzleData.scenes.map((scene: any) => ({
+              ...scene,
+              items: Array.isArray(scene.items) ? scene.items : [],
+              interactiveZones: Array.isArray(scene.interactiveZones) ? scene.interactiveZones : [],
+            })),
+          };
+        }
       }
       const submitBody: any = { ...formData, hints: filteredHints, puzzleData: cleanedPuzzleData };
       if (formData.puzzleType === 'sudoku' && sudokuPuzzle) {
@@ -337,6 +375,9 @@ export default function AdminPuzzlesPage() {
         // Sudoku answers are entered on the board; don't send a separate correctAnswer
         delete submitBody.correctAnswer;
       }
+      if (formData.puzzleType === 'code_master') {
+        delete submitBody.correctAnswer;
+      }
 
       const response = await fetch("/api/admin/puzzles", {
         method: "POST",
@@ -345,6 +386,7 @@ export default function AdminPuzzlesPage() {
         },
         body: JSON.stringify(submitBody),
       }).catch(err => {
+            console.log('[SUBMIT] Cleaned escape_room puzzleData:', cleanedPuzzleData);
         console.error("[SUBMIT] Fetch failed:", err);
         throw new Error(`Network error: ${err.message || 'Failed to connect to server'}`);
       });
@@ -701,57 +743,6 @@ export default function AdminPuzzlesPage() {
                           className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
                         />
                       </div>
-                      {/* Category and Difficulty Pickers (not for escape_room) */}
-                      {formData.puzzleType !== 'escape_room' && (
-                        <>
-                          {/* Category Picker */}
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-300 mb-2">Category</label>
-                            <select
-                              name="category"
-                              value={formData.category}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
-                            >
-                              <option value="general">General</option>
-                              <option value="logic">Logic</option>
-                              <option value="math">Math</option>
-                              <option value="visual">Visual</option>
-                              <option value="word">Word</option>
-                              <option value="story">Story</option>
-                              <option value="arg">ARG</option>
-                            </select>
-                          </div>
-                          {/* Difficulty Picker */}
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-300 mb-2">Difficulty</label>
-                            <select
-                              name="difficulty"
-                              value={formData.difficulty}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
-                            >
-                              <option value="easy">Easy</option>
-                              <option value="medium">Medium</option>
-                              <option value="hard">Hard</option>
-                              <option value="expert">Expert</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      {/* Description */}
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-300 mb-2">
-                          Description
-                        </label>
-                        <textarea
-                          name="description"
-                          value={formData.description}
-                          onChange={handleInputChange}
-                          placeholder="Describe your puzzle (optional)"
-                          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
-                        />
-                      </div>
                       {/* Type-Specific Fields (exclude riddle, general, sudoku) */}
                       {formData.puzzleType !== 'general' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'riddle' && (
                         <PuzzleTypeFields
@@ -929,6 +920,27 @@ export default function AdminPuzzlesPage() {
                           </select>
                         </div>
                       </div>
+                    ) : formData.puzzleType === 'sudoku' ? (
+                      <div className="grid md:grid-cols-1 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-300 mb-2">
+                            Category
+                          </label>
+                          <select
+                            name="category"
+                            value={formData.category}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+                          >
+                            <option value="general">General</option>
+                            <option value="sudoku">Sudoku</option>
+                            <option value="arg">ARG</option>
+                            <option value="jigsaw">Jigsaw</option>
+                            <option value="puzzle">Puzzle</option>
+                            <option value="challenge">Challenge</option>
+                          </select>
+                        </div>
+                      </div>
                     ) : (
                       <div className="grid md:grid-cols-2 gap-4">
                         <div>
@@ -944,6 +956,7 @@ export default function AdminPuzzlesPage() {
                             <option value="general">General</option>
                             <option value="sudoku">Sudoku</option>
                             <option value="arg">ARG</option>
+                            <option value="jigsaw">Jigsaw</option>
                             <option value="puzzle">Puzzle</option>
                             <option value="challenge">Challenge</option>
                           </select>
@@ -969,7 +982,7 @@ export default function AdminPuzzlesPage() {
                   )}
 
                   {/* Correct Answer (not required for Sudoku; answers entered on the board) */}
-                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'escape_room' && (
+                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'code_master' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         Correct Answer *
@@ -1001,41 +1014,43 @@ export default function AdminPuzzlesPage() {
                     />
                   </div>
 
-                  {/* Hints */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-2">
-                      Hints ({formData.hints.filter(h => h.trim()).length})
-                    </label>
-                    <div className="space-y-2 mb-3">
-                      {formData.hints.map((hint, index) => (
-                        <div key={index} className="flex gap-2">
-                          <input
-                            type="text"
-                            value={hint}
-                            onChange={(e) => handleHintChange(index, e.target.value)}
-                            placeholder={`Hint ${index + 1}`}
-                            className="flex-1 px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
-                          />
-                          {formData.hints.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveHint(index)}
-                              className="px-3 py-2 rounded-lg bg-red-900/30 text-red-300 hover:bg-red-900/50"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                  {/* Hints (hidden for Sudoku) */}
+                  {formData.puzzleType !== 'sudoku' && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-300 mb-2">
+                        Hints ({formData.hints.filter(h => h.trim()).length})
+                      </label>
+                      <div className="space-y-2 mb-3">
+                        {formData.hints.map((hint, index) => (
+                          <div key={index} className="flex gap-2">
+                            <input
+                              type="text"
+                              value={hint}
+                              onChange={(e) => handleHintChange(index, e.target.value)}
+                              placeholder={`Hint ${index + 1}`}
+                              className="flex-1 px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
+                            />
+                            {formData.hints.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveHint(index)}
+                                className="px-3 py-2 rounded-lg bg-red-900/30 text-red-300 hover:bg-red-900/50"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddHint}
+                        className="w-full px-4 py-2 rounded-lg bg-slate-600/50 border border-slate-500 text-gray-300 hover:bg-slate-600"
+                      >
+                        + Add Hint
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleAddHint}
-                      className="w-full px-4 py-2 rounded-lg bg-slate-600/50 border border-slate-500 text-gray-300 hover:bg-slate-600"
-                    >
-                      + Add Hint
-                    </button>
-                  </div>
+                  )}
 
                   {/* Submit button for non-escape_room types */}
                   {formData.puzzleType !== 'escape_room' && (

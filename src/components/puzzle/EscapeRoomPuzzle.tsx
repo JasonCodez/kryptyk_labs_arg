@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import ActionModal from "@/components/ActionModal";
 
 type EscapeRoomStage = {
   id: string;
@@ -36,9 +37,7 @@ export function EscapeRoomPuzzle({ puzzleId, onComplete }: { puzzleId: string; o
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EscapeRoomResponse | null>(null);
   const [stageIndex, setStageIndex] = useState(1);
-  const [answer, setAnswer] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
+  // answer input/submission not needed for this project; removed UI and handler
   const [inventory, setInventory] = useState<string[]>([]);
   const completedRef = useRef(false);
 
@@ -86,38 +85,33 @@ export function EscapeRoomPuzzle({ puzzleId, onComplete }: { puzzleId: string; o
     try { return typeof raw === "string" ? JSON.parse(raw) : []; } catch { return [] as string[]; }
   }, [stage]);
 
-  async function handleSubmit(e?: React.FormEvent) {
-    if (e && typeof e.preventDefault === "function") e.preventDefault();
-    if (!stage || !answer.trim() || submitting) return;
-    try {
-      setSubmitting(true);
-      setMessage("");
-      const res = await fetch(`/api/puzzles/escape-room/${puzzleId}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stageIndex, answer: answer.trim() }),
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error((body && (body as any).error) || "Submit failed");
-      if (body && (body as any).correct) {
-        setMessage((body as any).message || "Correct!");
-        setAnswer("");
-        setStageIndex(typeof (body as any).nextStageIndex === "number" ? (body as any).nextStageIndex : stageIndex + 1);
-      } else {
-        setMessage((body as any)?.message || "Incorrect");
-      }
-    } catch (e: any) {
-      setMessage(e?.message || String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  // submit handler removed — stage answers are not used in this variant
 
   const layout = data?.layouts && data.layouts.length > 0 ? data.layouts[0] : null;
   const PixiRoom = React.lazy(() => import("./PixiRoom"));
+  const [actionModalOpen, setActionModalOpen] = useState(false);
+  const [actionModalTitle, setActionModalTitle] = useState<string | undefined>(undefined);
+  const [actionModalMessage, setActionModalMessage] = useState<string | undefined>(undefined);
 
   const handleHotspotAction = async (hotspotId: string) => {
     try {
+      // find hotspot in current layout
+      const curLayout = layout as any;
+      const hs = curLayout?.hotspots?.find((h: any) => h.id === hotspotId);
+      let hsMeta: any = {};
+      if (hs && hs.meta) {
+        try { hsMeta = typeof hs.meta === 'string' ? JSON.parse(hs.meta) : hs.meta; } catch { hsMeta = hs.meta; }
+      }
+      const actionType = hs?.type || (hsMeta && hsMeta.actionType) || 'collect';
+      if (actionType === 'modal') {
+        // show modal using meta.modalContent or label
+        setActionModalTitle(hsMeta?.label || 'Info');
+        setActionModalMessage(hsMeta?.modalContent || hsMeta?.message || '');
+        setActionModalOpen(true);
+        return;
+      }
+
+      // default: send action to server (pickup)
       const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,12 +139,7 @@ export function EscapeRoomPuzzle({ puzzleId, onComplete }: { puzzleId: string; o
         <div className="mb-3 text-sm text-gray-400">Hints: {hints.join(" • ")}</div>
       )}
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="flex gap-2 items-center">
-        <input value={answer} onChange={(e) => setAnswer(e.target.value)} disabled={submitting} placeholder="Enter stage answer…" className="flex-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-white placeholder-gray-500" />
-        <button type="submit" disabled={submitting || !answer.trim()} className="px-4 py-2 rounded bg-slate-700 text-white disabled:opacity-50">{submitting ? "Checking…" : "Submit"}</button>
-      </form>
-
-      {message && <div className="mt-3 text-sm text-gray-200">{message}</div>}
+      {/* Stage answer input removed — not used for these puzzles */}
 
       {layout ? (
         <div className="mt-4" style={{ width: '100%', height: layout.height || 600 }}>
@@ -159,6 +148,8 @@ export function EscapeRoomPuzzle({ puzzleId, onComplete }: { puzzleId: string; o
           </React.Suspense>
         </div>
       ) : null}
+
+      <ActionModal isOpen={actionModalOpen} title={actionModalTitle} message={actionModalMessage} onClose={() => setActionModalOpen(false)} />
 
       {inventory.length > 0 && <div className="mt-2 text-sm text-gray-200">Inventory: {inventory.join(', ')}</div>}
     </div>

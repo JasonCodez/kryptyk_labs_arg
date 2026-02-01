@@ -19,6 +19,8 @@ interface EscapeRoomItem {
   description: string;
   x: number;
   y: number;
+  w?: number;
+  h?: number;
   properties: Record<string, any>;
   linkedPuzzleId?: string;
 }
@@ -70,10 +72,31 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   // Track upload status and errors for each item by scene/item index
   const [itemUploadState, setItemUploadState] = useState<Record<string, { uploading: boolean; error: string }>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const createFileInputRef = useCallback((idx: number, itemIdx: number) => (el: HTMLInputElement | null) => {
     const key = `${idx}-${itemIdx}`;
     fileInputRefs.current[key] = el;
   }, []);
+
+  // Background upload state (per scene index)
+  const [bgUploadState, setBgUploadState] = useState<Record<number, { uploading: boolean; error?: string }>>({});
+  const MAX_CLIENT_UPLOAD = 50 * 1024 * 1024; // 50MB client-side quick check
+
+  // selection & resizing state for items/zones in the canvas preview
+  const [selectedItem, setSelectedItem] = useState<{ sceneIdx: number; itemIdx: number } | null>(null);
+  const [selectedZone, setSelectedZone] = useState<{ sceneIdx: number; zoneIdx: number } | null>(null);
+  const resizingRef = useRef<null | {
+    kind: 'item' | 'zone';
+    sceneIdx: number;
+    idx: number; // itemIdx or zoneIdx depending on kind
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+    handle: 'nw' | 'ne' | 'sw' | 'se';
+    aspect?: number;
+  }>(null);
+
 
   // Remove non-serializable fields from scenes before passing data to parent
   const getSerializableScenes = () =>
@@ -184,10 +207,12 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
         {/* Live preview */}
         {scenes.length > 0 && (
           <div
+            ref={previewRef}
             className="mb-6 border rounded-lg overflow-hidden"
             style={{ background: '#222', minHeight: 320, position: 'relative', width: 600, maxWidth: '100%' }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => e.preventDefault()}
+            onClick={() => setSelectedItem(null)}
           >
             {/* Background image */}
             {scenes[previewSceneIdx].backgroundUrl ? (
@@ -223,16 +248,19 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   e.dataTransfer.setData('text/plain', `${previewSceneIdx}-${i}`);
                 }}
                 onDragEnd={(e) => {
-                  const rect = e.currentTarget.parentElement?.getBoundingClientRect();
+                  const rect = previewRef.current?.getBoundingClientRect();
                   if (rect) {
                     const newX = e.clientX - rect.left;
                     const newY = e.clientY - rect.top;
                     const updated = [...scenes];
-                    updated[previewSceneIdx].items[i].x = Math.max(0, Math.min(newX, rect.width - 40));
-                    updated[previewSceneIdx].items[i].y = Math.max(0, Math.min(newY, rect.height - 40));
+                    const iw = (updated[previewSceneIdx].items[i].w as number) || 48;
+                    const ih = (updated[previewSceneIdx].items[i].h as number) || 48;
+                    updated[previewSceneIdx].items[i].x = Math.max(0, Math.min(newX, rect.width - iw));
+                    updated[previewSceneIdx].items[i].y = Math.max(0, Math.min(newY, rect.height - ih));
                     setScenes(updated);
                   }
                 }}
+                onClick={(ev) => { ev.stopPropagation(); setSelectedItem({ sceneIdx: previewSceneIdx, itemIdx: i }); }}
                 style={{
                   position: 'absolute',
                   left: item.x || 20 + i * 60,
@@ -246,14 +274,210 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   userSelect: 'none'
                 }}
               >
-                {item.imageUrl ? <img src={item.imageUrl} alt={item.name} style={{ width: 32, height: 32, objectFit: 'contain' }} /> : <span>🧩</span>}
+                {item.imageUrl ? (
+                  <div style={{ position: 'relative', display: 'inline-block' }}>
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      style={{ width: (item.w ?? 48), height: (item.h ?? 48), objectFit: 'contain', display: 'block', borderRadius: 4, boxSizing: 'border-box', outline: selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i ? '2px solid rgba(99,102,241,0.9)' : 'none' }}
+                      draggable={false}
+                    />
+                    {selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i && (
+                      // resize handles (se, sw, ne, nw)
+                      <>
+                        {(['nw','ne','sw','se'] as const).map(h => {
+                          const isCorner = true;
+                          const style: React.CSSProperties = {
+                            position: 'absolute',
+                            width: 10,
+                            height: 10,
+                            background: '#fff',
+                            border: '1px solid rgba(0,0,0,0.4)',
+                            borderRadius: 2,
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 10,
+                            touchAction: 'none',
+                            cursor: h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize'
+                          };
+                          if (h === 'nw') Object.assign(style, { left: 0, top: 0 });
+                          if (h === 'ne') Object.assign(style, { left: (item.w ?? 48), top: 0 });
+                          if (h === 'sw') Object.assign(style, { left: 0, top: (item.h ?? 48) });
+                          if (h === 'se') Object.assign(style, { left: (item.w ?? 48), top: (item.h ?? 48) });
+                          return (
+                            <div
+                              key={h}
+                              style={style}
+                              onPointerDown={(ev) => {
+                                ev.stopPropagation();
+                                const rect = (ev.target as HTMLElement).closest('div')?.getBoundingClientRect();
+                                resizingRef.current = {
+                                  kind: 'item',
+                                  sceneIdx: previewSceneIdx,
+                                  idx: i,
+                                  startX: ev.clientX,
+                                  startY: ev.clientY,
+                                  startW: item.w ?? 48,
+                                  startH: item.h ?? 48,
+                                  handle: h,
+                                  aspect: (item.w && item.h) ? (item.w / item.h) : undefined,
+                                };
+                                // capture parent preview rect and original position so left/top handles update position
+                                const parentRect = previewRef.current?.getBoundingClientRect();
+                                const startXPos = item.x ?? (20 + i * 60);
+                                const startYPos = item.y ?? 20;
+                                // augment resizingRef with positional info
+                                (resizingRef.current as any).startXPos = startXPos;
+                                (resizingRef.current as any).startYPos = startYPos;
+                                (resizingRef.current as any).parentRect = parentRect;
+                                const onPointerMove = (pm: PointerEvent) => {
+                                  const r = resizingRef.current as any;
+                                  if (!r) return;
+                                  const dx = pm.clientX - r.startX;
+                                  const dy = pm.clientY - r.startY;
+                                  let newW = r.startW;
+                                  let newH = r.startH;
+                                  let newX = r.startXPos;
+                                  let newY = r.startYPos;
+                                  if (r.handle === 'se') { newW = Math.max(8, Math.round(r.startW + dx)); newH = Math.max(8, Math.round(r.startH + dy)); }
+                                  else if (r.handle === 'sw') { newW = Math.max(8, Math.round(r.startW - dx)); newH = Math.max(8, Math.round(r.startH + dy)); newX = r.startXPos + (r.startW - newW); }
+                                  else if (r.handle === 'ne') { newW = Math.max(8, Math.round(r.startW + dx)); newH = Math.max(8, Math.round(r.startH - dy)); newY = r.startYPos + (r.startH - newH); }
+                                  else if (r.handle === 'nw') { newW = Math.max(8, Math.round(r.startW - dx)); newH = Math.max(8, Math.round(r.startH - dy)); newX = r.startXPos + (r.startW - newW); newY = r.startYPos + (r.startH - newH); }
+                                  // if Shift is held preserve aspect
+                                  if (pm.shiftKey && r.aspect) { if (Math.abs(dx) > Math.abs(dy)) { newH = Math.max(8, Math.round(newW / r.aspect)); } else { newW = Math.max(8, Math.round(newH * r.aspect)); } }
+                                  // clamp within parent using captured rect
+                                  if (r.parentRect) {
+                                    newX = Math.max(0, Math.min(newX, r.parentRect.width - newW));
+                                    newY = Math.max(0, Math.min(newY, r.parentRect.height - newH));
+                                  }
+                                  setScenes(prev => {
+                                    const copy = [...prev];
+                                    const it = copy[r.sceneIdx].items[(r as any).idx];
+                                    it.w = Math.round(newW); it.h = Math.round(newH);
+                                    it.x = Math.round(newX); it.y = Math.round(newY);
+                                    return copy;
+                                  });
+                                };
+                                const onPointerUp = () => {
+                                  resizingRef.current = null;
+                                  window.removeEventListener('pointermove', onPointerMove);
+                                  window.removeEventListener('pointerup', onPointerUp);
+                                };
+                                window.addEventListener('pointermove', onPointerMove);
+                                window.addEventListener('pointerup', onPointerUp);
+                              }}
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                ) : <span>🧩</span>}
                 <div style={{ fontSize: 10 }}>{item.name}</div>
               </div>
             ))}
             {/* Interactive zones */}
             {scenes[previewSceneIdx].interactiveZones.map((zone, i) => (
-              <div key={zone.id} style={{ position: 'absolute', left: zone.x, top: zone.y, width: zone.width, height: zone.height, border: '2px dashed #38bdf8', background: 'rgba(56,189,248,0.1)', zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+              <div
+                key={zone.id}
+                onClick={(ev) => { ev.stopPropagation(); setSelectedZone({ sceneIdx: previewSceneIdx, zoneIdx: i }); setSelectedItem(null); }}
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  setSelectedZone({ sceneIdx: previewSceneIdx, zoneIdx: i });
+                  setSelectedItem(null);
+                  const parentElem = (ev.currentTarget as HTMLElement).parentElement;
+                  const parentRect = parentElem?.getBoundingClientRect();
+                  if (!parentRect) return;
+                  const startX = ev.clientX;
+                  const startY = ev.clientY;
+                  const origX = zone.x;
+                  const origY = zone.y;
+                  const onPointerMove = (pm: PointerEvent) => {
+                    const dx = pm.clientX - startX;
+                    const dy = pm.clientY - startY;
+                    const newX = Math.max(0, Math.min(origX + dx, parentRect.width - zone.width));
+                    const newY = Math.max(0, Math.min(origY + dy, parentRect.height - zone.height));
+                    setScenes(prev => {
+                      const copy = [...prev];
+                      copy[previewSceneIdx].interactiveZones[i] = { ...copy[previewSceneIdx].interactiveZones[i], x: Math.round(newX), y: Math.round(newY) };
+                      return copy;
+                    });
+                  };
+                  const onPointerUp = () => {
+                    window.removeEventListener('pointermove', onPointerMove);
+                    window.removeEventListener('pointerup', onPointerUp);
+                  };
+                  window.addEventListener('pointermove', onPointerMove);
+                  window.addEventListener('pointerup', onPointerUp);
+                }}
+                style={{ position: 'absolute', left: zone.x, top: zone.y, width: zone.width, height: zone.height, border: '2px dashed #38bdf8', background: 'rgba(56,189,248,0.1)', zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', touchAction: 'none' }}
+              >
                 <span style={{ color: '#38bdf8', fontSize: 12, fontWeight: 600 }}>{zone.label}</span>
+                {/* selected handles */}
+                {selectedZone && selectedZone.sceneIdx === previewSceneIdx && selectedZone.zoneIdx === i && (
+                  (['nw','ne','sw','se'] as const).map(h => {
+                    const style: React.CSSProperties = {
+                      position: 'absolute',
+                      width: 10,
+                      height: 10,
+                      background: '#fff',
+                      border: '1px solid rgba(0,0,0,0.4)',
+                      borderRadius: 2,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 20,
+                      touchAction: 'none',
+                      cursor: h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize'
+                    } as React.CSSProperties;
+                    if (h === 'nw') Object.assign(style, { left: 0, top: 0 });
+                    if (h === 'ne') Object.assign(style, { left: zone.width, top: 0 });
+                    if (h === 'sw') Object.assign(style, { left: 0, top: zone.height });
+                    if (h === 'se') Object.assign(style, { left: zone.width, top: zone.height });
+                    return (
+                      <div
+                        key={h}
+                        style={style}
+                        onPointerDown={(ev) => {
+                          ev.stopPropagation();
+                          const startX = ev.clientX;
+                          const startY = ev.clientY;
+                          const startW = zone.width;
+                          const startH = zone.height;
+                          const startXPos = zone.x;
+                          const startYPos = zone.y;
+                          resizingRef.current = { kind: 'zone', sceneIdx: previewSceneIdx, idx: i, startX, startY, startW, startH, handle: h as any };
+                          const parentElemForHandle = (ev.currentTarget as HTMLElement).parentElement;
+                          const parentRectForHandle = parentElemForHandle?.getBoundingClientRect();
+                          const onPointerMove = (pm: PointerEvent) => {
+                            const r = resizingRef.current;
+                            if (!r) return;
+                            const dx = pm.clientX - r.startX;
+                            const dy = pm.clientY - r.startY;
+                            let newW = r.startW;
+                            let newH = r.startH;
+                            let newX = startXPos;
+                            let newY = startYPos;
+                            if (r.handle === 'se') { newW = Math.max(8, Math.round(r.startW + dx)); newH = Math.max(8, Math.round(r.startH + dy)); }
+                            else if (r.handle === 'sw') { newW = Math.max(8, Math.round(r.startW - dx)); newH = Math.max(8, Math.round(r.startH + dy)); newX = startXPos + (r.startW - newW); }
+                            else if (r.handle === 'ne') { newW = Math.max(8, Math.round(r.startW + dx)); newH = Math.max(8, Math.round(r.startH - dy)); newY = startYPos + (r.startH - newH); }
+                            else if (r.handle === 'nw') { newW = Math.max(8, Math.round(r.startW - dx)); newH = Math.max(8, Math.round(r.startH - dy)); newX = startXPos + (r.startW - newW); newY = startYPos + (r.startH - newH); }
+                            // clamp within parent using captured rect
+                            if (parentRectForHandle) {
+                              newX = Math.max(0, Math.min(newX, parentRectForHandle.width - newW));
+                              newY = Math.max(0, Math.min(newY, parentRectForHandle.height - newH));
+                            }
+                            setScenes(prev => {
+                              const copy = [...prev];
+                              copy[previewSceneIdx].interactiveZones[i] = { ...copy[previewSceneIdx].interactiveZones[i], x: Math.round(newX), y: Math.round(newY), width: Math.round(newW), height: Math.round(newH) };
+                              return copy;
+                            });
+                          };
+                          const onPointerUp = () => { resizingRef.current = null; window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); };
+                          window.addEventListener('pointermove', onPointerMove);
+                          window.addEventListener('pointerup', onPointerUp);
+                        }}
+                      />
+                    );
+                  })
+                )}
               </div>
             ))}
           </div>
@@ -283,53 +507,124 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   </select>
                   <label className="block text-sm">Background Image</label>
                   <div className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      value={scene.backgroundUrl || ''}
-                      onChange={e => {
-                        const updated = [...scenes];
-                        updated[idx].backgroundUrl = e.target.value;
-                        setScenes(updated);
-                      }}
-                      placeholder="Paste an external image URL"
-                      className="border rounded px-2 py-1 text-xs w-64"
-                    />
-                    <button
-                      type="button"
-                      className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
-                      disabled={!scene.backgroundUrl || !editId}
-                      onClick={async () => {
-                        if (!scene.backgroundUrl || !editId) return;
-                        try {
-                          const resp = await fetch('/api/admin/media', {
-                            method: 'POST',
-                            body: (() => {
-                              const fd = new FormData();
-                              fd.append('url', scene.backgroundUrl);
-                              fd.append('puzzleId', editId);
-                              return fd;
-                            })(),
-                          });
-                          const data = await resp.json();
-                          if (resp.ok && data.mediaUrl) {
-                            const updated = [...scenes];
-                            updated[idx].backgroundUrl = data.mediaUrl;
-                            setScenes(updated);
-                            // Debug: log the response and updated backgroundUrl
-                            // eslint-disable-next-line no-console
-                            console.log('[Designer] Imported media:', { status: resp.status, body: data, updatedBackgroundUrl: updated[idx].backgroundUrl });
-                            alert('Image imported and saved to media!');
-                          } else {
-                            alert('Import failed: ' + (data.error || 'Unknown error'));
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="text"
+                        value={scene.backgroundUrl || ''}
+                        onChange={e => {
+                          const updated = [...scenes];
+                          updated[idx].backgroundUrl = e.target.value;
+                          setScenes(updated);
+                        }}
+                        placeholder="Paste an external image URL"
+                        className="border rounded px-2 py-1 text-xs w-64"
+                      />
+
+                      <button
+                        type="button"
+                        className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
+                        disabled={!scene.backgroundUrl || !editId}
+                        onClick={async () => {
+                          if (!scene.backgroundUrl || !editId) return;
+                          try {
+                            const resp = await fetch('/api/admin/media', {
+                              method: 'POST',
+                              body: (() => {
+                                const fd = new FormData();
+                                fd.append('url', scene.backgroundUrl);
+                                fd.append('puzzleId', editId);
+                                return fd;
+                              })(),
+                            });
+                            const data = await resp.json();
+                            if (resp.ok && data.mediaUrl) {
+                              const updated = [...scenes];
+                              updated[idx].backgroundUrl = data.mediaUrl;
+                              setScenes(updated);
+                              console.log('[Designer] Imported media:', { status: resp.status, body: data, updatedBackgroundUrl: updated[idx].backgroundUrl });
+                              alert('Image imported and saved to media!');
+                            } else {
+                              alert('Import failed: ' + (data.error || 'Unknown error'));
+                            }
+                          } catch (err) {
+                            alert('Import error: ' + (err instanceof Error ? err.message : String(err)));
                           }
-                        } catch (err) {
-                          alert('Import error: ' + (err instanceof Error ? err.message : String(err)));
-                        }
-                      }}
-                    >Import to Media</button>
-                    {scene.backgroundUrl && (
-                      <img src={scene.backgroundUrl} alt="bg" className="h-10 w-10 object-cover rounded ml-2" />
-                    )}
+                        }}
+                      >Import to Media</button>
+
+                      {/* New: upload background file and store under public/content/images */}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        id={`scene-bg-file-${idx}`}
+                        style={{ display: 'none' }}
+                        onChange={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const file = e.target.files?.[0];
+                          setBgUploadState(prev => ({ ...prev, [idx]: { uploading: true, error: undefined } }));
+                          try {
+                            if (!file) {
+                              setBgUploadState(prev => ({ ...prev, [idx]: { uploading: false, error: 'No file selected' } }));
+                              return;
+                            }
+
+                            // quick client-side validations to give faster feedback
+                            if (file.size > MAX_CLIENT_UPLOAD) {
+                              setBgUploadState(prev => ({ ...prev, [idx]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } }));
+                              return;
+                            }
+
+                            const fd = new FormData();
+                            fd.append('file', file);
+                            if (editId) fd.append('puzzleId', editId);
+                            fd.append('dest', 'content-images'); // request storage in content/images
+
+                            const res = await fetch('/api/admin/media', { method: 'POST', body: fd, credentials: 'same-origin' });
+
+                            // handle network-level failures
+                            if (!res.ok) {
+                              let bodyText = '';
+                              try { bodyText = await res.text(); } catch (_) { bodyText = ''; }
+                              let serverMsg = bodyText;
+                              try {
+                                const parsed = JSON.parse(bodyText || '{}');
+                                serverMsg = parsed.error || parsed.message || bodyText;
+                              } catch (_) {
+                                /* not JSON */
+                              }
+                              const errMsg = `Upload failed: ${res.status} ${res.statusText} - ${serverMsg || 'server error'}`;
+                              console.error('[Designer] background upload error response:', { status: res.status, statusText: res.statusText, body: bodyText });
+                              setBgUploadState(prev => ({ ...prev, [idx]: { uploading: false, error: errMsg } }));
+                              return;
+                            }
+
+                            const data = await res.json().catch(() => ({}));
+                            if (data && (data.mediaUrl || data.url)) {
+                              const updated = [...scenes];
+                              updated[idx].backgroundUrl = data.mediaUrl || data.url;
+                              setScenes(updated);
+                              setBgUploadState(prev => ({ ...prev, [idx]: { uploading: false, error: undefined } }));
+                            } else {
+                              const msg = (data && (data.error || data.message)) || 'Unknown server response';
+                              setBgUploadState(prev => ({ ...prev, [idx]: { uploading: false, error: `Upload failed: ${msg}` } }));
+                              console.error('[Designer] unexpected upload response', data);
+                            }
+                          } catch (err) {
+                            const errMsg = err instanceof Error ? err.message : String(err);
+                            console.error('[Designer] upload network/error', err);
+                            setBgUploadState(prev => ({ ...prev, [idx]: { uploading: false, error: `Upload error: ${errMsg}` } }));
+                          }
+                        }}
+                      />
+                      <label htmlFor={`scene-bg-file-${idx}`} className="bg-emerald-500 text-white px-2 py-1 rounded text-xs cursor-pointer">Upload background</label>
+                      {bgUploadState[idx]?.uploading && <span className="ml-2 text-xs text-blue-400">Uploading...</span>}
+                      {bgUploadState[idx]?.error && <div style={{ color: '#ff7b7b', fontSize: 12, marginLeft: 8 }}>{bgUploadState[idx]?.error}</div> }
+
+                      {scene.backgroundUrl && (
+                        <img src={scene.backgroundUrl} alt="bg" className="h-10 w-10 object-cover rounded ml-2" />
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="mb-2">
@@ -345,7 +640,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   <label className="block text-sm font-semibold">Items</label>
                   <button className="bg-blue-500 text-white px-2 py-1 rounded text-xs mb-2" type="button" onClick={() => {
                     const updated = [...scenes];
-                    updated[idx].items.push({ id: Date.now().toString(), name: '', imageUrl: '', description: '', x: 50, y: 50, properties: {} });
+                    updated[idx].items.push({ id: Date.now().toString(), name: '', imageUrl: '', description: '', x: 50, y: 50, w: 48, h: 48, properties: {} });
                     setScenes(updated);
                   }}>+ Add Item</button>
                   {scene.items.length === 0 ? (
@@ -434,16 +729,34 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             updated[idx].items[itemIdx].description = e.target.value;
                             setScenes(updated);
                           }} placeholder="Description" className="border rounded px-2 py-1 w-full text-xs" />
-                          <div className="mt-1">
-                            <label className="block text-xs">Linked Puzzle (optional)</label>
-                            <select value={item.linkedPuzzleId || ''} onChange={e => {
-                              const updated = [...scenes];
-                              updated[idx].items[itemIdx].linkedPuzzleId = e.target.value || undefined;
-                              setScenes(updated);
-                            }} className="border rounded px-2 py-1 text-xs">
-                              <option value="">None</option>
-                              {dummyPuzzles.map(pz => <option key={pz.id} value={pz.id}>{pz.title}</option>)}
-                            </select>
+                          <div className="mt-1 flex gap-2 items-center">
+                            <div>
+                              <label className="block text-xs">Width</label>
+                              <input type="number" value={Number(item.w ?? 48)} onChange={e => {
+                                const updated = [...scenes];
+                                updated[idx].items[itemIdx].w = Math.max(8, Number(e.target.value) || 8);
+                                setScenes(updated);
+                              }} className="border rounded px-2 py-1 w-24 text-xs" />
+                            </div>
+                            <div>
+                              <label className="block text-xs">Height</label>
+                              <input type="number" value={Number(item.h ?? 48)} onChange={e => {
+                                const updated = [...scenes];
+                                updated[idx].items[itemIdx].h = Math.max(8, Number(e.target.value) || 8);
+                                setScenes(updated);
+                              }} className="border rounded px-2 py-1 w-24 text-xs" />
+                            </div>
+                            <div style={{ marginLeft: 12 }}>
+                              <label className="block text-xs">Linked Puzzle (optional)</label>
+                              <select value={item.linkedPuzzleId || ''} onChange={e => {
+                                const updated = [...scenes];
+                                updated[idx].items[itemIdx].linkedPuzzleId = e.target.value || undefined;
+                                setScenes(updated);
+                              }} className="border rounded px-2 py-1 text-xs">
+                                <option value="">None</option>
+                                {dummyPuzzles.map(pz => <option key={pz.id} value={pz.id}>{pz.title}</option>)}
+                              </select>
+                            </div>
                           </div>
                         </li>
                       ))}

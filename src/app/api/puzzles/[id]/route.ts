@@ -102,6 +102,13 @@ export async function GET(
       }
     }
 
+    // Debug: log nested sudoku payload (if any) to help diagnose missing Sudoku on client
+    try {
+      console.log('[PUZZLE FETCH] Out payload sudoku:', JSON.stringify((outPayload as any)?.sudoku));
+    } catch (e) {
+      console.warn('[PUZZLE FETCH] Failed to stringify sudoku payload for debug:', e);
+    }
+
     return NextResponse.json(outPayload);
   } catch (error) {
     console.error("Error fetching puzzle:", error);

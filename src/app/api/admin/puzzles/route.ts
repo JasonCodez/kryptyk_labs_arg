@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-    } else if (puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room') {
+    } else if (puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'code_master') {
       if (!correctAnswer) {
         return NextResponse.json(
           { error: "Single-part puzzles must have a correct answer" },
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       },
       difficulty: puzzleDifficulty,
       puzzleType: puzzleType || 'general',
-      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' ? correctAnswer : undefined,
+      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'code_master' ? correctAnswer : undefined,
       jigsaw:
         puzzleType === 'jigsaw'
           ? {
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
               },
             }
           : undefined,
-      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'escape_room' ? undefined : {
+      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'escape_room' || puzzleType === 'code_master' ? undefined : {
         create: [
           {
             answer: correctAnswer,
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     };
 
-    if (puzzleType === 'escape_room' && typeof puzzleData !== 'undefined') {
+    if ((puzzleType === 'escape_room' || puzzleType === 'code_master') && typeof puzzleData !== 'undefined') {
       createData.data = puzzleData;
     }
 
@@ -391,8 +391,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Return puzzle; include escape-room data separately if desired by client
-    return NextResponse.json(puzzle, { status: 201 });
+    // Return puzzle; re-fetch to include any nested records (e.g., sudoku, jigsaw)
+    try {
+      const fullPuzzle = await prisma.puzzle.findUnique({
+        where: { id: puzzle.id },
+        include: {
+          hints: true,
+          media: true,
+          sudoku: true,
+          jigsaw: true,
+          parts: true,
+          category: true,
+        },
+      });
+      return NextResponse.json(fullPuzzle || puzzle, { status: 201 });
+    } catch (e) {
+      console.warn('[PUZZLE CREATE] Failed to re-fetch full puzzle payload:', e);
+      return NextResponse.json(puzzle, { status: 201 });
+    }
   } catch (error) {
     console.error("Error creating puzzle:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to create puzzle";

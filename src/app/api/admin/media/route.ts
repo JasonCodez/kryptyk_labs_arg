@@ -125,8 +125,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Allow caller to request alternate storage locations for specific use-cases
+      // (e.g. designer background images). Only allow whitelisted targets.
+      const dest = (formData.get('dest') as string) || '';
+      const ALLOWED_DESTS: Record<string, { dir: string; urlPrefix: string }> = {
+        'uploads-media': { dir: join(process.cwd(), 'public', 'uploads', 'media'), urlPrefix: '/uploads/media' },
+        'content-images': { dir: join(process.cwd(), 'public', 'content', 'images'), urlPrefix: '/content/images' },
+      };
+
+      const chosen = ALLOWED_DESTS[dest || 'uploads-media'] || ALLOWED_DESTS['uploads-media'];
+
       // Create upload directory if it doesn't exist
-      const uploadDir = join(process.cwd(), "public", "uploads", "media");
+      const uploadDir = chosen.dir;
       if (!existsSync(uploadDir)) {
         await mkdir(uploadDir, { recursive: true });
       }
@@ -134,7 +144,7 @@ export async function POST(request: NextRequest) {
       // Generate unique filename and save to disk
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 8);
-      const ext = file.name.substring(file.name.lastIndexOf(".")) || ".bin";
+      const ext = file.name.substring(file.name.lastIndexOf('.') ) || '.bin';
       const uniqueFileName = `${puzzleId || 'temp'}-${timestamp}-${random}${ext}`;
       const filePath = join(uploadDir, uniqueFileName);
 
@@ -142,7 +152,7 @@ export async function POST(request: NextRequest) {
 
       fileName = file.name;
       fileSize = buffer.byteLength;
-      mediaUrl = `/uploads/media/${uniqueFileName}`;
+      mediaUrl = `${chosen.urlPrefix}/${uniqueFileName}`;
     } else if (externalUrl) {
       // External URL path — fetch the remote resource and validate
       try {

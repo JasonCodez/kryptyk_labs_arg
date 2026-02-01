@@ -1,13 +1,15 @@
 generator client {
   provider = "prisma-client-js"
-  url      = env("DATABASE_URL")
+  // url is removed for Prisma 7+; provide connection via prisma.config.ts if needed
+  // url      = env("DATABASE_URL")
 }
 
 datasource db {
   // NOTE: switched to PostgreSQL for Render deployment. If you need MySQL,
   // change this back to "mysql" and update DATABASE_URL accordingly.
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // url is removed for Prisma 7+; move connection URLs to prisma.config.ts or PrismaClient configuration
+  // url      = env("DATABASE_URL")
   // Prisma 7+ no longer supports `url` in schema files; move connection URLs for Migrate
   // to prisma.config.ts and provide an `adapter` or `accelerateUrl` to PrismaClient.
   // See: https://pris.ly/d/config-datasource and https://pris.ly/d/prisma7-client-config

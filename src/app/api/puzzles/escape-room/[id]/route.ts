@@ -54,14 +54,30 @@ export async function GET(
         },
       });
       if (stored && Array.isArray(stored.layouts) && stored.layouts.length > 0) {
-        layouts = stored.layouts.map((l: any) => ({
-          id: l.id,
-          title: l.title || null,
-          backgroundUrl: l.backgroundUrl || null,
-          width: l.width || null,
-          height: l.height || null,
-          hotspots: (l.hotspots || []).map((h: any) => ({ id: h.id, x: h.x, y: h.y, w: h.w, h: h.h, type: h.type, meta: h.meta }))
-        }));
+        layouts = stored.layouts.map((l: any, idx: number) => {
+          // Try to attach designer items (positions + imageUrl) when available in the original designer payload
+          let items: any[] = [];
+          try {
+            const scenes = escapeRoomData && escapeRoomData.scenes && Array.isArray(escapeRoomData.scenes) ? escapeRoomData.scenes : null;
+            let srcScene: any = null;
+            if (scenes) {
+              // Prefer same-index mapping, otherwise match by title
+              srcScene = scenes[idx] || scenes.find((s: any) => (s.name || '').trim() === (l.title || '').trim()) || null;
+            }
+            if (srcScene && Array.isArray(srcScene.items)) items = srcScene.items.map((it: any) => ({ id: it.id, name: it.name, imageUrl: it.imageUrl, x: it.x, y: it.y, w: it.w, h: it.h, properties: it.properties || {} }));
+          } catch (err) {
+            items = [];
+          }
+          return {
+            id: l.id,
+            title: l.title || null,
+            backgroundUrl: l.backgroundUrl || null,
+            width: l.width || null,
+            height: l.height || null,
+            hotspots: (l.hotspots || []).map((h: any) => ({ id: h.id, x: h.x, y: h.y, w: h.w, h: h.h, type: h.type, meta: h.meta })),
+            items,
+          };
+        });
       }
     } catch (err) {
       // ignore layout loading errors — fall back to no layouts

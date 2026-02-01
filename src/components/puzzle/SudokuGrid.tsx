@@ -23,6 +23,10 @@ interface SudokuGridProps {
 
 export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disabled = false, solution, validateOnChange = false, onValidatedSuccess, onNotify, maxAttempts = 5, usedAttempts, onAttempt, onGiveUp, onRequestGiveUp }: SudokuGridProps) {
   const [grid, setGrid] = useState<number[][]>(() => puzzle.map((row) => [...row]));
+  const initialPuzzleRef = ((): { current: number[][] } => {
+    const ref: { current: number[][] } = { current: puzzle.map((r) => [...r]) };
+    return ref;
+  })();
   const [incorrectMap, setIncorrectMap] = useState<boolean[][]>(() => Array(9).fill(null).map(() => Array(9).fill(false)));
   const [incorrectCount, setIncorrectCount] = useState(0);
   const [submitMessage, setSubmitMessage] = useState<{ message: string; type?: 'info'|'success'|'error' } | null>(null);
@@ -34,11 +38,13 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
 
   useEffect(() => {
     setGrid(puzzle.map((row) => [...row]));
+    initialPuzzleRef.current = puzzle.map((row) => [...row]);
   }, [puzzle]);
 
   const handleCellChange = (row: number, col: number, value: string) => {
     if (disabled) return;
-    if (puzzle[row]?.[col] !== 0) return;
+    const isGiven = typeof givens !== 'undefined' ? (givens[row]?.[col] ?? 0) !== 0 : (initialPuzzleRef.current[row]?.[col] ?? 0) !== 0;
+    if (isGiven) return;
 
     const num = value === "" ? 0 : Number.parseInt(value, 10);
     if (Number.isNaN(num) || num < 0 || num > 9) return;
@@ -63,8 +69,15 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
       setSubmitMessage({ message: 'Please fill all cells before submitting the Sudoku.', type: 'info' });
       return;
     }
-
     // If a solution is provided, run animated validation
+    if (!Array.isArray(solution)) {
+      console.warn('[SudokuGrid] submit blocked: no solution provided');
+      setSubmitMessage({ message: 'Sudoku solution unavailable. Cannot validate submission.', type: 'error' });
+      return;
+    }
+
+    console.debug('[SudokuGrid] submitting, solution present:', Array.isArray(solution));
+    // run animated validation
     if (Array.isArray(solution)) {
       setAnimating('validating');
       const incorrect = findIncorrectCells(grid, solution);
@@ -127,7 +140,9 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
       for (let c = 0; c < 9; c++) {
         if ((puzzle[r]?.[c] || 0) === 0) {
           // only validate user-entered cells
-          if (g[r][c] !== 0 && sol[r][c] !== g[r][c]) {
+          const solutionVal = Number(sol[r]?.[c] ?? -1);
+          const gridVal = Number(g[r]?.[c] ?? -1);
+          if (gridVal !== 0 && solutionVal !== gridVal) {
             incorrect.push([r, c]);
           }
         }
@@ -182,7 +197,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
           {grid.map((row, rowIdx) => (
             <div key={rowIdx} className="flex">
               {row.map((cell, colIdx) => {
-              const isGiven = givens ? (givens[rowIdx]?.[colIdx] !== 0) : (puzzle[rowIdx]?.[colIdx] !== 0);
+              const isGiven = givens ? (givens[rowIdx]?.[colIdx] !== 0) : (initialPuzzleRef.current[rowIdx]?.[colIdx] !== 0);
               const thickRight = colIdx === 2 || colIdx === 5;
               const thickBottom = rowIdx === 2 || rowIdx === 5;
 

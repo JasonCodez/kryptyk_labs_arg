@@ -37,6 +37,24 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     return '';
   };
 
+  const asStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.filter((v) => typeof v === 'string') as string[];
+    if (typeof value === 'string') {
+      return value
+        .split(/\r?\n|,/g)
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const updateValidationRule = (key: string, value: unknown) => {
+    const existing = (puzzleData.validationRules && typeof puzzleData.validationRules === 'object')
+      ? (puzzleData.validationRules as Record<string, unknown>)
+      : {};
+    onDataChange('validationRules', { ...existing, [key]: value });
+  };
+
   const renderJigsawFields = () => (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -85,6 +103,141 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
         />
         Rotation Enabled
       </label>
+    </div>
+  );
+
+  const renderCodeMasterFields = () => (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-semibold text-gray-300 mb-2">Scenario</label>
+        <textarea
+          value={asString(puzzleData.scenario, '')}
+          onChange={(e) => onDataChange('scenario', e.target.value)}
+          placeholder="Describe the mission and what's broken"
+          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 h-24"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold text-gray-300 mb-2">Language</label>
+          <select
+            value={asString(puzzleData.language, 'html')}
+            onChange={(e) => onDataChange('language', e.target.value)}
+            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+          >
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="python">Python</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-300 mb-2">Validation Mode</label>
+          <select
+            value={asString(puzzleData.validationMode, 'exact')}
+            onChange={(e) => onDataChange('validationMode', e.target.value)}
+            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+          >
+            <option value="exact">Exact Match</option>
+            <option value="contains">Must Contain</option>
+            <option value="regex">Regex</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-300 mb-2">Broken Code</label>
+        <textarea
+          value={asString(puzzleData.brokenCode, '')}
+          onChange={(e) => onDataChange('brokenCode', e.target.value)}
+          placeholder="Paste the broken code"
+          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 h-32 font-mono"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-300 mb-2">Prefill CSS (optional)</label>
+        <textarea
+          value={asString(puzzleData.prefillCss, '')}
+          onChange={(e) => onDataChange('prefillCss', e.target.value)}
+          placeholder="Optional CSS to prefill styles.css"
+          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 h-24 font-mono"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-300 mb-2">Expected Fix</label>
+        <textarea
+          value={asString(puzzleData.expectedFix, '')}
+          onChange={(e) => onDataChange('expectedFix', e.target.value)}
+          placeholder="What should the fixed code look like?"
+          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 h-32 font-mono"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold text-gray-300 mb-2">Must Contain (comma or newline)</label>
+          <textarea
+            value={asStringArray((puzzleData.validationRules as Record<string, unknown> | undefined)?.mustContain).join('\n')}
+            onChange={(e) => updateValidationRule('mustContain', asStringArray(e.target.value))}
+            placeholder="e.g., <nav>"
+            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 h-20"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-300 mb-2">Must Not Contain (comma or newline)</label>
+          <textarea
+            value={asStringArray((puzzleData.validationRules as Record<string, unknown> | undefined)?.mustNotContain).join('\n')}
+            onChange={(e) => updateValidationRule('mustNotContain', asStringArray(e.target.value))}
+            placeholder="e.g., <center>"
+            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 h-20"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-300 mb-2">Regex (optional)</label>
+        <input
+          type="text"
+          value={asString((puzzleData.validationRules as Record<string, unknown> | undefined)?.regex, '')}
+          onChange={(e) => updateValidationRule('regex', e.target.value)}
+          placeholder="e.g., <nav>.*</nav>"
+          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <label className="inline-flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={Boolean((puzzleData.validationRules as Record<string, unknown> | undefined)?.ignoreCase)}
+            onChange={(e) => updateValidationRule('ignoreCase', e.target.checked)}
+            className="h-4 w-4"
+          />
+          Ignore Case
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={Boolean((puzzleData.validationRules as Record<string, unknown> | undefined)?.ignoreWhitespace)}
+            onChange={(e) => updateValidationRule('ignoreWhitespace', e.target.checked)}
+            className="h-4 w-4"
+          />
+          Ignore Whitespace
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={(puzzleData.validationRules as Record<string, unknown> | undefined)?.colorFlex !== false}
+            onChange={(e) => updateValidationRule('colorFlex', e.target.checked)}
+            className="h-4 w-4"
+          />
+          Match Color Names (e.g., blue)
+        </label>
+      </div>
     </div>
   );
 
@@ -165,6 +318,10 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
 
   if (puzzleType === 'jigsaw') {
     return renderJigsawFields();
+  }
+
+  if (puzzleType === 'code_master') {
+    return renderCodeMasterFields();
   }
 
   const renderCoordinatesFields = () => (

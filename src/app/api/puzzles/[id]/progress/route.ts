@@ -83,10 +83,12 @@ export async function GET(
 
 // POST /api/puzzles/[id]/progress - Update progress (start session, log attempt, etc)
 const UpdateProgressSchema = z.object({
-  action: z.enum(["start_session", "end_session", "log_attempt", "attempt_success"]),
+  action: z.enum(["start_session", "end_session", "log_attempt", "attempt_success", "lock_puzzle", "clear_state"]),
   durationSeconds: z.number().optional(),
   hintUsed: z.boolean().optional(),
   successful: z.boolean().optional(),
+  // optional grid payload for puzzles like Sudoku
+  grid: z.array(z.array(z.number())).optional(),
 });
 
 export async function POST(
@@ -120,6 +122,11 @@ export async function POST(
 
     const rawBody = await request.json().catch(() => null);
     console.log('[PROGRESS] rawBody:', rawBody);
+
+    if (!rawBody || typeof rawBody.action === 'undefined') {
+      console.warn('[PROGRESS] Missing request body or action');
+      return NextResponse.json({ error: 'Missing action in request body' }, { status: 400 });
+    }
 
     const { action, durationSeconds, hintUsed, successful } =
       UpdateProgressSchema.parse(rawBody || {});
@@ -236,6 +243,49 @@ export async function POST(
         break;
 
       case "attempt_success":
+        // If this is a Sudoku puzzle, validate the submitted grid against the stored solution
+        try {
+          const submittedGrid = rawBody.grid;
+          const puzzleRecord = await prisma.puzzle.findUnique({ where: { id }, include: { sudoku: true } });
+          if (puzzleRecord?.puzzleType === 'sudoku') {
+            if (!Array.isArray(submittedGrid)) {
+              console.warn('[PROGRESS] attempt_success missing grid for sudoku');
+              return NextResponse.json({ error: 'Missing submitted grid for Sudoku validation' }, { status: 400 });
+            }
+
+            let storedSolution: any = null;
+            try {
+              storedSolution = puzzleRecord.sudoku?.solutionGrid ? JSON.parse(puzzleRecord.sudoku.solutionGrid) : null;
+            } catch (e) {
+              storedSolution = null;
+            }
+
+            if (!Array.isArray(storedSolution)) {
+              console.error('[PROGRESS] server missing sudoku solution for puzzle', id);
+              return NextResponse.json({ error: 'Server missing Sudoku solution' }, { status: 500 });
+            }
+
+            const gridsMatch = (() => {
+              for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                  const s = Number(storedSolution[r]?.[c] ?? -1);
+                  const g = Number(submittedGrid[r]?.[c] ?? -1);
+                  if (Number.isNaN(s) || Number.isNaN(g) || s !== g) return false;
+                }
+              }
+              return true;
+            })();
+
+            if (!gridsMatch) {
+              console.warn('[PROGRESS] submitted sudoku grid does not match solution');
+              return NextResponse.json({ error: 'Submitted Sudoku solution does not match' }, { status: 400 });
+            }
+          }
+        } catch (e) {
+          console.error('[PROGRESS] error validating sudoku grid', e);
+          return NextResponse.json({ error: 'Failed to validate submitted solution' }, { status: 500 });
+        }
+
         const successfulAttempts = progress.successfulAttempts + 1;
         const newAttempts2 = progress.attempts + 1;
         const newAvgTime2 =

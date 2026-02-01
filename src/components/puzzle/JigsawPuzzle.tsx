@@ -1513,8 +1513,8 @@ export default function JigsawPuzzleSVGWithTray({
       // On narrow screens, prefer a scale that fits by height as well as width
       // so the stage isn't tiny in portrait mode. Reserve some UI chrome space.
       const wrapperH = wrapper.clientHeight || 0;
-      const reservedChrome = 140; // space for headers/controls when fullscreening
-      const availableHeight = wrapperH ? Math.max(200, wrapperH - reservedChrome) : null;
+      const reservedChrome = 24; // space for headers/controls when fullscreening
+      const availableHeight = isFullscreen && wrapperH ? Math.max(200, wrapperH - reservedChrome) : null;
       const stageH = isStacked ? boardHeight + trayHeight : boardHeight;
 
       const widthScale = wrapperW / effectiveStageWidth;
@@ -1527,7 +1527,8 @@ export default function JigsawPuzzleSVGWithTray({
       if (isFullscreen) {
         const viewportH = typeof window !== 'undefined' ? window.innerHeight : null;
         const wrapperH = wrapper.clientHeight || 0;
-        const availableHeight = wrapperH ? Math.max(200, wrapperH - 140) : (viewportH ? Math.max(200, viewportH - 140) : null);
+        const fullscreenChrome = 24;
+        const availableHeight = wrapperH ? Math.max(200, wrapperH - fullscreenChrome) : (viewportH ? Math.max(200, viewportH - fullscreenChrome) : null);
         const stageH = isStacked ? boardHeight + trayHeight : boardHeight;
         const fitScale = Math.min(1, wrapperW / (isStacked ? Math.max(boardWidth, trayWidth) : (boardWidth + trayWidth)), availableHeight ? availableHeight / stageH : 1);
         setFsScale(fitScale);
@@ -1589,6 +1590,9 @@ export default function JigsawPuzzleSVGWithTray({
     // Intentionally only run once per mount/parent callback change
   }, [onControlsReady]);
 
+  const nonFullscreenHeight = Math.max(320, Math.round(stageHeight * (scale || 1)));
+  const nonFullscreenWidth = Math.max(320, Math.round(stageWidth * (scale || 1)));
+
   return (
     <div
       ref={wrapperRef}
@@ -1598,11 +1602,12 @@ export default function JigsawPuzzleSVGWithTray({
         top: isFullscreen ? 0 : undefined,
         zIndex: isFullscreen ? 12000 : undefined,
         inset: isFullscreen ? '0px' : undefined,
-        padding: isFullscreen ? 24 : undefined,
+        padding: isFullscreen ? 0 : undefined,
         background: isFullscreen ? 'rgba(0,0,0,0.85)' : undefined,
         fontFamily: "system-ui, sans-serif",
-        width: '100%',
-        height: isFullscreen ? '100vh' : '100vh',
+        width: isFullscreen ? '100vw' : `${nonFullscreenWidth}px`,
+        height: isFullscreen ? '100vh' : `${nonFullscreenHeight}px`,
+        margin: isFullscreen ? undefined : '0 auto',
         overflow: isFullscreen ? 'hidden' : 'visible',
         maxWidth: '100%',
         ...containerStyle,
