@@ -2,6 +2,7 @@
 import dotenv from 'dotenv';
 import axios, { AxiosError } from 'axios';
 import { PrismaClient } from '@prisma/client';
+import ensureDevServer from './devServer';
 const prisma = new PrismaClient();
 dotenv.config();
 
@@ -12,6 +13,11 @@ describe('Escape Room API Endpoints', () => {
   let escapeRoomId: string;
 
   beforeAll(async () => {
+    // ensure dev server is running for HTTP e2e
+    const server = await ensureDevServer();
+    // attach to global so afterAll can stop it if needed
+    (global as any).__e2e_dev_server = server;
+
     // Create a test category
     const category = await prisma.puzzleCategory.create({
       data: {
@@ -51,10 +57,19 @@ describe('Escape Room API Endpoints', () => {
   });
 
   afterAll(async () => {
-    await prisma.escapeRoomPuzzle.deleteMany({ where: { puzzleId } });
-    await prisma.puzzle.delete({ where: { id: puzzleId } });
-    await prisma.puzzleCategory.delete({ where: { id: categoryId } });
+    if (puzzleId) {
+      await prisma.escapeRoomPuzzle.deleteMany({ where: { puzzleId } });
+      await prisma.puzzle.delete({ where: { id: puzzleId } });
+    }
+    if (categoryId) {
+      await prisma.puzzleCategory.delete({ where: { id: categoryId } });
+    }
     await prisma.$disconnect();
+    // stop spawned dev server if we started it
+    const server: any = (global as any).__e2e_dev_server;
+    if (server && typeof server.stop === 'function') {
+      await server.stop();
+    }
   });
 
   it('should list all escape rooms', async () => {
