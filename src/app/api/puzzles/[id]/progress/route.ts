@@ -112,10 +112,28 @@ export async function POST(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // Ensure the puzzle exists up front so we don't hit foreign key errors later.
+    const puzzleRecord = await prisma.puzzle.findUnique({
+      where: { id },
+      include: { sudoku: true, solutions: true, parts: true },
+    });
+
+    if (!puzzleRecord) {
+      return NextResponse.json({ error: "Puzzle not found" }, { status: 404 });
+    }
+
     const debug = process.env.DEBUG_PROGRESS === '1';
 
     // Debug logging (opt-in): set DEBUG_PROGRESS=1
-    const rawBody = await request.json().catch(() => null);
+    let rawBody: any = null;
+    try {
+      // Parse as text first to sidestep body stream issues on some clients (e.g., curl on Windows)
+      const bodyText = await request.text();
+      rawBody = bodyText ? JSON.parse(bodyText) : null;
+    } catch (e) {
+      console.warn('[PROGRESS] failed to parse JSON body', e);
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
     if (debug) {
       try {
         const ua = request.headers.get('user-agent') || '<none>';
@@ -259,7 +277,6 @@ export async function POST(
         // If this is a Sudoku puzzle, validate the submitted grid against the stored solution
         try {
           const submittedGrid = rawBody.grid;
-          const puzzleRecord = await prisma.puzzle.findUnique({ where: { id }, include: { sudoku: true } });
           if (puzzleRecord?.puzzleType === 'sudoku') {
             if (!Array.isArray(submittedGrid)) {
               console.warn('[PROGRESS] attempt_success missing grid for sudoku');
@@ -340,12 +357,6 @@ export async function POST(
 
           // Award points for solving the puzzle
           try {
-            // Fetch puzzle with solutions/parts to derive point value (avoid relying on a non-existent `pointsReward` field)
-            const puzzleRecord = await prisma.puzzle.findUnique({
-              where: { id },
-              include: { solutions: true, parts: true },
-            });
-
             let awardPoints = 100;
             if (puzzleRecord) {
               if (puzzleRecord.solutions && puzzleRecord.solutions.length > 0) {

@@ -1115,7 +1115,7 @@ export default function PuzzleDetailPage() {
         </div>
       </nav>
 
-      <div className="p-8 flex-1">
+      <div className="flex-1 w-screen relative left-1/2 -translate-x-1/2 px-0 py-4 sm:p-8 sm:w-auto sm:static sm:translate-x-0">
         <div className="w-full">
           <div
             className="border rounded-lg p-8 mb-8"
@@ -1334,23 +1334,22 @@ export default function PuzzleDetailPage() {
                   <div className="mb-8">
                     {jigsawPlayable && (
                       <div className="mb-4 flex flex-col items-stretch gap-3">
-                        <div className="flex items-center justify-center gap-3">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
                           <button
                             onClick={() => jigsawControls?.enterFullscreen?.()}
-                            className="px-3 py-1 rounded bg-gray-800 text-white border border-gray-600 hover:opacity-90"
+                            className="w-full sm:w-auto px-3 py-2 rounded bg-gray-800 text-white border border-gray-600 hover:opacity-90"
                           >
                             Fullscreen
                           </button>
                           <button
                             onClick={() => jigsawControls?.sendLooseToTray?.()}
-                            className="w-full px-3 py-2 rounded bg-yellow-400 text-black border border-yellow-500 hover:opacity-90"
-                            style={{ maxWidth: 180 }}
+                            className="w-full sm:w-auto px-3 py-2 rounded bg-yellow-400 text-black border border-yellow-500 hover:opacity-90"
                           >
                             Send loose to tray
                           </button>
                           <button
                             onClick={() => jigsawControls?.reset?.()}
-                            className="px-3 py-1 rounded bg-red-600 text-white border border-red-700 hover:opacity-90"
+                            className="w-full sm:w-auto px-3 py-2 rounded bg-red-600 text-white border border-red-700 hover:opacity-90"
                           >
                             Reset
                           </button>
@@ -1363,8 +1362,8 @@ export default function PuzzleDetailPage() {
                       </div>
                     ) : (
                       <div
-                        className="rounded-none overflow-hidden border border-gray-700 bg-gray-900"
-                        style={{ width: "fit-content", margin: "0 auto" }}
+                        className="rounded-none overflow-hidden border border-gray-700 bg-gray-900 w-screen relative left-1/2 -translate-x-1/2 sm:w-full sm:static sm:translate-x-0"
+                        style={{ margin: "0 auto" }}
                       >
                         <JigsawPuzzle
                           imageUrl={jigsawPlayable.imageUrl}

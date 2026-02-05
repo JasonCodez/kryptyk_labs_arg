@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import gsap from "gsap";
 
@@ -93,6 +94,8 @@ interface ClampFn {
 const clamp: ClampFn = function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 };
+
+  const EPS_GROUP_ALIGN_PX = 1.5;
 
 interface EdgeMap {
   top: number;
@@ -564,8 +567,9 @@ export default function JigsawPuzzleSVGWithTray({
   const shimmerOuterRef = useRef<HTMLDivElement>(null);
   const shimmerInnerRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLDivElement>(null);
-  const normalizedPositionsRef = useRef<Record<string, PiecePosition> | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const isFullscreenRef = useRef(false);
+  const [portalReady, setPortalReady] = useState(false);
   const [fsScale, setFsScale] = useState<number>(1);
   const [fsPan, setFsPan] = useState<PiecePosition>({ x: 0, y: 0 });
   const pointersRef = useRef<Map<number, { x: number; y: number; targetIsPiece: boolean }>>(new Map());
@@ -577,6 +581,45 @@ export default function JigsawPuzzleSVGWithTray({
   const completedRef = useRef<boolean>(false);
   const [showCongrats, setShowCongrats] = useState(false);
   const [awardedPoints, setAwardedPoints] = useState<number | null>(null);
+  // Allow panning/zooming in fullscreen but clamp to content bounds.
+  const fullscreenPanEnabled = true;
+
+  React.useEffect(() => {
+    isFullscreenRef.current = isFullscreen;
+  }, [isFullscreen]);
+
+  React.useEffect(() => {
+    // Only portal fullscreen UI after mount (document available)
+    setPortalReady(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isFullscreen]);
+
+  const clampFullscreenPan = (pan: PiecePosition, scaleVal: number): PiecePosition => {
+    const wrapper = wrapperRef.current;
+    const wrapperW = wrapper?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : stageWidth);
+    const wrapperH = wrapper?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : stageHeight);
+
+    const visibleW = wrapperW / (scaleVal || 1);
+    const visibleH = wrapperH / (scaleVal || 1);
+
+    const minX = Math.min(0, visibleW - stageWidth);
+    const maxX = 0;
+    const minY = Math.min(0, visibleH - stageHeight);
+    const maxY = 0;
+
+    return {
+      x: clamp(pan.x, minX, maxX),
+      y: clamp(pan.y, minY, maxY),
+    };
+  };
 
   const pieceW = boardWidth / cols;
   const pieceH = boardHeight / rows;
@@ -808,6 +851,42 @@ export default function JigsawPuzzleSVGWithTray({
         : p
     );
 
+  const normalizeGroupToCorrectOffsets = (arr: Piece[], groupId: string): Piece[] => {
+    const group = arr.filter((p) => p.groupId === groupId);
+    if (group.length <= 1) return arr;
+
+    // Pick a stable anchor: top-left-most (then id for tie-break).
+    const anchor = [...group].sort((a, b) => (a.pos.y - b.pos.y) || (a.pos.x - b.pos.x) || a.id.localeCompare(b.id))[0];
+    const ax = anchor.pos.x;
+    const ay = anchor.pos.y;
+
+    return arr.map((p) => {
+      if (p.groupId !== groupId) return p;
+      const dx = p.correct.x - anchor.correct.x;
+      const dy = p.correct.y - anchor.correct.y;
+      return {
+        ...p,
+        pos: { x: ax + dx, y: ay + dy },
+      };
+    });
+  };
+
+  const computeGroupTranslationToCorrect = (group: Piece[]) => {
+    if (group.length === 0) return { dx: 0, dy: 0, maxErr: Infinity };
+    const dxs = group.map((p) => p.correct.x - p.pos.x).sort((a, b) => a - b);
+    const dys = group.map((p) => p.correct.y - p.pos.y).sort((a, b) => a - b);
+    const mid = Math.floor(group.length / 2);
+    const dx = dxs[mid];
+    const dy = dys[mid];
+    let maxErr = 0;
+    for (const p of group) {
+      const ex = (p.correct.x - p.pos.x) - dx;
+      const ey = (p.correct.y - p.pos.y) - dy;
+      maxErr = Math.max(maxErr, hypot(ex, ey));
+    }
+    return { dx, dy, maxErr };
+  };
+
   interface MergeGroupsFn {
     (arr: Piece[], aGroup: string, bGroup: string): Piece[];
   }
@@ -846,20 +925,22 @@ export default function JigsawPuzzleSVGWithTray({
 
   const snapGroupToBoardIfClose: SnapGroupToBoardIfCloseFn = (arr, groupId) => {
     const group: Piece[] = arr.filter((p) => p.groupId === groupId);
-    for (const p of group) {
-      const dx: number = p.correct.x - p.pos.x;
-      const dy: number = p.correct.y - p.pos.y;
-      if (hypot(dx, dy) <= boardSnapTolerance) {
-        // Instead of forcing absolute positions (which can cause visual jerk),
-        // translate the whole group by the offset for this piece so the group's
-        // relative layout is preserved and movement is smooth.
-        const next = translateGroup(arr, groupId, dx, dy);
-        return next.map((piece) =>
-          piece.groupId === groupId ? { ...piece, snapped: true } : piece
-        );
-      }
-    }
-    return arr;
+    if (group.length === 0) return arr;
+
+    // Only lock-to-board if the whole group is already a rigid translation of its
+    // correct placement (prevents “random”/drifted groups from teleporting).
+    const { dx, dy, maxErr } = computeGroupTranslationToCorrect(group);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return arr;
+    if (maxErr > EPS_GROUP_ALIGN_PX) return arr;
+    if (hypot(dx, dy) > boardSnapTolerance) return arr;
+
+    // Snap: translate by the computed offset and then quantize to exact correct coords.
+    const translated = translateGroup(arr, groupId, dx, dy);
+    return translated.map((piece) =>
+      piece.groupId === groupId
+        ? { ...piece, snapped: true, pos: { x: piece.correct.x, y: piece.correct.y } }
+        : piece
+    );
   };
 
   interface SnapAndMergeNeighborsFn {
@@ -898,7 +979,12 @@ export default function JigsawPuzzleSVGWithTray({
           if (!n) continue;
           if (n.groupId === activeGroupId) continue;
 
-          const expected: PiecePosition = { x: p.pos.x + c.dx, y: p.pos.y + c.dy };
+          // Use correct-space offsets (not raw pieceW/pieceH) so merges remain
+          // grid-locked even after floating-point drift.
+          const expected: PiecePosition = {
+            x: p.pos.x + (n.correct.x - p.correct.x),
+            y: p.pos.y + (n.correct.y - p.correct.y),
+          };
           const d: number = hypot(n.pos.x - expected.x, n.pos.y - expected.y);
 
           if (d <= neighborSnapTolerance) {
@@ -907,6 +993,7 @@ export default function JigsawPuzzleSVGWithTray({
 
             next = translateGroup(next, n.groupId, shiftX, shiftY);
             next = mergeGroups(next, activeGroupId, n.groupId);
+            next = normalizeGroupToCorrectOffsets(next, activeGroupId);
 
             changed = true;
             break;
@@ -938,7 +1025,8 @@ export default function JigsawPuzzleSVGWithTray({
     if (anchor.snapped) return;
 
     const rect: DOMRect = el.getBoundingClientRect();
-    const effectiveScale = isFullscreen ? fsScale : scale;
+    const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
+    const effectiveScale = isFullscreen ? fsScale : nonFullscreenScale;
     const pan = isFullscreen ? fsPan : { x: 0, y: 0 };
     const px: number = (e.clientX - rect.left) / effectiveScale - pan.x;
     const py: number = (e.clientY - rect.top) / effectiveScale - pan.y;
@@ -988,7 +1076,8 @@ export default function JigsawPuzzleSVGWithTray({
     if (!outer) return;
 
     const rect: DOMRect = outer.getBoundingClientRect();
-    const effectiveScale = isFullscreen ? fsScale : scale;
+    const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
+    const effectiveScale = isFullscreen ? fsScale : nonFullscreenScale;
     const pan = isFullscreen ? fsPan : { x: 0, y: 0 };
 
     const px: number = (e.clientX - rect.left) / effectiveScale - pan.x;
@@ -1008,11 +1097,29 @@ export default function JigsawPuzzleSVGWithTray({
     let dx: number = nx - anchorStart.x;
     let dy: number = ny - anchorStart.y;
 
-    // Let pieces roam across whole stage, with small spill
+    // Clamp based on the whole group's bounds (not just the anchor piece).
     const spillX: number = pieceW * 0.5;
     const spillY: number = pieceH * 0.5;
-    dx = clamp(dx, -spillX - anchorStart.x, (stageWidth - pieceW + spillX) - anchorStart.x);
-    dy = clamp(dy, -spillY - anchorStart.y, (stageHeight - pieceH + spillY) - anchorStart.y);
+
+    const groupPieceStarts: PiecePosition[] = [];
+    for (const [id, sp] of startPositions.entries()) {
+      // startPositions contains only the active group’s pieces
+      if (id) groupPieceStarts.push(sp);
+    }
+    if (groupPieceStarts.length > 0) {
+      const minX = Math.min(...groupPieceStarts.map((p) => p.x));
+      const minY = Math.min(...groupPieceStarts.map((p) => p.y));
+      const maxX = Math.max(...groupPieceStarts.map((p) => p.x));
+      const maxY = Math.max(...groupPieceStarts.map((p) => p.y));
+      const groupW = (maxX - minX) + pieceW;
+      const groupH = (maxY - minY) + pieceH;
+
+      dx = clamp(dx, -spillX - minX, (stageWidth - groupW + spillX) - minX);
+      dy = clamp(dy, -spillY - minY, (stageHeight - groupH + spillY) - minY);
+    } else {
+      dx = clamp(dx, -spillX - anchorStart.x, (stageWidth - pieceW + spillX) - anchorStart.x);
+      dy = clamp(dy, -spillY - anchorStart.y, (stageHeight - pieceH + spillY) - anchorStart.y);
+    }
 
     setPieces((prev: Piece[]) =>
       prev.map((p: Piece) => {
@@ -1044,65 +1151,14 @@ export default function JigsawPuzzleSVGWithTray({
 
     setDraggingGroupId(null); // trigger re-render for drag scale
 
-    // Compute new piece positions and mark snapped groups; also record exact target positions
-    const normalizedPositions: Record<string, PiecePosition> = {};
     setPieces((prev: Piece[]) => {
       let next = prev;
       next = snapGroupToBoardIfClose(next, activeGroupId as string);
       next = snapAndMergeNeighbors(next, activeGroupId as string);
       next = snapGroupToBoardIfClose(next, activeGroupId as string);
-
-      // Collect exact correct positions for any pieces that are snapped in the resulting state
-      for (const p of next) {
-        if (p.snapped) {
-          normalizedPositions[p.id] = { x: p.correct.x, y: p.correct.y };
-        }
-      }
-
-      // Store normalized positions for the animation step
-      normalizedPositionsRef.current = normalizedPositions;
       return next;
     });
 
-    // After React updates the DOM, animate snapped pieces to their exact correct coords
-    setTimeout(() => {
-      try {
-        const norm = normalizedPositionsRef.current;
-        if (!norm) return;
-        const ids = Object.keys(norm);
-        if (ids.length === 0) return;
-
-        const els: HTMLElement[] = [];
-        for (const id of ids) {
-          const el = stageRef.current?.querySelector(`[data-piece-id="${id}"]`) as HTMLElement | null;
-          if (el) els.push(el);
-        }
-
-        if (els.length === 0) return;
-
-        // Animate DOM positions to target exact coords to avoid visible nudges
-        gsap.to(els, {
-          left: (i, targetEl) => {
-            const id = (targetEl as HTMLElement).getAttribute('data-piece-id') || '';
-            return (norm[id]?.x ?? 0) + 'px';
-          },
-          top: (i, targetEl) => {
-            const id = (targetEl as HTMLElement).getAttribute('data-piece-id') || '';
-            return (norm[id]?.y ?? 0) + 'px';
-          },
-          duration: 0.12,
-          ease: 'power2.out',
-          onComplete: () => {
-            // Commit normalized positions into React state to keep DOM and state in sync
-            setPieces((prev) => prev.map((p) => (norm[p.id] ? { ...p, pos: { x: norm[p.id].x, y: norm[p.id].y } } : p)));
-            normalizedPositionsRef.current = null;
-          },
-        });
-      } catch (err) {
-        console.error('[Jigsaw] finalize snap animation failed', err);
-        normalizedPositionsRef.current = null;
-      }
-    }, 0);
     // release any stage pointer captures related to gestures
     try {
       if (stageRef.current) {
@@ -1124,8 +1180,9 @@ export default function JigsawPuzzleSVGWithTray({
   const onStagePointerDown = (e: React.PointerEvent) => {
     const outer = stageRef.current;
     if (!outer) return;
-    try { outer.setPointerCapture(e.pointerId); } catch {}
     const targetIsPiece = (e.target as HTMLElement).closest('[data-piece-id]') !== null;
+    if (isFullscreen && !fullscreenPanEnabled && !targetIsPiece) return;
+    try { outer.setPointerCapture(e.pointerId); } catch {}
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, targetIsPiece });
 
     const pts = Array.from(pointersRef.current.values()).filter(p => !p.targetIsPiece);
@@ -1153,6 +1210,7 @@ export default function JigsawPuzzleSVGWithTray({
 
     const pts = Array.from(pointersRef.current.values()).filter(p => !p.targetIsPiece);
     const rect = outer.getBoundingClientRect();
+    if (isFullscreen && !fullscreenPanEnabled) return;
     if (pts.length >= 2 && pinchRef.current && pinchRef.current.startDist > 0) {
       const p1 = pts[0];
       const p2 = pts[1];
@@ -1173,7 +1231,7 @@ export default function JigsawPuzzleSVGWithTray({
       const newPanY = (centerY - rect.top) / newScale - contentLocalY;
 
       setFsScale(newScale);
-      setFsPan({ x: newPanX, y: newPanY });
+      setFsPan(clampFullscreenPan({ x: newPanX, y: newPanY }, newScale));
       pinchRef.current.active = true;
     } else if (pts.length === 1 && pinchRef.current && !pinchRef.current.active) {
       // handle pan with single finger
@@ -1182,7 +1240,7 @@ export default function JigsawPuzzleSVGWithTray({
       const startCenterY = pinchRef.current.centerClientY;
       const deltaX = (p.x - startCenterX) / fsScale;
       const deltaY = (p.y - startCenterY) / fsScale;
-      setFsPan({ x: pinchRef.current.startPan.x + deltaX, y: pinchRef.current.startPan.y + deltaY });
+      setFsPan(clampFullscreenPan({ x: pinchRef.current.startPan.x + deltaX, y: pinchRef.current.startPan.y + deltaY }, fsScale));
     }
   };
 
@@ -1193,28 +1251,36 @@ export default function JigsawPuzzleSVGWithTray({
     if (remaining.length < 2) pinchRef.current = null;
   };
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (!isFullscreen) return;
-    e.preventDefault();
-    const outer = stageRef.current;
-    if (!outer) return;
-    const rect = outer.getBoundingClientRect();
-    const delta = -e.deltaY;
-    const factor = Math.exp(delta * 0.001);
-    const FS_SCALE_MIN = 0.25;
-    const FS_SCALE_MAX = 4;
-    const newScale = clamp(fsScale * factor, FS_SCALE_MIN, FS_SCALE_MAX);
+  // Native wheel handler for fullscreen zoom (needs passive:false to preventDefault)
+  React.useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
 
-    // zoom to mouse position
-    const mouseX = e.clientX;
-    const mouseY = e.clientY;
-    const contentLocalX = (mouseX - rect.left) / fsScale - fsPan.x;
-    const contentLocalY = (mouseY - rect.top) / fsScale - fsPan.y;
-    const newPanX = (mouseX - rect.left) / newScale - contentLocalX;
-    const newPanY = (mouseY - rect.top) / newScale - contentLocalY;
-    setFsScale(newScale);
-    setFsPan({ x: newPanX, y: newPanY });
-  };
+    const onWheel = (e: WheelEvent) => {
+      if (!isFullscreen) return;
+      if (!fullscreenPanEnabled) return;
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      const delta = -e.deltaY;
+      const factor = Math.exp(delta * 0.001);
+      const FS_SCALE_MIN = 0.25;
+      const FS_SCALE_MAX = 4;
+      const newScale = clamp(fsScale * factor, FS_SCALE_MIN, FS_SCALE_MAX);
+
+      // zoom to mouse position
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+      const contentLocalX = (mouseX - rect.left) / fsScale - fsPan.x;
+      const contentLocalY = (mouseY - rect.top) / fsScale - fsPan.y;
+      const newPanX = (mouseX - rect.left) / newScale - contentLocalX;
+      const newPanY = (mouseY - rect.top) / newScale - contentLocalY;
+      setFsScale(newScale);
+      setFsPan(clampFullscreenPan({ x: newPanX, y: newPanY }, newScale));
+    };
+
+    stage.addEventListener('wheel', onWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, [isFullscreen, fullscreenPanEnabled, fsScale, fsPan]);
 
   
 
@@ -1238,6 +1304,7 @@ export default function JigsawPuzzleSVGWithTray({
         const shimmerOuter = shimmerOuterRef.current;
         const shimmerInner = shimmerInnerRef.current;
         const messageEl = messageRef.current;
+        const wrapperEl = wrapperRef.current;
 
         console.log('[Jigsaw] runCompletion start');
         console.log('[Jigsaw] refs', { boardEl, shimmerOuter, shimmerInner, messageEl });
@@ -1251,7 +1318,9 @@ export default function JigsawPuzzleSVGWithTray({
           const prevBorder = boardEl.style.borderColor || '';
           const prevZ = boardEl.style.zIndex || '';
           const prevOverflow = stageEl ? stageEl.style.overflow : '';
+          const prevWrapperOverflow = wrapperEl ? wrapperEl.style.overflow : '';
           if (stageEl) stageEl.style.overflow = 'visible';
+          if (wrapperEl) wrapperEl.style.overflow = 'visible';
           boardEl.style.zIndex = '100';
 
           // Brighten the board border color (no outer glow or scale)
@@ -1268,12 +1337,15 @@ export default function JigsawPuzzleSVGWithTray({
 
           tl.call(() => {
             if (stageEl) stageEl.style.overflow = prevOverflow;
+            if (wrapperEl) wrapperEl.style.overflow = prevWrapperOverflow;
             boardEl.style.zIndex = prevZ;
           });
         } else if (stageEl) {
           // Fallback: animate glow on stage only using box-shadow so layout isn't affected
           const prevOverflow = stageEl.style.overflow;
+          const prevWrapperOverflow = wrapperEl ? wrapperEl.style.overflow : '';
           stageEl.style.overflow = 'visible';
+          if (wrapperEl) wrapperEl.style.overflow = 'visible';
           tl.to(stageEl, {
             boxShadow: '0 0 60px 20px rgba(255,215,0,0.95)',
             duration: 0.9,
@@ -1284,7 +1356,10 @@ export default function JigsawPuzzleSVGWithTray({
             duration: 0.6,
             ease: 'power2.inOut',
           }, '+=0.15');
-          tl.call(() => { stageEl.style.overflow = prevOverflow; });
+          tl.call(() => {
+            stageEl.style.overflow = prevOverflow;
+            if (wrapperEl) wrapperEl.style.overflow = prevWrapperOverflow;
+          });
         }
 
         // Add piece-pop to timeline (runs before shimmer). Respect prefers-reduced-motion.
@@ -1503,8 +1578,18 @@ export default function JigsawPuzzleSVGWithTray({
       const wrapperW = wrapper.clientWidth || 0;
       setWrapperWidth(wrapperW || null);
 
-      // decide stacked layout: stack when wrapper width is less than 1200px
-      const wouldStack = wrapperW > 0 ? wrapperW < 1200 : false;
+      // Stack the tray under the board on narrow viewports or tight wrappers (mobile + small screens).
+      const viewportW = typeof window !== 'undefined' ? window.innerWidth || wrapperW : wrapperW;
+      const viewportH = typeof window !== 'undefined' ? window.innerHeight || 0 : 0;
+      const isLandscape = viewportW && viewportH ? viewportW >= viewportH : false;
+
+      // Stacking rules:
+      // - Portrait/square: always stack (board over tray) to guarantee both are visible.
+      // - Landscape: always side-by-side.
+      const wouldStack = (() => {
+        if (!isLandscape) return true;
+        return false;
+      })();
       setIsStacked(wouldStack);
 
       const effectiveStageWidth = wouldStack ? Math.max(boardWidth, trayWidth) : boardWidth + trayWidth;
@@ -1515,13 +1600,18 @@ export default function JigsawPuzzleSVGWithTray({
       const wrapperH = wrapper.clientHeight || 0;
       const reservedChrome = 24; // space for headers/controls when fullscreening
       const availableHeight = isFullscreen && wrapperH ? Math.max(200, wrapperH - reservedChrome) : null;
-      const stageH = isStacked ? boardHeight + trayHeight : boardHeight;
+      const stageH = wouldStack ? boardHeight + trayHeight : boardHeight;
 
-      const widthScale = wrapperW / effectiveStageWidth;
-      const heightScale = availableHeight ? availableHeight / stageH : 1;
+      const safeWrapperW = wrapperW || (typeof window !== 'undefined' ? window.innerWidth || effectiveStageWidth : effectiveStageWidth);
+      const widthScale = safeWrapperW / effectiveStageWidth;
+      // In non-fullscreen portrait/square we also constrain by viewport height so the stacked tray stays visible.
+      const fallbackHeight = viewportH ? Math.max(260, viewportH - 160) : (safeWrapperW ? Math.max(320, safeWrapperW * 0.75) : stageH);
+      const heightScale = availableHeight ? availableHeight / stageH : (fallbackHeight ? fallbackHeight / stageH : widthScale);
 
-      // Choose the best fit but never upscale beyond 1
-      const next = Math.min(1, widthScale, heightScale);
+      // Fit to BOTH width and height (otherwise the unscaled stage box will be clipped and can appear “missing”).
+      // Avoid collapsing to ~0 if we momentarily get bad measurements.
+      const fit = Math.min(widthScale || 1, heightScale || 1);
+      const next = Math.min(1, Math.max(0.06, fit));
       setScale(next);
       // If we're fullscreen, initialize fullscreen scale/pan to fit
       if (isFullscreen) {
@@ -1529,8 +1619,8 @@ export default function JigsawPuzzleSVGWithTray({
         const wrapperH = wrapper.clientHeight || 0;
         const fullscreenChrome = 24;
         const availableHeight = wrapperH ? Math.max(200, wrapperH - fullscreenChrome) : (viewportH ? Math.max(200, viewportH - fullscreenChrome) : null);
-        const stageH = isStacked ? boardHeight + trayHeight : boardHeight;
-        const fitScale = Math.min(1, wrapperW / (isStacked ? Math.max(boardWidth, trayWidth) : (boardWidth + trayWidth)), availableHeight ? availableHeight / stageH : 1);
+        const stageH = wouldStack ? boardHeight + trayHeight : boardHeight;
+        const fitScale = Math.min(1, wrapperW / (wouldStack ? Math.max(boardWidth, trayWidth) : (boardWidth + trayWidth)), availableHeight ? availableHeight / stageH : 1);
         setFsScale(fitScale);
         setFsPan({ x: 0, y: 0 });
       }
@@ -1544,7 +1634,7 @@ export default function JigsawPuzzleSVGWithTray({
       ro.disconnect();
       window.removeEventListener('resize', update);
     };
-  }, [boardWidth, trayWidth]);
+  }, [boardWidth, boardHeight, trayWidth, trayHeight, isFullscreen]);
 
   const controlBarHeight = 56; // px
   const controlBarTop = -Math.round(controlBarHeight / 2);
@@ -1576,7 +1666,7 @@ export default function JigsawPuzzleSVGWithTray({
       enterFullscreen: () => setIsFullscreen(true),
       exitFullscreen: () => setIsFullscreen(false),
       get isFullscreen() {
-        return isFullscreen;
+        return isFullscreenRef.current;
       },
     } as const;
 
@@ -1590,10 +1680,10 @@ export default function JigsawPuzzleSVGWithTray({
     // Intentionally only run once per mount/parent callback change
   }, [onControlsReady]);
 
-  const nonFullscreenHeight = Math.max(320, Math.round(stageHeight * (scale || 1)));
-  const nonFullscreenWidth = Math.max(320, Math.round(stageWidth * (scale || 1)));
+  const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
+  const nonFullscreenHeight = Math.max(240, Math.round(stageHeight * nonFullscreenScale));
 
-  return (
+  const puzzleUI = (
     <div
       ref={wrapperRef}
       style={{
@@ -1605,10 +1695,14 @@ export default function JigsawPuzzleSVGWithTray({
         padding: isFullscreen ? 0 : undefined,
         background: isFullscreen ? 'rgba(0,0,0,0.85)' : undefined,
         fontFamily: "system-ui, sans-serif",
-        width: isFullscreen ? '100vw' : `${nonFullscreenWidth}px`,
-        height: isFullscreen ? '100vh' : `${nonFullscreenHeight}px`,
+        width: isFullscreen ? '100vw' : '100%',
+        minHeight: isFullscreen ? '100vh' : `${nonFullscreenHeight}px`,
+        height: isFullscreen ? '100vh' : 'auto',
         margin: isFullscreen ? undefined : '0 auto',
-        overflow: isFullscreen ? 'hidden' : 'visible',
+        // Critical for mobile: prevent the (unscaled) stage box from creating
+        // horizontal scrolling or appearing to escape its container.
+        overflow: 'hidden',
+        contain: isFullscreen ? undefined : 'layout paint',
         maxWidth: '100%',
         ...containerStyle,
       }}
@@ -1619,13 +1713,13 @@ export default function JigsawPuzzleSVGWithTray({
         onPointerMove={(e) => { onStagePointerMove(e); onPointerMove(e as any); }}
         onPointerUp={(e) => { onStagePointerUp(e); onPointerUp(e as any); }}
         onPointerCancel={(e) => { onStagePointerUp(e); onPointerUp(e as any); }}
-        onWheel={onWheel}
         style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: stageWidth,
-        height: stageHeight,
+        position: isFullscreen ? "absolute" : "relative",
+        left: isFullscreen ? 0 : undefined,
+        top: isFullscreen ? 0 : undefined,
+        width: isFullscreen ? stageWidth : '100%',
+        height: isFullscreen ? stageHeight : Math.round(stageHeight * nonFullscreenScale),
+        maxWidth: '100%',
         borderRadius: 0,
         overflow: "hidden",
         background: "#070a0f",
@@ -1636,7 +1730,7 @@ export default function JigsawPuzzleSVGWithTray({
         display: 'block',
         marginLeft: 0,
         zIndex: 1,
-        transform: isFullscreen ? 'none' : `scale(${scale})`,
+        transform: 'none',
       }}
       >
         {/* contentRef sits inside the static outer stage and receives transform for pan/zoom */}
@@ -1651,7 +1745,7 @@ export default function JigsawPuzzleSVGWithTray({
             transformOrigin: 'top left',
             transform: isFullscreen
               ? `translate(${fsPan.x}px, ${fsPan.y}px) scale(${fsScale})`
-              : 'none',
+              : `scale(${nonFullscreenScale})`,
             willChange: 'transform',
           }}
         >
@@ -1832,6 +1926,14 @@ export default function JigsawPuzzleSVGWithTray({
       )}
     </div>
   );
+
+  // Fullscreen needs to escape any parent layout transforms (e.g. mobile breakout wrappers
+  // that use translate) or `position: fixed` won't be viewport-relative.
+  if (isFullscreen && portalReady && typeof document !== 'undefined') {
+    return createPortal(puzzleUI, document.body);
+  }
+
+  return puzzleUI;
 }
 
 
