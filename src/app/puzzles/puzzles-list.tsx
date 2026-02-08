@@ -90,6 +90,13 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 function getDisplayTitle(puzzle: any) {
+  const puzzleTitle = typeof puzzle?.title === 'string' ? puzzle.title.trim() : '';
+  const escapeTitle = typeof puzzle?.escapeRoom?.roomTitle === 'string' ? puzzle.escapeRoom.roomTitle.trim() : '';
+
+  // Escape rooms should display their roomTitle even if the Puzzle row has a default fallback title.
+  if (puzzle?.puzzleType === 'escape_room' && escapeTitle) return escapeTitle;
+  if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
+
   const raw = (puzzle && (puzzle.title ?? puzzle.name ?? puzzle?.escapeRoom?.roomTitle)) as unknown;
   const title = typeof raw === 'string' ? raw.trim() : '';
   return title || 'Untitled Puzzle';

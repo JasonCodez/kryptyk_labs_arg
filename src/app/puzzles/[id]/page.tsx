@@ -465,6 +465,8 @@ export default function PuzzleDetailPage() {
   // Fetch hints separately to get stats and history
   useEffect(() => {
     if (!puzzleId) return;
+    // Sudoku doesn't use hints; avoid fetching and rendering them.
+    if (puzzle?.puzzleType === 'sudoku') return;
 
     const fetchHints = async () => {
       try {
@@ -478,7 +480,7 @@ export default function PuzzleDetailPage() {
     };
 
     fetchHints();
-  }, [puzzleId]);
+  }, [puzzleId, puzzle?.puzzleType]);
 
   // Fetch progress data
   useEffect(() => {
@@ -1122,7 +1124,13 @@ export default function PuzzleDetailPage() {
             style={{ backgroundColor: "rgba(253, 231, 76, 0.08)", borderColor: "#FDE74C" }}
           >
             {/* Puzzle Title */}
-            <h1 className="text-4xl font-bold text-white mb-4">{((puzzle.title || puzzle?.escapeRoom?.roomTitle || '') + '').trim() || 'Untitled Puzzle'}</h1>
+            <h1 className="text-4xl font-bold text-white mb-4">{(() => {
+              const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
+              const puzzleTitle = (puzzle?.title || '').toString().trim();
+              if (puzzle?.puzzleType === 'escape_room' && escapeTitle) return escapeTitle;
+              if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
+              return puzzleTitle || escapeTitle || 'Untitled Puzzle';
+            })()}</h1>
             <div className="flex items-center gap-4 mb-6">
               <span className={`px-4 py-2 rounded-full text-sm font-semibold border whitespace-nowrap ${
                 difficultyColors[puzzle.difficulty] ||
@@ -1136,9 +1144,6 @@ export default function PuzzleDetailPage() {
                 </span>
               )}
             </div>
-            <p className="text-base" style={{ color: '#DDDBF1' }}>
-              {((puzzle.description || puzzle?.escapeRoom?.roomDescription || '') + '').trim() || 'No description yet.'}
-            </p>
 
             {/* Math Problem Configuration (if present) */}
             {puzzle.puzzleType === 'math' && puzzle.math && (
@@ -1175,7 +1180,7 @@ export default function PuzzleDetailPage() {
               </div>
             )}
             {/* Main Puzzle Content */}
-            {puzzle.puzzleType !== 'sudoku' && puzzle.puzzleType !== 'code_master' && (
+            {puzzle.puzzleType !== 'sudoku' && puzzle.puzzleType !== 'code_master' && puzzle.puzzleType !== 'jigsaw' && (
               <div className="prose prose-invert max-w-none mb-8">
                 <div
                   className="whitespace-pre-wrap rounded-lg p-6 border"
@@ -1630,8 +1635,14 @@ export default function PuzzleDetailPage() {
               );
             })()}
 
-            {/* Hints Section */}
-            <div style={{ borderTopColor: "#3891A6", borderTopWidth: "1px", paddingTop: "2rem" }}>
+            {/* Hints / Progress Section Wrapper */}
+            <div
+              style={
+                puzzle?.puzzleType === 'sudoku'
+                  ? undefined
+                  : { borderTopColor: "#3891A6", borderTopWidth: "1px", paddingTop: "2rem" }
+              }
+            >
               {/* Progress Section */}
               {progress && showProgress && progress.partProgress && progress.partProgress.length > 1 && (
                 <div className="mb-8 space-y-4">
@@ -1706,75 +1717,79 @@ export default function PuzzleDetailPage() {
 
               <div style={{ borderBottomColor: "#3891A6", borderBottomWidth: "1px", paddingBottom: "1.5rem", marginBottom: "1.5rem" }} />
 
-              {/* Hints Section */}
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => setShowHints(!showHints)}
-                  className="font-semibold transition-colors hover:opacity-80"
-                  style={{ color: "#FDE74C" }}
-                >
-                  {showHints ? "Hide Hints ↑" : "Show Hints ↓"} ({hints.length})
-                </button>
-                {hints.length > 0 && (
-                  <button
-                    onClick={() => setShowStats(!showStats)}
-                    className="text-sm px-3 py-1 rounded-lg transition-colors hover:opacity-80"
-                    style={{
-                      backgroundColor: showStats
-                        ? "rgba(253, 231, 76, 0.2)"
-                        : "rgba(171, 159, 157, 0.1)",
-                      color: showStats ? "#FDE74C" : "#AB9F9D",
-                    }}
-                  >
-                    {showStats ? "Hide Stats" : "View Stats"}
-                  </button>
-                )}
-              </div>
+              {puzzle?.puzzleType !== 'sudoku' && (
+                <>
+                  {/* Hints Section */}
+                  <div className="flex items-center justify-between mb-4">
+                    <button
+                      onClick={() => setShowHints(!showHints)}
+                      className="font-semibold transition-colors hover:opacity-80"
+                      style={{ color: "#FDE74C" }}
+                    >
+                      {showHints ? "Hide Hints ↑" : "Show Hints ↓"} ({hints.length})
+                    </button>
+                    {hints.length > 0 && (
+                      <button
+                        onClick={() => setShowStats(!showStats)}
+                        className="text-sm px-3 py-1 rounded-lg transition-colors hover:opacity-80"
+                        style={{
+                          backgroundColor: showStats
+                            ? "rgba(253, 231, 76, 0.2)"
+                            : "rgba(171, 159, 157, 0.1)",
+                          color: showStats ? "#FDE74C" : "#AB9F9D",
+                        }}
+                      >
+                        {showStats ? "Hide Stats" : "View Stats"}
+                      </button>
+                    )}
+                  </div>
 
-              {/* Hints Display */}
-              {showHints && (
-                <div className="space-y-4 mb-6">
-                  {hints.length === 0 ? (
-                    <p style={{ color: "#DDDBF1" }}>No hints available for this puzzle</p>
-                  ) : (
-                    hints.map((hint, index) => (
-                      <HintCard
-                        key={hint.id}
-                        hint={hint}
-                        index={index}
-                        isRevealed={revealedHints.has(hint.id)}
-                        isLoading={revealingHint === hint.id}
-                        onReveal={handleRevealHint}
-                        onRateHelpfulness={handleRateHelpfulness}
-                      />
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* Stats Display */}
-              {showStats && hints.length > 0 && (
-                <div className="mb-6">
-                  <HintStatsOverlay hints={hints} />
-                </div>
-              )}
-
-              {/* Hint History */}
-              {showHints && hints.length > 0 && (
-                <div>
-                  <HintHistoryPanel
-                    historyEntries={hints
-                      .flatMap((h) => h.userHistory.map((h2) => ({ ...h2, hintId: h.id })))
-                      .sort(
-                        (a, b) =>
-                          new Date(b.revealedAt).getTime() - new Date(a.revealedAt).getTime()
+                  {/* Hints Display */}
+                  {showHints && (
+                    <div className="space-y-4 mb-6">
+                      {hints.length === 0 ? (
+                        <p style={{ color: "#DDDBF1" }}>No hints available for this puzzle</p>
+                      ) : (
+                        hints.map((hint, index) => (
+                          <HintCard
+                            key={hint.id}
+                            hint={hint}
+                            index={index}
+                            isRevealed={revealedHints.has(hint.id)}
+                            isLoading={revealingHint === hint.id}
+                            onReveal={handleRevealHint}
+                            onRateHelpfulness={handleRateHelpfulness}
+                          />
+                        ))
                       )}
-                    puzzleId={puzzleId}
-                    totalCostSoFar={hints
-                      .flatMap((h) => h.userHistory)
-                      .reduce((sum, h) => sum + h.pointsCost, 0)}
-                  />
-                </div>
+                    </div>
+                  )}
+
+                  {/* Stats Display */}
+                  {showStats && hints.length > 0 && (
+                    <div className="mb-6">
+                      <HintStatsOverlay hints={hints} />
+                    </div>
+                  )}
+
+                  {/* Hint History */}
+                  {showHints && hints.length > 0 && (
+                    <div>
+                      <HintHistoryPanel
+                        historyEntries={hints
+                          .flatMap((h) => h.userHistory.map((h2) => ({ ...h2, hintId: h.id })))
+                          .sort(
+                            (a, b) =>
+                              new Date(b.revealedAt).getTime() - new Date(a.revealedAt).getTime()
+                          )}
+                        puzzleId={puzzleId}
+                        totalCostSoFar={hints
+                          .flatMap((h) => h.userHistory)
+                          .reduce((sum, h) => sum + h.pointsCost, 0)}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

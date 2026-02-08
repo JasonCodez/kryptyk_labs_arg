@@ -76,7 +76,7 @@ export async function GET(
           where: { puzzleId: puzzleId },
           include: {
             stages: { orderBy: { order: 'asc' } },
-            layouts: { include: { hotspots: true } },
+            layouts: { include: { hotspots: true }, orderBy: { createdAt: 'asc' } },
           },
         });
 
@@ -107,7 +107,7 @@ export async function GET(
               backgroundUrl: l.backgroundUrl || null,
               width: l.width || null,
               height: l.height || null,
-              hotspots: (l.hotspots || []).map((h: any) => ({ id: h.id, x: h.x, y: h.y, w: h.w, h: h.h, type: h.type, meta: h.meta })),
+              hotspots: (l.hotspots || []).map((h: any) => ({ id: h.id, x: h.x, y: h.y, w: h.w, h: h.h, type: h.type, meta: h.meta, targetId: h.targetId || null })),
               items: [],
             })),
           });
@@ -127,6 +127,7 @@ export async function GET(
         include: {
           layouts: {
             include: { hotspots: true },
+            orderBy: { createdAt: 'asc' },
           },
         },
       });
@@ -139,7 +140,11 @@ export async function GET(
             let srcScene: any = null;
             if (scenes) {
               // Prefer same-index mapping, otherwise match by title
-              srcScene = scenes[idx] || scenes.find((s: any) => (s.name || '').trim() === (l.title || '').trim()) || null;
+              srcScene =
+                scenes[idx] ||
+                scenes.find((s: any) => (s.name || '').trim() === (l.title || '').trim()) ||
+                scenes.find((s: any) => (s.backgroundUrl || '').trim() && (s.backgroundUrl || '').trim() === (l.backgroundUrl || '').trim()) ||
+                null;
             }
             if (srcScene && Array.isArray(srcScene.items)) {
               items = srcScene.items
@@ -147,7 +152,17 @@ export async function GET(
                   const id = typeof it?.id === 'string' ? it.id : '';
                   return !id || !collectedDesignerItemIds.has(id);
                 })
-                .map((it: any) => ({ id: it.id, name: it.name, imageUrl: it.imageUrl, x: it.x, y: it.y, w: it.w, h: it.h, properties: it.properties || {} }));
+                .map((it: any) => ({
+                  id: it.id,
+                  name: it.name,
+                  imageUrl: it.imageUrl,
+                  description: it.description || (it.properties && it.properties.description) || '',
+                  x: it.x,
+                  y: it.y,
+                  w: it.w,
+                  h: it.h,
+                  properties: it.properties || {},
+                }));
             }
           } catch (err) {
             items = [];
@@ -158,7 +173,7 @@ export async function GET(
             backgroundUrl: l.backgroundUrl || null,
             width: l.width || null,
             height: l.height || null,
-            hotspots: (l.hotspots || []).map((h: any) => ({ id: h.id, x: h.x, y: h.y, w: h.w, h: h.h, type: h.type, meta: h.meta })),
+            hotspots: (l.hotspots || []).map((h: any) => ({ id: h.id, x: h.x, y: h.y, w: h.w, h: h.h, type: h.type, meta: h.meta, targetId: h.targetId || null })),
             items,
           };
         });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as PIXI from "pixi.js";
 
 type Hotspot = {
@@ -20,6 +20,7 @@ export default function PixiRoom({
   onHotspotAction,
   onHotspotMove,
   onHotspotTransform,
+  onEffectiveLayoutSize,
 }: {
   puzzleId: string;
   layout: { id: string; title?: string | null; backgroundUrl?: string | null; width?: number | null; height?: number | null } | null;
@@ -27,11 +28,14 @@ export default function PixiRoom({
   onHotspotAction: (hotspotId: string) => Promise<void> | void;
   onHotspotMove?: (hotspotId: string, x: number, y: number) => void;
   onHotspotTransform?: (hotspotId: string, x: number, y: number, w: number, h: number) => void;
+  onEffectiveLayoutSize?: (w: number, h: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const createdCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const createdOverlayRef = useRef<HTMLCanvasElement | null>(null);
+  const runIdRef = useRef(0);
+  const [runtimeForceCanvas, setRuntimeForceCanvas] = useState(false);
   const hotspotsRef = useRef<Hotspot[]>(hotspots);
   const onHotspotActionRef = useRef<typeof onHotspotAction>(onHotspotAction);
   // local handle for canvas created inside effect (so closures can reference it)
@@ -45,6 +49,12 @@ export default function PixiRoom({
     onHotspotActionRef.current = onHotspotAction;
   }, [onHotspotAction]);
 
+  // If we auto-fallback to Canvas due to a WebGL crash, keep it for this puzzle.
+  // Reset when navigating to a different puzzle.
+  useEffect(() => {
+    setRuntimeForceCanvas(false);
+  }, [puzzleId]);
+
   const layoutKey = layout?.id ?? null;
   const layoutBg = layout?.backgroundUrl ?? null;
   const layoutW = layout?.width ?? null;
@@ -52,18 +62,37 @@ export default function PixiRoom({
 
   const isEditor = typeof onHotspotMove === 'function' || typeof onHotspotTransform === 'function';
 
+  const normalizeImageUrl = (raw: string | null | undefined): string => {
+    const src = (raw || '').trim();
+    if (!src) return '';
+    // If a remote URL is used, route through the image proxy to avoid CORS blocking in WebGL.
+    // (Proxy may be restricted in production via ALLOWED_IMAGE_HOSTS.)
+    if (/^https?:\/\//i.test(src)) {
+      return `/api/image-proxy?url=${encodeURIComponent(src)}`;
+    }
+    return src;
+  };
+
   type FitMode = 'cover' | 'contain';
 
   useEffect(() => {
-    try {
-      // Diagnostic: confirm effect runs and show initial state
-      try { console.info('[PixiRoom] useEffect start', { puzzleId, hasContainer: !!containerRef.current, hasLayout: !!layout, layout }); } catch (_) { /* ignore */ }
-      if (!containerRef.current || !layout) {
-        try { console.info('[PixiRoom] useEffect early exit - missing container or layout', { hasContainer: !!containerRef.current, hasLayout: !!layout }); } catch (_) { /* ignore */ }
-        return;
-      }
+    let cancelled = false;
+    let cleanup: (() => void) | null = null;
+    const runId = ++runIdRef.current;
+    const isStale = () => cancelled || runId !== runIdRef.current;
+
+    void (async () => {
+      try {
+        // Diagnostic: confirm effect runs and show initial state
+        try { console.info('[PixiRoom] useEffect start', { puzzleId, hasContainer: !!containerRef.current, hasLayout: !!layout, layout }); } catch (_) { /* ignore */ }
+        if (isStale()) return;
+        if (!containerRef.current || !layout) {
+          try { console.info('[PixiRoom] useEffect early exit - missing container or layout', { hasContainer: !!containerRef.current, hasLayout: !!layout }); } catch (_) { /* ignore */ }
+          return;
+        }
 
       let app: PIXI.Application | null = null;
+      let forceCanvasOverride = false;
       // pure-canvas fallback state (declare early so we can enable fallback immediately)
       let usePureCanvas: boolean = false;
       let pureCtx: CanvasRenderingContext2D | null = null;
@@ -73,6 +102,67 @@ export default function PixiRoom({
       const imageCache = new Map<string, HTMLImageElement>();
       // pointer handler for overlay (kept so we can remove on cleanup)
       let overlayPointerHandler: ((ev: PointerEvent) => void) | null = null;
+      let overlayPointerTarget: HTMLCanvasElement | null = null;
+      // PIXI texture loading cache (avoid repeatedly calling Texture.from on URLs that aren't loaded yet)
+      const pixiTextureCache = new Map<string, PIXI.Texture>();
+      const pixiTextureLoading = new Set<string>();
+
+      const getOrLoadPixiTexture = (url: string | null | undefined): PIXI.Texture | null => {
+        const src = normalizeImageUrl(url);
+        if (!src) return null;
+        const cached = pixiTextureCache.get(src);
+        if (cached) return cached;
+
+        // Try PIXI Assets cache first (if already loaded elsewhere)
+        try {
+          const assetsAny = (PIXI as any).Assets;
+          if (assetsAny && typeof assetsAny.get === 'function') {
+            const asset = assetsAny.get(src);
+            const tex = asset instanceof PIXI.Texture ? asset : (asset?.texture instanceof PIXI.Texture ? asset.texture : null);
+            if (tex) {
+              pixiTextureCache.set(src, tex);
+              return tex;
+            }
+          }
+        } catch (_) { /* ignore */ }
+
+        if (!pixiTextureLoading.has(src)) {
+          pixiTextureLoading.add(src);
+          try {
+            const assetsAny = (PIXI as any).Assets;
+            const loadPromise: Promise<any> | null = assetsAny && typeof assetsAny.load === 'function' ? assetsAny.load(src) : null;
+            if (loadPromise) {
+              loadPromise
+                .then((asset: any) => {
+                  const tex = asset instanceof PIXI.Texture ? asset : (asset?.texture instanceof PIXI.Texture ? asset.texture : null);
+                  if (tex) pixiTextureCache.set(src, tex);
+                })
+                .catch((err: any) => {
+                  console.info('[PixiRoom] PIXI.Assets.load failed', src, err);
+                })
+                .finally(() => {
+                  pixiTextureLoading.delete(src);
+                  if (!isStale()) {
+                    try { draw(); } catch (_) { /* ignore */ }
+                  }
+                });
+            } else {
+              // As a last resort, fall back to Texture.from (may warn, but can still load)
+              try {
+                const tex = PIXI.Texture.from(src);
+                pixiTextureCache.set(src, tex);
+                pixiTextureLoading.delete(src);
+                return tex;
+              } catch (_) {
+                pixiTextureLoading.delete(src);
+              }
+            }
+          } catch (_) {
+            pixiTextureLoading.delete(src);
+          }
+        }
+        return null;
+      };
       try {
         // create a canvas element and pass it explicitly to PIXI.Application to avoid
         // using the deprecated `view` getter which accesses internal `canvas`.
@@ -98,82 +188,148 @@ export default function PixiRoom({
           canvas.width = Math.max(1, Math.floor(width * dpr));
           canvas.height = Math.max(1, Math.floor(height * dpr));
         } catch (err) { /* ignore */ }
-        // Prefer the modern Application.init() if provided by the installed PIXI build,
-        // otherwise fall back to the constructor for compatibility with older builds.
+        // Pixi v8: create Application then await `app.init()`.
+        // We still keep a legacy fallback in case a different build is present.
         const appOptions = {
-          view: canvas,
+          // v8 prefers `canvas`; keep `view` out to avoid deprecated getters.
+          canvas,
           // Player view uses a solid background so letterboxing from 'contain' isn't white.
           // Designer/editor stays transparent so it blends with the editor UI.
           backgroundAlpha: isEditor ? 0 : 1,
           backgroundColor: 0x0b1220,
           resolution: window.devicePixelRatio || 1,
           autoDensity: true,
+          // Ask explicitly for a stencil buffer; some Pixi features (masks) and pipelines assume it.
+          // Also helps avoid warnings/errors when a context is created without stencil.
+          stencil: true,
+          antialias: true,
+          // Render on-demand so render errors are catchable (avoid uncaught crashes inside Pixi's ticker).
+          autoStart: false,
           width,
           height,
         } as any;
-        // detect WebGL availability on this canvas; if not available, force Canvas renderer
-        let supportsWebGL = false;
+
+        // Hard override: allow forcing Canvas renderer for environments where WebGL is unstable.
+        // - Set `NEXT_PUBLIC_PIXI_FORCE_CANVAS=1` (client-side env)
+        // - Or append `?forceCanvas=1` to the URL
+        forceCanvasOverride = false;
         try {
-          supportsWebGL = !!(canvas.getContext && (canvas.getContext('webgl2') || canvas.getContext('webgl')));
-        } catch (_) { supportsWebGL = false; }
-        if (!supportsWebGL) {
+          const qp = new URLSearchParams(window.location.search);
+          forceCanvasOverride = qp.get('forceCanvas') === '1';
+        } catch (_) {
+          // ignore
+        }
+        try {
+          if ((process.env as any).NEXT_PUBLIC_PIXI_FORCE_CANVAS === '1') forceCanvasOverride = true;
+        } catch (_) {
+          // ignore
+        }
+        if (runtimeForceCanvas) forceCanvasOverride = true;
+        if (forceCanvasOverride) {
           appOptions.forceCanvas = true;
-          console.info('[PixiRoom] WebGL not detected — forcing Canvas renderer fallback');
-        } else {
-          console.info('[PixiRoom] WebGL detected — using GPU renderer when available');
+          console.info('[PixiRoom] forceCanvas override enabled');
         }
 
-        try {
-          // Pre-create diagnostics
-          try { console.info('[PixiRoom] PIXI.version/info', { VERSION: (PIXI as any).VERSION || (PIXI as any).version || null, AppType: typeof PIXI.Application }); } catch (_) { /* ignore */ }
-          try { console.info('[PixiRoom] appOptions before create', { width, height, resolution: appOptions.resolution, forceCanvas: appOptions.forceCanvas || false }); } catch (_) { /* ignore */ }
-          try { console.info('[PixiRoom] canvas present in DOM?', !!(canvas && canvas.parentNode), 'canvas size:', { cw: canvas.width, ch: canvas.height, cssW: canvas.style?.width, cssH: canvas.style?.height }); } catch (_) { /* ignore */ }
-          const AppCtorAny = PIXI.Application as any;
-          try { console.info('[PixiRoom] AppCtorAny.init available?', !!(AppCtorAny && typeof AppCtorAny.init === 'function')); } catch (_) { /* ignore */ }
-          if (AppCtorAny && typeof AppCtorAny.init === 'function') {
+        // Pixi v8 WebGL can crash inside its shader error logging on some stacks
+        // (gl.getShaderSource(...) is null -> .split throws). The most reliable fix
+        // for player mode is to bypass PIXI entirely and use the pure Canvas2D renderer.
+        // Keep PIXI enabled only for editor interactions.
+        const forcePureCanvas = !isEditor;
+        if (forcePureCanvas) {
+          console.info('[PixiRoom] using pure Canvas2D mode for player (skipping PIXI init)');
+        }
+
+        if (!forcePureCanvas) {
+          // Detect WebGL availability WITHOUT touching the real canvas.
+          // Calling `canvas.getContext('webgl')` here can create a context with default attributes
+          // (often without stencil). Pixi will then reuse that context and warn/spam WebGL errors.
+          let supportsWebGL = false;
+          if (!appOptions.forceCanvas) {
             try {
-              app = AppCtorAny.init(appOptions) as PIXI.Application;
-              console.info('[PixiRoom] Application.init() returned app?', !!app);
-            } catch (initErr) {
-              console.info('[PixiRoom] Application.init() threw, will fall back to constructor', initErr);
-              // eslint-disable-next-line new-cap
-              app = new PIXI.Application(appOptions);
-              console.info('[PixiRoom] Fallback constructor created app after init error?', !!app);
+              const testCanvas = document.createElement('canvas');
+              supportsWebGL = !!(
+                (testCanvas.getContext && testCanvas.getContext('webgl2', { stencil: true } as any)) ||
+                (testCanvas.getContext && testCanvas.getContext('webgl', { stencil: true } as any))
+              );
+            } catch (_) {
+              supportsWebGL = false;
             }
+          }
+
+          if (!supportsWebGL || appOptions.forceCanvas) {
+            appOptions.forceCanvas = true;
+            console.info('[PixiRoom] WebGL not detected (or forced off) — forcing Canvas renderer fallback');
           } else {
-            // older pixi builds: use constructor
-            // eslint-disable-next-line new-cap
-            app = new PIXI.Application(appOptions);
-            console.info('[PixiRoom] Constructor path used to create app', !!app);
+            console.info('[PixiRoom] WebGL detected — using GPU renderer when available');
           }
-        } catch (err) {
-          // last-resort: attempt constructor
+        }
+
+        if (!forcePureCanvas) {
           try {
+            // Pre-create diagnostics
+            try { console.info('[PixiRoom] PIXI.version/info', { VERSION: (PIXI as any).VERSION || (PIXI as any).version || null, AppType: typeof PIXI.Application }); } catch (_) { /* ignore */ }
+            try { console.info('[PixiRoom] appOptions before create', { width, height, resolution: appOptions.resolution, forceCanvas: appOptions.forceCanvas || false }); } catch (_) { /* ignore */ }
+            try { console.info('[PixiRoom] canvas present in DOM?', !!(canvas && canvas.parentNode), 'canvas size:', { cw: canvas.width, ch: canvas.height, cssW: canvas.style?.width, cssH: canvas.style?.height }); } catch (_) { /* ignore */ }
+
+            // Pixi v8: constructor does NOT fully initialize renderer; call `app.init()`.
             // eslint-disable-next-line new-cap
-            app = new PIXI.Application(appOptions);
-            console.info('[PixiRoom] Constructor recovery created app?', !!app);
-          } catch (e) {
-            console.error('[PixiRoom] Failed to create PIXI.Application by any method', e);
-            throw err;
+            const maybeApp = new (PIXI as any).Application();
+            if (maybeApp && typeof maybeApp.init === 'function') {
+              await maybeApp.init(appOptions);
+              if (isStale()) {
+                try {
+                  try { maybeApp.ticker?.stop?.(); } catch (_) { /* ignore */ }
+                  try { maybeApp.stop?.(); } catch (_) { /* ignore */ }
+                  try { maybeApp.destroy?.({ removeView: true, children: true } as any); } catch (_) { /* ignore */ }
+                } catch (_) { /* ignore */ }
+                return;
+              }
+              app = maybeApp as PIXI.Application;
+              console.info('[PixiRoom] Application.init() completed; renderer present?', !!(app as any).renderer);
+            } else {
+              // Legacy: some builds still accept constructor options.
+              // eslint-disable-next-line new-cap
+              app = new PIXI.Application({ ...(appOptions as any), view: canvas } as any);
+              console.info('[PixiRoom] Legacy constructor created app', !!app, 'renderer present?', !!(app as any).renderer);
+            }
+          } catch (err) {
+            console.error('[PixiRoom] Failed to init PIXI.Application, falling back to Canvas2D', err);
+            // Ensure the component doesn't hard-crash; let the pure-canvas path handle rendering.
+            app = null;
           }
+        } else {
+          app = null;
+        }
+
+        // Ensure no internal ticker is running. We render on-demand inside `draw()`.
+        try {
+          const appAny = app as any;
+          if (appAny?.ticker) {
+            try { appAny.ticker.autoStart = false; } catch (_) { /* ignore */ }
+            try { appAny.ticker.stop?.(); } catch (_) { /* ignore */ }
+          }
+          try { appAny?.stop?.(); } catch (_) { /* ignore */ }
+        } catch (_) {
+          /* ignore */
         }
         // ensure renderer matches container immediately
         try {
-          app.renderer.resize(width, height);
+          if (app && (app as any).renderer) {
+            (app as any).renderer.resize(width, height);
+          }
           // make sure the canvas element backing store matches DPR-scaled pixels
           try {
-            const view = app.renderer.view as unknown as HTMLCanvasElement;
-            view.width = Math.max(1, Math.floor(width * dpr));
-            view.height = Math.max(1, Math.floor(height * dpr));
-            view.style.width = width + 'px';
-            view.style.height = height + 'px';
+            canvas.width = Math.max(1, Math.floor(width * dpr));
+            canvas.height = Math.max(1, Math.floor(height * dpr));
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
           } catch (_) { /* ignore */ }
         } catch (err) { /* ignore */ }
         appRef.current = app;
         // If the created PIXI Application lacks a renderer (some builds strip renderers),
         // enable the pure-canvas fallback immediately so the user sees a visible output.
         try {
-          if (!app || !(app as any).renderer) {
+          if (forcePureCanvas || !app || !(app as any).renderer) {
             usePureCanvas = true;
             pureCanvasEl = createdCanvasRef.current || createdCanvasLocal;
             try { pureCtx = pureCanvasEl && (pureCanvasEl.getContext && pureCanvasEl.getContext('2d')) ? pureCanvasEl.getContext('2d') : null; } catch (_) { pureCtx = null; }
@@ -204,15 +360,18 @@ export default function PixiRoom({
                 if (pureCtx) {
                   pureCanvasEl = overlay;
                   // attach pointer handler to map clicks to hotspots when using pure-canvas fallback
+                  overlayPointerTarget = overlay;
                   overlayPointerHandler = (ev: PointerEvent) => {
                     try {
-                      const rect = overlay.getBoundingClientRect();
+                      const targetCanvas = overlayPointerTarget;
+                      if (!targetCanvas) return;
+                      const rect = targetCanvas.getBoundingClientRect();
                       const dprLocal = window.devicePixelRatio || 1;
                       // convert client coords to backing-store (canvas) pixels
                       const bx = (ev.clientX - rect.left) * dprLocal;
                       const by = (ev.clientY - rect.top) * dprLocal;
-                      const canvasW = overlay.width || Math.max(1, Math.floor(rect.width * dprLocal));
-                      const canvasH = overlay.height || Math.max(1, Math.floor(rect.height * dprLocal));
+                      const canvasW = targetCanvas.width || Math.max(1, Math.floor(rect.width * dprLocal));
+                      const canvasH = targetCanvas.height || Math.max(1, Math.floor(rect.height * dprLocal));
                       const layoutW = layout.width || (bgImageEl && bgImageEl.naturalWidth) || 800;
                       const layoutH = layout.height || (bgImageEl && bgImageEl.naturalHeight) || 600;
                       const mode = getFitMode();
@@ -242,18 +401,62 @@ export default function PixiRoom({
             if (layout && layout.backgroundUrl) {
               try {
                 bgImageEl = new Image();
+                // Prefer proxying remote hosts to avoid CORS issues (especially for canvas/WebGL).
+                // Keep crossOrigin enabled; the proxy is same-origin.
                 bgImageEl.crossOrigin = 'anonymous';
-                bgImageEl.src = layout.backgroundUrl;
+                bgImageEl.src = normalizeImageUrl(layout.backgroundUrl);
                 bgImageEl.onload = () => { try { /* trigger a draw once loaded */ draw(); } catch (_) { /* ignore */ } };
               } catch (_) { bgImageEl = null; }
             }
-            console.info('[PixiRoom] enabled pure Canvas2D fallback immediately after app creation', { hasCtx: !!pureCtx });
+            // If we ended up drawing directly on the base canvas (no overlay), we still need
+            // a pointer handler so player-mode hotspots work.
+            try {
+              if (pureCtx && pureCanvasEl && !overlayPointerHandler) {
+                overlayPointerTarget = pureCanvasEl;
+                overlayPointerHandler = (ev: PointerEvent) => {
+                  try {
+                    const targetCanvas = overlayPointerTarget;
+                    if (!targetCanvas) return;
+                    const rect = targetCanvas.getBoundingClientRect();
+                    const dprLocal = window.devicePixelRatio || 1;
+                    const bx = (ev.clientX - rect.left) * dprLocal;
+                    const by = (ev.clientY - rect.top) * dprLocal;
+                    const canvasW = targetCanvas.width || Math.max(1, Math.floor(rect.width * dprLocal));
+                    const canvasH = targetCanvas.height || Math.max(1, Math.floor(rect.height * dprLocal));
+                    const eff = resolveLayoutSize();
+                    const mode = getFitMode();
+                    const { scale, offsetX, offsetY } = computeTransform(eff.w, eff.h, canvasW, canvasH, mode);
+                    const lx = (bx - offsetX) / scale;
+                    const ly = (by - offsetY) / scale;
+                    const hsNorm = normalizeHotspotsToLayout(hotspotsRef.current || [], eff.w, eff.h);
+                    for (const hs of hsNorm || []) {
+                      if (lx >= hs.x && lx <= hs.x + hs.w && ly >= hs.y && ly <= hs.y + hs.h) {
+                        try {
+                          const fn = onHotspotActionRef.current;
+                          if (typeof fn === 'function') fn(hs.id);
+                        } catch (e) {
+                          console.error('Hotspot action error', e);
+                        }
+                        ev.stopPropagation();
+                        ev.preventDefault();
+                        return;
+                      }
+                    }
+                  } catch (_) {
+                    /* ignore */
+                  }
+                };
+                try { pureCanvasEl.addEventListener('pointerdown', overlayPointerHandler); } catch (_) { /* ignore */ }
+              }
+            } catch (_) { /* ignore */ }
+
+            console.info('[PixiRoom] enabled pure Canvas2D fallback immediately', { hasCtx: !!pureCtx, forcePureCanvas });
           }
         } catch (_) { /* ignore */ }
         // If renderer missing, attempt a recovery by creating a PIXI.Application without `view` so
-        // the runtime can construct its own renderer. Then attach that renderer.view to the DOM.
+        // the runtime can construct its own renderer. Then attach that renderer canvas to the DOM.
         try {
-          if (!app || !(app as any).renderer) {
+          if (!forcePureCanvas && (!app || !(app as any).renderer)) {
             try { console.info('[PixiRoom] app or app.renderer missing after creation — attempting app-without-view fallback', app); } catch (_) { /* ignore */ }
             try {
               // Create options without `view` to let PIXI decide renderer implementation
@@ -265,16 +468,16 @@ export default function PixiRoom({
               const altApp = new (PIXI as any).Application(fallbackOptions) as any;
               if (altApp && altApp.renderer) {
                 try {
-                  const viewEl = altApp.renderer.view as HTMLCanvasElement | undefined;
-                  if (viewEl) {
+                  const rendererEl = ((altApp.renderer as any)?.canvas || (altApp.renderer as any)?.view) as HTMLCanvasElement | undefined;
+                  if (rendererEl) {
                     if (createdCanvasRef.current && createdCanvasRef.current.parentNode) {
-                      try { createdCanvasRef.current.parentNode.replaceChild(viewEl, createdCanvasRef.current); } catch (_) { /* ignore */ }
+                      try { createdCanvasRef.current.parentNode.replaceChild(rendererEl, createdCanvasRef.current); } catch (_) { /* ignore */ }
                     } else if (createdCanvasLocal && createdCanvasLocal.parentNode) {
-                      try { createdCanvasLocal.parentNode.replaceChild(viewEl, createdCanvasLocal); } catch (_) { /* ignore */ }
+                      try { createdCanvasLocal.parentNode.replaceChild(rendererEl, createdCanvasLocal); } catch (_) { /* ignore */ }
                     } else if (containerRef.current) {
-                      try { containerRef.current.appendChild(viewEl); } catch (_) { /* ignore */ }
+                      try { containerRef.current.appendChild(rendererEl); } catch (_) { /* ignore */ }
                     }
-                    createdCanvasRef.current = viewEl;
+                    createdCanvasRef.current = rendererEl;
                     // ensure any overlay canvas remains on top after PIXI replaces/attaches its view
                     try {
                       const ov = createdOverlayRef.current;
@@ -294,19 +497,21 @@ export default function PixiRoom({
             }
           }
         } catch (_) { /* ignore */ }
-        try {
-          // immediate diagnostics: report renderer and view presence and sizes
-          if (app && (app as any).renderer) {
-            const rendererExists = true;
-            const rendererName = (app.renderer as any)?.constructor?.name || 'unknown';
-            const viewEl = (app.renderer as any)?.view as HTMLCanvasElement | undefined;
-            const viewInfo = viewEl ? { width: viewEl.width, height: viewEl.height, cssWidth: viewEl.style?.width, cssHeight: viewEl.style?.height, has2d: !!(viewEl.getContext && viewEl.getContext('2d')) } : null;
-            console.info('[PixiRoom] created renderer:', rendererName, 'rendererExists:', rendererExists, 'resolution:', app.renderer?.resolution, 'viewInfo:', viewInfo);
-          } else {
-            console.info('[PixiRoom] created renderer: none');
+        if (!forcePureCanvas) {
+          try {
+            // immediate diagnostics: report renderer and view presence and sizes
+            if (app && (app as any).renderer) {
+              const rendererExists = true;
+              const rendererName = (app.renderer as any)?.constructor?.name || 'unknown';
+              const canvasEl = ((app.renderer as any)?.canvas || (app.renderer as any)?.view) as HTMLCanvasElement | undefined;
+              const viewInfo = canvasEl ? { width: canvasEl.width, height: canvasEl.height, cssWidth: canvasEl.style?.width, cssHeight: canvasEl.style?.height, has2d: !!(canvasEl.getContext && canvasEl.getContext('2d')) } : null;
+              console.info('[PixiRoom] created renderer:', rendererName, 'rendererExists:', rendererExists, 'resolution:', app.renderer?.resolution, 'viewInfo:', viewInfo);
+            } else {
+              console.info('[PixiRoom] created renderer: none');
+            }
+          } catch (diagErr) {
+            console.info('[PixiRoom] created renderer diagnostics failed', diagErr);
           }
-        } catch (diagErr) {
-          console.info('[PixiRoom] created renderer diagnostics failed', diagErr);
         }
         // enforce renderer resolution and backing store size
         try {
@@ -315,11 +520,13 @@ export default function PixiRoom({
             try { app.renderer.resolution = dprEnforce; } catch (_) { /* ignore */ }
             try { app.renderer.resize(width, height); } catch (_) { /* ignore */ }
             try {
-              const view = app.renderer.view as unknown as HTMLCanvasElement;
-              view.width = Math.max(1, Math.floor(width * dprEnforce));
-              view.height = Math.max(1, Math.floor(height * dprEnforce));
-              view.style.width = width + 'px';
-              view.style.height = height + 'px';
+              const canvasEl = ((app.renderer as any)?.canvas || (app.renderer as any)?.view) as HTMLCanvasElement | undefined;
+              if (canvasEl) {
+                canvasEl.width = Math.max(1, Math.floor(width * dprEnforce));
+                canvasEl.height = Math.max(1, Math.floor(height * dprEnforce));
+                canvasEl.style.width = width + 'px';
+                canvasEl.style.height = height + 'px';
+              }
               /* enforced canvas size */
             } catch (_) { /* ignore */ }
           }
@@ -330,6 +537,8 @@ export default function PixiRoom({
       }
 
     let bgSprite: PIXI.Sprite | null = null;
+    let requestedCanvasFallback = false;
+    let skipPixiRendering = false;
 
       const PREVIEW_W = 600;
       const PREVIEW_H = 320;
@@ -357,6 +566,115 @@ export default function PixiRoom({
         if (!w) w = 800;
         if (!h) h = 600;
         return { w, h };
+      };
+
+      let lastReportedLayoutW = 0;
+      let lastReportedLayoutH = 0;
+      const reportEffectiveLayoutSize = () => {
+        try {
+          const fn = onEffectiveLayoutSize;
+          if (typeof fn !== 'function') return;
+          const eff = resolveLayoutSize();
+          if (!eff?.w || !eff?.h) return;
+          if (eff.w === lastReportedLayoutW && eff.h === lastReportedLayoutH) return;
+          lastReportedLayoutW = eff.w;
+          lastReportedLayoutH = eff.h;
+          fn(eff.w, eff.h);
+        } catch (_) {
+          /* ignore */
+        }
+      };
+
+      const enablePureCanvasFallback = (reason: string) => {
+        try {
+          if (usePureCanvas) return;
+          usePureCanvas = true;
+
+          const width = containerRef.current?.clientWidth || 800;
+          const height = containerRef.current?.clientHeight || 600;
+          const dpr = window.devicePixelRatio || 1;
+
+          // Prefer drawing into an overlay 2D canvas so we don't depend on the PIXI canvas context.
+          // (A PIXI canvas may already have a WebGL context and refuse a 2D context.)
+          let overlay = createdOverlayRef.current;
+          if (!overlay && containerRef.current) {
+            overlay = document.createElement('canvas');
+            overlay.style.position = 'absolute';
+            overlay.style.left = '0';
+            overlay.style.top = '0';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.pointerEvents = 'auto';
+            overlay.style.zIndex = '10';
+            createdOverlayRef.current = overlay;
+            try { containerRef.current.appendChild(overlay); } catch (_) { /* ignore */ }
+          }
+
+          if (overlay) {
+            try {
+              overlay.width = Math.max(1, Math.floor(width * dpr));
+              overlay.height = Math.max(1, Math.floor(height * dpr));
+              overlay.style.width = width + 'px';
+              overlay.style.height = height + 'px';
+            } catch (_) { /* ignore */ }
+            try { pureCtx = overlay.getContext && overlay.getContext('2d') ? overlay.getContext('2d') : null; } catch (_) { pureCtx = null; }
+            pureCanvasEl = overlay;
+
+            if (pureCtx && !overlayPointerHandler) {
+              overlayPointerHandler = (ev: PointerEvent) => {
+                try {
+                  const rect = overlay!.getBoundingClientRect();
+                  const dprLocal = window.devicePixelRatio || 1;
+                  const bx = (ev.clientX - rect.left) * dprLocal;
+                  const by = (ev.clientY - rect.top) * dprLocal;
+                  const canvasW = overlay!.width || Math.max(1, Math.floor(rect.width * dprLocal));
+                  const canvasH = overlay!.height || Math.max(1, Math.floor(rect.height * dprLocal));
+                  const eff = resolveLayoutSize();
+                  const mode = getFitMode();
+                  const { scale, offsetX, offsetY } = computeTransform(eff.w, eff.h, canvasW, canvasH, mode);
+                  const lx = (bx - offsetX) / scale;
+                  const ly = (by - offsetY) / scale;
+                  const hsNorm = normalizeHotspotsToLayout(hotspotsRef.current || [], eff.w, eff.h);
+                  for (const hs of hsNorm || []) {
+                    if (lx >= hs.x && lx <= hs.x + hs.w && ly >= hs.y && ly <= hs.y + hs.h) {
+                      try {
+                        const fn = onHotspotActionRef.current;
+                        if (typeof fn === 'function') fn(hs.id);
+                      } catch (e) {
+                        console.error('Hotspot action error', e);
+                      }
+                      ev.stopPropagation();
+                      ev.preventDefault();
+                      return;
+                    }
+                  }
+                } catch (_) {
+                  /* ignore */
+                }
+              };
+              try { overlay.addEventListener('pointerdown', overlayPointerHandler); } catch (_) { /* ignore */ }
+            }
+          } else {
+            // Last resort: draw into the existing canvas if we can get a 2D context.
+            pureCanvasEl = createdCanvasRef.current || createdCanvasLocal;
+            try { pureCtx = pureCanvasEl && pureCanvasEl.getContext ? pureCanvasEl.getContext('2d') : null; } catch (_) { pureCtx = null; }
+          }
+
+          if (layout && layout.backgroundUrl && !bgImageEl) {
+            try {
+              bgImageEl = new Image();
+              bgImageEl.crossOrigin = 'anonymous';
+              bgImageEl.src = normalizeImageUrl(layout.backgroundUrl);
+              bgImageEl.onload = () => { try { draw(); } catch (_) { /* ignore */ } };
+            } catch (_) {
+              bgImageEl = null;
+            }
+          }
+
+          console.info('[PixiRoom] enabled pure Canvas2D fallback', { reason, hasCtx: !!pureCtx });
+        } catch (_) {
+          // ignore
+        }
       };
 
       const hotspotsLikelyPreviewCoords = (hsList: any[], layoutW: number, layoutH: number) => {
@@ -400,14 +718,9 @@ export default function PixiRoom({
       const getFitMode = (): FitMode => {
         // Designer/editor expects cover so saved coords remain consistent.
         if (isEditor) return 'cover';
-        try {
-          const cw = containerRef.current?.clientWidth || 0;
-          // Small widths = mobile; show the whole room (no crop).
-          if (cw > 0 && cw < 640) return 'contain';
-        } catch {
-          // ignore
-        }
-        return 'cover';
+        // Player view should always show the full room (no crop) so scaling stays
+        // consistent across all screen sizes and hotspot hit-testing remains aligned.
+        return 'contain';
       };
 
       const computeScale = (sx: number, sy: number, mode: FitMode) => {
@@ -426,14 +739,13 @@ export default function PixiRoom({
       };
 
       const draw = () => {
+        reportEffectiveLayoutSize();
         if (usePureCanvas) {
             try {
             const canvasEl = pureCanvasEl || createdCanvasRef.current || createdCanvasLocal;
             if (!canvasEl) return;
             const ctx = pureCtx || (canvasEl.getContext && canvasEl.getContext('2d'));
             if (!ctx) return;
-            const cssW = canvasEl.clientWidth || (canvasEl.style && parseInt(canvasEl.style.width || '0')) || 800;
-            const cssH = canvasEl.clientHeight || (canvasEl.style && parseInt(canvasEl.style.height || '0')) || 600;
             // clear
             ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
             // fill fallback background
@@ -459,6 +771,10 @@ export default function PixiRoom({
               const items = (layout as any).items || [];
               console.info('[PixiRoom] canvas items count', Array.isArray(items) ? items.length : 0);
               if (Array.isArray(items) && items.length > 0) {
+                // These match the Designer preview canvas size used when placing items.
+                // Item coordinates are stored in that preview coordinate space.
+                const PREVIEW_W = 600;
+                const PREVIEW_H = 320;
                 // Preserve Designer stacking order (array order) unless an explicit zIndex is provided.
                 const itemsSorted = items
                   .map((it: any, idx: number) => ({ ...it, __idx: idx }))
@@ -476,7 +792,7 @@ export default function PixiRoom({
                     if (!img) {
                       img = new Image();
                       img.crossOrigin = 'anonymous';
-                      img.src = src;
+                        img.src = normalizeImageUrl(src);
                       // when any image finishes loading, request a full redraw so draw() will render all items in order
                       img.onload = () => { try { draw(); } catch (_) { /* ignore */ } };
                       img.onerror = () => { console.info('[PixiRoom] item image load failed', src); };
@@ -495,10 +811,33 @@ export default function PixiRoom({
                     const itemYInLayout = ((it.y || 0) - offsetPreviewY) / (scalePreview || 1);
                     const ix = Math.floor(offsetTargetX + itemXInLayout * scaleTarget);
                     const iy = Math.floor(offsetTargetY + itemYInLayout * scaleTarget);
-                    const iW = Math.max(1, Math.floor(iw * scaleTarget));
-                    const iH = Math.max(1, Math.floor(ih * scaleTarget));
+                    // Item w/h are stored in Designer preview pixels (600x320). Convert preview-pixels -> layout-units -> target-pixels.
+                    const sizeScale = (scaleTarget || 1) / (scalePreview || 1);
+                    const iW = Math.max(1, Math.floor(iw * sizeScale));
+                    const iH = Math.max(1, Math.floor(ih * sizeScale));
                     if (img.complete && img.naturalWidth) {
-                      try { ctx.drawImage(img, 0, 0, img.naturalWidth || iW, img.naturalHeight || iH, ix, iy, iW, iH); } catch (_) { /* ignore */ }
+                      try {
+                        // Match Designer preview: <img style={{ objectFit: 'contain' }}>
+                        // Draw the image inside the item box without distortion.
+                        const srcW = img.naturalWidth || iW;
+                        const srcH = img.naturalHeight || iH;
+                        const srcAspect = srcW / Math.max(1, srcH);
+                        const boxAspect = iW / Math.max(1, iH);
+                        let dW = iW;
+                        let dH = iH;
+                        if (srcAspect > boxAspect) {
+                          dW = iW;
+                          dH = Math.max(1, Math.round(iW / srcAspect));
+                        } else {
+                          dH = iH;
+                          dW = Math.max(1, Math.round(iH * srcAspect));
+                        }
+                        const dx = Math.floor(ix + (iW - dW) / 2);
+                        const dy = Math.floor(iy + (iH - dH) / 2);
+                        ctx.drawImage(img, 0, 0, srcW, srcH, dx, dy, dW, dH);
+                      } catch (_) {
+                        /* ignore */
+                      }
                     }
                   } catch (_) { /* ignore per-item */ }
                 }
@@ -526,11 +865,16 @@ export default function PixiRoom({
           return;
         }
 
+        // Defensive: Pixi (especially WebGL shader error formatting) can throw synchronously.
+        // Catch everything here so the page doesn't hard-crash, and attempt a Canvas fallback.
+        try {
+
       // defensive: ensure app still exists
       if (!appRef.current) return;
       const appInst = appRef.current;
       const renderer = (appInst as any).renderer;
-      if (!renderer || !renderer.view) return;
+      const rendererCanvas = (renderer && ((renderer as any).canvas || (renderer as any).view)) as HTMLCanvasElement | undefined;
+      if (!renderer || !rendererCanvas) return;
 
       // Pixi v8 events: make sure the stage participates in event processing.
       try {
@@ -541,13 +885,24 @@ export default function PixiRoom({
 
       // background
       if (layout.backgroundUrl) {
-        const tex = PIXI.Texture.from(layout.backgroundUrl);
-        bgSprite = new PIXI.Sprite(tex);
+        const tex = getOrLoadPixiTexture(layout.backgroundUrl);
+        if (!tex) {
+          // Visible placeholder while the image loads
+          const bg = new PIXI.Graphics();
+          const targetW = renderer.width || (rendererCanvas && rendererCanvas.width) || 0;
+          const targetH = renderer.height || (rendererCanvas && rendererCanvas.height) || 0;
+          bg.beginFill(0xf3f4f6, 1);
+          bg.drawRect(0, 0, Math.max(1, targetW), Math.max(1, targetH));
+          bg.endFill();
+          appInst.stage.addChild(bg);
+          // skip item rendering until background loads (draw() will be called again when load finishes)
+        } else {
+          bgSprite = new PIXI.Sprite(tex);
         // Decide which logical layout size to use: prefer persisted layout, else try image intrinsic size, else fallback
         let layoutW = layout.width || 0;
         let layoutH = layout.height || 0;
-        const targetW = renderer.width || (renderer.view && renderer.view.width) || 0;
-        const targetH = renderer.height || (renderer.view && renderer.view.height) || 0;
+        const targetW = renderer.width || (rendererCanvas && rendererCanvas.width) || 0;
+        const targetH = renderer.height || (rendererCanvas && rendererCanvas.height) || 0;
 
         const applySizing = () => {
           // If persisted layout size missing, try to read texture intrinsic size
@@ -612,7 +967,8 @@ export default function PixiRoom({
             for (let sortedIdx = 0; sortedIdx < itemsSorted.length; sortedIdx++) {
               const it = itemsSorted[sortedIdx];
               try {
-                const texIt = PIXI.Texture.from(it.imageUrl || it.imageUrl || '');
+                const texIt = getOrLoadPixiTexture(it.imageUrl || '');
+                if (!texIt) continue;
                 const sprIt = new PIXI.Sprite(texIt);
                 const itemLayoutW = layoutW || 800;
                 const itemLayoutH = layoutH || 600;
@@ -631,8 +987,10 @@ export default function PixiRoom({
                 // convert designer preview coords -> layout coords -> target coords
                 const itemXInLayout = ((it.x || 0) - offsetPreviewX) / (scalePreview || 1);
                 const itemYInLayout = ((it.y || 0) - offsetPreviewY) / (scalePreview || 1);
-                sprIt.width = iw * scaleTarget;
-                sprIt.height = ih * scaleTarget;
+                // Item w/h are stored in Designer preview pixels; convert through layout coords.
+                const sizeScale = (scaleTarget || 1) / (scalePreview || 1);
+                sprIt.width = iw * sizeScale;
+                sprIt.height = ih * sizeScale;
                 sprIt.x = offsetTargetX + itemXInLayout * scaleTarget;
                 sprIt.y = offsetTargetY + itemYInLayout * scaleTarget;
                 // use sorted index so Designer ordering is preserved
@@ -684,14 +1042,15 @@ export default function PixiRoom({
             base.on('update', () => { try { applySizing(); draw(); } catch (_) { /* ignore */ } });
           }
         } catch (err) { console.error('[PixiRoom] bg texture check failed', err); }
+        }
       }
       else {
         // fallback visible background so canvas isn't empty
         const bg = new PIXI.Graphics();
         const layoutW = layout.width || 800;
         const layoutH = layout.height || 600;
-        const targetW = renderer.width || (renderer.view && renderer.view.width) || 0;
-        const targetH = renderer.height || (renderer.view && renderer.view.height) || 0;
+        const targetW = renderer.width || (rendererCanvas && rendererCanvas.width) || 0;
+        const targetH = renderer.height || (rendererCanvas && rendererCanvas.height) || 0;
         bg.beginFill(0xf3f4f6, 1);
         bg.drawRect(0, 0, Math.max(1, targetW), Math.max(1, targetH));
         bg.endFill();
@@ -706,8 +1065,8 @@ export default function PixiRoom({
       for (const hs of hsNorm || []) {
         const layoutW = effLayoutW;
         const layoutH = effLayoutH;
-        const targetW = renderer.width || (renderer.view && renderer.view.width) || 0;
-        const targetH = renderer.height || (renderer.view && renderer.view.height) || 0;
+        const targetW = renderer.width || (rendererCanvas && rendererCanvas.width) || 0;
+        const targetH = renderer.height || (rendererCanvas && rendererCanvas.height) || 0;
         const sx = targetW / layoutW;
         const sy = targetH / layoutH;
         // Use 'cover' scaling so hotspots map to the background positioning
@@ -849,6 +1208,19 @@ export default function PixiRoom({
               c.x = Math.max(bgLeft, Math.min(newX, maxX));
               c.y = Math.max(bgTop, Math.min(newY, maxY));
               try { (c as any).hitArea = new PIXI.Rectangle(0, 0, currW, currH); } catch (_) { /* ignore */ }
+              try {
+                (appInst as any).renderer.render(appInst.stage);
+              } catch (err) {
+                try {
+                  const rendererName = (appInst as any)?.renderer?.constructor?.name || '';
+                  const isWebGL = /webgl/i.test(String(rendererName));
+                  if (isWebGL && !requestedCanvasFallback && !isStale()) {
+                    console.info('[PixiRoom] switching to Canvas renderer due to WebGL render failure');
+                    requestedCanvasFallback = true;
+                    setRuntimeForceCanvas(true);
+                  }
+                } catch (_) { /* ignore */ }
+              }
               return;
             } catch (err) {
               return;
@@ -898,6 +1270,19 @@ export default function PixiRoom({
               drawOutline();
               positionHandles();
               try { (c as any).hitArea = new PIXI.Rectangle(0, 0, currW, currH); } catch (_) { /* ignore */ }
+              try {
+                (appInst as any).renderer.render(appInst.stage);
+              } catch (err) {
+                try {
+                  const rendererName = (appInst as any)?.renderer?.constructor?.name || '';
+                  const isWebGL = /webgl/i.test(String(rendererName));
+                  if (isWebGL && !requestedCanvasFallback && !isStale()) {
+                    console.info('[PixiRoom] switching to Canvas renderer due to WebGL render failure');
+                    requestedCanvasFallback = true;
+                    setRuntimeForceCanvas(true);
+                  }
+                } catch (_) { /* ignore */ }
+              }
               return;
             } catch (err) {
               return;
@@ -974,126 +1359,171 @@ export default function PixiRoom({
       }
 
       // DOM overlay removed; rely on PIXI rendering
+
+      // Render on-demand so we can catch renderer errors (some WebGL stacks crash inside PIXI shader logging).
+      if (skipPixiRendering) return;
+      try {
+        (appInst as any).renderer.render(appInst.stage);
+      } catch (err) {
+        console.error('[PixiRoom] renderer.render failed', err);
+        // If WebGL blows up, re-init with Canvas renderer.
+        try {
+          const rendererName = (appInst as any)?.renderer?.constructor?.name || '';
+          const isWebGL = /webgl/i.test(String(rendererName));
+          if (isWebGL && !requestedCanvasFallback && !isStale()) {
+            console.info('[PixiRoom] switching to Canvas renderer due to WebGL render failure');
+            requestedCanvasFallback = true;
+            skipPixiRendering = true;
+            // Immediately show something (Canvas2D) instead of waiting for React to re-init.
+            enablePureCanvasFallback('webgl render failure');
+            setRuntimeForceCanvas(true);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+        } catch (err) {
+          console.error('[PixiRoom] draw() threw (caught)', err);
+          // If this was triggered by WebGL/Pixi internals, try switching to the pure Canvas2D path.
+          try {
+            const appInst = appRef.current as any;
+            const rendererName = appInst?.renderer?.constructor?.name || '';
+            const isWebGL = /webgl/i.test(String(rendererName));
+            if (isWebGL && !requestedCanvasFallback && !isStale()) {
+              console.info('[PixiRoom] switching to Canvas renderer due to draw() exception');
+              requestedCanvasFallback = true;
+              enablePureCanvasFallback('draw() exception');
+              setRuntimeForceCanvas(true);
+            }
+          } catch (_) {
+            /* ignore */
+          }
+        }
     };
 
     try { draw(); } catch (err) { console.error('[PixiRoom] draw() failed', err); }
 
-    // force a render after draw to ensure canvas pixels update immediately
-    try { if (appRef.current) appRef.current.renderer.render(appRef.current.stage); } catch (err) { /* ignore */ }
-
-    // Diagnostic: attempt to read center pixel from the canvas (2D ctx or PIXI extract)
-    try {
-      const appInst = appRef.current;
-      if (appInst) {
-        const view = (appInst.renderer.view as unknown) as HTMLCanvasElement | undefined;
-        if (view) {
-          try {
-            const dprLocal = window.devicePixelRatio || 1;
-            const cw = Math.max(1, Math.floor((view.width || 1) / dprLocal));
-            const ch = Math.max(1, Math.floor((view.height || 1) / dprLocal));
-            // try 2d read first
-            const ctx = view.getContext && view.getContext('2d');
-            if (ctx) {
-              try {
-                const img = ctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data;
-                console.info('[PixiRoom] center pixel (2d):', [img[0], img[1], img[2], img[3]]);
-              } catch (e) {
-                console.info('[PixiRoom] 2d getImageData failed', e);
-              }
-            } else if ((appInst.renderer as any).extract && typeof (appInst.renderer as any).extract.canvas === 'function') {
-              try {
-                const tmp = (appInst.renderer as any).extract.canvas(appInst.stage);
-                const tctx = tmp.getContext && tmp.getContext('2d');
-                if (tctx) {
-                  const img = tctx.getImageData(Math.floor(tmp.width / 2), Math.floor(tmp.height / 2), 1, 1).data;
-                  console.info('[PixiRoom] center pixel (extract.canvas):', [img[0], img[1], img[2], img[3]]);
-                } else {
-                  console.info('[PixiRoom] extract.canvas returned no 2d context');
-                }
-              } catch (e) {
-                console.info('[PixiRoom] extract.canvas read failed', e);
-              }
-            } else {
-              console.info('[PixiRoom] cannot read center pixel: no 2d ctx and no extract.canvas');
-            }
-          } catch (e) { console.info('[PixiRoom] pixel-read top-level error', e); }
-        }
-      }
-    } catch (e) { /* ignore */ }
+    // Diagnostic pixel reads removed: extract.canvas can allocate huge buffers and break WebGL contexts.
 
     const resizeObserver = new ResizeObserver(() => {
-      // ensure renderer matches container size then redraw
-      const appInst = appRef.current;
+      // Ensure renderer/canvases match container size then redraw.
+      // IMPORTANT: player mode skips PIXI entirely, so we must resize the base canvas too.
+      const appInst = appRef.current as any;
       const cw = containerRef.current?.clientWidth || 0;
       const ch = containerRef.current?.clientHeight || 0;
       const dprLocal = window.devicePixelRatio || 1;
-      if (appInst && cw > 0 && ch > 0) {
+
+      if (cw > 0 && ch > 0) {
+        // Resize the base canvas (PIXI view or pure-canvas target).
         try {
-          appInst.renderer.resize(cw, ch);
+          const baseCanvas = createdCanvasRef.current || createdCanvasLocal;
+          if (baseCanvas) {
+            baseCanvas.width = Math.max(1, Math.floor(cw * dprLocal));
+            baseCanvas.height = Math.max(1, Math.floor(ch * dprLocal));
+            baseCanvas.style.width = cw + 'px';
+            baseCanvas.style.height = ch + 'px';
+          }
+        } catch (_) { /* ignore */ }
+
+        // Resize PIXI renderer when present.
+        if (appInst?.renderer) {
           try {
-            const view = appInst.renderer.view as unknown as HTMLCanvasElement;
-            view.width = Math.max(1, Math.floor(cw * dprLocal));
-            view.height = Math.max(1, Math.floor(ch * dprLocal));
-            view.style.width = cw + 'px';
-            view.style.height = ch + 'px';
+            appInst.renderer.resize(cw, ch);
           } catch (_) { /* ignore */ }
-        } catch (err) { /* ignore */ }
-      }
-      // update overlay backing store size when present
-      try {
-        const ov = createdOverlayRef.current;
-        if (ov && cw > 0 && ch > 0) {
-          try {
+        }
+
+        // Resize overlay backing store size when present.
+        try {
+          const ov = createdOverlayRef.current;
+          if (ov) {
             ov.width = Math.max(1, Math.floor(cw * dprLocal));
             ov.height = Math.max(1, Math.floor(ch * dprLocal));
             ov.style.width = cw + 'px';
             ov.style.height = ch + 'px';
             // ensure overlay remains the last child (on top)
             try { if (ov.parentNode) ov.parentNode.appendChild(ov); } catch (_) { /* ignore */ }
-          } catch (_) { /* ignore */ }
-        }
-      } catch (_) { /* ignore */ }
-      draw();
+          }
+        } catch (_) { /* ignore */ }
+      }
+
+      try { draw(); } catch (err) { console.error('[PixiRoom] draw() failed during resize', err); }
     });
     if (containerRef.current) resizeObserver.observe(containerRef.current);
 
-      return () => {
-      try {
-        resizeObserver.disconnect();
-      } catch (err) {
-        console.error('[PixiRoom] resizeObserver.disconnect failed', err);
-      }
-      try {
-        // Only remove the canvas we created; if the Designer placed its own canvas,
-        // leave it intact.
-        try {
-          const myCanvas = createdCanvasRef.current;
-          if (myCanvas && myCanvas.parentNode) {
-            try { myCanvas.parentNode.removeChild(myCanvas); } catch (_) { /* ignore */ }
+        cleanup = () => {
+          try {
+            resizeObserver.disconnect();
+          } catch (err) {
+            console.error('[PixiRoom] resizeObserver.disconnect failed', err);
           }
-        } catch (_) { /* ignore */ }
-        appRef.current = null;
-        createdCanvasRef.current = null;
-        // remove overlay canvas if created for pure-canvas fallback and detach handler
-        try {
-          const ov = createdOverlayRef.current;
-          if (ov) {
-            try { if (typeof overlayPointerHandler === 'function') ov.removeEventListener('pointerdown', overlayPointerHandler); } catch (_) { /* ignore */ }
-            if (ov.parentNode) {
-              try { ov.parentNode.removeChild(ov); } catch (_) { /* ignore */ }
-            }
+          try {
+            // Stop/destroy PIXI app first (important for React StrictMode which mounts/unmounts twice in dev).
+            // If we leave the ticker running, it can continue rendering to a detached canvas and spam WebGL errors.
+            try {
+              const appInst = appRef.current as any;
+              if (appInst) {
+                try { appInst.ticker?.stop?.(); } catch (_) { /* ignore */ }
+                try { appInst.stop?.(); } catch (_) { /* ignore */ }
+                try { appInst.stage?.removeChildren?.(); } catch (_) { /* ignore */ }
+                try {
+                  // Pixi v7 signature: destroy(removeView, stageOptions)
+                  appInst.destroy?.(true, { children: true } as any);
+                } catch (_) {
+                  // Pixi v8 signature: destroy(options)
+                  try { appInst.destroy?.({ removeView: true, children: true } as any); } catch (_) { /* ignore */ }
+                }
+              }
+            } catch (_) { /* ignore */ }
+
+            // Only remove the canvas we created; if the Designer placed its own canvas,
+            // leave it intact.
+            try {
+              const myCanvas = createdCanvasRef.current;
+              if (myCanvas && myCanvas.parentNode) {
+                try { myCanvas.parentNode.removeChild(myCanvas); } catch (_) { /* ignore */ }
+              }
+            } catch (_) { /* ignore */ }
+            appRef.current = null;
+            createdCanvasRef.current = null;
+            // remove overlay canvas if created for pure-canvas fallback and detach handler
+            try {
+              const ov = createdOverlayRef.current;
+              if (ov) {
+                  try {
+                    if (typeof overlayPointerHandler === 'function') {
+                      try { ov.removeEventListener('pointerdown', overlayPointerHandler); } catch (_) { /* ignore */ }
+                      try {
+                        const tgt = overlayPointerTarget;
+                        if (tgt && tgt !== ov) tgt.removeEventListener('pointerdown', overlayPointerHandler);
+                      } catch (_) { /* ignore */ }
+                    }
+                  } catch (_) { /* ignore */ }
+                if (ov.parentNode) {
+                  try { ov.parentNode.removeChild(ov); } catch (_) { /* ignore */ }
+                }
+              }
+            } catch (_) { /* ignore */ }
+            createdOverlayRef.current = null;
+          } catch (err) {
+            console.error('[PixiRoom] minimal cleanup failed', err);
           }
-        } catch (_) { /* ignore */ }
-        createdOverlayRef.current = null;
+          // Do not clear container.innerHTML here; StrictMode/HMR can run effects concurrently and
+          // nuking the container can remove the *new* instance's canvas.
+        };
       } catch (err) {
-        console.error('[PixiRoom] minimal cleanup failed', err);
+        console.error('[PixiRoom] useEffect top-level error', err);
       }
-      try { if (containerRef.current) containerRef.current.innerHTML = ""; } catch (err) { console.error('[PixiRoom] clear container failed', err); }
-      };
-    } catch (err) {
-      console.error('[PixiRoom] useEffect top-level error', err);
-    }
-  }, [layoutKey, layoutBg, layoutW, layoutH, puzzleId]);
+    })();
+
+    return () => {
+      cancelled = true;
+      try {
+        cleanup?.();
+      } catch (err) {
+        console.error('[PixiRoom] cleanup wrapper failed', err);
+      }
+    };
+  }, [layoutKey, layoutBg, layoutW, layoutH, puzzleId, runtimeForceCanvas]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 300 }} />

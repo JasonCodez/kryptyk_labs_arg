@@ -301,6 +301,8 @@ model TeamEscapeProgress {
   currentStageIndex Int @default(0)
   solvedStages String  @default("[]")
   inventory    String  @default("[]")
+  // Shared per-team scene state: used to toggle visibility/availability (e.g. opened containers)
+  sceneState   String  @default("{}")
   // Role assignments: userId -> role key/name
   roles        String  @default("{}")
   // Briefing acknowledgements: userId -> ISO timestamp (or true)

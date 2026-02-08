@@ -65,7 +65,7 @@ export default function PuzzleCompletionRatingModal({
                 className="text-sm mt-1"
                 style={{ color: "#DDDBF1" }}
               >
-                You solved "{puzzleTitle}"
+                You solved the puzzle
               </p>
               {typeof completionSeconds === 'number' ? (
                 <div className="text-sm mt-2" style={{ color: '#AB9F9D' }}>

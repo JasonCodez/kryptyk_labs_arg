@@ -29,6 +29,7 @@ export async function GET(
         where: { teamId_escapeRoomId: { teamId: ctx.teamId, escapeRoomId: ctx.escapeRoomId } },
         select: {
           inventory: true,
+          sceneState: true,
           solvedStages: true,
           currentStageIndex: true,
           roles: true,
@@ -129,10 +130,12 @@ export async function GET(
     const roles = safeJsonParse<Record<string, string>>(progress?.roles, {});
     const briefingAcks = safeJsonParse<Record<string, string>>(progress?.briefingAcks, {});
     const inventoryLocks = safeJsonParse<Record<string, any>>(progress?.inventoryLocks, {});
+    const sceneState = safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {});
 
     return NextResponse.json({
       inventory,
       inventoryItems,
+      sceneState,
       currentStageIndex: progress?.currentStageIndex ?? 0,
       solvedStages: progress?.solvedStages ?? "[]",
       roles,

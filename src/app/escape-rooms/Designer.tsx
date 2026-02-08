@@ -33,7 +33,13 @@ interface InteractiveZone {
   width: number;
   height: number;
   actionType: "modal" | "collect" | "trigger";
+  // Optional: associate this zone with an item so the player modal can show its image/description.
+  itemId?: string;
+  // Optional: explicit modal image override (shown in the player modal before falling back to associated item image).
+  imageUrl?: string;
   modalContent?: string;
+  // Optional: additional interactions for the same zone/item (shown as buttons in the player modal).
+  interactions?: Array<{ label: string; modalContent: string }>;
   eventId?: string;
   linkedPuzzleId?: string;
   collectItemId?: string;
@@ -71,6 +77,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [previewProxying, setPreviewProxying] = useState(false);
   // Track upload status and errors for each item by scene/item index
   const [itemUploadState, setItemUploadState] = useState<Record<string, { uploading: boolean; error: string }>>({});
+  // Track upload status and errors for each zone (for modal image overrides)
+  const [zoneUploadState, setZoneUploadState] = useState<Record<string, { uploading: boolean; error: string }>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const previewRef = useRef<HTMLDivElement | null>(null);
   const createFileInputRef = useCallback((idx: number, itemIdx: number) => (el: HTMLInputElement | null) => {
@@ -968,11 +976,179 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             </select>
                           </div>
                           {zone.actionType === 'modal' && (
-                            <textarea value={zone.modalContent} onChange={e => {
-                              const updated = [...scenes];
-                              updated[idx].interactiveZones[zoneIdx].modalContent = e.target.value;
-                              setScenes(updated);
-                            }} placeholder="Modal Content (Markdown or HTML)" className="border rounded px-2 py-1 w-full text-xs" />
+                            <>
+                              <div className="mb-1">
+                                <label className="block text-xs">Associated Item (shows image/description)</label>
+                                <select
+                                  value={zone.itemId || ''}
+                                  onChange={e => {
+                                    const updated = [...scenes];
+                                    updated[idx].interactiveZones[zoneIdx].itemId = e.target.value || undefined;
+                                    setScenes(updated);
+                                  }}
+                                  className="border rounded px-2 py-1 text-xs"
+                                >
+                                  <option value="">None</option>
+                                  {scene.items.map(it => <option key={it.id} value={it.id}>{it.name || 'Unnamed Item'}</option>)}
+                                </select>
+                                <div className="mt-1">
+                                  <label className="block text-xs">Modal image override (optional)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={zone.imageUrl || ''}
+                                      onChange={e => {
+                                        const updated = [...scenes];
+                                        updated[idx].interactiveZones[zoneIdx].imageUrl = e.target.value || undefined;
+                                        setScenes(updated);
+                                      }}
+                                      placeholder="Paste an image URL (optional)"
+                                      className="border rounded px-2 py-1 text-xs w-64"
+                                    />
+
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      id={`zone-image-${idx}-${zoneIdx}`}
+                                      style={{ display: 'none' }}
+                                      onChange={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const file = e.target.files?.[0];
+                                        const key = `${idx}-${zoneIdx}`;
+                                        setZoneUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                                        try {
+                                          if (!file) {
+                                            setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: 'No file selected' } }));
+                                            return;
+                                          }
+                                          if (file.size > MAX_CLIENT_UPLOAD) {
+                                            setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } }));
+                                            return;
+                                          }
+                                          const formData = new FormData();
+                                          formData.append('file', file);
+                                          if (editId) formData.append('puzzleId', editId);
+                                          const res = await fetch('/api/admin/media', { method: 'POST', body: formData });
+                                          const data = await res.json().catch(() => ({}));
+                                          if (res.ok && (data.mediaUrl || data.url)) {
+                                            const uploadedUrl = data.mediaUrl || data.url;
+                                            const updated = [...scenes];
+                                            updated[idx].interactiveZones[zoneIdx].imageUrl = uploadedUrl;
+                                            setScenes(updated);
+                                            setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: '' } }));
+                                          } else {
+                                            const errMsg = (data && (data.error || data.message)) || `Upload failed (${res.status})`;
+                                            setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: errMsg } }));
+                                          }
+                                        } catch (err) {
+                                          const errMsg = err instanceof Error ? err.message : String(err);
+                                          setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: errMsg } }));
+                                        }
+                                      }}
+                                    />
+                                    <label
+                                      htmlFor={`zone-image-${idx}-${zoneIdx}`}
+                                      className="bg-blue-500 text-white px-2 py-1 rounded text-xs cursor-pointer"
+                                    >
+                                      Upload Image
+                                    </label>
+
+                                    {zoneUploadState[`${idx}-${zoneIdx}`]?.uploading && (
+                                      <span className="text-xs text-blue-400">Uploading...</span>
+                                    )}
+                                    {zoneUploadState[`${idx}-${zoneIdx}`]?.error && (
+                                      <span className="text-xs text-red-400">{zoneUploadState[`${idx}-${zoneIdx}`].error}</span>
+                                    )}
+
+                                    {zone.imageUrl && !zoneUploadState[`${idx}-${zoneIdx}`]?.uploading && (
+                                      <img src={zone.imageUrl} alt="modal" className="h-8 w-8 object-cover rounded" />
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-gray-400 mt-1">
+                                    If set, this image is shown in the player modal. Otherwise it uses the Associated Item image.
+                                  </div>
+                                </div>
+                              </div>
+
+                              <textarea
+                                value={zone.modalContent}
+                                onChange={e => {
+                                  const updated = [...scenes];
+                                  updated[idx].interactiveZones[zoneIdx].modalContent = e.target.value;
+                                  setScenes(updated);
+                                }}
+                                placeholder="Modal Content (Markdown or HTML)"
+                                className="border rounded px-2 py-1 w-full text-xs"
+                              />
+
+                              <div className="mt-2">
+                                <div className="flex items-center justify-between">
+                                  <label className="block text-xs font-semibold">Extra Interactions (optional)</label>
+                                  <button
+                                    type="button"
+                                    className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
+                                    onClick={() => {
+                                      const updated = [...scenes];
+                                      const existing = updated[idx].interactiveZones[zoneIdx].interactions || [];
+                                      updated[idx].interactiveZones[zoneIdx].interactions = [...existing, { label: 'Read', modalContent: '' }];
+                                      setScenes(updated);
+                                    }}
+                                  >
+                                    + Add Interaction
+                                  </button>
+                                </div>
+
+                                {(zone.interactions || []).length === 0 ? (
+                                  <div className="text-xs text-gray-400">No extra interactions.</div>
+                                ) : (
+                                  <div className="mt-1 space-y-2">
+                                    {(zone.interactions || []).map((itx, itxIdx) => (
+                                      <div key={itxIdx} className="border rounded p-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <input
+                                            value={itx.label}
+                                            onChange={e => {
+                                              const updated = [...scenes];
+                                              const arr = updated[idx].interactiveZones[zoneIdx].interactions || [];
+                                              arr[itxIdx] = { ...arr[itxIdx], label: e.target.value };
+                                              updated[idx].interactiveZones[zoneIdx].interactions = [...arr];
+                                              setScenes(updated);
+                                            }}
+                                            placeholder="Button Label"
+                                            className="border rounded px-2 py-1 text-xs"
+                                          />
+                                          <button
+                                            type="button"
+                                            className="text-red-500 text-xs"
+                                            onClick={() => {
+                                              const updated = [...scenes];
+                                              const arr = (updated[idx].interactiveZones[zoneIdx].interactions || []).filter((_, j) => j !== itxIdx);
+                                              updated[idx].interactiveZones[zoneIdx].interactions = arr;
+                                              setScenes(updated);
+                                            }}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                        <textarea
+                                          value={itx.modalContent}
+                                          onChange={e => {
+                                            const updated = [...scenes];
+                                            const arr = updated[idx].interactiveZones[zoneIdx].interactions || [];
+                                            arr[itxIdx] = { ...arr[itxIdx], modalContent: e.target.value };
+                                            updated[idx].interactiveZones[zoneIdx].interactions = [...arr];
+                                            setScenes(updated);
+                                          }}
+                                          placeholder="Interaction Content"
+                                          className="border rounded px-2 py-1 w-full text-xs"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </>
                           )}
                           {zone.actionType === 'collect' && (
                             <div className="mb-1">
@@ -1058,7 +1234,36 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
               if (typeof onChange === 'function') {
                 onChange({ title, description, timeLimit, scenes, userSpecialties });
               }
-              // Optionally show a message
+
+              // If we're in the standalone designer edit page, persist to the API.
+              if (editId) {
+                try {
+                  const res = await fetch(`/api/escape-rooms/designer/${encodeURIComponent(editId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      title,
+                      description,
+                      timeLimit,
+                      startMode,
+                      scenes,
+                      userSpecialties,
+                    }),
+                  });
+                  const j = await res.json().catch(() => null);
+                  if (!res.ok) {
+                    setValidationError(j?.error || `Save failed (${res.status})`);
+                    return;
+                  }
+                  setValidationError('Escape room saved.');
+                  return;
+                } catch (err) {
+                  setValidationError('Save failed: network error');
+                  return;
+                }
+              }
+
+              // Otherwise, just save the draft into the parent form.
               setValidationError("Escape room draft saved (in form, not submitted yet).");
             }}
           >

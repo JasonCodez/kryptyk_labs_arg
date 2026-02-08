@@ -189,13 +189,20 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
   return (
     <div className="flex flex-col gap-4 items-center justify-center">
       <motion.div
-          className="inline-block border-4 p-3 bg-[#071016] rounded"
-          style={{ borderColor: "#FDE74C", width: '100%', maxWidth: 'min(90vw,720px)' }}
+          className="w-full border-4 p-3 bg-[#071016] rounded"
+          style={{
+            borderColor: "#FDE74C",
+            width: '100%',
+            maxWidth: 'min(90vw,720px)',
+            aspectRatio: '1 / 1',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
           variants={{ idle: {}, popParent: { transition: { staggerChildren: 0.03 } } }}
           animate={animating === 'success' ? 'popParent' : 'idle'}
         >
           {grid.map((row, rowIdx) => (
-            <div key={rowIdx} className="flex">
+            <div key={rowIdx} className="flex flex-1">
               {row.map((cell, colIdx) => {
               const isGiven = givens ? (givens[rowIdx]?.[colIdx] !== 0) : (initialPuzzleRef.current[rowIdx]?.[colIdx] !== 0);
               const thickRight = colIdx === 2 || colIdx === 5;
@@ -224,9 +231,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
                         width: '100%',
                         height: '100%',
                         boxSizing: 'border-box',
-                        aspectRatio: '1 / 1',
                         minWidth: 0,
-                        minHeight: 36,
                         fontSize: 'clamp(16px, 4vw, 28px)',
                         borderRightWidth: thickRight ? "3px" : "1px",
                         borderBottomWidth: thickBottom ? "3px" : "1px",

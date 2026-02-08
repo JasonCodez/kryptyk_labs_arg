@@ -8,6 +8,7 @@
     "start": "next start -p $PORT",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
+    "validate:escape-room": "tsx scripts/validate-escape-room-wiring.ts",
     "test:e2e": "playwright test",
     "socket-server": "node scripts/socket-server.js",
     "postinstall": "prisma generate"

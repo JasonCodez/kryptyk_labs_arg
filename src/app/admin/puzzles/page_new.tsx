@@ -341,7 +341,25 @@ export default function AdminPuzzlesPage() {
                   h: Number(z.height) || Number(z.h) || 32,
                   type: z.actionType || 'modal',
                   targetId: z.collectItemId || null,
-                  meta: z.meta || { label: z.label, modalContent: z.modalContent, linkedPuzzleId: z.linkedPuzzleId, eventId: z.eventId },
+                  // Persist the fields the player modal needs (imageUrl/itemId/interactions).
+                  // Keep any provided `z.meta` but ensure these keys exist.
+                  meta: (() => {
+                    const base = {
+                      label: z.label,
+                      modalContent: z.modalContent,
+                      itemId: z.itemId,
+                      imageUrl: z.imageUrl,
+                      description: z.description,
+                      interactions: z.interactions,
+                      linkedPuzzleId: z.linkedPuzzleId,
+                      eventId: z.eventId,
+                      actionType: z.actionType,
+                    };
+                    if (z.meta && typeof z.meta === 'object') return { ...(z.meta as any), ...base };
+                    // If `z.meta` was a string (already serialized), preserve it as-is.
+                    if (typeof z.meta === 'string') return z.meta;
+                    return base;
+                  })(),
                 })) : [],
               };
               return { layout, stages: scene.stages || [] };

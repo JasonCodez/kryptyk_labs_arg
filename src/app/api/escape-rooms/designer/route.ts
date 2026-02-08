@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
             meta: JSON.stringify({
               label: zone.label,
               modalContent: zone.modalContent,
+              itemId: (zone as any).itemId,
+              imageUrl: (zone as any).imageUrl,
+              interactions: (zone as any).interactions,
               linkedPuzzleId: zone.linkedPuzzleId,
               eventId: zone.eventId,
             }),
