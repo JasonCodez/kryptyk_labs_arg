@@ -188,6 +188,8 @@ export async function PUT(
               type: String(actionType),
               targetId,
               meta: JSON.stringify({
+                // Stable designer id so effects can refer to zones without knowing DB hotspot ids.
+                zoneId: typeof zone?.id === 'string' ? zone.id : undefined,
                 label: zone?.label,
                 modalContent: zone?.modalContent,
                 itemId: zone?.itemId,
@@ -196,6 +198,10 @@ export async function PUT(
                 interactions: zone?.interactions,
                 linkedPuzzleId: zone?.linkedPuzzleId,
                 eventId: zone?.eventId,
+                requiredItemId: zone?.requiredItemId,
+                consumeItemOnUse: zone?.consumeItemOnUse,
+                disabledByDefault: zone?.disabledByDefault,
+                useEffect: zone?.useEffect,
                 actionType,
               }),
             },

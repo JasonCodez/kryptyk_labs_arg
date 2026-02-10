@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import gsap from "gsap";
@@ -422,13 +422,32 @@ function JigsawPiece({
   cornerInset,
   smooth,
   isDragging = false,
+  dragDx = 0,
+  dragDy = 0,
+  snapDx = 0,
+  snapDy = 0,
+  snapAnimating = false,
   imageOk = null,
-}: JigsawPieceProps & { snapped?: boolean; tabRadius?: number; tabDepth?: number; neckWidth?: number; neckDepth?: number; shoulderLen?: number; shoulderDepth?: number; cornerInset?: number; smooth?: number; isDragging?: boolean; imageOk?: boolean | null }) {
+}: JigsawPieceProps & { snapped?: boolean; tabRadius?: number; tabDepth?: number; neckWidth?: number; neckDepth?: number; shoulderLen?: number; shoulderDepth?: number; cornerInset?: number; smooth?: number; isDragging?: boolean; dragDx?: number; dragDy?: number; snapDx?: number; snapDy?: number; snapAnimating?: boolean; imageOk?: boolean | null }) {
   const clipId = `clip-${id}`;
   const d = useMemo(
     () => piecePath(pieceW, pieceH, edges),
     [pieceW, pieceH, edges]
   );
+
+  // Subtle "settle" on drop: quick squash then return.
+  const [dropSettle, setDropSettle] = useState(false);
+  const prevDraggingRef = useRef(false);
+  React.useEffect(() => {
+    const wasDragging = prevDraggingRef.current;
+    prevDraggingRef.current = !!isDragging;
+
+    if (wasDragging && !isDragging) {
+      setDropSettle(true);
+      const t = setTimeout(() => setDropSettle(false), 90);
+      return () => clearTimeout(t);
+    }
+  }, [isDragging]);
 
   // NOTE: removed drag scale animation — pieces no longer scale on pick/drop
 
@@ -467,6 +486,10 @@ function JigsawPiece({
     return () => fadeTimer && clearTimeout(fadeTimer);
   }, [snapped]);
 
+  const tx = (dragDx || 0) + (snapDx || 0);
+  const ty = (dragDy || 0) + (snapDy || 0);
+  const hasOuterTransform = tx !== 0 || ty !== 0;
+
   return (
     <div
       style={{
@@ -477,9 +500,13 @@ function JigsawPiece({
         cursor: snapped ? "default" : "grab",
         touchAction: "none",
         userSelect: "none",
-        filter: !snapped && pos.x > boardW ? "drop-shadow(0px 14px 22px rgba(0,0,0,0.45))" : undefined,
+        // Drop-shadow filters are expensive across many SVGs; keep it only for
+        // the actively dragged group.
+        filter: !snapped && isDragging ? "drop-shadow(0px 14px 22px rgba(0,0,0,0.45))" : undefined,
         pointerEvents: snapped ? "none" : "auto",
-        transform: 'scale(1)'
+        transform: hasOuterTransform ? `translate3d(${tx}px, ${ty}px, 0px)` : undefined,
+        transition: snapAnimating ? 'transform 170ms cubic-bezier(0.18, 1.35, 0.32, 1)' : undefined,
+        willChange: hasOuterTransform ? 'transform' : undefined,
       }}
       data-piece-id={id}
       data-piece-group={groupId}
@@ -488,7 +515,18 @@ function JigsawPiece({
         width={pieceW}
         height={pieceH}
         viewBox={`0 0 ${pieceW} ${pieceH}`}
-        style={{ overflow: "visible" }}
+        style={{
+          overflow: "visible",
+          transformOrigin: '50% 50%',
+          // Lift on pick-up: animate only the "lift" transform, not the drag translate.
+          transform: isDragging
+            ? 'translate3d(0px, -2px, 0px) scale(1.025)'
+            : (dropSettle ? 'translate3d(0px, 0px, 0px) scale(0.985)' : 'translate3d(0px, 0px, 0px) scale(1)'),
+          transition: isDragging
+            ? 'transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1)'
+            : 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+          willChange: 'transform',
+        }}
         onPointerDown={snapped ? undefined : (e) => onPointerDown(e, id)}
       >
         <defs>
@@ -500,8 +538,8 @@ function JigsawPiece({
         {imageOk && (
           <image
             href={imageUrl}
-            x={-(boardLeft + col * pieceW)}
-            y={-(boardTop + row * pieceH)}
+            x={-(col * pieceW)}
+            y={-(row * pieceH)}
             width={boardW}
             height={boardH}
             preserveAspectRatio="none"
@@ -535,6 +573,46 @@ function JigsawPiece({
   );
 }
 
+const MemoJigsawPiece = React.memo(
+  JigsawPiece,
+  (prev, next) => {
+    // Ignore function identity props (e.g. onPointerDown) so pieces don't rerender
+    // during drag; ensure the handler itself reads latest state via refs.
+    const prevEdges = prev.edges;
+    const nextEdges = next.edges;
+
+    return (
+      prev.id === next.id &&
+      prev.row === next.row &&
+      prev.col === next.col &&
+      prev.pieceW === next.pieceW &&
+      prev.pieceH === next.pieceH &&
+      prev.boardW === next.boardW &&
+      prev.boardH === next.boardH &&
+      prev.boardLeft === next.boardLeft &&
+      prev.boardTop === next.boardTop &&
+      prev.imageUrl === next.imageUrl &&
+      prev.imageOk === next.imageOk &&
+      prev.pos.x === next.pos.x &&
+      prev.pos.y === next.pos.y &&
+      prev.z === next.z &&
+      prev.groupId === next.groupId &&
+      prev.highlight === next.highlight &&
+      prev.snapped === next.snapped &&
+      prev.isDragging === next.isDragging &&
+      prev.dragDx === next.dragDx &&
+      prev.dragDy === next.dragDy &&
+      prev.snapDx === next.snapDx &&
+      prev.snapDy === next.snapDy &&
+      prev.snapAnimating === next.snapAnimating &&
+      prevEdges.top === nextEdges.top &&
+      prevEdges.right === nextEdges.right &&
+      prevEdges.bottom === nextEdges.bottom &&
+      prevEdges.left === nextEdges.left
+    );
+  }
+);
+
 export default function JigsawPuzzleSVGWithTray({
   imageUrl,
   rows = 4,
@@ -566,6 +644,11 @@ export default function JigsawPuzzleSVGWithTray({
   const boardRef = useRef<HTMLDivElement>(null);
   const shimmerOuterRef = useRef<HTMLDivElement>(null);
   const shimmerInnerRef = useRef<HTMLDivElement>(null);
+  const shimmerInnerBRef = useRef<HTMLDivElement>(null);
+  const shimmerInnerCRef = useRef<HTMLDivElement>(null);
+  const flareOuterRef = useRef<HTMLDivElement>(null);
+  const energyRingRef = useRef<HTMLDivElement>(null);
+  const energyGlowRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isFullscreenRef = useRef(false);
@@ -575,8 +658,9 @@ export default function JigsawPuzzleSVGWithTray({
   const pointersRef = useRef<Map<number, { x: number; y: number; targetIsPiece: boolean }>>(new Map());
   const pinchRef = useRef<{ active: boolean; startDist: number; startScale: number; startPan: PiecePosition; centerClientX: number; centerClientY: number } | null>(null);
   const [scale, setScale] = useState<number>(1);
+  const scaleRef = useRef<number>(1);
   const [wrapperWidth, setWrapperWidth] = useState<number | null>(null);
-  const [isStacked, setIsStacked] = useState<boolean>(false);
+  const [wrapperHeight, setWrapperHeight] = useState<number | null>(null);
   const startTimeRef = useRef<number>(Date.now());
   const completedRef = useRef<boolean>(false);
   const [showCongrats, setShowCongrats] = useState(false);
@@ -587,6 +671,21 @@ export default function JigsawPuzzleSVGWithTray({
   React.useEffect(() => {
     isFullscreenRef.current = isFullscreen;
   }, [isFullscreen]);
+
+  React.useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+
+  const fsScaleRef = useRef<number>(1);
+  const fsPanRef = useRef<PiecePosition>({ x: 0, y: 0 });
+
+  React.useEffect(() => {
+    fsScaleRef.current = fsScale;
+  }, [fsScale]);
+
+  React.useEffect(() => {
+    fsPanRef.current = fsPan;
+  }, [fsPan]);
 
   React.useEffect(() => {
     // Only portal fullscreen UI after mount (document available)
@@ -610,10 +709,15 @@ export default function JigsawPuzzleSVGWithTray({
     const visibleW = wrapperW / (scaleVal || 1);
     const visibleH = wrapperH / (scaleVal || 1);
 
-    const minX = Math.min(0, visibleW - stageWidth);
-    const maxX = 0;
-    const minY = Math.min(0, visibleH - stageHeight);
-    const maxY = 0;
+    const centerX = (visibleW - stageWidth) / 2;
+    const centerY = (visibleH - stageHeight) / 2;
+
+    // If the viewport can fully show the content, lock pan to centered.
+    // Otherwise, clamp within bounds (0 aligns top/left).
+    const minX = visibleW >= stageWidth ? centerX : (visibleW - stageWidth);
+    const maxX = visibleW >= stageWidth ? centerX : 0;
+    const minY = visibleH >= stageHeight ? centerY : (visibleH - stageHeight);
+    const maxY = visibleH >= stageHeight ? centerY : 0;
 
     return {
       x: clamp(pan.x, minX, maxX),
@@ -623,6 +727,12 @@ export default function JigsawPuzzleSVGWithTray({
 
   const pieceW = boardWidth / cols;
   const pieceH = boardHeight / rows;
+  const scatterMargin = useMemo(() => {
+    // Unscaled stage-space margin around the board reserved for loose pieces.
+    // Roughly ~1.35 piece size plus a small buffer.
+    const base = Math.max(pieceW, pieceH);
+    return Math.round(base * 1.35 + 48);
+  }, [pieceW, pieceH]);
   const [imageOk, setImageOk] = useState<boolean | null>(null);
   const [imageReloadKey, setImageReloadKey] = useState(0);
   const [proxyAttempted, setProxyAttempted] = useState(false);
@@ -678,26 +788,133 @@ export default function JigsawPuzzleSVGWithTray({
     };
   }, [effectiveImageUrl, imageReloadKey, proxyAttempted]);
 
-  // Stage layout:
-  // +-------------------------------+
-  // |  [ board ]   [ tray ]         |
-  // +-------------------------------+
-  const trayWidth = Math.round(boardWidth * 0.95);
+  const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
 
-  // When the available wrapper width is small, stack the tray below the board
-  const stageWidth = isStacked ? Math.max(boardWidth, trayWidth) : boardWidth + trayWidth;
-  const stageHeight = isStacked ? boardHeight + trayHeight : boardHeight;
+  const nonFullscreenHeight = (() => {
+    if (typeof window === 'undefined') return 680;
+    const vh = window.innerHeight || 800;
+    // Give extra vertical space for scattered pieces around the board.
+    // Clamp so it doesn't become absurdly tall on desktop.
+    const target = Math.round(vh * 0.98);
+    return Math.max(720, Math.min(1600, target));
+  })();
 
-  const boardLeft = 0;
-  const boardTop = 0;
+  // Stage layout: board centered, loose pieces scattered around it (no tray).
+  // In non-fullscreen, we treat the wrapper as the visible area and make the stage fill it.
+  // Stage coordinates are "unscaled" and then we apply `scale()` to fit.
+  const stageWidth = useMemo(() => {
+    const minStageW = boardWidth + scatterMargin * 2;
+    // In fullscreen, keep world dimensions stable; zoom is handled by fsScale/fsPan.
+    if (isFullscreen) return minStageW;
 
-  const trayLeft = isStacked ? 0 : boardLeft + boardWidth;
-  const trayTop = isStacked ? boardTop + boardHeight : boardTop;
+    const wPx = (!isFullscreen ? wrapperWidth : null) ?? boardWidth;
+    const effectiveScale = nonFullscreenScale || 1;
+    return Math.max(minStageW, Math.round(wPx / effectiveScale));
+  }, [isFullscreen, wrapperWidth, boardWidth, nonFullscreenScale, scatterMargin]);
+
+  const stageHeight = useMemo(() => {
+    const minStageH = boardHeight + scatterMargin * 2;
+    // In fullscreen, keep world dimensions stable; zoom is handled by fsScale/fsPan.
+    if (isFullscreen) return minStageH;
+
+    const hPx = (!isFullscreen ? (wrapperHeight ?? nonFullscreenHeight) : null) ?? boardHeight;
+    const effectiveScale = nonFullscreenScale || 1;
+    return Math.max(minStageH, Math.round(hPx / effectiveScale));
+  }, [isFullscreen, wrapperHeight, nonFullscreenHeight, boardHeight, nonFullscreenScale, scatterMargin]);
+
+  const boardLeft = Math.max(0, Math.round((stageWidth - boardWidth) / 2));
+  const boardTop = Math.max(0, Math.round((stageHeight - boardHeight) / 2));
 
   const edgesMap = useMemo(() => buildEdges(rows, cols), [rows, cols]);
 
   const initialPieces = useMemo(() => {
     const pieces = [];
+
+    const pickSpawn = () => {
+      // Spawn pieces strictly outside the (padded) board rectangle so the puzzle
+      // starts with the board unobscured.
+      const pad = Math.max(10, Math.round(Math.min(pieceW, pieceH) * 0.08));
+      const maxX = Math.max(0, stageWidth - pieceW);
+      const maxY = Math.max(0, stageHeight - pieceH);
+
+      const forbiddenLeft = boardLeft - pad;
+      const forbiddenTop = boardTop - pad;
+      const forbiddenRight = boardLeft + boardWidth + pad;
+      const forbiddenBottom = boardTop + boardHeight + pad;
+
+      const isOutsideForbidden = (x: number, y: number) => {
+        return (
+          x + pieceW <= forbiddenLeft ||
+          x >= forbiddenRight ||
+          y + pieceH <= forbiddenTop ||
+          y >= forbiddenBottom
+        );
+      };
+
+      type Rect = { x0: number; x1: number; y0: number; y1: number; area: number };
+      const rects: Rect[] = [];
+
+      const addRect = (x0: number, x1: number, y0: number, y1: number) => {
+        const xx0 = Math.max(0, Math.min(maxX, x0));
+        const xx1 = Math.max(0, Math.min(maxX, x1));
+        const yy0 = Math.max(0, Math.min(maxY, y0));
+        const yy1 = Math.max(0, Math.min(maxY, y1));
+        if (xx1 > xx0 && yy1 > yy0) rects.push({ x0: xx0, x1: xx1, y0: yy0, y1: yy1, area: (xx1 - xx0) * (yy1 - yy0) });
+      };
+
+      // Disjoint "ring" regions around the board:
+      // - full-height bands on the left and right
+      // - top/bottom bands only over the board's x-span
+      addRect(0, forbiddenLeft - pieceW, 0, maxY);
+      addRect(forbiddenRight, maxX, 0, maxY);
+      addRect(forbiddenLeft, forbiddenRight - pieceW, 0, forbiddenTop - pieceH);
+      addRect(forbiddenLeft, forbiddenRight - pieceW, forbiddenBottom, maxY);
+
+      if (rects.length > 0) {
+        const total = rects.reduce((s, r) => s + r.area, 0) || 1;
+        let pick = Math.random() * total;
+        let chosen = rects[0];
+        for (const r of rects) {
+          pick -= r.area;
+          if (pick <= 0) {
+            chosen = r;
+            break;
+          }
+        }
+
+        // Try a few times in case extreme padding makes edge cases.
+        for (let i = 0; i < 30; i++) {
+          const x = chosen.x0 + Math.random() * (chosen.x1 - chosen.x0);
+          const y = chosen.y0 + Math.random() * (chosen.y1 - chosen.y0);
+          if (isOutsideForbidden(x, y)) return { x, y };
+        }
+      }
+
+      // Fallback: rejection sample anywhere but still enforce outside.
+      for (let i = 0; i < 200; i++) {
+        const x = Math.random() * maxX;
+        const y = Math.random() * maxY;
+        if (isOutsideForbidden(x, y)) return { x, y };
+      }
+
+      // Last resort: shove to nearest side.
+      const candidate = { x: Math.random() * maxX, y: Math.random() * maxY };
+      if (isOutsideForbidden(candidate.x, candidate.y)) return candidate;
+
+      const leftX = clamp(forbiddenLeft - pieceW, 0, maxX);
+      const rightX = clamp(forbiddenRight, 0, maxX);
+      const topY = clamp(forbiddenTop - pieceH, 0, maxY);
+      const bottomY = clamp(forbiddenBottom, 0, maxY);
+      const options = [
+        { x: leftX, y: candidate.y },
+        { x: rightX, y: candidate.y },
+        { x: candidate.x, y: topY },
+        { x: candidate.x, y: bottomY },
+      ].filter((p) => isOutsideForbidden(p.x, p.y));
+
+      return options[0] || { x: 0, y: 0 };
+    };
+
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const id = `${r}-${c}`;
@@ -707,17 +924,8 @@ export default function JigsawPuzzleSVGWithTray({
           y: boardTop + r * pieceH,
         };
 
-        // spawn in tray
-        const spawn = {
-          x:
-            trayLeft +
-            Math.random() * (trayWidth - pieceW) +
-            (Math.random() * 2 - 1) * trayScatter,
-          y:
-            trayTop +
-            Math.random() * (trayHeight - pieceH) +
-            (Math.random() * 2 - 1) * trayScatter,
-        };
+        // spawn scattered around the board (within stage bounds)
+        const spawn = pickSpawn();
 
         pieces.push({
           id,
@@ -740,15 +948,19 @@ export default function JigsawPuzzleSVGWithTray({
     pieceH,
     boardLeft,
     boardTop,
-    trayLeft,
-    trayTop,
-    trayWidth,
-    trayHeight,
-    trayScatter,
+    boardWidth,
+    boardHeight,
+    stageWidth,
+    stageHeight,
     edgesMap,
   ]);
 
   const [pieces, setPieces] = useState(initialPieces);
+  const piecesRef = useRef<Piece[]>(initialPieces);
+
+  React.useEffect(() => {
+    piecesRef.current = pieces;
+  }, [pieces]);
   // Reset pieces when initialPieces changes (e.g., layout switches stacked vs side-by-side)
   // Initialize pieces when core puzzle inputs change (rows/cols/image).
   // Avoid resetting pieces on layout/scale changes to prevent mid-play resets.
@@ -756,35 +968,176 @@ export default function JigsawPuzzleSVGWithTray({
     setPieces(initialPieces);
     completedRef.current = false;
     startTimeRef.current = Date.now();
+    hasInteractedRef.current = false;
   }, [rows, cols, imageUrl]);
 
-  // When layout changes between stacked and side-by-side, move existing pieces
-  // so that pieces that were in the tray remain in the tray area relative to the
-  // new layout. This prevents pieces spawning off-screen when breakpoint flips.
-  const prevIsStackedRef = useRef<boolean>(isStacked);
+  // The board is centered based on wrapper size, so `boardLeft/boardTop` can change after mount
+  // (and on resizes). Keep each piece's `correct` position in sync so snapping/locking works.
   React.useEffect(() => {
-    const prevIsStacked = prevIsStackedRef.current;
-    if (prevIsStacked === isStacked) return;
+    setPieces((prev) => {
+      let changed = false;
+      let next = prev.map((p) => {
+        const correct = { x: boardLeft + p.col * pieceW, y: boardTop + p.row * pieceH };
+        const correctChanged = p.correct.x !== correct.x || p.correct.y !== correct.y;
+        if (!correctChanged) return p;
+        changed = true;
+        return {
+          ...p,
+          correct,
+          pos: p.snapped ? { x: correct.x, y: correct.y } : p.pos,
+        };
+      });
 
-    const oldTrayLeft = prevIsStacked ? 0 : boardLeft + boardWidth;
-    const oldTrayTop = prevIsStacked ? boardTop + boardHeight : boardTop;
+      // Before the user interacts, ensure nothing is sitting on top of the board
+      // after a recenter/resize. Move any loose (unsnapped) groups that overlap.
+      if (!hasInteractedRef.current) {
+        const pad = Math.max(10, Math.round(Math.min(pieceW, pieceH) * 0.08));
+        const forbiddenLeft = boardLeft - pad;
+        const forbiddenTop = boardTop - pad;
+        const forbiddenRight = boardLeft + boardWidth + pad;
+        const forbiddenBottom = boardTop + boardHeight + pad;
 
-    const newTrayLeft = isStacked ? 0 : boardLeft + boardWidth;
-    const newTrayTop = isStacked ? boardTop + boardHeight : boardTop;
+        const groupIds = [...new Set(next.map((p) => p.groupId))];
+        for (const gid of groupIds) {
+          const group = next.filter((p) => p.groupId === gid);
+          if (group.length === 0) continue;
+          if (group.some((p) => p.snapped)) continue;
 
-    const dx = newTrayLeft - oldTrayLeft;
-    const dy = newTrayTop - oldTrayTop;
+          const minX = Math.min(...group.map((p) => p.pos.x));
+          const minY = Math.min(...group.map((p) => p.pos.y));
+          const maxX = Math.max(...group.map((p) => p.pos.x));
+          const maxY = Math.max(...group.map((p) => p.pos.y));
+          const groupW = (maxX - minX) + pieceW;
+          const groupH = (maxY - minY) + pieceH;
 
-    if (dx === 0 && dy === 0) {
-      prevIsStackedRef.current = isStacked;
-      return;
-    }
+          const overlapsForbidden = !(
+            minX + groupW <= forbiddenLeft ||
+            minX >= forbiddenRight ||
+            minY + groupH <= forbiddenTop ||
+            minY >= forbiddenBottom
+          );
 
-    setPieces((prev) => prev.map((p) => ({ ...p, pos: { x: p.pos.x + dx, y: p.pos.y + dy } })));
-    prevIsStackedRef.current = isStacked;
-  }, [isStacked, boardLeft, boardTop, boardWidth, boardHeight]);
+          if (!overlapsForbidden) continue;
+
+          const maxSpawnX = Math.max(0, stageWidth - groupW);
+          const maxSpawnY = Math.max(0, stageHeight - groupH);
+
+          const isOutsideForbidden = (x: number, y: number) => {
+            return (
+              x + groupW <= forbiddenLeft ||
+              x >= forbiddenRight ||
+              y + groupH <= forbiddenTop ||
+              y >= forbiddenBottom
+            );
+          };
+
+          type Rect = { x0: number; x1: number; y0: number; y1: number; area: number };
+          const rects: Rect[] = [];
+          const addRect = (x0: number, x1: number, y0: number, y1: number) => {
+            const xx0 = Math.max(0, Math.min(maxSpawnX, x0));
+            const xx1 = Math.max(0, Math.min(maxSpawnX, x1));
+            const yy0 = Math.max(0, Math.min(maxSpawnY, y0));
+            const yy1 = Math.max(0, Math.min(maxSpawnY, y1));
+            if (xx1 > xx0 && yy1 > yy0) rects.push({ x0: xx0, x1: xx1, y0: yy0, y1: yy1, area: (xx1 - xx0) * (yy1 - yy0) });
+          };
+
+          addRect(0, forbiddenLeft - groupW, 0, maxSpawnY);
+          addRect(forbiddenRight, maxSpawnX, 0, maxSpawnY);
+          addRect(forbiddenLeft, forbiddenRight - groupW, 0, forbiddenTop - groupH);
+          addRect(forbiddenLeft, forbiddenRight - groupW, forbiddenBottom, maxSpawnY);
+
+          let target: { x: number; y: number } | null = null;
+          if (rects.length > 0) {
+            const total = rects.reduce((s, r) => s + r.area, 0) || 1;
+            let pick = Math.random() * total;
+            let chosen = rects[0];
+            for (const r of rects) {
+              pick -= r.area;
+              if (pick <= 0) {
+                chosen = r;
+                break;
+              }
+            }
+            for (let i = 0; i < 30; i++) {
+              const x = chosen.x0 + Math.random() * (chosen.x1 - chosen.x0);
+              const y = chosen.y0 + Math.random() * (chosen.y1 - chosen.y0);
+              if (isOutsideForbidden(x, y)) {
+                target = { x, y };
+                break;
+              }
+            }
+          }
+
+          if (!target) {
+            for (let i = 0; i < 200; i++) {
+              const x = Math.random() * maxSpawnX;
+              const y = Math.random() * maxSpawnY;
+              if (isOutsideForbidden(x, y)) {
+                target = { x, y };
+                break;
+              }
+            }
+          }
+
+          if (!target) continue;
+          const dx = target.x - minX;
+          const dy = target.y - minY;
+          next = next.map((p) => (p.groupId === gid ? { ...p, pos: { x: p.pos.x + dx, y: p.pos.y + dy } } : p));
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [boardLeft, boardTop, boardWidth, boardHeight, stageWidth, stageHeight, pieceW, pieceH]);
+
+  const effectiveSnapScale = isFullscreen ? (fsScale || 1) : (nonFullscreenScale || 1);
+  const effectiveBoardSnapTolerance = boardSnapTolerance / (effectiveSnapScale || 1);
+  const effectiveNeighborSnapTolerance = neighborSnapTolerance / (effectiveSnapScale || 1);
+
+  const hasInteractedRef = useRef(false);
+
   // Track which group is currently being dragged (for consistent re-render)
   const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
+
+  // Performance: don't rewrite every piece's position on each pointer move.
+  // Track a single drag delta, apply it via CSS translate, and commit once on drop.
+  const [dragDelta, setDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const dragDeltaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const pendingDragDeltaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const dragRafRef = useRef<number | null>(null);
+
+  // Magnetic snap animation: apply a temporary transform offset to the snapped
+  // group and ease it to the final locked position.
+  const [snapAnim, setSnapAnim] = useState<null | { groupId: string; dx: number; dy: number; phase: 'offset' | 'toZero' }>(null);
+  const snapAnimRafRef = useRef<number | null>(null);
+  const snapAnimTimeoutRef = useRef<number | null>(null);
+
+  const triggerMagneticSnap = useCallback((groupId: string, snapDx: number, snapDy: number) => {
+    if (!groupId) return;
+    if (!Number.isFinite(snapDx) || !Number.isFinite(snapDy)) return;
+    if (snapDx === 0 && snapDy === 0) return;
+
+    if (snapAnimRafRef.current != null) {
+      cancelAnimationFrame(snapAnimRafRef.current);
+      snapAnimRafRef.current = null;
+    }
+    if (snapAnimTimeoutRef.current != null) {
+      window.clearTimeout(snapAnimTimeoutRef.current);
+      snapAnimTimeoutRef.current = null;
+    }
+
+    // Start at an opposite offset so the snap doesn't visually jump.
+    setSnapAnim({ groupId, dx: -snapDx, dy: -snapDy, phase: 'offset' });
+    snapAnimRafRef.current = requestAnimationFrame(() => {
+      snapAnimRafRef.current = null;
+      setSnapAnim({ groupId, dx: 0, dy: 0, phase: 'toZero' });
+      snapAnimTimeoutRef.current = window.setTimeout(() => {
+        snapAnimTimeoutRef.current = null;
+        setSnapAnim(null);
+      }, 210);
+    });
+  }, []);
 
   const dragRef = useRef<{
     active: boolean;
@@ -825,12 +1178,12 @@ export default function JigsawPuzzleSVGWithTray({
     (groupId: string): void;
   }
 
-  const bringGroupToFront: BringGroupToFrontFn = (groupId) => {
+  const bringGroupToFront: BringGroupToFrontFn = useCallback((groupId) => {
     setPieces((prev: Piece[]) => {
       const maxZ = prev.reduce((m, p) => Math.max(m, p.z), 1);
       return prev.map((p: Piece) => (p.groupId === groupId ? { ...p, z: maxZ + 1 } : p));
     });
-  };
+  }, []);
 
   interface TranslateGroupFn {
     (
@@ -854,6 +1207,17 @@ export default function JigsawPuzzleSVGWithTray({
   const normalizeGroupToCorrectOffsets = (arr: Piece[], groupId: string): Piece[] => {
     const group = arr.filter((p) => p.groupId === groupId);
     if (group.length <= 1) return arr;
+
+    // If any piece in the group is snapped (placed), the entire group must be
+    // locked to the puzzle grid. This prevents a snapped group from drifting
+    // off-grid due to anchor-based normalization during neighbor merges.
+    if (group.some((p) => p.snapped)) {
+      return arr.map((p) =>
+        p.groupId === groupId
+          ? { ...p, snapped: true, pos: { x: p.correct.x, y: p.correct.y } }
+          : p
+      );
+    }
 
     // Pick a stable anchor: top-left-most (then id for tie-break).
     const anchor = [...group].sort((a, b) => (a.pos.y - b.pos.y) || (a.pos.x - b.pos.x) || a.id.localeCompare(b.id))[0];
@@ -919,28 +1283,36 @@ export default function JigsawPuzzleSVGWithTray({
     return `${row}-${col}`;
   };
 
+  interface SnapGroupToBoardIfCloseResult {
+    pieces: Piece[];
+    didSnap: boolean;
+    dx: number;
+    dy: number;
+  }
+
   interface SnapGroupToBoardIfCloseFn {
-    (arr: Piece[], groupId: string): Piece[];
+    (arr: Piece[], groupId: string): SnapGroupToBoardIfCloseResult;
   }
 
   const snapGroupToBoardIfClose: SnapGroupToBoardIfCloseFn = (arr, groupId) => {
     const group: Piece[] = arr.filter((p) => p.groupId === groupId);
-    if (group.length === 0) return arr;
+    if (group.length === 0) return { pieces: arr, didSnap: false, dx: 0, dy: 0 };
 
     // Only lock-to-board if the whole group is already a rigid translation of its
     // correct placement (prevents “random”/drifted groups from teleporting).
     const { dx, dy, maxErr } = computeGroupTranslationToCorrect(group);
-    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return arr;
-    if (maxErr > EPS_GROUP_ALIGN_PX) return arr;
-    if (hypot(dx, dy) > boardSnapTolerance) return arr;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return { pieces: arr, didSnap: false, dx: 0, dy: 0 };
+    if (maxErr > EPS_GROUP_ALIGN_PX) return { pieces: arr, didSnap: false, dx: 0, dy: 0 };
+    if (hypot(dx, dy) > effectiveBoardSnapTolerance) return { pieces: arr, didSnap: false, dx: 0, dy: 0 };
 
     // Snap: translate by the computed offset and then quantize to exact correct coords.
     const translated = translateGroup(arr, groupId, dx, dy);
-    return translated.map((piece) =>
+    const pieces = translated.map((piece) =>
       piece.groupId === groupId
         ? { ...piece, snapped: true, pos: { x: piece.correct.x, y: piece.correct.y } }
         : piece
     );
+    return { pieces, didSnap: true, dx, dy };
   };
 
   interface SnapAndMergeNeighborsFn {
@@ -987,7 +1359,7 @@ export default function JigsawPuzzleSVGWithTray({
           };
           const d: number = hypot(n.pos.x - expected.x, n.pos.y - expected.y);
 
-          if (d <= neighborSnapTolerance) {
+          if (d <= effectiveNeighborSnapTolerance) {
             const shiftX: number = expected.x - n.pos.x;
             const shiftY: number = expected.y - n.pos.y;
 
@@ -1007,35 +1379,48 @@ export default function JigsawPuzzleSVGWithTray({
   };
 
   interface OnPointerDownFn {
-      (e: React.PointerEvent<SVGSVGElement>, pieceId: string): void;
-    }
-  
-    const onPointerDown: OnPointerDownFn = (e, pieceId) => {
-    if (solved) return;
+    (e: React.PointerEvent<SVGSVGElement>, pieceId: string): void;
+  }
+
+  const onPointerDown: OnPointerDownFn = useCallback((e, pieceId) => {
     const el = stageRef.current;
     if (!el) return;
+    hasInteractedRef.current = true;
       // Prevent single-finger touch from scrolling the page while dragging pieces
       // but allow multi-touch (pinch) gestures to reach the browser (pinch-to-zoom).
       try { e.preventDefault(); } catch {}
 
-    const current: Piece[] = pieces;
-    const byId: Map<string, Piece> = indexById(current);
+    const current: Piece[] = piecesRef.current;
+
+    // Avoid referencing the later `solved` memo here (it would be TDZ in deps);
+    // compute a quick check from the latest pieces.
+    const isSolvedNow = (() => {
+      const g = current[0]?.groupId;
+      if (!g) return false;
+      if (!current.every((p) => p.groupId === g)) return false;
+      const eps = 0.8;
+      return current.every((p) => hypot(p.pos.x - p.correct.x, p.pos.y - p.correct.y) <= eps);
+    })();
+    if (isSolvedNow || completedRef.current) return;
+
+    const byId: Map<string, Piece> = new Map(current.map((p) => [p.id, p] as const));
     const anchor: Piece | undefined = byId.get(pieceId);
     if (!anchor) return;
     if (anchor.snapped) return;
 
     const rect: DOMRect = el.getBoundingClientRect();
-    const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
-    const effectiveScale = isFullscreen ? fsScale : nonFullscreenScale;
-    const pan = isFullscreen ? fsPan : { x: 0, y: 0 };
+    const scaleVal = scaleRef.current;
+    const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scaleVal) && scaleVal > 0 ? scaleVal : 1));
+    const effectiveScale = isFullscreenRef.current ? fsScaleRef.current : nonFullscreenScale;
+    const pan = isFullscreenRef.current ? fsPanRef.current : { x: 0, y: 0 };
     const px: number = (e.clientX - rect.left) / effectiveScale - pan.x;
     const py: number = (e.clientY - rect.top) / effectiveScale - pan.y;
 
     const groupId: string = anchor.groupId;
-    const groupIds: string[] = getGroupPieceIds(current, groupId);
+    const groupPieces = current.filter((p) => p.groupId === groupId);
+    const groupIds: string[] = groupPieces.map((p) => p.id);
 
     // Prevent dragging an entire group if any piece in the group is snapped to the board
-    const groupPieces = current.filter((p) => p.groupId === groupId);
     if (groupPieces.some((p) => p.snapped)) return;
 
     const startPositions: Map<string, PiecePosition> = new Map();
@@ -1053,10 +1438,15 @@ export default function JigsawPuzzleSVGWithTray({
     dragRef.current.anchorPieceId = pieceId;
     dragRef.current.anchorOffset = { x: px - anchor.pos.x, y: py - anchor.pos.y };
 
+    // reset delta
+    dragDeltaRef.current = { dx: 0, dy: 0 };
+    pendingDragDeltaRef.current = { dx: 0, dy: 0 };
+    setDragDelta({ dx: 0, dy: 0 });
+
     setDraggingGroupId(groupId); // trigger re-render for drag scale
     bringGroupToFront(groupId);
     e.currentTarget.setPointerCapture(e.pointerId);
-  };
+  }, [bringGroupToFront]);
 
   interface OnPointerMoveEvent extends React.PointerEvent<HTMLDivElement> {
     pointerId: number;
@@ -1080,6 +1470,14 @@ export default function JigsawPuzzleSVGWithTray({
     const effectiveScale = isFullscreen ? fsScale : nonFullscreenScale;
     const pan = isFullscreen ? fsPan : { x: 0, y: 0 };
 
+    // Visible viewport in content (stage) coordinates.
+    const visibleW = rect.width / (effectiveScale || 1);
+    const visibleH = rect.height / (effectiveScale || 1);
+    const viewLeft = -pan.x;
+    const viewTop = -pan.y;
+    const viewRight = viewLeft + visibleW;
+    const viewBottom = viewTop + visibleH;
+
     const px: number = (e.clientX - rect.left) / effectiveScale - pan.x;
     const py: number = (e.clientY - rect.top) / effectiveScale - pan.y;
 
@@ -1097,15 +1495,13 @@ export default function JigsawPuzzleSVGWithTray({
     let dx: number = nx - anchorStart.x;
     let dy: number = ny - anchorStart.y;
 
-    // Clamp based on the whole group's bounds (not just the anchor piece).
-    const spillX: number = pieceW * 0.5;
-    const spillY: number = pieceH * 0.5;
-
+    // Clamp dragging to the currently visible viewport so pieces cannot be dragged
+    // outside the viewable area (fullscreen or not).
     const groupPieceStarts: PiecePosition[] = [];
     for (const [id, sp] of startPositions.entries()) {
-      // startPositions contains only the active group’s pieces
       if (id) groupPieceStarts.push(sp);
     }
+
     if (groupPieceStarts.length > 0) {
       const minX = Math.min(...groupPieceStarts.map((p) => p.x));
       const minY = Math.min(...groupPieceStarts.map((p) => p.y));
@@ -1114,21 +1510,32 @@ export default function JigsawPuzzleSVGWithTray({
       const groupW = (maxX - minX) + pieceW;
       const groupH = (maxY - minY) + pieceH;
 
-      dx = clamp(dx, -spillX - minX, (stageWidth - groupW + spillX) - minX);
-      dy = clamp(dy, -spillY - minY, (stageHeight - groupH + spillY) - minY);
+      const dxA = (viewLeft) - minX;
+      const dxB = (viewRight - groupW) - minX;
+      const dyA = (viewTop) - minY;
+      const dyB = (viewBottom - groupH) - minY;
+
+      dx = clamp(dx, Math.min(dxA, dxB), Math.max(dxA, dxB));
+      dy = clamp(dy, Math.min(dyA, dyB), Math.max(dyA, dyB));
     } else {
-      dx = clamp(dx, -spillX - anchorStart.x, (stageWidth - pieceW + spillX) - anchorStart.x);
-      dy = clamp(dy, -spillY - anchorStart.y, (stageHeight - pieceH + spillY) - anchorStart.y);
+      const dxA = (viewLeft) - anchorStart.x;
+      const dxB = (viewRight - pieceW) - anchorStart.x;
+      const dyA = (viewTop) - anchorStart.y;
+      const dyB = (viewBottom - pieceH) - anchorStart.y;
+
+      dx = clamp(dx, Math.min(dxA, dxB), Math.max(dxA, dxB));
+      dy = clamp(dy, Math.min(dyA, dyB), Math.max(dyA, dyB));
     }
 
-    setPieces((prev: Piece[]) =>
-      prev.map((p: Piece) => {
-        if (p.groupId !== groupId) return p;
-        const sp: PiecePosition | undefined = startPositions.get(p.id);
-        if (!sp) return p;
-        return { ...p, pos: { x: sp.x + dx, y: sp.y + dy } };
-      })
-    );
+    // rAF throttle: update a single small state object instead of remapping all pieces.
+    pendingDragDeltaRef.current = { dx, dy };
+    if (dragRafRef.current == null) {
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = null;
+        dragDeltaRef.current = pendingDragDeltaRef.current;
+        setDragDelta(pendingDragDeltaRef.current);
+      });
+    }
   };
 
   interface OnPointerUpEvent extends React.PointerEvent<HTMLDivElement> {
@@ -1144,6 +1551,8 @@ export default function JigsawPuzzleSVGWithTray({
     if (e.pointerId !== dragRef.current.pointerId) return;
 
     const activeGroupId = dragRef.current.groupId;
+    const startPositions: Map<string, PiecePosition> = dragRef.current.startPositions;
+    const { dx, dy } = dragDeltaRef.current;
 
     dragRef.current.active = false;
     dragRef.current.pointerId = null;
@@ -1151,13 +1560,43 @@ export default function JigsawPuzzleSVGWithTray({
 
     setDraggingGroupId(null); // trigger re-render for drag scale
 
-    setPieces((prev: Piece[]) => {
-      let next = prev;
-      next = snapGroupToBoardIfClose(next, activeGroupId as string);
-      next = snapAndMergeNeighbors(next, activeGroupId as string);
-      next = snapGroupToBoardIfClose(next, activeGroupId as string);
-      return next;
-    });
+    // Clear the visual delta (we'll commit to state below).
+    dragDeltaRef.current = { dx: 0, dy: 0 };
+    pendingDragDeltaRef.current = { dx: 0, dy: 0 };
+    setDragDelta({ dx: 0, dy: 0 });
+
+    // Compute the post-drop state from the latest pieces snapshot. This lets us
+    // also trigger a magnetic snap animation in the same render (no visible jump).
+    const prev: Piece[] = piecesRef.current;
+    let next: Piece[] = prev;
+
+    if (activeGroupId && (dx !== 0 || dy !== 0)) {
+      next = next.map((p: Piece) => {
+        if (p.groupId !== activeGroupId) return p;
+        const sp: PiecePosition | undefined = startPositions.get(p.id);
+        if (!sp) return p;
+        return { ...p, pos: { x: sp.x + dx, y: sp.y + dy } };
+      });
+    }
+
+    let lastSnap: { dx: number; dy: number } | null = null;
+    if (activeGroupId) {
+      const s1 = snapGroupToBoardIfClose(next, activeGroupId);
+      next = s1.pieces;
+      if (s1.didSnap) lastSnap = { dx: s1.dx, dy: s1.dy };
+
+      next = snapAndMergeNeighbors(next, activeGroupId);
+
+      const s2 = snapGroupToBoardIfClose(next, activeGroupId);
+      next = s2.pieces;
+      if (s2.didSnap) lastSnap = { dx: s2.dx, dy: s2.dy };
+    }
+
+    if (activeGroupId && lastSnap) {
+      triggerMagneticSnap(activeGroupId, lastSnap.dx, lastSnap.dy);
+    }
+
+    setPieces(next);
 
     // release any stage pointer captures related to gestures
     try {
@@ -1180,6 +1619,7 @@ export default function JigsawPuzzleSVGWithTray({
   const onStagePointerDown = (e: React.PointerEvent) => {
     const outer = stageRef.current;
     if (!outer) return;
+    hasInteractedRef.current = true;
     const targetIsPiece = (e.target as HTMLElement).closest('[data-piece-id]') !== null;
     if (isFullscreen && !fullscreenPanEnabled && !targetIsPiece) return;
     try { outer.setPointerCapture(e.pointerId); } catch {}
@@ -1303,12 +1743,19 @@ export default function JigsawPuzzleSVGWithTray({
         const stageEl = stageRef.current;
         const shimmerOuter = shimmerOuterRef.current;
         const shimmerInner = shimmerInnerRef.current;
+        const shimmerInnerB = shimmerInnerBRef.current;
+        const shimmerInnerC = shimmerInnerCRef.current;
+        const flareOuter = flareOuterRef.current;
+        const energyRing = energyRingRef.current;
+        const energyGlow = energyGlowRef.current;
         const messageEl = messageRef.current;
         const wrapperEl = wrapperRef.current;
 
         console.log('[Jigsaw] runCompletion start');
         console.log('[Jigsaw] refs', { boardEl, shimmerOuter, shimmerInner, messageEl });
+        const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const tl = gsap.timeline({ defaults: { ease: 'power2.inOut' } });
+        let restoreAfterTimeline: (() => void) | null = null;
 
         // Prefer applying glow to the stage so it won't be clipped by board overflow or transforms
         // Prefer animating the board element so the gold glow stays inside the puzzle container
@@ -1323,6 +1770,17 @@ export default function JigsawPuzzleSVGWithTray({
           if (wrapperEl) wrapperEl.style.overflow = 'visible';
           boardEl.style.zIndex = '100';
 
+          restoreAfterTimeline = () => {
+            try {
+              boardEl.style.boxShadow = prevBox;
+              if (stageEl) stageEl.style.overflow = prevOverflow;
+              if (wrapperEl) wrapperEl.style.overflow = prevWrapperOverflow;
+              boardEl.style.zIndex = prevZ;
+            } catch {
+              // ignore
+            }
+          };
+
           // Brighten the board border color (no outer glow or scale)
           tl.to(boardEl, {
             borderColor: '#FFD700',
@@ -1334,18 +1792,24 @@ export default function JigsawPuzzleSVGWithTray({
             duration: 0.6,
             ease: 'power2.in',
           }, '+=0.15');
-
-          tl.call(() => {
-            if (stageEl) stageEl.style.overflow = prevOverflow;
-            if (wrapperEl) wrapperEl.style.overflow = prevWrapperOverflow;
-            boardEl.style.zIndex = prevZ;
-          });
         } else if (stageEl) {
           // Fallback: animate glow on stage only using box-shadow so layout isn't affected
           const prevOverflow = stageEl.style.overflow;
           const prevWrapperOverflow = wrapperEl ? wrapperEl.style.overflow : '';
+          const prevStageBox = stageEl.style.boxShadow || '';
           stageEl.style.overflow = 'visible';
           if (wrapperEl) wrapperEl.style.overflow = 'visible';
+
+          restoreAfterTimeline = () => {
+            try {
+              stageEl.style.overflow = prevOverflow;
+              stageEl.style.boxShadow = prevStageBox;
+              if (wrapperEl) wrapperEl.style.overflow = prevWrapperOverflow;
+            } catch {
+              // ignore
+            }
+          };
+
           tl.to(stageEl, {
             boxShadow: '0 0 60px 20px rgba(255,215,0,0.95)',
             duration: 0.9,
@@ -1356,15 +1820,10 @@ export default function JigsawPuzzleSVGWithTray({
             duration: 0.6,
             ease: 'power2.inOut',
           }, '+=0.15');
-          tl.call(() => {
-            stageEl.style.overflow = prevOverflow;
-            if (wrapperEl) wrapperEl.style.overflow = prevWrapperOverflow;
-          });
         }
 
         // Add piece-pop to timeline (runs before shimmer). Respect prefers-reduced-motion.
         try {
-          const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
           if (!prefersReduced && stageEl) {
             const piecesEls = stageEl.querySelectorAll('[data-piece-id]');
             if (piecesEls && piecesEls.length > 0) {
@@ -1383,16 +1842,91 @@ export default function JigsawPuzzleSVGWithTray({
           console.warn('[Jigsaw] failed to add piece-pop to timeline', e);
         }
 
+        // Epic cinematic flare: subtle camera punch + shockwave ring + multi-pass light sweeps.
+        // All effects are transform/opacity only and confined to a small number of elements.
+        const flareLabel = 'flare';
+        if (!prefersReduced && wrapperEl) {
+          tl.fromTo(
+            wrapperEl,
+            { x: 0, y: 0, rotate: 0 },
+            {
+              x: 1.2,
+              y: -0.8,
+              rotate: 0.12,
+              duration: 0.06,
+              yoyo: true,
+              repeat: 4,
+              ease: 'power2.inOut',
+              clearProps: 'x,y,rotate',
+            },
+            flareLabel
+          );
+        }
+
+        if (boardEl && !prefersReduced) {
+          // A quick, intense glow pulse on the board itself.
+          tl.fromTo(
+            boardEl,
+            { boxShadow: '0 0 0px 0px rgba(255,215,0,0)' },
+            { boxShadow: '0 0 46px 14px rgba(255,215,0,0.75)', duration: 0.18, ease: 'power3.out' },
+            flareLabel
+          );
+          tl.to(boardEl, { boxShadow: '0 0 0px 0px rgba(255,215,0,0)', duration: 0.38, ease: 'power2.inOut' }, `${flareLabel}+=0.18`);
+        }
+
+        if (!prefersReduced && flareOuter && energyRing && energyGlow) {
+          tl.set([energyRing, energyGlow], { autoAlpha: 0, scale: 0.25, transformOrigin: '50% 50%' }, flareLabel);
+          tl.to([energyRing, energyGlow], { autoAlpha: 1, duration: 0.05, ease: 'none' }, flareLabel);
+          tl.to(energyGlow, { scale: 1.6, autoAlpha: 0, duration: 0.55, ease: 'power3.out' }, `${flareLabel}+=0.03`);
+          tl.to(energyRing, { scale: 2.0, autoAlpha: 0, duration: 0.62, ease: 'power3.out' }, `${flareLabel}+=0.02`);
+        }
+
         if (shimmerOuter && shimmerInner) {
           // Ensure shimmer sits above pieces
           shimmerOuter.style.zIndex = '999';
           shimmerOuter.style.pointerEvents = 'none';
-          // Start shimmer after the piece-pop finishes so it fully traverses the board
-          tl.set(shimmerOuter, { autoAlpha: 1 });
-          // use xPercent animation for reliable motion across transforms and ensure it fully enters/exits
-          tl.fromTo(shimmerInner, { xPercent: -200 }, { xPercent: 200, duration: 1.2, ease: 'power2.inOut' });
-          // fade shimmer out after pass
-          tl.to(shimmerOuter, { autoAlpha: 0, duration: 0.18 }, '>-0.02');
+
+          tl.set(shimmerOuter, { autoAlpha: 1 }, flareLabel);
+
+          // Multi-pass sweeps for a more cinematic “light burst” feel.
+          // Use xPercent for reliable motion across nested transforms.
+          tl.set([shimmerInner, shimmerInnerB, shimmerInnerC].filter(Boolean) as any, { xPercent: -250, autoAlpha: 0 }, flareLabel);
+
+          // Primary sweep (bright)
+          tl.fromTo(
+            shimmerInner,
+            { xPercent: -220, autoAlpha: 0 },
+            { xPercent: 220, autoAlpha: 1, duration: 0.70, ease: 'power3.inOut' },
+            `${flareLabel}+=0.06`
+          );
+
+          // Secondary broader sweep (softer, slightly delayed)
+          if (shimmerInnerB) {
+            tl.fromTo(
+              shimmerInnerB,
+              { xPercent: -240, autoAlpha: 0 },
+              { xPercent: 240, autoAlpha: 0.85, duration: 0.92, ease: 'power2.inOut' },
+              `${flareLabel}+=0.12`
+            );
+          }
+
+          // Fast trailing glint (quick pass)
+          if (shimmerInnerC) {
+            tl.fromTo(
+              shimmerInnerC,
+              { xPercent: -260, autoAlpha: 0 },
+              { xPercent: 260, autoAlpha: 0.95, duration: 0.55, ease: 'power4.inOut' },
+              `${flareLabel}+=0.20`
+            );
+          }
+
+          // Fade shimmer out after passes
+          tl.to(shimmerOuter, { autoAlpha: 0, duration: 0.22 }, '>-0.06');
+        }
+
+        // Restore any temporary overflow/zIndex changes after all flare effects.
+        if (restoreAfterTimeline) {
+          tl.call(() => restoreAfterTimeline && restoreAfterTimeline());
         }
 
         // play timeline and wait
@@ -1522,7 +2056,7 @@ export default function JigsawPuzzleSVGWithTray({
 
   const sendLooseToTray = () => {
     setPieces((prev) => {
-      // Keep any pieces on the board-ish area where they are; move "loose" ones to tray.
+      // Keep any pieces on the board-ish area where they are; move "loose" ones to the scattered area.
       // Loose = groups that are NOT already board-aligned (no piece within board snap range)
       const next = [...prev];
       const groupIds = [...new Set(next.map((p) => p.groupId))];
@@ -1534,9 +2068,64 @@ export default function JigsawPuzzleSVGWithTray({
 
       const moved = next.map((p) => ({ ...p, snapped: false }));
 
+      const pad = Math.max(10, Math.round(Math.min(pieceW, pieceH) * 0.08));
+      const forbiddenLeft = boardLeft - pad;
+      const forbiddenTop = boardTop - pad;
+      const forbiddenRight = boardLeft + boardWidth + pad;
+      const forbiddenBottom = boardTop + boardHeight + pad;
+
+      const pickScatterTargetForSize = (w: number, h: number) => {
+        const maxX = Math.max(0, stageWidth - w);
+        const maxY = Math.max(0, stageHeight - h);
+
+        const isOutsideForbidden = (x: number, y: number) =>
+          x + w <= forbiddenLeft || x >= forbiddenRight || y + h <= forbiddenTop || y >= forbiddenBottom;
+
+        type Rect = { x0: number; x1: number; y0: number; y1: number; area: number };
+        const rects: Rect[] = [];
+        const addRect = (x0: number, x1: number, y0: number, y1: number) => {
+          const xx0 = Math.max(0, Math.min(maxX, x0));
+          const xx1 = Math.max(0, Math.min(maxX, x1));
+          const yy0 = Math.max(0, Math.min(maxY, y0));
+          const yy1 = Math.max(0, Math.min(maxY, y1));
+          if (xx1 > xx0 && yy1 > yy0) rects.push({ x0: xx0, x1: xx1, y0: yy0, y1: yy1, area: (xx1 - xx0) * (yy1 - yy0) });
+        };
+
+        addRect(0, forbiddenLeft - w, 0, maxY);
+        addRect(forbiddenRight, maxX, 0, maxY);
+        addRect(forbiddenLeft, forbiddenRight - w, 0, forbiddenTop - h);
+        addRect(forbiddenLeft, forbiddenRight - w, forbiddenBottom, maxY);
+
+        if (rects.length > 0) {
+          const total = rects.reduce((s, r) => s + r.area, 0) || 1;
+          let pick = Math.random() * total;
+          let chosen = rects[0];
+          for (const r of rects) {
+            pick -= r.area;
+            if (pick <= 0) {
+              chosen = r;
+              break;
+            }
+          }
+          for (let i = 0; i < 40; i++) {
+            const x = chosen.x0 + Math.random() * (chosen.x1 - chosen.x0);
+            const y = chosen.y0 + Math.random() * (chosen.y1 - chosen.y0);
+            if (isOutsideForbidden(x, y)) return { x, y };
+          }
+        }
+
+        for (let i = 0; i < 200; i++) {
+          const x = Math.random() * maxX;
+          const y = Math.random() * maxY;
+          if (isOutsideForbidden(x, y)) return { x, y };
+        }
+
+        return { x: 0, y: 0 };
+      };
+
       for (const [gid, groupPieces] of byGroup.entries()) {
         const boardAligned: boolean = groupPieces.some(
-          (p: Piece) => hypot(p.pos.x - p.correct.x, p.pos.y - p.correct.y) <= boardSnapTolerance + 1
+          (p: Piece) => hypot(p.pos.x - p.correct.x, p.pos.y - p.correct.y) <= effectiveBoardSnapTolerance + 1
         );
         if (boardAligned) continue;
 
@@ -1547,11 +2136,27 @@ export default function JigsawPuzzleSVGWithTray({
 
         const minX: number = Math.min(...(groupPieces as GroupPiece[]).map((p: GroupPiece) => p.pos.x));
         const minY: number = Math.min(...(groupPieces as { pos: PiecePosition }[]).map((p: { pos: PiecePosition }) => p.pos.y));
+        const maxGX: number = Math.max(...(groupPieces as GroupPiece[]).map((p: GroupPiece) => p.pos.x));
+        const maxGY: number = Math.max(...(groupPieces as GroupPiece[]).map((p: GroupPiece) => p.pos.y));
+        const groupW = (maxGX - minX) + pieceW;
+        const groupH = (maxGY - minY) + pieceH;
 
-        const targetX =
-          trayLeft + Math.random() * (trayWidth - pieceW) + (Math.random() * 2 - 1) * trayScatter;
-        const targetY =
-          trayTop + Math.random() * (trayHeight - pieceH) + (Math.random() * 2 - 1) * trayScatter;
+        const baseTarget = pickScatterTargetForSize(groupW, groupH);
+        let targetX = baseTarget.x + (Math.random() * 2 - 1) * trayScatter;
+        let targetY = baseTarget.y + (Math.random() * 2 - 1) * trayScatter;
+
+        // Keep within bounds after jitter.
+        targetX = clamp(targetX, 0, Math.max(0, stageWidth - groupW));
+        targetY = clamp(targetY, 0, Math.max(0, stageHeight - groupH));
+
+        // Ensure we didn't jitter back onto the forbidden region.
+        const outside = (x: number, y: number) =>
+          x + groupW <= forbiddenLeft || x >= forbiddenRight || y + groupH <= forbiddenTop || y >= forbiddenBottom;
+        if (!outside(targetX, targetY)) {
+          const forced = pickScatterTargetForSize(groupW, groupH);
+          targetX = forced.x;
+          targetY = forced.y;
+        }
 
         const dx = targetX - minX;
         const dy = targetY - minY;
@@ -1576,53 +2181,29 @@ export default function JigsawPuzzleSVGWithTray({
 
       const update = () => {
       const wrapperW = wrapper.clientWidth || 0;
-      setWrapperWidth(wrapperW || null);
-
-      // Stack the tray under the board on narrow viewports or tight wrappers (mobile + small screens).
-      const viewportW = typeof window !== 'undefined' ? window.innerWidth || wrapperW : wrapperW;
-      const viewportH = typeof window !== 'undefined' ? window.innerHeight || 0 : 0;
-      const isLandscape = viewportW && viewportH ? viewportW >= viewportH : false;
-
-      // Stacking rules:
-      // - Portrait/square: always stack (board over tray) to guarantee both are visible.
-      // - Landscape: always side-by-side.
-      const wouldStack = (() => {
-        if (!isLandscape) return true;
-        return false;
-      })();
-      setIsStacked(wouldStack);
-
-      const effectiveStageWidth = wouldStack ? Math.max(boardWidth, trayWidth) : boardWidth + trayWidth;
-      if (!wrapperW || !effectiveStageWidth) return;
-
-      // On narrow screens, prefer a scale that fits by height as well as width
-      // so the stage isn't tiny in portrait mode. Reserve some UI chrome space.
       const wrapperH = wrapper.clientHeight || 0;
-      const reservedChrome = 24; // space for headers/controls when fullscreening
-      const availableHeight = isFullscreen && wrapperH ? Math.max(200, wrapperH - reservedChrome) : null;
-      const stageH = wouldStack ? boardHeight + trayHeight : boardHeight;
+      setWrapperWidth(wrapperW || null);
+      setWrapperHeight(wrapperH || null);
 
-      const safeWrapperW = wrapperW || (typeof window !== 'undefined' ? window.innerWidth || effectiveStageWidth : effectiveStageWidth);
-      const widthScale = safeWrapperW / effectiveStageWidth;
-      // In non-fullscreen portrait/square we also constrain by viewport height so the stacked tray stays visible.
-      const fallbackHeight = viewportH ? Math.max(260, viewportH - 160) : (safeWrapperW ? Math.max(320, safeWrapperW * 0.75) : stageH);
-      const heightScale = availableHeight ? availableHeight / stageH : (fallbackHeight ? fallbackHeight / stageH : widthScale);
+      const reservedChrome = 24;
+      const availableHeight = isFullscreen && wrapperH ? Math.max(200, wrapperH - reservedChrome) : wrapperH;
+      const availableWidth = wrapperW;
+      if (!availableWidth || !availableHeight) return;
 
-      // Fit to BOTH width and height (otherwise the unscaled stage box will be clipped and can appear “missing”).
-      // Avoid collapsing to ~0 if we momentarily get bad measurements.
-      const fit = Math.min(widthScale || 1, heightScale || 1);
+      // Fit the board PLUS a margin ring (for scattered pieces) into the visible wrapper area.
+      const pad = 16;
+      const contentW = boardWidth + scatterMargin * 2;
+      const contentH = boardHeight + scatterMargin * 2;
+      const widthScale = Math.max(0.06, (availableWidth - pad) / contentW);
+      const heightScale = Math.max(0.06, (availableHeight - pad) / contentH);
+      const fit = Math.min(1, widthScale, heightScale);
       const next = Math.min(1, Math.max(0.06, fit));
-      setScale(next);
-      // If we're fullscreen, initialize fullscreen scale/pan to fit
+
       if (isFullscreen) {
-        const viewportH = typeof window !== 'undefined' ? window.innerHeight : null;
-        const wrapperH = wrapper.clientHeight || 0;
-        const fullscreenChrome = 24;
-        const availableHeight = wrapperH ? Math.max(200, wrapperH - fullscreenChrome) : (viewportH ? Math.max(200, viewportH - fullscreenChrome) : null);
-        const stageH = wouldStack ? boardHeight + trayHeight : boardHeight;
-        const fitScale = Math.min(1, wrapperW / (wouldStack ? Math.max(boardWidth, trayWidth) : (boardWidth + trayWidth)), availableHeight ? availableHeight / stageH : 1);
-        setFsScale(fitScale);
+        setFsScale(next);
         setFsPan({ x: 0, y: 0 });
+      } else {
+        setScale(next);
       }
     };
 
@@ -1634,7 +2215,7 @@ export default function JigsawPuzzleSVGWithTray({
       ro.disconnect();
       window.removeEventListener('resize', update);
     };
-  }, [boardWidth, boardHeight, trayWidth, trayHeight, isFullscreen]);
+  }, [boardWidth, boardHeight, scatterMargin, isFullscreen]);
 
   const controlBarHeight = 56; // px
   const controlBarTop = -Math.round(controlBarHeight / 2);
@@ -1680,9 +2261,6 @@ export default function JigsawPuzzleSVGWithTray({
     // Intentionally only run once per mount/parent callback change
   }, [onControlsReady]);
 
-  const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
-  const nonFullscreenHeight = Math.max(240, Math.round(stageHeight * nonFullscreenScale));
-
   const puzzleUI = (
     <div
       ref={wrapperRef}
@@ -1697,7 +2275,7 @@ export default function JigsawPuzzleSVGWithTray({
         fontFamily: "system-ui, sans-serif",
         width: isFullscreen ? '100vw' : '100%',
         minHeight: isFullscreen ? '100vh' : `${nonFullscreenHeight}px`,
-        height: isFullscreen ? '100vh' : 'auto',
+        height: isFullscreen ? '100vh' : `${nonFullscreenHeight}px`,
         margin: isFullscreen ? undefined : '0 auto',
         // Critical for mobile: prevent the (unscaled) stage box from creating
         // horizontal scrolling or appearing to escape its container.
@@ -1717,8 +2295,8 @@ export default function JigsawPuzzleSVGWithTray({
         position: isFullscreen ? "absolute" : "relative",
         left: isFullscreen ? 0 : undefined,
         top: isFullscreen ? 0 : undefined,
-        width: isFullscreen ? stageWidth : '100%',
-        height: isFullscreen ? stageHeight : Math.round(stageHeight * nonFullscreenScale),
+        width: isFullscreen ? '100%' : '100%',
+        height: isFullscreen ? '100%' : Math.max(240, nonFullscreenHeight),
         maxWidth: '100%',
         borderRadius: 0,
         overflow: "hidden",
@@ -1744,7 +2322,7 @@ export default function JigsawPuzzleSVGWithTray({
             height: stageHeight,
             transformOrigin: 'top left',
             transform: isFullscreen
-              ? `translate(${fsPan.x}px, ${fsPan.y}px) scale(${fsScale})`
+              ? `scale(${fsScale}) translate(${fsPan.x}px, ${fsPan.y}px)`
               : `scale(${nonFullscreenScale})`,
             willChange: 'transform',
           }}
@@ -1798,36 +2376,11 @@ export default function JigsawPuzzleSVGWithTray({
         </div>
 
         {/* TRAY */}
-        <div
-          style={{
-            position: "absolute",
-            left: trayLeft,
-            top: trayTop,
-            width: trayWidth,
-            height: trayHeight,
-            borderRadius: 0,
-            border: "1px dashed rgba(255,255,255,0.18)",
-            background: "rgba(255,255,255,0.02)",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              left: 12,
-              top: 10,
-              fontSize: 12,
-              opacity: 0.6,
-              color: "white",
-              pointerEvents: "none",
-            }}
-          >
-            TRAY
-          </div>
-        </div>
+        {/* No tray: loose pieces are scattered around the centered board */}
 
         {/* PIECES */}
         {pieces.map((p) => (
-          <JigsawPiece
+          <MemoJigsawPiece
             key={p.id}
             id={p.id}
             row={p.row}
@@ -1848,13 +2401,18 @@ export default function JigsawPuzzleSVGWithTray({
             highlight={!!activeGroup && p.groupId === activeGroup}
             snapped={p.snapped || solved}
             isDragging={!!activeGroup && p.groupId === activeGroup}
+            dragDx={!!activeGroup && p.groupId === activeGroup ? dragDelta.dx : 0}
+            dragDy={!!activeGroup && p.groupId === activeGroup ? dragDelta.dy : 0}
+            snapDx={snapAnim && p.groupId === snapAnim.groupId ? snapAnim.dx : 0}
+            snapDy={snapAnim && p.groupId === snapAnim.groupId ? snapAnim.dy : 0}
+            snapAnimating={!!snapAnim && p.groupId === snapAnim.groupId && snapAnim.phase === 'toZero'}
           />
         ))}
 
         {/* Shimmer overlay (hidden until completion) - placed after pieces so it sits on top */}
         <div
           ref={shimmerOuterRef}
-          style={{ position: 'absolute', left: boardLeft, top: boardTop, width: boardWidth, height: boardHeight, pointerEvents: 'none', opacity: 0, zIndex: 999 }}
+          style={{ position: 'absolute', left: boardLeft, top: boardTop, width: boardWidth, height: boardHeight, pointerEvents: 'none', opacity: 0, zIndex: 999, overflow: 'hidden' }}
         >
           <div
             ref={shimmerInnerRef}
@@ -1866,7 +2424,78 @@ export default function JigsawPuzzleSVGWithTray({
               height: '100%',
               background: 'linear-gradient(90deg, rgba(255,215,0,0) 0%, rgba(255,215,0,0.92) 52%, rgba(255,215,0,0) 100%)',
               transform: 'skewX(-20deg)',
+              mixBlendMode: 'screen',
               willChange: 'transform, opacity'
+            }}
+          />
+          <div
+            ref={shimmerInnerBRef}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: '85%',
+              height: '100%',
+              background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,215,0,0.36) 35%, rgba(255,255,255,0.22) 52%, rgba(255,215,0,0.28) 68%, rgba(255,255,255,0) 100%)',
+              transform: 'skewX(-18deg)',
+              mixBlendMode: 'screen',
+              opacity: 0,
+              willChange: 'transform, opacity',
+            }}
+          />
+          <div
+            ref={shimmerInnerCRef}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: '40%',
+              height: '100%',
+              background: 'linear-gradient(90deg, rgba(255,215,0,0) 0%, rgba(255,255,255,0.72) 48%, rgba(255,215,0,0) 100%)',
+              transform: 'skewX(-22deg)',
+              mixBlendMode: 'screen',
+              opacity: 0,
+              willChange: 'transform, opacity',
+            }}
+          />
+        </div>
+
+        {/* Shockwave flare overlay (can extend slightly beyond board) */}
+        <div
+          ref={flareOuterRef}
+          style={{ position: 'absolute', left: boardLeft, top: boardTop, width: boardWidth, height: boardHeight, pointerEvents: 'none', opacity: 1, zIndex: 1001, overflow: 'visible' }}
+        >
+          <div
+            ref={energyGlowRef}
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: '115%',
+              height: '115%',
+              transform: 'translate(-50%, -50%)',
+              borderRadius: 9999,
+              background: 'radial-gradient(circle, rgba(255,215,0,0.42) 0%, rgba(255,215,0,0.16) 36%, rgba(255,215,0,0) 72%)',
+              mixBlendMode: 'screen',
+              opacity: 0,
+              willChange: 'transform, opacity',
+            }}
+          />
+          <div
+            ref={energyRingRef}
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: '110%',
+              height: '110%',
+              transform: 'translate(-50%, -50%)',
+              borderRadius: 9999,
+              border: '2px solid rgba(255,215,0,0.80)',
+              boxShadow: '0 0 22px 6px rgba(255,215,0,0.22)',
+              mixBlendMode: 'screen',
+              opacity: 0,
+              willChange: 'transform, opacity',
             }}
           />
         </div>

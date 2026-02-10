@@ -33,6 +33,14 @@ interface InteractiveZone {
   width: number;
   height: number;
   actionType: "modal" | "collect" | "trigger";
+  // Optional: override whether the dragged/used item is consumed when using it on this zone.
+  // Default behavior is to consume the item; set to false to keep the item.
+  consumeItemOnUse?: boolean;
+  // Optional: gate a "use" interaction on a specific scene item (designer id).
+  // Server converts this to an inventory item key at runtime.
+  requiredItemId?: string;
+  // Optional: start disabled until a useEffect enables it.
+  disabledByDefault?: boolean;
   // Optional: associate this zone with an item so the player modal can show its image/description.
   itemId?: string;
   // Optional: explicit modal image override (shown in the player modal before falling back to associated item image).
@@ -40,6 +48,14 @@ interface InteractiveZone {
   modalContent?: string;
   // Optional: additional interactions for the same zone/item (shown as buttons in the player modal).
   interactions?: Array<{ label: string; modalContent: string }>;
+  // Optional: designer-wired effects that are applied when using an inventory item on this zone.
+  // NOTE: enable/disable IDs are designer zone ids (not DB hotspot ids).
+  useEffect?: {
+    hideItemIds?: string[];
+    showItemIds?: string[];
+    disableHotspotIds?: string[];
+    enableHotspotIds?: string[];
+  };
   eventId?: string;
   linkedPuzzleId?: string;
   collectItemId?: string;
@@ -73,6 +89,26 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [userSpecialties, setUserSpecialties] = useState<UserSpecialty[]>(initialData?.userSpecialties || []);
   const [validationError, setValidationError] = useState("");
   const [previewSceneIdx, setPreviewSceneIdx] = useState(0);
+  const [previewMode, setPreviewMode] = useState<'edit' | 'playtest'>('edit');
+
+  // Local playtest state (no server, no DB) so designers can test wiring before creating/saving a puzzle.
+  const [playtestSceneIdx, setPlaytestSceneIdx] = useState(0);
+  const [playtestInventoryItemIds, setPlaytestInventoryItemIds] = useState<string[]>([]);
+  const [playtestSelectedInventoryItemId, setPlaytestSelectedInventoryItemId] = useState<string | null>(null);
+  const [playtestMessage, setPlaytestMessage] = useState<string>('');
+  const [playtestCompleted, setPlaytestCompleted] = useState(false);
+  const [playtestSceneState, setPlaytestSceneState] = useState<{
+    hiddenItemIds: string[];
+    shownItemIds: string[];
+    disabledHotspotIds: string[]; // stores designer zone ids in playtest
+    enabledHotspotIds: string[]; // stores designer zone ids in playtest
+  }>({ hiddenItemIds: [], shownItemIds: [], disabledHotspotIds: [], enabledHotspotIds: [] });
+  const [playtestModal, setPlaytestModal] = useState<null | {
+    title: string;
+    content: string;
+    imageUrl?: string | null;
+    choices?: Array<{ label: string; modalContent: string }>;
+  }>(null);
   const [previewImageError, setPreviewImageError] = useState<string | null>(null);
   const [previewProxying, setPreviewProxying] = useState(false);
   // Track upload status and errors for each item by scene/item index
@@ -175,6 +211,18 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
     }
   }, [scenes, previewSceneIdx]);
 
+  // Reset playtest whenever Playtest mode is entered.
+  useEffect(() => {
+    if (previewMode !== 'playtest') return;
+    setPlaytestSceneIdx(Math.max(0, Math.min(previewSceneIdx, Math.max(0, scenes.length - 1))));
+    setPlaytestInventoryItemIds([]);
+    setPlaytestSelectedInventoryItemId(null);
+    setPlaytestSceneState({ hiddenItemIds: [], shownItemIds: [], disabledHotspotIds: [], enabledHotspotIds: [] });
+    setPlaytestMessage('');
+    setPlaytestCompleted(false);
+    setPlaytestModal(null);
+  }, [previewMode, previewSceneIdx, scenes.length]);
+
   // Call notifyParent whenever title changes
   useEffect(() => {
     notifyParent();
@@ -242,10 +290,382 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                 <option key={scene.id} value={idx}>{scene.name || `Scene ${idx + 1}`}</option>
               ))}
             </select>
+
+            <button
+              type="button"
+              className={previewMode === 'playtest' ? 'bg-emerald-600 text-white px-3 py-1 rounded text-sm' : 'bg-slate-700 text-white px-3 py-1 rounded text-sm'}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPreviewMode(prev => (prev === 'playtest' ? 'edit' : 'playtest'));
+              }}
+            >
+              {previewMode === 'playtest' ? 'Exit Playtest' : 'Playtest'}
+            </button>
           </div>
         )}
         {/* Live preview */}
-        {scenes.length > 0 && (
+        {scenes.length > 0 && previewMode === 'playtest' && (
+          <div>
+            <div className="mb-2 text-xs text-gray-300">
+              Playtest: click Collect zones to pick up items. Select an inventory item, then click a zone to use it.
+            </div>
+
+            <div
+              ref={previewRef}
+              className="mb-3 border rounded-lg overflow-hidden"
+              style={{ background: '#222', minHeight: 320, position: 'relative', width: 600, maxWidth: '100%' }}
+              onClick={() => {
+                // Clicking empty background clears inventory selection and closes modal.
+                setPlaytestSelectedInventoryItemId(null);
+                setPlaytestModal(null);
+              }}
+            >
+              {/* Background image */}
+              {scenes[playtestSceneIdx]?.backgroundUrl ? (
+                <>
+                  <img
+                    src={previewProxying ? `/api/image-proxy?url=${encodeURIComponent(scenes[playtestSceneIdx].backgroundUrl)}` : scenes[playtestSceneIdx].backgroundUrl}
+                    alt="Background"
+                    style={{ width: '100%', height: 320, objectFit: 'cover', display: 'block' }}
+                    onLoad={() => {
+                      setPreviewImageError(null);
+                    }}
+                    onError={() => {
+                      if (!previewProxying) {
+                        setPreviewImageError('Failed to load preview image; retrying via server proxy...');
+                        setPreviewProxying(true);
+                      } else {
+                        setPreviewImageError('Failed to load preview image (proxy failed or URL invalid)');
+                      }
+                    }}
+                  />
+                  {previewImageError && (
+                    <div style={{ padding: 8, color: '#ff7b7b', fontSize: 12 }}>{previewImageError}</div>
+                  )}
+                </>
+              ) : null}
+
+              {(() => {
+                const scene = scenes[playtestSceneIdx];
+                if (!scene) return null;
+
+                const hiddenItemIds = new Set<string>(Array.isArray(playtestSceneState.hiddenItemIds) ? playtestSceneState.hiddenItemIds : []);
+                const shownItemIds = new Set<string>(Array.isArray(playtestSceneState.shownItemIds) ? playtestSceneState.shownItemIds : []);
+                const disabledZoneIds = new Set<string>(Array.isArray(playtestSceneState.disabledHotspotIds) ? playtestSceneState.disabledHotspotIds : []);
+                const enabledZoneIds = new Set<string>(Array.isArray(playtestSceneState.enabledHotspotIds) ? playtestSceneState.enabledHotspotIds : []);
+                const inventorySet = new Set<string>(Array.isArray(playtestInventoryItemIds) ? playtestInventoryItemIds : []);
+
+                const isItemVisible = (it: any) => {
+                  const id = typeof it?.id === 'string' ? it.id : '';
+                  if (!id) return true;
+                  if (inventorySet.has(id)) return false;
+                  const hiddenByDefault = !!it?.properties?.hiddenByDefault;
+                  if (hiddenByDefault && !shownItemIds.has(id)) return false;
+                  if (hiddenItemIds.has(id) && !shownItemIds.has(id)) return false;
+                  return true;
+                };
+
+                const isZoneEnabled = (z: any) => {
+                  const zid = typeof z?.id === 'string' ? z.id : '';
+                  if (!zid) return true;
+                  const disabledByDefault = z?.disabledByDefault === true;
+                  const isEnabled = enabledZoneIds.has(zid);
+                  const isDisabled = disabledZoneIds.has(zid);
+                  if (disabledByDefault && !isEnabled) return false;
+                  if (isDisabled && !isEnabled) return false;
+                  return true;
+                };
+
+                const findItemById = (id: string) => {
+                  for (const s of scenes) {
+                    const found = s?.items?.find((it: any) => it?.id === id);
+                    if (found) return found;
+                  }
+                  return null;
+                };
+
+                const applyUseEffect = (useEffect: any) => {
+                  const hideItemIds: string[] = Array.isArray(useEffect?.hideItemIds) ? useEffect.hideItemIds.filter((x: any) => typeof x === 'string') : [];
+                  const showItemIds: string[] = Array.isArray(useEffect?.showItemIds) ? useEffect.showItemIds.filter((x: any) => typeof x === 'string') : [];
+                  const disableHotspotIds: string[] = Array.isArray(useEffect?.disableHotspotIds) ? useEffect.disableHotspotIds.filter((x: any) => typeof x === 'string') : [];
+                  const enableHotspotIds: string[] = Array.isArray(useEffect?.enableHotspotIds) ? useEffect.enableHotspotIds.filter((x: any) => typeof x === 'string') : [];
+
+                  setPlaytestSceneState(prev => {
+                    const nextHidden = new Set<string>(Array.isArray(prev.hiddenItemIds) ? prev.hiddenItemIds : []);
+                    const nextShown = new Set<string>(Array.isArray(prev.shownItemIds) ? prev.shownItemIds : []);
+                    const nextDisabled = new Set<string>(Array.isArray(prev.disabledHotspotIds) ? prev.disabledHotspotIds : []);
+                    const nextEnabled = new Set<string>(Array.isArray(prev.enabledHotspotIds) ? prev.enabledHotspotIds : []);
+
+                    for (const id of hideItemIds) {
+                      nextHidden.add(id);
+                      nextShown.delete(id);
+                    }
+                    for (const id of showItemIds) {
+                      nextShown.add(id);
+                      nextHidden.delete(id);
+                    }
+                    for (const id of disableHotspotIds) {
+                      nextDisabled.add(id);
+                      nextEnabled.delete(id);
+                    }
+                    for (const id of enableHotspotIds) {
+                      nextEnabled.add(id);
+                      nextDisabled.delete(id);
+                    }
+
+                    return {
+                      hiddenItemIds: Array.from(nextHidden),
+                      shownItemIds: Array.from(nextShown),
+                      disabledHotspotIds: Array.from(nextDisabled),
+                      enabledHotspotIds: Array.from(nextEnabled),
+                    };
+                  });
+                };
+
+                const handleZoneClick = (z: any) => {
+                  const zid = typeof z?.id === 'string' ? z.id : '';
+                  const label = (typeof z?.label === 'string' && z.label.trim()) ? z.label.trim() : (zid || 'Zone');
+                  const hasSelected = !!playtestSelectedInventoryItemId;
+
+                  // "Use" behavior if an inventory item is selected
+                  if (hasSelected) {
+                    const selectedId = playtestSelectedInventoryItemId as string;
+                    if (z?.requiredItemId && z.requiredItemId !== selectedId) {
+                      setPlaytestMessage(`That item doesn't work here.`);
+                      return;
+                    }
+
+                    const useEffect = z?.useEffect && typeof z.useEffect === 'object' ? z.useEffect : null;
+                    if (useEffect) {
+                      applyUseEffect(useEffect);
+                      const consume = z?.consumeItemOnUse !== false;
+                      if (consume) {
+                        setPlaytestInventoryItemIds(prev => prev.filter(x => x !== selectedId));
+                      }
+                      const item = findItemById(selectedId);
+                      setPlaytestMessage(`Used ${(item?.name || selectedId)} on ${label}.`);
+                      setPlaytestSelectedInventoryItemId(null);
+                      return;
+                    }
+
+                    // Fallback: trigger semantics
+                    if ((z?.actionType || '') === 'trigger') {
+                      const nextIdx = playtestSceneIdx + 1;
+                      if (nextIdx >= scenes.length) {
+                        setPlaytestCompleted(true);
+                        setPlaytestMessage('Completed (playtest).');
+                      } else {
+                        setPlaytestSceneIdx(nextIdx);
+                        setPlaytestMessage(`Moved to scene ${nextIdx + 1}.`);
+                      }
+                      const consume = z?.consumeItemOnUse !== false;
+                      if (consume) {
+                        setPlaytestInventoryItemIds(prev => prev.filter(x => x !== selectedId));
+                      }
+                      setPlaytestSelectedInventoryItemId(null);
+                      return;
+                    }
+
+                    setPlaytestMessage('Nothing happens.');
+                    return;
+                  }
+
+                  // Normal click behavior when no inventory item is selected
+                  if ((z?.actionType || '') === 'collect') {
+                    const collectItemId = typeof z?.collectItemId === 'string' ? z.collectItemId : '';
+                    if (!collectItemId) {
+                      setPlaytestMessage('Collect zone has no item configured.');
+                      return;
+                    }
+                    setPlaytestInventoryItemIds(prev => (prev.includes(collectItemId) ? prev : [...prev, collectItemId]));
+                    const item = findItemById(collectItemId);
+                    setPlaytestMessage(`Picked up ${(item?.name || collectItemId)}.`);
+                    return;
+                  }
+
+                  if ((z?.actionType || '') === 'modal') {
+                    const content = typeof z?.modalContent === 'string' ? z.modalContent : '';
+                    const imageUrl = typeof z?.imageUrl === 'string' ? z.imageUrl : (typeof z?.itemId === 'string' ? (findItemById(z.itemId)?.imageUrl || null) : null);
+                    const choices = Array.isArray(z?.interactions) ? z.interactions.filter((c: any) => c && typeof c.label === 'string' && typeof c.modalContent === 'string') : [];
+                    setPlaytestModal({ title: label, content, imageUrl, choices });
+                    setPlaytestMessage('');
+                    return;
+                  }
+
+                  if ((z?.actionType || '') === 'trigger') {
+                    const nextIdx = playtestSceneIdx + 1;
+                    if (nextIdx >= scenes.length) {
+                      setPlaytestCompleted(true);
+                      setPlaytestMessage('Completed (playtest).');
+                    } else {
+                      setPlaytestSceneIdx(nextIdx);
+                      setPlaytestMessage(`Moved to scene ${nextIdx + 1}.`);
+                    }
+                    return;
+                  }
+                };
+
+                return (
+                  <>
+                    {/* Visible items */}
+                    {scene.items.filter(isItemVisible).map((item: any, i: number) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          position: 'absolute',
+                          left: item.x ?? (20 + i * 60),
+                          top: item.y ?? 20,
+                          zIndex: 2,
+                          borderRadius: 4,
+                          padding: 2,
+                          minWidth: 40,
+                          textAlign: 'center',
+                          userSelect: 'none',
+                          touchAction: 'none'
+                        }}
+                      >
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            style={{ width: (item.w ?? 48), height: (item.h ?? 48), objectFit: 'contain', display: 'block', borderRadius: 4 }}
+                            draggable={false}
+                          />
+                        ) : (
+                          <div style={{ width: 48, height: 48, background: 'rgba(255,255,255,0.15)', borderRadius: 4 }} />
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Enabled zones */}
+                    {scene.interactiveZones.filter(isZoneEnabled).map((z: any) => (
+                      <div
+                        key={z.id}
+                        onClick={(ev) => { ev.stopPropagation(); handleZoneClick(z); }}
+                        title={z.label || z.id}
+                        style={{
+                          position: 'absolute',
+                          left: z.x ?? 0,
+                          top: z.y ?? 0,
+                          width: z.width ?? 64,
+                          height: z.height ?? 64,
+                          zIndex: 3,
+                          border: playtestSelectedInventoryItemId ? '2px solid rgba(34,197,94,0.9)' : '2px solid rgba(59,130,246,0.8)',
+                          background: 'rgba(0,0,0,0.15)',
+                          cursor: 'pointer',
+                          boxSizing: 'border-box',
+                          borderRadius: 6,
+                        }}
+                      />
+                    ))}
+
+                    {/* Modal */}
+                    {playtestModal && (
+                      <div
+                        onClick={(ev) => ev.stopPropagation()}
+                        style={{
+                          position: 'absolute',
+                          left: 12,
+                          top: 12,
+                          right: 12,
+                          bottom: 12,
+                          background: 'rgba(10,10,10,0.92)',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: 10,
+                          padding: 12,
+                          zIndex: 20,
+                          overflow: 'auto',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                          <div style={{ fontWeight: 700 }}>{playtestModal.title}</div>
+                          <button
+                            type="button"
+                            className="bg-slate-700 text-white px-3 py-1 rounded text-sm"
+                            onClick={() => setPlaytestModal(null)}
+                          >
+                            Close
+                          </button>
+                        </div>
+                        {playtestModal.imageUrl ? (
+                          <div style={{ marginTop: 10 }}>
+                            <img src={playtestModal.imageUrl} alt="modal" style={{ maxHeight: 140, borderRadius: 8 }} />
+                          </div>
+                        ) : null}
+                        <div style={{ marginTop: 10, whiteSpace: 'pre-wrap', fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>
+                          {playtestModal.content || '(No modal content)'}
+                        </div>
+                        {Array.isArray(playtestModal.choices) && playtestModal.choices.length > 0 && (
+                          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {playtestModal.choices.map((c, idx) => (
+                              <button
+                                key={`${c.label}-${idx}`}
+                                type="button"
+                                className="bg-blue-600 text-white px-3 py-1 rounded text-sm"
+                                onClick={() => setPlaytestModal(prev => prev ? ({ ...prev, content: c.modalContent }) : prev)}
+                              >
+                                {c.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Completion banner */}
+                    {playtestCompleted && (
+                      <div style={{ position: 'absolute', left: 12, bottom: 12, zIndex: 30, background: 'rgba(16,185,129,0.9)', color: '#fff', padding: '6px 10px', borderRadius: 8, fontSize: 12 }}>
+                        Completed (playtest)
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Inventory */}
+            <div className="border rounded-lg p-2 bg-slate-900/40">
+              <div className="text-xs font-semibold mb-1">Inventory</div>
+              <div className="flex flex-wrap gap-2">
+                {playtestInventoryItemIds.length === 0 ? (
+                  <div className="text-xs text-gray-400">No items collected yet.</div>
+                ) : (
+                  playtestInventoryItemIds.map((id) => {
+                    const item = (() => {
+                      for (const s of scenes) {
+                        const found = s?.items?.find((it: any) => it?.id === id);
+                        if (found) return found;
+                      }
+                      return null;
+                    })();
+                    const selected = playtestSelectedInventoryItemId === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={selected ? 'bg-emerald-700 text-white px-2 py-1 rounded text-xs flex items-center gap-2' : 'bg-slate-700 text-white px-2 py-1 rounded text-xs flex items-center gap-2'}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPlaytestSelectedInventoryItemId(prev => (prev === id ? null : id));
+                          setPlaytestModal(null);
+                        }}
+                        title={item?.name || id}
+                      >
+                        {item?.imageUrl ? <img src={item.imageUrl} alt="" className="h-5 w-5 object-cover rounded" /> : null}
+                        <span>{item?.name || id}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              {playtestMessage ? <div className="mt-2 text-xs text-gray-200">{playtestMessage}</div> : null}
+            </div>
+          </div>
+        )}
+
+        {scenes.length > 0 && previewMode !== 'playtest' && (
           <div
             ref={previewRef}
             className="mb-6 border rounded-lg overflow-hidden"
@@ -886,6 +1306,22 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             updated[idx].items[itemIdx].description = e.target.value;
                             setScenes(updated);
                           }} placeholder="Description" className="border rounded px-2 py-1 w-full text-xs" />
+                          <div className="mt-1 flex items-center gap-2">
+                            <label className="text-xs flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={!!(item.properties && item.properties.hiddenByDefault)}
+                                onChange={(e) => {
+                                  const updated = [...scenes];
+                                  const cur = updated[idx].items[itemIdx];
+                                  const nextProps = { ...(cur.properties || {}), hiddenByDefault: !!e.target.checked };
+                                  updated[idx].items[itemIdx] = { ...cur, properties: nextProps };
+                                  setScenes(updated);
+                                }}
+                              />
+                              Hidden by default (revealed by an unlock/use effect)
+                            </label>
+                          </div>
                           <div className="mt-1 flex gap-2 items-center">
                             <div className="text-xs text-gray-300">
                               <div>Size: {Math.round(item.w ?? 48)}×{Math.round(item.h ?? 48)}</div>
@@ -975,6 +1411,165 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               {dummyPuzzles.map(pz => <option key={pz.id} value={pz.id}>{pz.title}</option>)}
                             </select>
                           </div>
+
+                          <div className="mb-2">
+                            <label className="block text-xs font-semibold">Unlock / Use Wiring (optional)</label>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div>
+                                <label className="block text-xs">Requires Item (drag this onto the zone)</label>
+                                <select
+                                  value={zone.requiredItemId || ''}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    updated[idx].interactiveZones[zoneIdx].requiredItemId = e.target.value || undefined;
+                                    setScenes(updated);
+                                  }}
+                                  className="border rounded px-2 py-1 text-xs"
+                                >
+                                  <option value="">None</option>
+                                  {scene.items.map((it) => (
+                                    <option key={it.id} value={it.id}>
+                                      {it.name || 'Unnamed Item'}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <label className="text-xs flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!!zone.disabledByDefault}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    updated[idx].interactiveZones[zoneIdx].disabledByDefault = !!e.target.checked;
+                                    setScenes(updated);
+                                  }}
+                                />
+                                Disabled by default (must be enabled by an effect)
+                              </label>
+
+                              <label className="text-xs flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={zone.consumeItemOnUse === false}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    updated[idx].interactiveZones[zoneIdx].consumeItemOnUse = e.target.checked ? false : undefined;
+                                    setScenes(updated);
+                                  }}
+                                />
+                                Do not consume item on use
+                              </label>
+                            </div>
+
+                            <div className="mt-2 grid grid-cols-1 gap-2">
+                              <div className="text-xs text-gray-500">
+                                Use effects: swap images by hiding/showing items, and reveal loot by enabling a disabled Collect zone.
+                              </div>
+
+                              <div className="flex flex-wrap gap-6">
+                                <div>
+                                  <div className="text-xs font-semibold">Hide Item(s)</div>
+                                  <div className="max-h-32 overflow-auto border rounded p-2 text-xs">
+                                    {scene.items.length === 0 ? (
+                                      <div className="text-gray-400">No items in this scene.</div>
+                                    ) : (
+                                      scene.items.map((it) => {
+                                        const selected = Array.isArray(zone.useEffect?.hideItemIds) && zone.useEffect!.hideItemIds!.includes(it.id);
+                                        return (
+                                          <label key={it.id} className="flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!selected}
+                                              onChange={(e) => {
+                                                const updated = [...scenes];
+                                                const z = updated[idx].interactiveZones[zoneIdx];
+                                                const ue = { ...(z.useEffect || {}) } as any;
+                                                const cur = Array.isArray(ue.hideItemIds) ? ue.hideItemIds.slice() : [];
+                                                const next = e.target.checked ? Array.from(new Set([...cur, it.id])) : cur.filter((x: string) => x !== it.id);
+                                                ue.hideItemIds = next;
+                                                z.useEffect = ue;
+                                                updated[idx].interactiveZones[zoneIdx] = { ...z };
+                                                setScenes(updated);
+                                              }}
+                                            />
+                                            {it.name || it.id}
+                                          </label>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className="text-xs font-semibold">Show Item(s)</div>
+                                  <div className="max-h-32 overflow-auto border rounded p-2 text-xs">
+                                    {scene.items.length === 0 ? (
+                                      <div className="text-gray-400">No items in this scene.</div>
+                                    ) : (
+                                      scene.items.map((it) => {
+                                        const selected = Array.isArray(zone.useEffect?.showItemIds) && zone.useEffect!.showItemIds!.includes(it.id);
+                                        return (
+                                          <label key={it.id} className="flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!selected}
+                                              onChange={(e) => {
+                                                const updated = [...scenes];
+                                                const z = updated[idx].interactiveZones[zoneIdx];
+                                                const ue = { ...(z.useEffect || {}) } as any;
+                                                const cur = Array.isArray(ue.showItemIds) ? ue.showItemIds.slice() : [];
+                                                const next = e.target.checked ? Array.from(new Set([...cur, it.id])) : cur.filter((x: string) => x !== it.id);
+                                                ue.showItemIds = next;
+                                                z.useEffect = ue;
+                                                updated[idx].interactiveZones[zoneIdx] = { ...z };
+                                                setScenes(updated);
+                                              }}
+                                            />
+                                            {it.name || it.id}
+                                          </label>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className="text-xs font-semibold">Enable Zone(s)</div>
+                                  <div className="max-h-32 overflow-auto border rounded p-2 text-xs">
+                                    {scene.interactiveZones.length === 0 ? (
+                                      <div className="text-gray-400">No zones in this scene.</div>
+                                    ) : (
+                                      scene.interactiveZones.map((z2) => {
+                                        const selected = Array.isArray(zone.useEffect?.enableHotspotIds) && zone.useEffect!.enableHotspotIds!.includes(z2.id);
+                                        return (
+                                          <label key={z2.id} className="flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!selected}
+                                              onChange={(e) => {
+                                                const updated = [...scenes];
+                                                const z = updated[idx].interactiveZones[zoneIdx];
+                                                const ue = { ...(z.useEffect || {}) } as any;
+                                                const cur = Array.isArray(ue.enableHotspotIds) ? ue.enableHotspotIds.slice() : [];
+                                                const next = e.target.checked ? Array.from(new Set([...cur, z2.id])) : cur.filter((x: string) => x !== z2.id);
+                                                ue.enableHotspotIds = next;
+                                                z.useEffect = ue;
+                                                updated[idx].interactiveZones[zoneIdx] = { ...z };
+                                                setScenes(updated);
+                                              }}
+                                            />
+                                            {z2.label || z2.id} ({z2.actionType})
+                                          </label>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
                           {zone.actionType === 'modal' && (
                             <>
                               <div className="mb-1">

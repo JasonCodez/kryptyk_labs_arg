@@ -61,6 +61,8 @@ export default function AdminPuzzlesPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [jigsawImagePreview, setJigsawImagePreview] = useState<string>("");
   const [jigsawImageUrl, setJigsawImageUrl] = useState<string>("");
+  const [jigsawImageFile, setJigsawImageFile] = useState<File | null>(null);
+  const [jigsawImageObjectUrl, setJigsawImageObjectUrl] = useState<string>("");
   const [importingImage, setImportingImage] = useState(false);
   const [importImageResult, setImportImageResult] = useState<string | null>(null);
   const [importImageError, setImportImageError] = useState<string | null>(null);
@@ -167,6 +169,64 @@ export default function AdminPuzzlesPage() {
 
   const handleJigsawImageUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setJigsawImageUrl(e.target.value);
+  };
+
+  const handleJigsawImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.currentTarget.files?.[0] || null;
+    setJigsawImageFile(f);
+    setImportImageResult(null);
+    setImportImageError(null);
+    if (f) {
+      const objUrl = URL.createObjectURL(f);
+      setJigsawImageObjectUrl(objUrl);
+      // For live preview before upload.
+      setJigsawImagePreview(objUrl);
+    } else {
+      setJigsawImageObjectUrl('');
+    }
+    // Clear input to allow re-selecting same file.
+    if (e.currentTarget) e.currentTarget.value = '';
+  };
+
+  useEffect(() => {
+    return () => {
+      try {
+        if (jigsawImageObjectUrl) URL.revokeObjectURL(jigsawImageObjectUrl);
+      } catch {
+        // ignore
+      }
+    };
+  }, [jigsawImageObjectUrl]);
+
+  const uploadJigsawFile = async (targetPuzzleId: string, file: File) => {
+    const formDataUpload = new FormData();
+    formDataUpload.append('file', file);
+    formDataUpload.append('puzzleId', targetPuzzleId);
+
+    const res = await fetch('/api/admin/media', {
+      method: 'POST',
+      body: formDataUpload,
+    }).catch((e) => {
+      throw new Error(`Network error: ${e?.message || e}`);
+    });
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      const msg = (data && (data.error || data.message)) || `Upload failed (${res.status})`;
+      throw new Error(msg);
+    }
+    const uploadedUrl = data?.url ? String(data.url) : '';
+    if (uploadedUrl) {
+      setJigsawImageUrl(uploadedUrl);
+      setJigsawImagePreview(uploadedUrl);
+      setImportImageResult(uploadedUrl);
+    }
+    return data;
   };
 
   const handleUseJigsawUrl = () => {
@@ -300,8 +360,8 @@ export default function AdminPuzzlesPage() {
     try {
       // Check if jigsaw puzzle has an image (URL required)
       if (formData.puzzleType === 'jigsaw') {
-        if (!jigsawImageUrl && !jigsawImagePreview) {
-          setFormError("Jigsaw puzzles require an image. Please provide an external image URL before creating.");
+        if (!jigsawImageUrl && !jigsawImagePreview && !jigsawImageFile) {
+          setFormError("Jigsaw puzzles require an image. Provide a URL or upload a file.");
           setSubmitting(false);
           return;
         }
@@ -427,8 +487,20 @@ export default function AdminPuzzlesPage() {
       console.log("[SUBMIT] Puzzle created:", createdPuzzle);
       setPuzzleId(createdPuzzle.id);
 
+      // If a local jigsaw image file was selected, upload it now (preferred over external URL).
+      if (formData.puzzleType === 'jigsaw' && jigsawImageFile) {
+        try {
+          console.log('[SUBMIT] Uploading jigsaw image file to /api/admin/media');
+          await uploadJigsawFile(createdPuzzle.id, jigsawImageFile);
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error('[SUBMIT] Failed to upload jigsaw image file:', errorMsg);
+          setFormError(`Failed to upload jigsaw image file: ${errorMsg}`);
+        }
+      }
+
       // If a jigsaw image URL was provided, post the URL to the media API
-      if (formData.puzzleType === 'jigsaw' && jigsawImageUrl) {
+      if (formData.puzzleType === 'jigsaw' && jigsawImageUrl && !jigsawImageFile) {
         try {
           console.log("[SUBMIT] Posting jigsaw image URL to /api/admin/media:", jigsawImageUrl);
           const formDataUpload = new FormData();
@@ -811,6 +883,36 @@ export default function AdminPuzzlesPage() {
                       <label className="block text-sm font-semibold text-gray-300 mb-2">Jigsaw Image {jigsawImagePreview ? <span className="text-xs text-green-300">(selected)</span> : <span className="text-xs text-gray-400">(required)</span>}</label>
                       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full">
+                          <div className="flex flex-col gap-2 w-full">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleJigsawImageFileChange}
+                                className="flex-1 min-w-0 px-3 py-2 rounded bg-slate-700/50 border border-slate-600 text-white"
+                              />
+                              <button
+                                type="button"
+                                disabled={!jigsawImageFile || !puzzleId || uploadingMedia}
+                                onClick={async () => {
+                                  setImportImageResult(null);
+                                  setImportImageError(null);
+                                  try {
+                                    if (!jigsawImageFile) throw new Error('No file selected');
+                                    if (!puzzleId) throw new Error('Save the puzzle first to upload');
+                                    await uploadJigsawFile(puzzleId, jigsawImageFile);
+                                  } catch (err) {
+                                    const msg = err instanceof Error ? err.message : String(err);
+                                    setImportImageError(msg);
+                                  }
+                                }}
+                                className="px-3 py-1 rounded bg-emerald-700 text-white text-sm"
+                              >
+                                Upload file
+                              </button>
+                            </div>
+                            <div className="text-xs text-gray-400">Or paste an external image URL:</div>
+                          </div>
                           <input
                             type="text"
                             placeholder="Paste an external image URL"

@@ -93,6 +93,7 @@ export function EscapeRoomPuzzle({
   // answer input/submission not needed for this project; removed UI and handler
   const [inventory, setInventory] = useState<string[]>([]);
   const [inventoryItems, setInventoryItems] = useState<Record<string, InventoryItem>>({});
+  const [selectedInventoryKey, setSelectedInventoryKey] = useState<string | null>(null);
   const [briefingAcks, setBriefingAcks] = useState<Record<string, string>>({});
   const [inventoryLocks, setInventoryLocks] = useState<InventoryLocksMap>({});
   const [sceneState, setSceneState] = useState<Record<string, any>>({});
@@ -578,9 +579,15 @@ export function EscapeRoomPuzzle({
     const filteredHotspots = hotspotsRaw.filter((hs: any) => {
       const id = typeof hs?.id === 'string' ? hs.id : '';
       const meta = parseMeta(hs?.meta);
+      const zoneId = typeof meta?.zoneId === 'string' ? meta.zoneId : '';
       const disabledByDefault = meta?.disabledByDefault === true;
-      if (disabledByDefault && id && !enabledHotspotIds.has(id)) return false;
-      if (id && disabledHotspotIds.has(id) && !enabledHotspotIds.has(id)) return false;
+
+      const identifiers = [id, zoneId].filter(Boolean);
+      const isEnabled = identifiers.some((k) => enabledHotspotIds.has(k));
+      const isDisabled = identifiers.some((k) => disabledHotspotIds.has(k));
+
+      if (disabledByDefault && identifiers.length > 0 && !isEnabled) return false;
+      if (identifiers.length > 0 && isDisabled && !isEnabled) return false;
       return true;
     });
 
@@ -637,7 +644,65 @@ export function EscapeRoomPuzzle({
       if (hs && hs.meta) {
         try { hsMeta = typeof hs.meta === 'string' ? JSON.parse(hs.meta) : hs.meta; } catch { hsMeta = hs.meta; }
       }
+
       const actionType = hs?.type || (hsMeta && hsMeta.actionType) || 'collect';
+      const hotspotLabel = (typeof hsMeta?.label === 'string' && hsMeta.label.trim()) ? hsMeta.label.trim() : 'here';
+
+      // Click-to-use: if an inventory item is selected, and the hotspot looks like it supports "use",
+      // attempt a server-side use first.
+      if (selectedInventoryKey) {
+        const requiresItems = Array.isArray(hsMeta?.requiresItems) && hsMeta.requiresItems.length > 0;
+        const hasRequiredKey = typeof hsMeta?.requiredItemKey === 'string' && hsMeta.requiredItemKey;
+        const hasRequiredId = typeof hsMeta?.requiredItemId === 'string' && hsMeta.requiredItemId;
+        const hasUseEffect = !!hsMeta?.useEffect;
+        const canUseOnCollect = hasUseEffect || requiresItems || hasRequiredKey || hasRequiredId;
+        const shouldAttemptUse = actionType !== 'collect' || canUseOnCollect;
+
+        if (shouldAttemptUse) {
+          const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'use', hotspotId, teamId, itemKey: selectedInventoryKey }),
+          });
+          const jb = await r.json().catch(() => null);
+          if (r.ok) {
+            playSfx(jb?.sfx);
+            playSfx(jb?.sfxLoot);
+            if (Array.isArray(jb?.inventory)) setInventory(jb.inventory);
+            if (jb?.inventoryItems) setInventoryItems(jb.inventoryItems || {});
+            if (jb?.sceneState) setSceneState(jb.sceneState || {});
+
+            const usedName = inventoryItems?.[selectedInventoryKey]?.name || selectedInventoryKey;
+            const grantedKeys: string[] = Array.isArray(jb?.granted?.keys) ? jb.granted.keys.filter((x: any) => typeof x === 'string') : [];
+            const grantedNames = grantedKeys
+              .map((k) => {
+                const it = jb?.inventoryItems?.[k];
+                return (it && typeof it.name === 'string' && it.name.trim()) ? it.name.trim() : k;
+              })
+              .filter(Boolean);
+            const grantedLine = grantedNames.length > 0 ? `\n\nReceived: ${grantedNames.join(', ')}` : '';
+
+            setActionModalTitle(hotspotLabel === 'here' ? 'Used item' : hotspotLabel);
+            setActionModalMessage(`Used ${usedName} on ${hotspotLabel}.${grantedLine}`);
+            setActionModalOpen(true);
+
+            const nextInventory: string[] = Array.isArray(jb?.inventory) ? jb.inventory : inventory;
+            const stillHaveItem = Array.isArray(nextInventory) && nextInventory.includes(selectedInventoryKey);
+            if (!stillHaveItem) {
+              // If the item was consumed, clear selection (and release lock if held by me).
+              const lock = inventoryLocks?.[selectedInventoryKey];
+              const lockedByMe = !!lock && !!currentUserId && lock.lockedBy === currentUserId;
+              setSelectedInventoryKey(null);
+              if (lockedByMe) void releaseLock(selectedInventoryKey);
+            }
+            return;
+          }
+          setActionModalTitle('Unable to use item');
+          setActionModalMessage(jb?.error || 'Please try again.');
+          setActionModalOpen(true);
+          return;
+        }
+      }
       if (actionType === 'modal') {
         // show modal using meta.modalContent or label
         const baseTitle = hsMeta?.label || 'Info';
@@ -715,7 +780,7 @@ export function EscapeRoomPuzzle({
     } catch (e) {
       console.error('Hotspot action failed', e);
     }
-  }, [teamId, runStartedAt, failedAt, completedAt, layout, puzzleId, playSfx]);
+  }, [teamId, runStartedAt, failedAt, completedAt, layout, puzzleId, playSfx, selectedInventoryKey, inventory, inventoryItems, inventoryLocks, currentUserId]);
 
   const handleActionModalChoice = useCallback((index: number) => {
     if (!actionModalChoices || actionModalChoices.length === 0) return;
@@ -880,7 +945,7 @@ export function EscapeRoomPuzzle({
   };
 
   const acquireLock = async (itemKey: string) => {
-    if (!teamId) return;
+    if (!teamId) return false;
     try {
       setSessionBusy(true);
       const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/session`, {
@@ -891,15 +956,19 @@ export function EscapeRoomPuzzle({
       const jb = await r.json().catch(() => null);
       if (r.ok && jb?.inventoryLocks) {
         setInventoryLocks(jb.inventoryLocks || {});
+        return true;
       } else if (r.status === 409 && jb?.lock) {
         setActionModalTitle('Item in use');
         setActionModalMessage(`This item is being used by ${jb.lock.lockedByName || 'a teammate'}.`);
         setActionModalOpen(true);
+        return false;
       } else if (!r.ok) {
         setActionModalTitle('Unable to use item');
         setActionModalMessage(jb?.error || 'Please try again.');
         setActionModalOpen(true);
+        return false;
       }
+      return false;
     } finally {
       setSessionBusy(false);
     }
@@ -1048,48 +1117,6 @@ export function EscapeRoomPuzzle({
               <div
                 className="w-full bg-slate-950"
                 ref={stageDropRef}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                }}
-                onDrop={(e) => {
-                  try {
-                    e.preventDefault();
-                    if (!canInteract) return;
-                    const itemKey = e.dataTransfer?.getData("text/plain") || "";
-                    if (!itemKey) return;
-                    const hotspotId = resolveHotspotAtClientPoint(e.clientX, e.clientY);
-                    if (!hotspotId) return;
-                    void (async () => {
-                      try {
-                        if (!teamId) return;
-                        const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ action: 'use', hotspotId, teamId, itemKey }),
-                        });
-                        const jb = await r.json().catch(() => null);
-                        if (r.ok) {
-                          playSfx(jb?.sfx);
-                          playSfx(jb?.sfxLoot);
-                          if (Array.isArray(jb?.inventory)) setInventory(jb.inventory);
-                          if (jb?.inventoryItems) setInventoryItems(jb.inventoryItems || {});
-                          if (jb?.sceneState) setSceneState(jb.sceneState || {});
-                          return;
-                        }
-                        setActionModalTitle('Unable to use item');
-                        setActionModalMessage(jb?.error || 'Please try again.');
-                        setActionModalOpen(true);
-                      } catch (err) {
-                        console.error('Use item failed', err);
-                        setActionModalTitle('Unable to use item');
-                        setActionModalMessage('Please try again.');
-                        setActionModalOpen(true);
-                      }
-                    })();
-                  } catch {
-                    // ignore
-                  }
-                }}
                 style={{
                   // Let the canvas grow on larger screens while preserving the room ratio.
                   // Match the Designer's logical coordinate space when layout dimensions are missing.
@@ -1145,6 +1172,12 @@ export function EscapeRoomPuzzle({
             {sideTab === 'inventory' ? (
               <>
                 <div className="text-sm text-amber-200/90 mb-2 font-semibold tracking-wide">Inventory</div>
+                {selectedInventoryKey ? (
+                  <div className="mb-2 rounded border border-emerald-700/40 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-100/90">
+                    Selected: <span className="font-semibold">{inventoryItems?.[selectedInventoryKey]?.name || selectedInventoryKey}</span>
+                    <span className="opacity-80"> — click a hotspot to use it, or click the item again to deselect.</span>
+                  </div>
+                ) : null}
                 {inventory.length === 0 ? (
                   <div className="text-sm text-amber-200/60">No items yet.</div>
                 ) : (
@@ -1155,28 +1188,42 @@ export function EscapeRoomPuzzle({
                       const item = inventoryItems?.[key];
                       const displayName = item?.name || key;
                       const imageUrl = item?.imageUrl || null;
+                      const selected = selectedInventoryKey === key;
                       return (
                         <div
                           key={key}
-                          draggable={!!canInteract && !sessionBusy && (!lock || lockedByMe)}
-                          onDragStart={(e) => {
+                          onClick={() => {
                             if (!canInteract) return;
                             if (sessionBusy) return;
-                            if (lock && !lockedByMe) return;
-                            try {
-                              e.dataTransfer?.setData("text/plain", key);
-                              e.dataTransfer.effectAllowed = "move";
-                            } catch {
-                              // ignore
+                            if (lock && !lockedByMe) {
+                              setActionModalTitle('Item in use');
+                              setActionModalMessage(`This item is being used by ${lock.lockedByName || 'a teammate'}.`);
+                              setActionModalOpen(true);
+                              return;
                             }
+
+                            // Toggle selection; acquire lock when selecting.
+                            if (selected) {
+                              setSelectedInventoryKey(null);
+                              if (lockedByMe) void releaseLock(key);
+                              return;
+                            }
+
+                            void (async () => {
+                              if (lock && lockedByMe) {
+                                setSelectedInventoryKey(key);
+                                return;
+                              }
+                              const ok = await acquireLock(key);
+                              if (ok) setSelectedInventoryKey(key);
+                            })();
                           }}
                           className={
                             "rounded-lg border border-amber-800/30 bg-neutral-950/40 px-3 py-2 text-sm text-amber-50/90 " +
-                            (canInteract && !sessionBusy && (!lock || lockedByMe)
-                              ? "cursor-grab active:cursor-grabbing"
-                              : "cursor-default")
+                            (canInteract && !sessionBusy && (!lock || lockedByMe) ? "cursor-pointer" : "cursor-default") +
+                            (selected ? " ring-2 ring-emerald-500/60" : "")
                           }
-                          title="Drag onto the room to use"
+                          title={selected ? 'Selected' : 'Click to select'}
                         >
                           <div className="flex items-center gap-2">
                             {imageUrl ? (
@@ -1199,16 +1246,31 @@ export function EscapeRoomPuzzle({
                             <button
                               type="button"
                               disabled={!canInteract || sessionBusy || (!!lock && !lockedByMe)}
-                              onClick={() => acquireLock(key)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (selected) {
+                                  setSelectedInventoryKey(null);
+                                  if (lockedByMe) void releaseLock(key);
+                                  return;
+                                }
+                                void (async () => {
+                                  const ok = lock && lockedByMe ? true : await acquireLock(key);
+                                  if (ok) setSelectedInventoryKey(key);
+                                })();
+                              }}
                               className="px-2 py-1 rounded bg-amber-700 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
                             >
-                              Use
+                              {selected ? 'Selected' : 'Select'}
                             </button>
                             {lockedByMe || isLeader ? (
                               <button
                                 type="button"
                                 disabled={!canInteract || sessionBusy || !lock}
-                                onClick={() => releaseLock(key)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (selected) setSelectedInventoryKey(null);
+                                  void releaseLock(key);
+                                }}
                                 className="px-2 py-1 rounded border border-amber-700/50 bg-neutral-900/60 text-amber-50/90 hover:bg-neutral-900/80 disabled:opacity-50"
                               >
                                 Release

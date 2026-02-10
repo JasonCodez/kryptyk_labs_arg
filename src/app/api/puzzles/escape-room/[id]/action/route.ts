@@ -12,6 +12,10 @@ function safeJsonParse<T>(raw: unknown, fallback: T): T {
   }
 }
 
+function makeDesignerItemKey(escapeRoomId: string, designerItemId: string) {
+  return `item_${escapeRoomId}_${designerItemId}`;
+}
+
 type SceneState = {
   hiddenItemIds?: string[];
   shownItemIds?: string[];
@@ -314,10 +318,21 @@ export async function POST(
       const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
       const useSfx = extractSfx(meta, 'use');
       const lootSfx = extractSfx(meta, 'loot');
-      const requiresItems: string[] = Array.isArray(meta.requiresItems)
-        ? meta.requiresItems.filter((x: any) => typeof x === 'string')
+      const requiredItemId = typeof meta.requiredItemId === 'string' ? meta.requiredItemId : null;
+      const derivedRequiredItemKey = requiredItemId ? makeDesignerItemKey(String(escapeRoom.id), requiredItemId) : null;
+
+      const requiresItemIds: string[] = Array.isArray(meta.requiresItemIds)
+        ? meta.requiresItemIds.filter((x: any) => typeof x === 'string')
         : [];
-      const requiredItemKey = typeof meta.requiredItemKey === 'string' ? meta.requiredItemKey : null;
+      const derivedRequiresItems: string[] = requiresItemIds.map((id) => makeDesignerItemKey(String(escapeRoom.id), id));
+
+      const requiresItems: string[] = Array.from(
+        new Set([
+          ...(Array.isArray(meta.requiresItems) ? meta.requiresItems.filter((x: any) => typeof x === 'string') : []),
+          ...derivedRequiresItems,
+        ])
+      );
+      const requiredItemKey = typeof meta.requiredItemKey === 'string' ? meta.requiredItemKey : derivedRequiredItemKey;
 
       const useEffect = (meta && typeof meta.useEffect === 'object' && meta.useEffect) ? (meta.useEffect as any) : null;
 
@@ -359,20 +374,27 @@ export async function POST(
 
         // Optional strict validation for designer wiring (useful during authoring/testing).
         if (strict) {
-          // Validate hotspot ids referenced by useEffect exist for this escape room.
+          // Validate hotspot identifiers referenced by useEffect exist for this escape room.
+          // Identifiers may be either DB hotspot ids OR designer-authored `zoneId` values.
           const hotspotIdsToCheck = Array.from(new Set([...disableHotspotIds, ...enableHotspotIds])).filter(Boolean);
           if (hotspotIdsToCheck.length > 0) {
-            const found = await prisma.hotspot.findMany({
+            const all = await prisma.hotspot.findMany({
               where: {
-                id: { in: hotspotIdsToCheck },
                 layout: { escapeRoomId: escapeRoom.id },
               },
-              select: { id: true },
+              select: { id: true, meta: true },
             });
-            const foundSet = new Set(found.map((h: any) => String(h.id)));
-            const missing = hotspotIdsToCheck.filter((id) => !foundSet.has(String(id)));
+            const foundIdSet = new Set(all.map((h: any) => String(h.id)));
+            const foundZoneIdSet = new Set(
+              all
+                .map((h: any) => safeJsonParse<Record<string, any>>(h.meta, {}))
+                .map((m: any) => (typeof m?.zoneId === 'string' ? m.zoneId : ''))
+                .filter(Boolean)
+            );
+
+            const missing = hotspotIdsToCheck.filter((id) => !foundIdSet.has(String(id)) && !foundZoneIdSet.has(String(id)));
             if (missing.length > 0) {
-              return NextResponse.json({ error: `Invalid hotspot id(s) in useEffect: ${missing.join(', ')}` }, { status: 400 });
+              return NextResponse.json({ error: `Invalid hotspot/zone id(s) in useEffect: ${missing.join(', ')}` }, { status: 400 });
             }
           }
 
