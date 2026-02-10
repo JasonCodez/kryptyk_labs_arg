@@ -151,19 +151,49 @@ function originsFromEnv() {
   set.add('http://localhost:3000');
   set.add('http://127.0.0.1:3000');
 
-  // production defaults for this project (helps when socket service env is sparse)
-  if (process.env.NODE_ENV === 'production') {
-    set.add('https://www.puzzlewarz.com');
-    set.add('https://puzzlewarz.com');
-  }
+  // Project defaults (helps when socket service env is sparse and NODE_ENV is unset)
+  set.add('https://www.puzzlewarz.com');
+  set.add('https://puzzlewarz.com');
 
   try { set.add(new URL(process.env.NEXTAUTH_URL || '').origin); } catch (e) {}
   return Array.from(set).filter(Boolean);
 }
 
+const allowedOriginsList = originsFromEnv();
+const allowedOriginsSet = new Set(allowedOriginsList.map((o) => String(o).replace(/\/$/, '')));
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // non-browser clients / health checks
+  const normalized = String(origin).replace(/\/$/, '');
+  return allowedOriginsSet.has(normalized);
+}
+
 const io = new Server(server, {
-  cors: { origin: originsFromEnv(), methods: ['GET', 'POST'] },
+  cors: {
+    origin: (origin, cb) => {
+      if (isAllowedOrigin(origin)) return cb(null, true);
+      return cb(new Error('origin not allowed'), false);
+    },
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
 });
+
+// Ensure Engine.IO always emits CORS headers for allowed origins (esp. long-polling)
+try {
+  io.engine.on('headers', (headers, req) => {
+    const origin = req && req.headers ? req.headers.origin : undefined;
+    if (isAllowedOrigin(origin)) {
+      if (origin) headers['Access-Control-Allow-Origin'] = String(origin).replace(/\/$/, '');
+      headers['Access-Control-Allow-Credentials'] = 'true';
+      headers['Vary'] = 'Origin';
+    }
+  });
+} catch (e) {
+  // ignore if engine hook is unavailable
+}
+
+console.log('Socket.IO allowed origins:', allowedOriginsList);
 
 // If REDIS_URL is set and redis adapter is available, configure adapter so multiple
 // socket server instances can share rooms and broadcasts.
