@@ -404,6 +404,20 @@ export default function PuzzleDetailPage() {
     };
   }, [puzzle?.puzzleType, puzzle?.sudoku, progress?.sudokuStartedAt, progress?.sudokuExpiresAt, progress?.sudokuLockedAt, progress?.solved]);
 
+  // If Sudoku fails (time limit reached or max attempts), auto-redirect to puzzles page.
+  useEffect(() => {
+    if (puzzle?.puzzleType !== 'sudoku') return;
+    if (!timeLimitExceeded && !maxAttemptsExceeded) return;
+
+    const t = window.setTimeout(() => {
+      router.push('/puzzles');
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(t);
+    };
+  }, [puzzle?.puzzleType, timeLimitExceeded, maxAttemptsExceeded, router]);
+
   // Fetch hints separately to get stats and history
   useEffect(() => {
     if (!puzzleId) return;
@@ -908,12 +922,6 @@ export default function PuzzleDetailPage() {
                 >
                   Go to puzzles now
                 </button>
-                <button
-                  onClick={() => setTimeLimitExceeded(false)}
-                  className="px-3 py-2 rounded bg-transparent border border-white/10 text-sm text-white/90 hover:bg-white/5 transition"
-                >
-                  Stay
-                </button>
               </div>
             </div>
           </div>
@@ -940,12 +948,6 @@ export default function PuzzleDetailPage() {
                   className="px-4 py-2 rounded bg-yellow-300 text-black font-semibold shadow hover:brightness-95 transition"
                 >
                   Go to puzzles now
-                </button>
-                <button
-                  onClick={() => setMaxAttemptsExceeded(false)}
-                  className="px-3 py-2 rounded bg-transparent border border-white/10 text-sm text-white/90 hover:bg-white/5 transition"
-                >
-                  Stay
                 </button>
               </div>
             </div>
