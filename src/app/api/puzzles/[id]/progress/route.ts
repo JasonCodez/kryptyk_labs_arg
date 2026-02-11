@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 // GET /api/puzzles/[id]/progress - Fetch user's progress for puzzle
 export async function GET(
@@ -73,7 +74,18 @@ export async function GET(
 
     return NextResponse.json(progress);
   } catch (error) {
-    console.error("Failed to fetch progress:", error);
+    const requestId = request.headers.get("x-vercel-id") || request.headers.get("x-request-id") || "<no-request-id>";
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      console.error("Failed to fetch progress (Prisma known):", {
+        code: error.code,
+        meta: error.meta,
+        requestId,
+      });
+    } else if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+      console.error("Failed to fetch progress (Prisma unknown):", { message: error.message, requestId });
+    } else {
+      console.error("Failed to fetch progress:", { error, requestId });
+    }
     return NextResponse.json(
       { error: "Failed to fetch progress" },
       { status: 500 }
