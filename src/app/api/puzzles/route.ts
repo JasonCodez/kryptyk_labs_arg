@@ -92,6 +92,8 @@ export async function GET(request: NextRequest) {
             id: true,
             solved: true,
             attempts: true,
+            sudokuLockedAt: true,
+            sudokuLockReason: true,
           },
         },
       },
@@ -195,7 +197,19 @@ export async function GET(request: NextRequest) {
       filtered = puzzles.filter((p: { userProgress: { solved?: boolean; attempts?: number }[] }) => p.userProgress.length === 0 || (!p.userProgress[0].solved && ((p.userProgress[0].attempts ?? 0) === 0)));
     }
 
-    return NextResponse.json(puzzlesWithPoints);
+    // Sudoku lockout state (per-user): failed/locked Sudoku puzzles are no longer accessible.
+    const visiblePuzzles = puzzlesWithPoints.filter((p: any) => {
+      try {
+        if (p?.puzzleType !== 'sudoku') return true;
+        const up = Array.isArray(p?.userProgress) ? p.userProgress[0] : null;
+        if (up?.sudokuLockedAt) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    });
+
+    return NextResponse.json(visiblePuzzles);
   } catch (error) {
     console.error("Failed to fetch puzzles:", error);
     return NextResponse.json(

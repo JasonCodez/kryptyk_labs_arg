@@ -89,27 +89,102 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 }
 
 export function generateEmailVerificationEmail(userName: string, verifyUrl: string): string {
+  let logoUrl = "";
+  try {
+    const u = new URL(verifyUrl);
+    logoUrl = `${u.origin}/images/puzzle_warz_logo.png`;
+  } catch {
+    // ignore
+  }
+
+  const safeName = userName || "there";
+
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <div style="background: linear-gradient(135deg, #020202 0%, #0a0a0a 100%); padding: 40px; text-align: center; border-radius: 8px 8px 0 0;">
-        <h1 style="color: #FDE74C; margin: 0;">✅ Verify Your Email</h1>
+  <!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <meta name="x-apple-disable-message-reformatting" />
+      <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+      <title>Verify your email</title>
+    </head>
+    <body style="margin:0; padding:0; background-color:#020202;">
+      <!-- Preheader (hidden) -->
+      <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; mso-hide:all;">
+        Verify your email to activate your Puzzle Warz account.
       </div>
 
-      <div style="background: #1a1a1a; padding: 40px; border-radius: 0 0 8px 8px; color: #DDDBF1;">
-        <p>Hi <strong>${userName}</strong>,</p>
-        <p>Thanks for signing up for Puzzle Warz. Please verify your email to activate your account.</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#020202;">
+        <tr>
+          <td align="center" style="padding: 28px 16px;">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px; max-width:600px;">
+              <tr>
+                <td style="padding: 0 0 14px 0; text-align:center;">
+                  ${logoUrl ? `<img src="${logoUrl}" width="220" alt="Puzzle Warz" style="display:block; margin:0 auto; border:0; outline:none; text-decoration:none;" />` : ``}
+                </td>
+              </tr>
 
-        <p style="text-align:center; margin: 24px 0;">
-          <a href="${verifyUrl}" style="display: inline-block; background: #3891A6; color: #020202; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">
-            Verify Email →
-          </a>
-        </p>
+              <tr>
+                <td style="background: linear-gradient(135deg, #020202 0%, #0a0a0a 100%); border: 1px solid #3891A6; border-radius: 14px; overflow:hidden;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                    <tr>
+                      <td style="padding: 26px 26px 14px 26px; text-align:left;">
+                        <div style="font-family: Arial, sans-serif; font-size: 20px; font-weight: 700; color: #FDE74C; line-height: 1.25;">
+                          Verify your email
+                        </div>
+                        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #DDDBF1; line-height: 1.6; margin-top: 10px;">
+                          Hi <strong style="color:#DDDBF1;">${safeName}</strong>,<br />
+                          Thanks for signing up for Puzzle Warz. Click the button below to verify your email and activate your account.
+                        </div>
+                      </td>
+                    </tr>
 
-        <p style="color: #AB9F9D; font-size: 12px; margin-top: 24px;">
-          If you didn’t create this account, you can ignore this email.
-        </p>
-      </div>
-    </div>
+                    <tr>
+                      <td align="center" style="padding: 10px 26px 18px 26px;">
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                          <tr>
+                            <td align="center" bgcolor="#3891A6" style="border-radius: 10px;">
+                              <a href="${verifyUrl}" style="display:inline-block; padding: 12px 18px; font-family: Arial, sans-serif; font-size: 14px; font-weight: 700; color:#020202; text-decoration:none; border-radius:10px;">
+                                Verify Email
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td style="padding: 0 26px 22px 26px;">
+                        <div style="font-family: Arial, sans-serif; font-size: 12px; color: #AB9F9D; line-height: 1.6;">
+                          If the button doesn’t work, copy and paste this link into your browser:
+                          <div style="word-break: break-all; margin-top: 8px;">
+                            <a href="${verifyUrl}" style="color:#DDDBF1; text-decoration: underline;">${verifyUrl}</a>
+                          </div>
+                        </div>
+
+                        <div style="font-family: Arial, sans-serif; font-size: 12px; color: #AB9F9D; line-height: 1.6; margin-top: 14px;">
+                          If you didn’t create this account, you can safely ignore this email.
+                        </div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding: 14px 6px 0 6px; text-align:center;">
+                  <div style="font-family: Arial, sans-serif; font-size: 11px; color: #AB9F9D; line-height: 1.6;">
+                    © ${new Date().getFullYear()} Puzzle Warz
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+  </html>
   `;
 }
 
