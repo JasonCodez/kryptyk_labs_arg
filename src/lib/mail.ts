@@ -20,6 +20,11 @@ interface EmailOptions {
 }
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  // Email sending is disabled during development. To re-enable, uncomment the code below.
+  console.info("[mail] Email sending is currently DISABLED. No email sent.");
+  return false;
+
+  /*
   try {
     // Preferred: SendGrid Web API
     if (process.env.SENDGRID_API_KEY) {
@@ -86,6 +91,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     }
     return false;
   }
+  */
 }
 
 export function generateEmailVerificationEmail(userName: string, verifyUrl: string): string {

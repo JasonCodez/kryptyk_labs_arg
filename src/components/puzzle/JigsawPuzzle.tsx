@@ -1087,6 +1087,21 @@ export default function JigsawPuzzleSVGWithTray({
         }
       }
 
+      // After repositioning, clamp all loose pieces to ensure they stay within visible stage bounds
+      // during orientation/resize changes (especially important on mobile).
+      const maxX = Math.max(0, stageWidth - pieceW);
+      const maxY = Math.max(0, stageHeight - pieceH);
+      next = next.map((p) => {
+        if (p.snapped) return p;
+        const clampedX = Math.max(0, Math.min(maxX, p.pos.x));
+        const clampedY = Math.max(0, Math.min(maxY, p.pos.y));
+        if (clampedX !== p.pos.x || clampedY !== p.pos.y) {
+          changed = true;
+          return { ...p, pos: { x: clampedX, y: clampedY } };
+        }
+        return p;
+      });
+
       return changed ? next : prev;
     });
   }, [boardLeft, boardTop, boardWidth, boardHeight, stageWidth, stageHeight, pieceW, pieceH]);
@@ -1658,7 +1673,7 @@ export default function JigsawPuzzleSVGWithTray({
       const dy = p2.y - p1.y;
       const dist = Math.hypot(dx, dy) || 1;
       const scaleFactor = dist / pinchRef.current.startDist;
-        const FS_SCALE_MIN = 0.25;
+        const FS_SCALE_MIN = 0.1;
         const FS_SCALE_MAX = 4;
         const newScale = clamp(pinchRef.current.startScale * scaleFactor, FS_SCALE_MIN, FS_SCALE_MAX);
 
@@ -1703,7 +1718,7 @@ export default function JigsawPuzzleSVGWithTray({
       const rect = stage.getBoundingClientRect();
       const delta = -e.deltaY;
       const factor = Math.exp(delta * 0.001);
-      const FS_SCALE_MIN = 0.25;
+      const FS_SCALE_MIN = 0.1;
       const FS_SCALE_MAX = 4;
       const newScale = clamp(fsScale * factor, FS_SCALE_MIN, FS_SCALE_MAX);
 
@@ -2201,7 +2216,19 @@ export default function JigsawPuzzleSVGWithTray({
 
       if (isFullscreen) {
         setFsScale(next);
-        setFsPan({ x: 0, y: 0 });
+        // Recalculate centered pan when the scale changes during fullscreen
+        const visibleW = availableWidth / (next || 1);
+        const visibleH = availableHeight / (next || 1);
+        const centerX = (visibleW - stageWidth) / 2;
+        const centerY = (visibleH - stageHeight) / 2;
+        const minX = visibleW >= stageWidth ? centerX : (visibleW - stageWidth);
+        const maxX = visibleW >= stageWidth ? centerX : 0;
+        const minY = visibleH >= stageHeight ? centerY : (visibleH - stageHeight);
+        const maxY = visibleH >= stageHeight ? centerY : 0;
+        setFsPan({
+          x: clamp(fsPanRef.current.x, minX, maxX),
+          y: clamp(fsPanRef.current.y, minY, maxY),
+        });
       } else {
         setScale(next);
       }
@@ -2279,7 +2306,7 @@ export default function JigsawPuzzleSVGWithTray({
         margin: isFullscreen ? undefined : '0 auto',
         // Critical for mobile: prevent the (unscaled) stage box from creating
         // horizontal scrolling or appearing to escape its container.
-        overflow: 'hidden',
+        overflow: isFullscreen ? 'hidden' : 'auto',
         contain: isFullscreen ? undefined : 'layout paint',
         maxWidth: '100%',
         ...containerStyle,
