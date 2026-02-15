@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ActionModal from "@/components/ActionModal";
+import PuzzleModal from "@/components/puzzle/PuzzleModal";
 
 // IMPORTANT: keep this at module scope.
 // Defining React.lazy() inside the component recreates a new component type on every render,
@@ -994,6 +995,22 @@ export function EscapeRoomPuzzle({
     }
   };
 
+  const [puzzleModal, setPuzzleModal] = useState<{ open: boolean; type: string; config?: any }>({ open: false, type: "info", config: {} });
+
+  // Example handler to open modal (to be called from hotspot/item logic)
+  const openPuzzleModal = (type: string, config?: any) => {
+    setPuzzleModal({ open: true, type, config });
+  };
+
+  // Handler to update the background image (stub implementation)
+  const updateBackgroundImage = (newUrl: string) => {
+    // Example: update the layout backgroundUrl if needed
+    // This is a stub; implement logic as needed for your app
+    // setData or setSceneState can be used to update the background
+    // For now, just log for demonstration
+    console.log("updateBackgroundImage called with:", newUrl);
+  };
+
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 relative">
       {timeExpiredModalOpen ? (
@@ -1380,6 +1397,16 @@ export function EscapeRoomPuzzle({
           setActionModalImageUrl(null);
           setActionModalDescription(undefined);
         }}
+      />
+      <PuzzleModal
+        open={puzzleModal.open}
+        type={puzzleModal.type}
+        config={{
+          ...puzzleModal.config,
+          updateBackgroundImage, // Pass the handler to the modal for use in interactions
+        }}
+        onClose={() => setPuzzleModal({ ...puzzleModal, open: false })}
+        onComplete={() => setPuzzleModal({ ...puzzleModal, open: false })}
       />
     </div>
   );

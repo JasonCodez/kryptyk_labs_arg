@@ -153,7 +153,7 @@ async function main() {
         title: 'Main Room',
         backgroundUrl: '',
         width: 1200,
-        height: 800,
+        height: 720,
       },
       select: { id: true },
     });

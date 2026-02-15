@@ -73,8 +73,8 @@ async function main() {
           escapeRoomId: escapeRoom.id,
           title: 'Main Room',
           backgroundUrl: '',
-          width: 1024,
-          height: 768,
+          width: 1200,
+          height: 720,
         },
       });
       console.log('Created layout id=', layout.id);

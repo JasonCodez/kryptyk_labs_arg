@@ -488,7 +488,7 @@ async function seedEscapeRoomExample() {
       title: 'Office Layout',
       backgroundUrl: '',
       width: 1200,
-      height: 800,
+      height: 720,
     },
   });
 
