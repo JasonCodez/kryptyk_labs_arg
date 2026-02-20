@@ -519,7 +519,7 @@ export async function POST(req: NextRequest) {
               create: {
                 teamId,
                 escapeRoomId: puzzle.escapeRoom.id,
-                currentStageIndex: 0,
+                currentStageIndex: 1,
                 solvedStages: '[]',
                 inventory: '[]',
                 roles: '{}',
@@ -533,7 +533,7 @@ export async function POST(req: NextRequest) {
                 completedAt: null,
               },
               update: {
-                currentStageIndex: 0,
+                currentStageIndex: 1,
                 solvedStages: '[]',
                 inventory: '[]',
                 roles: '{}',
@@ -722,97 +722,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (action === 'assignRoles') {
-      // allow the lobby leader to assign roles for planning
-      try {
-        const leaderId = lobby.leaderId;
-        if (leaderId && leaderId !== userId) {
-          return NextResponse.json({ error: 'Only the lobby leader can assign roles' }, { status: 403 });
-        }
-
-        const { assignments } = body as any; // { userId: role }
-        if (!assignments || typeof assignments !== 'object') {
-          return NextResponse.json({ error: 'assignments object required' }, { status: 400 });
-        }
-
-        const participants = Array.isArray(lobby.participants) ? lobby.participants : [];
-        if (participants.length !== 4) {
-          return NextResponse.json({ error: 'Exactly 4 participants must be in the lobby before finalizing roles' }, { status: 400 });
-        }
-
-        // Validate: every participant must have a non-empty role.
-        for (const pid of participants) {
-          const role = assignments?.[pid];
-          if (!role || typeof role !== 'string' || role.trim().length === 0) {
-            return NextResponse.json({ error: 'All participants must be assigned a role before finalizing' }, { status: 400 });
-          }
-        }
-
-        // Persist in in-memory lobby state so other clients can poll it
-        lobby.assignments = lobby.assignments || {};
-        // Validate uniqueness: no two users may have the same non-empty role
-        try {
-          const assignedRoles = Object.values(assignments || {}).filter((r: any) => !!r);
-          const uniqueRoles = new Set(assignedRoles);
-          if (uniqueRoles.size !== assignedRoles.length) {
-            return NextResponse.json({ error: 'Each role must be unique; duplicate role assignments detected' }, { status: 400 });
-          }
-        } catch (e) {
-          // ignore validation failure path and let later code handle it
-        }
-
-        for (const uid of Object.keys(assignments)) {
-          const role = assignments[uid];
-          if (typeof role === 'string') lobby.assignments[uid] = role;
-        }
-
-        // Mark assignments as finalized once saved.
-        lobby.assignmentsFinalized = true;
-        lobby.assignmentsFinalizedAt = Date.now();
-
-        // notify connected clients via socket server that roles have been assigned
-        (async () => {
-        try {
-          const { postToSocket } = await import('@/lib/socket-client');
-          await postToSocket('/emit', {
-            room: key,
-            event: 'rolesAssigned',
-            payload: {
-              teamId,
-              puzzleId,
-              assignments: lobby.assignments,
-              assignmentsFinalized: lobby.assignmentsFinalized,
-              assignmentsFinalizedAt: lobby.assignmentsFinalizedAt,
-            },
-          });
-        } catch (e) {
-          // ignore
-        }
-        })();
-
-        // If this puzzle is an escape room and a team progress record exists, persist roles there as well.
-        (async () => {
-          try {
-            const escapeRoom = await prisma.escapeRoomPuzzle.findUnique({ where: { puzzleId }, select: { id: true } });
-            if (!escapeRoom) return;
-            await (prisma as any).teamEscapeProgress.update({
-              where: { teamId_escapeRoomId: { teamId, escapeRoomId: escapeRoom.id } },
-              data: { roles: JSON.stringify(lobby.assignments || {}) },
-            });
-          } catch (e) {
-            // ignore
-          }
-        })();
-
-        return NextResponse.json({ success: true, lobby });
-      } catch (err) {
-        console.error('lobby assignRoles error', err);
-        return NextResponse.json({ error: 'Failed to assign roles' }, { status: 500 });
-      }
-    }
-
     if (action === 'openPuzzle') {
-      // Leader-only: after roles are finalized, broadcast that the puzzle is opening.
+      // Leader-only: once all 4 participants are present, broadcast that the puzzle is opening.
       try {
         const leaderId = lobby.leaderId;
         if (leaderId && leaderId !== userId) {
@@ -822,18 +733,6 @@ export async function POST(req: NextRequest) {
         const participants = Array.isArray(lobby.participants) ? lobby.participants : [];
         if (participants.length !== 4) {
           return NextResponse.json({ error: 'Exactly 4 participants must be in the lobby before opening the puzzle' }, { status: 400 });
-        }
-
-        if (!lobby.assignmentsFinalized) {
-          return NextResponse.json({ error: 'Roles must be finalized before opening the puzzle' }, { status: 400 });
-        }
-
-        // Safety check: ensure every participant has a role.
-        for (const pid of participants) {
-          const role = lobby.assignments?.[pid];
-          if (!role || typeof role !== 'string' || role.trim().length === 0) {
-            return NextResponse.json({ error: 'All participants must have finalized roles before opening the puzzle' }, { status: 400 });
-          }
         }
 
         lobby.started = true;

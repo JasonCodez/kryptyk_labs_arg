@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
               interactions: (zone as any).interactions,
               linkedPuzzleId: zone.linkedPuzzleId,
               eventId: zone.eventId,
+              pickupAnimationPreset: (zone as any).pickupAnimationPreset,
             }),
           },
         });

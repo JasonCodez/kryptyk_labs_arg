@@ -81,6 +81,7 @@ export async function GET(
             linkedPuzzleId: typeof meta.linkedPuzzleId === 'string' ? meta.linkedPuzzleId : undefined,
             eventId: typeof meta.eventId === 'string' ? meta.eventId : undefined,
             collectItemId: zone.targetId,
+            pickupAnimationPreset: typeof meta.pickupAnimationPreset === 'string' ? meta.pickupAnimationPreset : 'cinematic',
           };
         }),
       }));
@@ -198,6 +199,7 @@ export async function PUT(
                 interactions: zone?.interactions,
                 linkedPuzzleId: zone?.linkedPuzzleId,
                 eventId: zone?.eventId,
+                pickupAnimationPreset: zone?.pickupAnimationPreset,
                 requiredItemId: zone?.requiredItemId,
                 consumeItemOnUse: zone?.consumeItemOnUse,
                 disabledByDefault: zone?.disabledByDefault,

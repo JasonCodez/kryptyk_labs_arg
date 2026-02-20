@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { jest } from '@jest/globals';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const RUN = process.env.RUN_INTEGRATION_TESTS === '1';
 

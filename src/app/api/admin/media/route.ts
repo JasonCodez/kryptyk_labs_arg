@@ -6,6 +6,46 @@ import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import { resolveUploadsPath } from "@/lib/uploadStorage";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+
+// ---------------------------------------------------------------------------
+// Cloudflare R2 helpers (S3-compatible)
+// ---------------------------------------------------------------------------
+function getR2Client(): S3Client | null {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  if (!accountId || !accessKeyId || !secretAccessKey) return null;
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
+
+async function uploadToR2(buffer: ArrayBuffer, key: string, mimeType: string): Promise<string> {
+  const client = getR2Client();
+  const bucket = process.env.R2_BUCKET_NAME;
+  const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, '');
+  if (!client || !bucket || !publicUrl) throw new Error('R2 not configured');
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: Buffer.from(buffer),
+    ContentType: mimeType,
+  }));
+  return `${publicUrl}/${key}`;
+}
+
+async function deleteFromR2(url: string): Promise<void> {
+  const client = getR2Client();
+  const bucket = process.env.R2_BUCKET_NAME;
+  const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, '');
+  if (!client || !bucket || !publicUrl) return;
+  if (!url.startsWith(publicUrl)) return;
+  const key = url.slice(publicUrl.length + 1);
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
 
 // Max file sizes (in bytes)
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB for video
@@ -126,35 +166,38 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Allow caller to request alternate storage locations for specific use-cases
-      // (e.g. designer background images). Only allow whitelisted targets.
-      const dest = (formData.get('dest') as string) || '';
-      const ALLOWED_DESTS: Record<string, { dir: string; urlPrefix: string }> = {
-        'uploads-media': { dir: resolveUploadsPath('media'), urlPrefix: '/uploads/media' },
-        // Store backgrounds under the uploads root (served via /content/images/* route handler).
-        'content-images': { dir: resolveUploadsPath('content', 'images'), urlPrefix: '/content/images' },
-      };
-
-      const chosen = ALLOWED_DESTS[dest || 'uploads-media'] || ALLOWED_DESTS['uploads-media'];
-
-      // Create upload directory if it doesn't exist
-      const uploadDir = chosen.dir;
-      if (!existsSync(uploadDir)) {
-        await mkdir(uploadDir, { recursive: true });
-      }
-
-      // Generate unique filename and save to disk
+      // Generate a unique filename
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 8);
-      const ext = file.name.substring(file.name.lastIndexOf('.') ) || '.bin';
+      const ext = file.name.substring(file.name.lastIndexOf('.')) || '.bin';
       const uniqueFileName = `${puzzleId || 'temp'}-${timestamp}-${random}${ext}`;
-      const filePath = join(uploadDir, uniqueFileName);
-
-      await writeFile(filePath, Buffer.from(buffer));
 
       fileName = file.name;
       fileSize = buffer.byteLength;
-      mediaUrl = `${chosen.urlPrefix}/${uniqueFileName}`;
+
+      // Use R2 if configured, otherwise fall back to local disk
+      if (getR2Client() && process.env.R2_BUCKET_NAME && process.env.R2_PUBLIC_URL) {
+        const r2Key = `media/${uniqueFileName}`;
+        console.log(`[MEDIA UPLOAD] Uploading to R2: ${r2Key}`);
+        mediaUrl = await uploadToR2(buffer, r2Key, mimeType);
+        console.log(`[MEDIA UPLOAD] R2 upload complete: ${mediaUrl}`);
+      } else {
+        // Local disk fallback
+        const dest = (formData.get('dest') as string) || '';
+        const ALLOWED_DESTS: Record<string, { dir: string; urlPrefix: string }> = {
+          'uploads-media': { dir: resolveUploadsPath('media'), urlPrefix: '/uploads/media' },
+          'content-images': { dir: resolveUploadsPath('content', 'images'), urlPrefix: '/content/images' },
+        };
+        const chosen = ALLOWED_DESTS[dest || 'uploads-media'] || ALLOWED_DESTS['uploads-media'];
+        const uploadDir = chosen.dir;
+        if (!existsSync(uploadDir)) {
+          await mkdir(uploadDir, { recursive: true });
+        }
+        const filePath = join(uploadDir, uniqueFileName);
+        await writeFile(filePath, Buffer.from(buffer));
+        mediaUrl = `${chosen.urlPrefix}/${uniqueFileName}`;
+        console.log(`[MEDIA UPLOAD] Saved to local disk: ${mediaUrl}`);
+      }
     } else if (externalUrl) {
       // External URL path — fetch the remote resource and validate
       try {
@@ -342,17 +385,23 @@ export async function DELETE(request: NextRequest) {
       where: { id: mediaId },
     });
 
-    // Delete file from filesystem
+    // Delete file from R2 or local filesystem
     try {
       if (media && media.url) {
-        const fileName = media.url.split("/").pop();
-        const filePath = resolveUploadsPath('media', fileName || "");
-        const fs = await import("fs").then((m: any) => m.promises);
-        await fs.unlink(filePath).catch(() => {
-          // File might not exist, that's okay
-        });
+        const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, '');
+        if (publicUrl && media.url.startsWith(publicUrl)) {
+          await deleteFromR2(media.url);
+          console.log(`[MEDIA DELETE] Deleted from R2: ${media.url}`);
+        } else {
+          const fileName = media.url.split("/").pop();
+          const filePath = resolveUploadsPath('media', fileName || "");
+          const fs = await import("fs").then((m: any) => m.promises);
+          await fs.unlink(filePath).catch(() => {
+            // File might not exist, that's okay
+          });
+        }
       } else {
-        console.warn('Media has no URL, skipping filesystem delete');
+        console.warn('Media has no URL, skipping storage delete');
       }
     } catch (fileError) {
       console.error("Error deleting file:", fileError);

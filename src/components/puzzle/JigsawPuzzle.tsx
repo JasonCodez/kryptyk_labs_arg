@@ -198,103 +198,95 @@ function piecePath(w: number, h: number, edges: EdgeMap, opts: PiecePathOptions 
     if (dir === 0) return [`L ${L} 0`];
 
     const sign = dir; // +1 tab, -1 slot
+    const sizeRef = Math.min(w, h);
 
-    const featureSpan = clamp01(P.featureSpan) * L;
-    const neckSpan = clamp01(P.neckSpan) * L;
-    const headSpan = clamp01(P.headSpan) * L;
+    const featureSpan = Math.min(
+      Math.max(0.42, Math.min(0.56, clamp01(P.featureSpan))) * sizeRef,
+      L * 0.72
+    );
+    const neckSpan = Math.min(
+      Math.max(0.12, Math.min(0.21, clamp01(P.neckSpan))) * sizeRef,
+      Math.min(featureSpan * 0.62, L * 0.42)
+    );
+    const rawHeadSpan = Math.min(
+      Math.max(0.22, Math.min(0.32, clamp01(P.headSpan))) * sizeRef,
+      Math.min(featureSpan * 0.84, L * 0.58)
+    );
+    const headSpan = Math.max(rawHeadSpan, neckSpan * 1.34);
 
     const mid = L / 2;
     const halfFeature = featureSpan / 2;
     const halfNeck = neckSpan / 2;
     const halfHead = headSpan / 2;
 
-    const a = mid - halfFeature; // feature start
-    const b = mid - halfNeck;    // neck start
-    const c = mid + halfNeck;    // neck end
-    const d = mid + halfFeature; // feature end
+    const a = mid - halfFeature;
+    const b = mid - halfNeck;
+    const c = mid + halfNeck;
+    const d = mid + halfFeature;
 
-    const sh = clamp01(P.shoulderSpan) * L;
-    const sh1End = Math.min(b, a + sh);
-    const sh2Start = Math.max(c, d - sh);
-
-    const tabDepth = P.tabDepth * L * sign;
-    const neckPinch = P.neckPinch * L * -Math.sign(sign);
-    const shoulderDepth = P.shoulderDepth * L * -1; // inward scoop
+    const tabDepth = sign * Math.min(P.tabDepth * sizeRef, sizeRef * 0.3, L * 0.28);
+    const neckDepth = Math.max(0.0012 * sizeRef, P.neckPinch * sizeRef);
+    const neckY = sign * neckDepth;
+    const shoulderY = sign * Math.max(0, P.shoulderDepth * sizeRef) * (0.14 + 0.1 * P.smooth);
 
     const pt = (x: number, y: number) => ({ x, y });
 
-    // Head points (width controlled by headSpan)
-    const headL = pt(mid - halfHead, tabDepth * 0.92);
-    const headR = pt(mid + halfHead, tabDepth * 0.92);
+    const headRadius = halfHead;
+    const headY = tabDepth - sign * headRadius;
     const apex = pt(mid, tabDepth);
 
-    const capL_c1 = pt(mid - halfHead, tabDepth * 0.92 + tabDepth * 0.08);
-    const capL_c2 = pt(mid - halfHead * P.kappa, tabDepth);
-    const capR_c1 = pt(mid + halfHead * P.kappa, tabDepth);
-    const capR_c2 = pt(mid + halfHead, tabDepth * 0.92 + tabDepth * 0.08);
+    const shoulderSpan = Math.min(
+      Math.max(0.08, Math.min(0.16, clamp01(P.shoulderSpan))) * sizeRef,
+      L * 0.28
+    );
 
     const cmds: string[] = [];
-
     cmds.push(`L ${a} 0`);
 
-    // shoulder scoop in to sh1End (back to baseline)
     cmds.push(
       Ccmd(
-        pt(a + sh * 0.35, shoulderDepth * P.smooth),
-        pt(sh1End - sh * 0.35, shoulderDepth * P.smooth),
-        pt(sh1End, 0)
+        pt(a + shoulderSpan * 0.9, shoulderY),
+        pt(b - shoulderSpan * 0.08, neckY * 0.96),
+        pt(b, neckY)
       )
     );
 
-    cmds.push(`L ${b} 0`);
-
-    // pinch into neckPinch
     cmds.push(
       Ccmd(
-        pt(b + neckSpan * 0.08, neckPinch * P.smooth),
-        pt(b + neckSpan * 0.18, neckPinch),
-        pt(b + neckSpan * 0.26, neckPinch)
+        pt(b + neckSpan * 0.16, neckY),
+        pt(mid - halfHead * 1.0, headY + (tabDepth - headY) * 0.38),
+        pt(mid - halfHead * 0.7, headY + (tabDepth - headY) * 0.82)
       )
     );
 
-    // neck pinch -> headL
     cmds.push(
       Ccmd(
-        pt(b + neckSpan * 0.34, neckPinch),
-        pt(mid - halfHead - neckSpan * 0.10, tabDepth * 0.55),
-        headL
+        pt(mid - halfHead * 0.44, tabDepth - sign * headRadius * 0.05),
+        pt(mid - halfHead * 0.16, tabDepth - sign * headRadius * 0.02),
+        apex
       )
     );
 
-    // headL -> apex
-    cmds.push(Ccmd(capL_c1, capL_c2, apex));
-
-    // apex -> headR
-    cmds.push(Ccmd(capR_c1, capR_c2, headR));
-
-    // headR -> neck pinch near c
     cmds.push(
       Ccmd(
-        pt(mid + halfHead + neckSpan * 0.10, tabDepth * 0.55),
-        pt(c - neckSpan * 0.34, neckPinch),
-        pt(c - neckSpan * 0.26, neckPinch)
+        pt(mid + halfHead * 0.16, tabDepth - sign * headRadius * 0.02),
+        pt(mid + halfHead * 0.44, tabDepth - sign * headRadius * 0.05),
+        pt(mid + halfHead * 0.7, headY + (tabDepth - headY) * 0.82)
       )
     );
 
-    // neck pinch -> baseline at c
     cmds.push(
       Ccmd(
-        pt(c - neckSpan * 0.18, neckPinch),
-        pt(c - neckSpan * 0.08, neckPinch * P.smooth),
-        pt(c, 0)
+        pt(mid + halfHead * 1.0, headY + (tabDepth - headY) * 0.38),
+        pt(c - neckSpan * 0.16, neckY),
+        pt(c, neckY)
       )
     );
 
-    // shoulder scoop out to d
     cmds.push(
       Ccmd(
-        pt(sh2Start + sh * 0.35, shoulderDepth * P.smooth),
-        pt(d - sh * 0.35, shoulderDepth * P.smooth),
+        pt(c + shoulderSpan * 0.08, neckY * 0.96),
+        pt(d - shoulderSpan * 0.9, shoulderY),
         pt(d, 0)
       )
     );
@@ -430,9 +422,23 @@ function JigsawPiece({
   imageOk = null,
 }: JigsawPieceProps & { snapped?: boolean; tabRadius?: number; tabDepth?: number; neckWidth?: number; neckDepth?: number; shoulderLen?: number; shoulderDepth?: number; cornerInset?: number; smooth?: number; isDragging?: boolean; dragDx?: number; dragDy?: number; snapDx?: number; snapDy?: number; snapAnimating?: boolean; imageOk?: boolean | null }) {
   const clipId = `clip-${id}`;
+  const lightWashId = `piece-light-${id}`;
+  const shadeWashId = `piece-shade-${id}`;
+  const minSide = Math.min(pieceW, pieceH);
   const d = useMemo(
-    () => piecePath(pieceW, pieceH, edges),
-    [pieceW, pieceH, edges]
+    () => piecePath(pieceW, pieceH, edges, {
+      // Traditional cardboard profile: round head, slimmer neck, modest shoulders.
+      featureSpan: Math.max(0.44, Math.min(0.54, 0.46 + (shoulderLen ?? 0.22) * 0.06)),
+      headSpan: Math.max(0.255, Math.min(0.33, (tabRadius ?? 0.18) * 1.5)),
+      neckSpan: Math.max(0.14, Math.min(0.19, (neckWidth ?? 0.22) * 0.74)),
+      tabDepth: Math.max(0.17, Math.min(0.225, (tabDepth ?? 0.22) * 0.95)),
+      neckPinch: Math.max(0.0008, Math.min(0.004, (neckDepth ?? 0.1) * 0.03)),
+      shoulderSpan: Math.max(0.09, Math.min(0.14, (shoulderLen ?? 0.22) * 0.56)),
+      shoulderDepth: Math.max(0.0006, Math.min(0.0025, (shoulderDepth ?? 0.08) * 0.02)),
+      cornerInset: Math.max(0, Math.min(minSide * 0.012, (cornerInset ?? 0.05) * minSide * 0.06)),
+      smooth: Math.max(0.72, Math.min(0.94, smooth ?? 0.55)),
+    }),
+    [pieceW, pieceH, edges, tabRadius, tabDepth, neckWidth, neckDepth, shoulderLen, shoulderDepth, cornerInset, smooth, minSide]
   );
 
   // Subtle "settle" on drop: quick squash then return.
@@ -533,7 +539,23 @@ function JigsawPiece({
           <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
             <path d={d} />
           </clipPath>
+          <linearGradient id={lightWashId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.34)" />
+            <stop offset="36%" stopColor="rgba(255,255,255,0.1)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+          </linearGradient>
+          <radialGradient id={shadeWashId} cx="72%" cy="78%" r="78%">
+            <stop offset="35%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.18)" />
+          </radialGradient>
         </defs>
+
+        <path
+          d={d}
+          fill="rgba(0,0,0,0.1)"
+          transform={isDragging ? "translate(1.35 2.05)" : "translate(0.7 1.05)"}
+          style={{ pointerEvents: "none" }}
+        />
 
         {imageOk && (
           <image
@@ -548,11 +570,23 @@ function JigsawPiece({
           />
         )}
 
+        <g clipPath={`url(#${clipId})`} style={{ pointerEvents: "none" }}>
+          <rect x={0} y={0} width={pieceW} height={pieceH} fill={`url(#${lightWashId})`} opacity={isDragging ? 0.2 : 0.14} />
+          <rect x={0} y={0} width={pieceW} height={pieceH} fill={`url(#${shadeWashId})`} opacity={isDragging ? 0.2 : 0.14} />
+        </g>
+
         <path
           d={d}
           fill={imageOk === false ? "rgba(255,255,255,0.06)" : "rgba(0,128,255,0.25)"}
-          stroke={highlight ? "rgba(0,255,255,0.55)" : "rgba(255,255,255,0.18)"}
-          strokeWidth={1.4}
+          stroke={highlight ? "rgba(0,255,255,0.52)" : "rgba(255,255,255,0.2)"}
+          strokeWidth={1.25}
+          style={{ pointerEvents: "none" }}
+        />
+        <path
+          d={d}
+          fill="none"
+          stroke="rgba(255,255,255,0.16)"
+          strokeWidth={0.8}
           style={{ pointerEvents: "none" }}
         />
         {/* Gold border animation */}
@@ -605,6 +639,14 @@ const MemoJigsawPiece = React.memo(
       prev.snapDx === next.snapDx &&
       prev.snapDy === next.snapDy &&
       prev.snapAnimating === next.snapAnimating &&
+      prev.tabRadius === next.tabRadius &&
+      prev.tabDepth === next.tabDepth &&
+      prev.neckWidth === next.neckWidth &&
+      prev.neckDepth === next.neckDepth &&
+      prev.shoulderLen === next.shoulderLen &&
+      prev.shoulderDepth === next.shoulderDepth &&
+      prev.cornerInset === next.cornerInset &&
+      prev.smooth === next.smooth &&
       prevEdges.top === nextEdges.top &&
       prevEdges.right === nextEdges.right &&
       prevEdges.bottom === nextEdges.bottom &&
@@ -2427,6 +2469,14 @@ export default function JigsawPuzzleSVGWithTray({
             imageOk={imageOk}
             highlight={!!activeGroup && p.groupId === activeGroup}
             snapped={p.snapped || solved}
+            tabRadius={tabRadius}
+            tabDepth={tabDepth}
+            neckWidth={neckWidth}
+            neckDepth={neckDepth}
+            shoulderLen={shoulderLen}
+            shoulderDepth={shoulderDepth}
+            cornerInset={cornerInset}
+            smooth={smooth}
             isDragging={!!activeGroup && p.groupId === activeGroup}
             dragDx={!!activeGroup && p.groupId === activeGroup ? dragDelta.dx : 0}
             dragDy={!!activeGroup && p.groupId === activeGroup ? dragDelta.dy : 0}

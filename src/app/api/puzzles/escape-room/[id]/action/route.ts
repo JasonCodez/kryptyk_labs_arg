@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { createNotification } from "@/lib/notification-service";
 import { requireEscapeRoomTeamContext } from "@/lib/escapeRoomTeamAuth";
+import { applyEscapeStageProgress } from "@/lib/escape-room-progression";
+import {
+  isContributionGateSatisfied,
+  parseContributionGate,
+  recordStageContribution,
+  summarizeStageContributions,
+} from "@/lib/escape-room-contribution";
 
 function safeJsonParse<T>(raw: unknown, fallback: T): T {
   if (typeof raw !== "string") return fallback;
@@ -21,15 +28,70 @@ type SceneState = {
   shownItemIds?: string[];
   disabledHotspotIds?: string[];
   enabledHotspotIds?: string[];
+  itemStates?: Record<string, string>;
+  itemImageOverrides?: Record<string, string>;
+  itemAlphaOverrides?: Record<string, number>;
+  itemScaleOverrides?: Record<string, number>;
+  itemRotationOverrides?: Record<string, number>;
+  itemTintOverrides?: Record<string, string>;
+  stageContributions?: Record<string, Record<string, number>>;
 };
 
 function normalizeSceneState(raw: unknown): Required<SceneState> {
   const base = (raw && typeof raw === 'object') ? (raw as SceneState) : {};
+  const itemStates = Object.fromEntries(
+    Object.entries((base.itemStates && typeof base.itemStates === 'object') ? base.itemStates : {}).filter(
+      ([itemId, state]) => typeof itemId === 'string' && typeof state === 'string' && itemId.trim().length > 0 && state.trim().length > 0
+    )
+  ) as Record<string, string>;
+
+  const itemImageOverrides = Object.fromEntries(
+    Object.entries((base.itemImageOverrides && typeof base.itemImageOverrides === 'object') ? base.itemImageOverrides : {}).filter(
+      ([itemId, imageUrl]) => typeof itemId === 'string' && typeof imageUrl === 'string' && itemId.trim().length > 0 && imageUrl.trim().length > 0
+    )
+  ) as Record<string, string>;
+
+  const itemAlphaOverrides = Object.fromEntries(
+    Object.entries((base.itemAlphaOverrides && typeof base.itemAlphaOverrides === 'object') ? base.itemAlphaOverrides : {}).filter(([itemId, value]) => {
+      const n = Number(value);
+      return typeof itemId === 'string' && itemId.trim().length > 0 && Number.isFinite(n);
+    }).map(([itemId, value]) => [itemId, Math.max(0, Math.min(1, Number(value)))])
+  ) as Record<string, number>;
+
+  const itemScaleOverrides = Object.fromEntries(
+    Object.entries((base.itemScaleOverrides && typeof base.itemScaleOverrides === 'object') ? base.itemScaleOverrides : {}).filter(([itemId, value]) => {
+      const n = Number(value);
+      return typeof itemId === 'string' && itemId.trim().length > 0 && Number.isFinite(n) && n > 0;
+    }).map(([itemId, value]) => [itemId, Math.max(0.1, Math.min(5, Number(value)))])
+  ) as Record<string, number>;
+
+  const itemRotationOverrides = Object.fromEntries(
+    Object.entries((base.itemRotationOverrides && typeof base.itemRotationOverrides === 'object') ? base.itemRotationOverrides : {}).filter(([itemId, value]) => {
+      const n = Number(value);
+      return typeof itemId === 'string' && itemId.trim().length > 0 && Number.isFinite(n);
+    }).map(([itemId, value]) => [itemId, Number(value)])
+  ) as Record<string, number>;
+
+  const itemTintOverrides = Object.fromEntries(
+    Object.entries((base.itemTintOverrides && typeof base.itemTintOverrides === 'object') ? base.itemTintOverrides : {}).filter(
+      ([itemId, value]) => typeof itemId === 'string' && itemId.trim().length > 0 && typeof value === 'string' && value.trim().length > 0
+    )
+  ) as Record<string, string>;
+
   return {
     hiddenItemIds: Array.isArray(base.hiddenItemIds) ? base.hiddenItemIds.filter((x) => typeof x === 'string') : [],
     shownItemIds: Array.isArray(base.shownItemIds) ? base.shownItemIds.filter((x) => typeof x === 'string') : [],
     disabledHotspotIds: Array.isArray(base.disabledHotspotIds) ? base.disabledHotspotIds.filter((x) => typeof x === 'string') : [],
     enabledHotspotIds: Array.isArray(base.enabledHotspotIds) ? base.enabledHotspotIds.filter((x) => typeof x === 'string') : [],
+    itemStates,
+    itemImageOverrides,
+    itemAlphaOverrides,
+    itemScaleOverrides,
+    itemRotationOverrides,
+    itemTintOverrides,
+    stageContributions: (base.stageContributions && typeof base.stageContributions === 'object')
+      ? (base.stageContributions as Record<string, Record<string, number>>)
+      : {},
   };
 }
 
@@ -119,6 +181,9 @@ export async function POST(
     const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { id: true, name: true, email: true } });
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
+    const teamMemberRows = await prisma.teamMember.findMany({ where: { teamId: ctx.teamId }, select: { userId: true } });
+    const teamUserIds = teamMemberRows.map((m) => m.userId).filter(Boolean);
+
     // Resolve escapeRoom for this puzzle
     const escapeRoom = await prisma.escapeRoomPuzzle.findUnique({ where: { puzzleId } });
     if (!escapeRoom) return NextResponse.json({ error: 'Escape room not found' }, { status: 404 });
@@ -162,11 +227,41 @@ export async function POST(
       return NextResponse.json({ error: 'This escape room run has already failed and cannot be retried.' }, { status: 409 });
     }
 
+    if (action === 'pickupPreview') {
+      if (!hotspot.targetId) return NextResponse.json({ error: 'No item to pick up' }, { status: 400 });
+
+      const item = await prisma.itemDefinition.findUnique({ where: { id: hotspot.targetId } });
+      if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+      if (item.escapeRoomId !== escapeRoom.id) {
+        return NextResponse.json({ error: 'Item not part of this escape room' }, { status: 403 });
+      }
+
+      const pickupMeta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+      const pickupSfx = extractSfx(pickupMeta, 'pickup');
+      const presetRaw = typeof pickupMeta?.pickupAnimationPreset === 'string' ? pickupMeta.pickupAnimationPreset : 'cinematic';
+      const pickupAnimationPreset = ['cinematic', 'quickSpin', 'floatIn', 'powerDrop'].includes(presetRaw)
+        ? presetRaw
+        : 'cinematic';
+
+      return NextResponse.json({
+        success: true,
+        preview: {
+          id: item.id,
+          key: item.key,
+          name: item.name,
+          imageUrl: item.imageUrl ?? null,
+          pickupAnimationPreset,
+        },
+        ...(pickupSfx ? { sfx: pickupSfx } : {}),
+      });
+    }
+
     if (action === 'pickup') {
       // If hotspot.targetId points to an ItemDefinition id, add item key to player state
       if (!hotspot.targetId) return NextResponse.json({ error: 'No item to pick up' }, { status: 400 });
 
       const pickupMeta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+
       const pickupSfx = extractSfx(pickupMeta, 'pickup');
 
       const item = await prisma.itemDefinition.findUnique({ where: { id: hotspot.targetId } });
@@ -185,9 +280,20 @@ export async function POST(
 
       if (!inventory.includes(item.key)) inventory.push(item.key);
 
+      const pickupStageIndex = Math.max(1, Number(progress.currentStageIndex || 1));
+      const pickupSceneStateBase = normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {}));
+      const pickupSceneState = recordStageContribution({
+        sceneStateRaw: pickupSceneStateBase,
+        stageIndex: pickupStageIndex,
+        userId: ctx.userId,
+      });
+
       await (prisma as any).teamEscapeProgress.update({
         where: { teamId_escapeRoomId: { teamId: ctx.teamId, escapeRoomId: escapeRoom.id } },
-        data: { inventory: JSON.stringify(inventory) },
+        data: {
+          inventory: JSON.stringify(inventory),
+          sceneState: JSON.stringify(pickupSceneState),
+        },
       });
 
       // Provide item metadata for inventory rendering.
@@ -199,6 +305,7 @@ export async function POST(
         puzzleId,
         inventory,
         inventoryItems,
+        sceneState: pickupSceneState,
       });
 
       // Real-time team activity feed (non-blocking)
@@ -316,6 +423,7 @@ export async function POST(
       }
 
       const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+
       const useSfx = extractSfx(meta, 'use');
       const lootSfx = extractSfx(meta, 'loot');
       const requiredItemId = typeof meta.requiredItemId === 'string' ? meta.requiredItemId : null;
@@ -360,12 +468,57 @@ export async function POST(
         const shownItemIds = new Set(baseSceneState.shownItemIds);
         const disabledHotspotIds = new Set(baseSceneState.disabledHotspotIds);
         const enabledHotspotIds = new Set(baseSceneState.enabledHotspotIds);
+        const itemStates = { ...(baseSceneState.itemStates || {}) };
+        const itemImageOverrides = { ...(baseSceneState.itemImageOverrides || {}) };
+        const itemAlphaOverrides = { ...(baseSceneState.itemAlphaOverrides || {}) };
+        const itemScaleOverrides = { ...(baseSceneState.itemScaleOverrides || {}) };
+        const itemRotationOverrides = { ...(baseSceneState.itemRotationOverrides || {}) };
+        const itemTintOverrides = { ...(baseSceneState.itemTintOverrides || {}) };
 
         const hideItemIds: string[] = Array.isArray(useEffect.hideItemIds) ? useEffect.hideItemIds.filter((x: any) => typeof x === 'string') : [];
         const showItemIds: string[] = Array.isArray(useEffect.showItemIds) ? useEffect.showItemIds.filter((x: any) => typeof x === 'string') : [];
         const disableHotspotIds: string[] = Array.isArray(useEffect.disableHotspotIds) ? useEffect.disableHotspotIds.filter((x: any) => typeof x === 'string') : [];
         const enableHotspotIds: string[] = Array.isArray(useEffect.enableHotspotIds) ? useEffect.enableHotspotIds.filter((x: any) => typeof x === 'string') : [];
         const grantItemKeys: string[] = Array.isArray(useEffect.grantItemKeys) ? useEffect.grantItemKeys.filter((x: any) => typeof x === 'string') : [];
+        const setItemStateById: Record<string, string> = Object.fromEntries(
+          Object.entries((useEffect?.setItemStateById && typeof useEffect.setItemStateById === 'object') ? useEffect.setItemStateById : {}).filter(
+            ([itemId, state]) => typeof itemId === 'string' && typeof state === 'string' && itemId.trim().length > 0 && state.trim().length > 0
+          )
+        ) as Record<string, string>;
+        const setItemImageById: Record<string, string> = Object.fromEntries(
+          Object.entries((useEffect?.setItemImageById && typeof useEffect.setItemImageById === 'object') ? useEffect.setItemImageById : {}).filter(
+            ([itemId, imageUrl]) => typeof itemId === 'string' && typeof imageUrl === 'string' && itemId.trim().length > 0 && imageUrl.trim().length > 0
+          )
+        ) as Record<string, string>;
+        const setItemAlphaById: Record<string, number> = Object.fromEntries(
+          Object.entries((useEffect?.setItemAlphaById && typeof useEffect.setItemAlphaById === 'object') ? useEffect.setItemAlphaById : {})
+            .filter(([itemId, alpha]) => {
+              const n = Number(alpha);
+              return typeof itemId === 'string' && itemId.trim().length > 0 && Number.isFinite(n);
+            })
+            .map(([itemId, alpha]) => [itemId, Math.max(0, Math.min(1, Number(alpha)))])
+        ) as Record<string, number>;
+        const setItemScaleById: Record<string, number> = Object.fromEntries(
+          Object.entries((useEffect?.setItemScaleById && typeof useEffect.setItemScaleById === 'object') ? useEffect.setItemScaleById : {})
+            .filter(([itemId, scale]) => {
+              const n = Number(scale);
+              return typeof itemId === 'string' && itemId.trim().length > 0 && Number.isFinite(n) && n > 0;
+            })
+            .map(([itemId, scale]) => [itemId, Math.max(0.1, Math.min(5, Number(scale)))])
+        ) as Record<string, number>;
+        const setItemRotationById: Record<string, number> = Object.fromEntries(
+          Object.entries((useEffect?.setItemRotationById && typeof useEffect.setItemRotationById === 'object') ? useEffect.setItemRotationById : {})
+            .filter(([itemId, rotation]) => {
+              const n = Number(rotation);
+              return typeof itemId === 'string' && itemId.trim().length > 0 && Number.isFinite(n);
+            })
+            .map(([itemId, rotation]) => [itemId, Number(rotation)])
+        ) as Record<string, number>;
+        const setItemTintById: Record<string, string> = Object.fromEntries(
+          Object.entries((useEffect?.setItemTintById && typeof useEffect.setItemTintById === 'object') ? useEffect.setItemTintById : {}).filter(
+            ([itemId, tint]) => typeof itemId === 'string' && typeof tint === 'string' && itemId.trim().length > 0 && tint.trim().length > 0
+          )
+        ) as Record<string, string>;
 
         const consumeItemKeys: string[] = Array.isArray(useEffect.consumeItemKeys)
           ? useEffect.consumeItemKeys.filter((x: any) => typeof x === 'string')
@@ -437,6 +590,24 @@ export async function POST(
           enabledHotspotIds.add(id);
           disabledHotspotIds.delete(id);
         }
+        for (const [itemId, state] of Object.entries(setItemStateById)) {
+          itemStates[itemId] = state;
+        }
+        for (const [itemId, imageUrl] of Object.entries(setItemImageById)) {
+          itemImageOverrides[itemId] = imageUrl;
+        }
+        for (const [itemId, alpha] of Object.entries(setItemAlphaById)) {
+          itemAlphaOverrides[itemId] = alpha;
+        }
+        for (const [itemId, scale] of Object.entries(setItemScaleById)) {
+          itemScaleOverrides[itemId] = scale;
+        }
+        for (const [itemId, rotation] of Object.entries(setItemRotationById)) {
+          itemRotationOverrides[itemId] = rotation;
+        }
+        for (const [itemId, tint] of Object.entries(setItemTintById)) {
+          itemTintOverrides[itemId] = tint;
+        }
 
         const consumeItem = meta.consumeItemOnUse !== false;
         const nextInventorySet = new Set<string>(inventory);
@@ -489,11 +660,36 @@ export async function POST(
         }
 
         const nextInventory = Array.from(nextInventorySet);
+        const sceneStateWithContribution = recordStageContribution({
+          sceneStateRaw: {
+            hiddenItemIds: Array.from(hiddenItemIds),
+            shownItemIds: Array.from(shownItemIds),
+            disabledHotspotIds: Array.from(disabledHotspotIds),
+            enabledHotspotIds: Array.from(enabledHotspotIds),
+            itemStates,
+            itemImageOverrides,
+            itemAlphaOverrides,
+            itemScaleOverrides,
+            itemRotationOverrides,
+            itemTintOverrides,
+            stageContributions: baseSceneState.stageContributions || {},
+          },
+          stageIndex: Math.max(1, Number(progress.currentStageIndex || 1)),
+          userId: ctx.userId,
+        });
+
         const nextSceneState: Required<SceneState> = {
           hiddenItemIds: Array.from(hiddenItemIds),
           shownItemIds: Array.from(shownItemIds),
           disabledHotspotIds: Array.from(disabledHotspotIds),
           enabledHotspotIds: Array.from(enabledHotspotIds),
+          itemStates,
+          itemImageOverrides,
+          itemAlphaOverrides,
+          itemScaleOverrides,
+          itemRotationOverrides,
+          itemTintOverrides,
+          stageContributions: (sceneStateWithContribution as any).stageContributions || {},
         };
 
         const updated = await (prisma as any).teamEscapeProgress.update({
@@ -535,6 +731,12 @@ export async function POST(
                 showItemIds,
                 disableHotspotIds,
                 enableHotspotIds,
+                setItemStateById,
+                setItemImageById,
+                setItemAlphaById,
+                setItemScaleById,
+                setItemRotationById,
+                setItemTintById,
                 grantItemKeys,
                 consumeItemKeys,
                 consumeRequiredItems,
@@ -606,24 +808,52 @@ export async function POST(
       }
 
       const cur = Math.max(1, Number(progress.currentStageIndex || 1));
+      const sceneStateForUseAdvance = recordStageContribution({
+        sceneStateRaw: normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {})),
+        stageIndex: cur,
+        userId: ctx.userId,
+      });
+      const contributionGate = parseContributionGate(meta, {
+        requiredDistinct: Math.max(1, teamUserIds.length),
+        minActionsPerPlayer: 1,
+      });
+      const contributionSummary = summarizeStageContributions({
+        sceneStateRaw: sceneStateForUseAdvance,
+        stageIndex: cur,
+        teamUserIds,
+        gate: contributionGate,
+      });
+      if (!isContributionGateSatisfied(contributionSummary)) {
+        return NextResponse.json(
+          {
+            error: `All teammates must contribute before advancing. Progress: ${contributionSummary.distinctContributors}/${contributionSummary.requiredDistinct} contributors with at least ${contributionSummary.minActionsPerPlayer} action(s).`,
+            contribution: contributionSummary,
+          },
+          { status: 409 }
+        );
+      }
       const nextFromMeta = typeof meta.nextStageIndex === 'number'
         ? meta.nextStageIndex
         : (typeof meta.nextStageOrder === 'number' ? meta.nextStageOrder : null);
       const advanceBy = typeof meta.advanceBy === 'number' && Number.isFinite(meta.advanceBy) ? meta.advanceBy : 1;
       const requestedNext = nextFromMeta ?? (cur + advanceBy);
 
-      const isComplete = Boolean(meta.complete) || meta.eventId === 'complete' || (totalRooms > 0 && requestedNext > totalRooms);
-      const nextStageIndex = isComplete ? (totalRooms || cur) : Math.max(1, Math.floor(requestedNext));
-
-      let solvedStages: number[] = [];
+      let solvedStagesRaw: number[] = [];
       try {
-        solvedStages = progress?.solvedStages ? JSON.parse(progress.solvedStages) : [];
-        if (!Array.isArray(solvedStages)) solvedStages = [];
+        solvedStagesRaw = progress?.solvedStages ? JSON.parse(progress.solvedStages) : [];
+        if (!Array.isArray(solvedStagesRaw)) solvedStagesRaw = [];
       } catch {
-        solvedStages = [];
+        solvedStagesRaw = [];
       }
-      if (!solvedStages.includes(nextStageIndex)) solvedStages.push(nextStageIndex);
-      solvedStages.sort((a, b) => a - b);
+
+      const progression = applyEscapeStageProgress({
+        currentStageIndex: cur,
+        solvedStages: solvedStagesRaw,
+        requestedNextStageIndex: requestedNext,
+        totalRooms,
+        explicitComplete: Boolean(meta.complete) || meta.eventId === 'complete',
+      });
+      const { isComplete, nextStageIndex, solvedStages } = progression;
 
       // Consume the used item only on success.
       const nextInventory = inventory.filter((k) => k !== itemKey);
@@ -635,8 +865,9 @@ export async function POST(
           solvedStages: JSON.stringify(solvedStages),
           completedAt: isComplete ? new Date() : undefined,
           inventory: JSON.stringify(nextInventory),
+          sceneState: JSON.stringify(sceneStateForUseAdvance),
         },
-        select: { currentStageIndex: true, solvedStages: true, completedAt: true, inventory: true },
+        select: { currentStageIndex: true, solvedStages: true, completedAt: true, inventory: true, sceneState: true },
       });
 
       const inventoryItems = await buildInventoryItems(escapeRoom.id, nextInventory);
@@ -649,7 +880,8 @@ export async function POST(
         completedAt: updated.completedAt,
         inventory: nextInventory,
         inventoryItems,
-        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {})),
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        contribution: contributionSummary,
       });
 
       await emitEscapeActivity(ctx.teamId, puzzleId, {
@@ -672,6 +904,8 @@ export async function POST(
         completedAt: updated.completedAt,
         inventory: nextInventory,
         inventoryItems,
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        contribution: contributionSummary,
         consumed: { itemKey },
         ...(useSfx ? { sfx: useSfx } : {}),
       });
@@ -680,6 +914,7 @@ export async function POST(
     if (action === 'trigger') {
       // Trigger/door hotspot: advance rooms or complete the run.
       const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+
       const triggerSfx = extractSfx(meta, 'trigger');
 
       let inventory: string[] = [];
@@ -720,24 +955,52 @@ export async function POST(
       }
 
       const cur = Math.max(1, Number(progress.currentStageIndex || 1));
+      const sceneStateForTriggerAdvance = recordStageContribution({
+        sceneStateRaw: normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {})),
+        stageIndex: cur,
+        userId: ctx.userId,
+      });
+      const contributionGate = parseContributionGate(meta, {
+        requiredDistinct: Math.max(1, teamUserIds.length),
+        minActionsPerPlayer: 1,
+      });
+      const contributionSummary = summarizeStageContributions({
+        sceneStateRaw: sceneStateForTriggerAdvance,
+        stageIndex: cur,
+        teamUserIds,
+        gate: contributionGate,
+      });
+      if (!isContributionGateSatisfied(contributionSummary)) {
+        return NextResponse.json(
+          {
+            error: `All teammates must contribute before advancing. Progress: ${contributionSummary.distinctContributors}/${contributionSummary.requiredDistinct} contributors with at least ${contributionSummary.minActionsPerPlayer} action(s).`,
+            contribution: contributionSummary,
+          },
+          { status: 409 }
+        );
+      }
       const nextFromMeta = typeof meta.nextStageIndex === 'number'
         ? meta.nextStageIndex
         : (typeof meta.nextStageOrder === 'number' ? meta.nextStageOrder : null);
       const advanceBy = typeof meta.advanceBy === 'number' && Number.isFinite(meta.advanceBy) ? meta.advanceBy : 1;
       const requestedNext = nextFromMeta ?? (cur + advanceBy);
 
-      const isComplete = Boolean(meta.complete) || meta.eventId === 'complete' || (totalRooms > 0 && requestedNext > totalRooms);
-      const nextStageIndex = isComplete ? (totalRooms || cur) : Math.max(1, Math.floor(requestedNext));
-
-      let solvedStages: number[] = [];
+      let solvedStagesRaw: number[] = [];
       try {
-        solvedStages = progress?.solvedStages ? JSON.parse(progress.solvedStages) : [];
-        if (!Array.isArray(solvedStages)) solvedStages = [];
+        solvedStagesRaw = progress?.solvedStages ? JSON.parse(progress.solvedStages) : [];
+        if (!Array.isArray(solvedStagesRaw)) solvedStagesRaw = [];
       } catch {
-        solvedStages = [];
+        solvedStagesRaw = [];
       }
-      if (!solvedStages.includes(nextStageIndex)) solvedStages.push(nextStageIndex);
-      solvedStages.sort((a, b) => a - b);
+
+      const progression = applyEscapeStageProgress({
+        currentStageIndex: cur,
+        solvedStages: solvedStagesRaw,
+        requestedNextStageIndex: requestedNext,
+        totalRooms,
+        explicitComplete: Boolean(meta.complete) || meta.eventId === 'complete',
+      });
+      const { isComplete, nextStageIndex, solvedStages } = progression;
 
       const updated = await (prisma as any).teamEscapeProgress.update({
         where: { teamId_escapeRoomId: { teamId: ctx.teamId, escapeRoomId: escapeRoom.id } },
@@ -745,8 +1008,9 @@ export async function POST(
           currentStageIndex: nextStageIndex,
           solvedStages: JSON.stringify(solvedStages),
           completedAt: isComplete ? new Date() : undefined,
+          sceneState: JSON.stringify(sceneStateForTriggerAdvance),
         },
-        select: { currentStageIndex: true, solvedStages: true, completedAt: true },
+        select: { currentStageIndex: true, solvedStages: true, completedAt: true, sceneState: true },
       });
 
       await emitEscapeSession(ctx.teamId, puzzleId, {
@@ -755,6 +1019,8 @@ export async function POST(
         currentStageIndex: updated.currentStageIndex,
         solvedStages: updated.solvedStages,
         completedAt: updated.completedAt,
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        contribution: contributionSummary,
       });
 
       const triggerLabel =
@@ -788,6 +1054,8 @@ export async function POST(
         currentStageIndex: updated.currentStageIndex,
         solvedStages: updated.solvedStages,
         completedAt: updated.completedAt,
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        contribution: contributionSummary,
         ...(triggerSfx ? { sfx: triggerSfx } : {}),
       });
     }

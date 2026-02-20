@@ -11,17 +11,12 @@ export default function PlanningPage() {
 
   const [members, setMembers] = useState<any[]>([]);
   const [lobby, setLobby] = useState<any>(null);
-  const [assignments, setAssignments] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [assignmentsDirty, setAssignmentsDirty] = useState(false);
-  const assignmentsDirtyRef = useRef(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const currentUserIdRef = useRef<string | null>(null);
   const [lobbyLeaderId, setLobbyLeaderId] = useState<string | null>(null);
   const navigatedRef = useRef(false);
   const socketRef = useRef<any>(null);
   const membersRef = useRef<any[]>([]);
-  const roles = ["Scout", "Investigator", "Analyst", "Technician"];
 
   const isLeader = !!lobbyLeaderId && !!currentUserId && lobbyLeaderId === currentUserId;
 
@@ -43,7 +38,7 @@ export default function PlanningPage() {
 
     const t = setInterval(fetchLobby, 3000);
 
-    // setup socket to receive live assignment updates
+    // setup socket for live lobby updates
     (async () => {
       try {
         const { io } = await import('socket.io-client');
@@ -65,19 +60,6 @@ export default function PlanningPage() {
             // ignore
           }
         });
-        socket.on('rolesAssigned', (payload: any) => {
-          if (!payload) return;
-          if (payload.assignments) {
-            setAssignments(payload.assignments || {});
-            setAssignmentsDirty(false);
-            assignmentsDirtyRef.current = false;
-          }
-          // keep lobby in sync with finalized status
-          if (typeof payload.assignmentsFinalized === 'boolean') {
-            setLobby((prev: any) => ({ ...(prev || {}), assignmentsFinalized: payload.assignmentsFinalized, assignmentsFinalizedAt: payload.assignmentsFinalizedAt }));
-          }
-        });
-
         socket.on('puzzleOpened', (payload: any) => {
           try {
             if (!payload) return;
@@ -202,36 +184,8 @@ export default function PlanningPage() {
       const j = await res.json();
       setLobby(j);
       setLobbyLeaderId(j?.leaderId || null);
-      // Only update assignments from server if local edits are not in progress
-      if (j && j.assignments && !assignmentsDirtyRef.current) setAssignments(j.assignments || {});
     } catch (e) {
       // ignore
-    }
-  }
-
-  function setRoleFor(userId: string, role: string) {
-    setAssignments((s) => ({ ...(s || {}), [userId]: role }));
-    setAssignmentsDirty(true);
-    assignmentsDirtyRef.current = true;
-  }
-
-  async function saveAssignments() {
-    setSaving(true);
-    try {
-      const res = await fetch('/api/team/lobby', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'assignRoles', teamId, puzzleId, assignments }) });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        alert('Failed to save: ' + (j?.error || res.statusText));
-        return;
-      }
-      await fetchLobby();
-      setAssignmentsDirty(false);
-      assignmentsDirtyRef.current = false;
-      alert('Roles finalized');
-    } catch (e) {
-      alert('Failed to save roles');
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -260,32 +214,19 @@ export default function PlanningPage() {
     <div className="min-h-screen p-6" style={{ background: '#020202', paddingTop: 88 }}>
       <div className="max-w-3xl mx-auto bg-slate-900 border rounded-lg p-6">
         <h2 className="text-2xl text-white font-bold mb-4">Team Planning</h2>
-        <p className="text-sm text-gray-300 mb-4">Assign specialties to each player before the escape room begins. Each role is unique; the team leader can change assignments any time before the run starts.</p>
+        <p className="text-sm text-gray-300 mb-4">Confirm all four players are present, then open the puzzle for the team.</p>
 
         <div className="space-y-3">
           {(lobby?.participants || []).length === 0 && <div className="text-sm text-gray-400">No participants in the lobby yet.</div>}
 
           {members.filter((m: any) => (lobby?.participants || []).includes(m.user?.id)).map((m: any) => {
             const uid = m.user.id;
-            const current = assignments?.[uid] || '';
-            // compute roles taken by others
-            const takenByOthers = new Set(Object.entries(assignments || {})
-              .filter(([k, v]) => k !== uid && !!v)
-              .map(([k, v]) => v));
-            const availableRoles = roles.filter((r) => !takenByOthers.has(r) || r === current);
             const isLeader = !!lobbyLeaderId && !!currentUserId && lobbyLeaderId === currentUserId;
             return (
               <div key={uid} className="flex items-center justify-between p-3 bg-slate-800 rounded">
                 <div className="text-white">{m.user.name || m.user.email}</div>
                 <div className="flex items-center gap-2">
-                  {isLeader ? (
-                    <select value={current} onChange={(e) => setRoleFor(uid, e.target.value)} className="px-2 py-1 bg-black text-white border rounded">
-                      <option value="">(unassigned)</option>
-                      {availableRoles.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  ) : (
-                    <div className="px-2 py-1 text-sm text-gray-300 bg-black border rounded">{current || '(unassigned)'}</div>
-                  )}
+                  <div className="px-2 py-1 text-sm text-gray-300 bg-black border rounded">{isLeader ? 'Leader' : 'Participant'}</div>
                 </div>
               </div>
             );
@@ -295,9 +236,7 @@ export default function PlanningPage() {
         <div className="mt-6 flex gap-2">
           {(() => {
             const participants = (lobby?.participants || []) as string[];
-            const rolesFinalized = !!lobby?.assignmentsFinalized;
-            const rolesComplete = participants.length === 4 && participants.every((uid) => !!assignments?.[uid]);
-            const canOpen = isLeader && rolesFinalized && rolesComplete && !assignmentsDirty;
+            const canOpen = isLeader && participants.length === 4;
 
             if (!isLeader) return null;
 
@@ -307,17 +246,9 @@ export default function PlanningPage() {
                   onClick={openPuzzle}
                   disabled={!canOpen}
                   className={`px-4 py-2 rounded text-white ${canOpen ? 'bg-indigo-600' : 'bg-indigo-950 opacity-60 cursor-not-allowed'}`}
-                  title={!canOpen ? 'Finalize roles for all 4 participants before opening the puzzle' : 'Open the puzzle for the team'}
+                  title={!canOpen ? 'Wait until exactly 4 participants are present' : 'Open the puzzle for the team'}
                 >
                   Open Puzzle
-                </button>
-                <button
-                  disabled={saving || !rolesComplete}
-                  onClick={saveAssignments}
-                  className={`px-4 py-2 rounded text-white ${(!rolesComplete || saving) ? 'bg-emerald-950 opacity-60 cursor-not-allowed' : 'bg-emerald-600'}`}
-                  title={!rolesComplete ? 'Assign a unique role to all 4 participants' : 'Finalize roles'}
-                >
-                  Finalize Roles
                 </button>
               </>
             );
@@ -327,7 +258,7 @@ export default function PlanningPage() {
 
         {!isLeader ? (
           <div className="mt-3 text-sm text-gray-400">
-            Waiting for the lobby leader to finalize roles and open the puzzle.
+            Waiting for the lobby leader to open the puzzle.
           </div>
         ) : null}
       </div>

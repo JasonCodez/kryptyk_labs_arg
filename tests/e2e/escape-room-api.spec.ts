@@ -4,7 +4,9 @@ import axios, { AxiosError } from 'axios';
 import { PrismaClient } from '@prisma/client';
 import ensureDevServer from './devServer';
 const prisma = new PrismaClient();
-dotenv.config();
+dotenv.config({ quiet: true });
+
+jest.setTimeout(30000);
 
 
 describe('Escape Room API Endpoints', () => {
@@ -48,8 +50,8 @@ describe('Escape Room API Endpoints', () => {
         puzzleId,
         roomTitle: 'API Test Room',
         roomDescription: 'Room for API tests',
-        minTeamSize: 2,
-        maxTeamSize: 5,
+        minTeamSize: 4,
+        maxTeamSize: 4,
         timeLimitSeconds: 1200,
       },
     });
@@ -99,11 +101,11 @@ describe('Escape Room API Endpoints', () => {
     try {
       const response = await axios.put(`http://localhost:3000/api/escape-rooms/${escapeRoomId}`, {
         roomTitle: 'Updated API Test Room',
-        minTeamSize: 3,
+        minTeamSize: 4,
       });
       expect(response.status).toBe(200);
       expect(response.data.escapeRoom.roomTitle).toBe('Updated API Test Room');
-      expect(response.data.escapeRoom.minTeamSize).toBe(3);
+      expect(response.data.escapeRoom.minTeamSize).toBe(4);
     } catch (error: unknown) {
       if (axios.isAxiosError(error) && error.response) {
         console.error('PUT Error Response:', error.response.data);

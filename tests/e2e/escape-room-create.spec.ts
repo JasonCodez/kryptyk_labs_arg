@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const axios = require('axios');
 const { PrismaClient } = require('@prisma/client');
 const ensureDevServer = require('./devServer').default || require('./devServer');

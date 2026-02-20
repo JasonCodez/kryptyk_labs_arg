@@ -27,6 +27,16 @@ type InventoryItem = {
   imageUrl: string | null;
 };
 
+type PendingPickup = {
+  hotspotId: string;
+  itemId: string;
+  itemKey: string;
+  itemName: string;
+  imageUrl: string | null;
+  label: string;
+  animationPreset: 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop';
+};
+
 type EscapeActivityEntry = {
   id: string;
   ts: string;
@@ -560,6 +570,24 @@ export function EscapeRoomPuzzle({
     const shownItemIds = new Set<string>(Array.isArray((sceneState as any)?.shownItemIds) ? (sceneState as any).shownItemIds : []);
     const disabledHotspotIds = new Set<string>(Array.isArray((sceneState as any)?.disabledHotspotIds) ? (sceneState as any).disabledHotspotIds : []);
     const enabledHotspotIds = new Set<string>(Array.isArray((sceneState as any)?.enabledHotspotIds) ? (sceneState as any).enabledHotspotIds : []);
+    const itemStates = ((sceneState as any)?.itemStates && typeof (sceneState as any).itemStates === 'object')
+      ? ((sceneState as any).itemStates as Record<string, string>)
+      : {};
+    const itemImageOverrides = ((sceneState as any)?.itemImageOverrides && typeof (sceneState as any).itemImageOverrides === 'object')
+      ? ((sceneState as any).itemImageOverrides as Record<string, string>)
+      : {};
+    const itemAlphaOverrides = ((sceneState as any)?.itemAlphaOverrides && typeof (sceneState as any).itemAlphaOverrides === 'object')
+      ? ((sceneState as any).itemAlphaOverrides as Record<string, number>)
+      : {};
+    const itemScaleOverrides = ((sceneState as any)?.itemScaleOverrides && typeof (sceneState as any).itemScaleOverrides === 'object')
+      ? ((sceneState as any).itemScaleOverrides as Record<string, number>)
+      : {};
+    const itemRotationOverrides = ((sceneState as any)?.itemRotationOverrides && typeof (sceneState as any).itemRotationOverrides === 'object')
+      ? ((sceneState as any).itemRotationOverrides as Record<string, number>)
+      : {};
+    const itemTintOverrides = ((sceneState as any)?.itemTintOverrides && typeof (sceneState as any).itemTintOverrides === 'object')
+      ? ((sceneState as any).itemTintOverrides as Record<string, string>)
+      : {};
 
     const filteredItems = itemsRaw.filter((it: any) => {
       const id = typeof it?.id === 'string' ? it.id : '';
@@ -596,9 +624,54 @@ export function EscapeRoomPuzzle({
       return true;
     });
 
+    const resolvedItems = filteredItems.map((it: any) => {
+      const id = typeof it?.id === 'string' ? it.id : '';
+      const explicitOverride = id ? itemImageOverrides[id] : null;
+      const stateKey = id ? itemStates[id] : null;
+      const stateMap =
+        (it?.properties?.spriteStates && typeof it.properties.spriteStates === 'object')
+          ? (it.properties.spriteStates as Record<string, unknown>)
+          : {};
+      const stateImage =
+        stateKey && typeof stateMap[stateKey] === 'string'
+          ? (stateMap[stateKey] as string)
+          : null;
+
+      const imageUrl =
+        (typeof explicitOverride === 'string' && explicitOverride.trim().length > 0)
+          ? explicitOverride
+          : (typeof stateImage === 'string' && stateImage.trim().length > 0)
+          ? stateImage
+          : it?.imageUrl;
+
+      const alphaRaw = id ? itemAlphaOverrides[id] : undefined;
+      const alphaNum = Number(alphaRaw);
+      const visualAlpha = Number.isFinite(alphaNum) ? Math.max(0, Math.min(1, alphaNum)) : undefined;
+
+      const scaleRaw = id ? itemScaleOverrides[id] : undefined;
+      const scaleNum = Number(scaleRaw);
+      const visualScale = Number.isFinite(scaleNum) && scaleNum > 0 ? Math.max(0.1, Math.min(5, scaleNum)) : undefined;
+
+      const rotationRaw = id ? itemRotationOverrides[id] : undefined;
+      const rotationNum = Number(rotationRaw);
+      const visualRotationDeg = Number.isFinite(rotationNum) ? rotationNum : undefined;
+
+      const tintRaw = id ? itemTintOverrides[id] : undefined;
+      const visualTint = (typeof tintRaw === 'string' && tintRaw.trim().length > 0) ? tintRaw.trim() : undefined;
+
+      return {
+        ...it,
+        imageUrl,
+        ...(visualAlpha !== undefined ? { visualAlpha } : {}),
+        ...(visualScale !== undefined ? { visualScale } : {}),
+        ...(visualRotationDeg !== undefined ? { visualRotationDeg } : {}),
+        ...(visualTint ? { visualTint } : {}),
+      };
+    });
+
     return {
       ...(baseLayout as any),
-      items: filteredItems,
+      items: resolvedItems,
       hotspots: filteredHotspots,
     };
   }, [baseLayout, inventory, sceneState]);
@@ -610,6 +683,8 @@ export function EscapeRoomPuzzle({
   }, [stageIndex, (layout as any)?.id]);
 
   const stageDropRef = useRef<HTMLDivElement | null>(null);
+  const inventoryPanelRef = useRef<HTMLDivElement | null>(null);
+  const pickupAnimTimerRef = useRef<number | null>(null);
   const [effectiveLayoutSize, setEffectiveLayoutSize] = useState<{ w: number; h: number } | null>(null);
 
   const onEffectiveLayoutSize = useCallback((w: number, h: number) => {
@@ -636,12 +711,31 @@ export function EscapeRoomPuzzle({
   const [actionModalDescription, setActionModalDescription] = useState<string | undefined>(undefined);
   const [actionModalChoices, setActionModalChoices] = useState<Array<{ label: string; modalContent: string }> | null>(null);
   const [actionModalChoiceIndex, setActionModalChoiceIndex] = useState<number>(0);
+  const [pendingPickup, setPendingPickup] = useState<PendingPickup | null>(null);
+  const [pickupPhase, setPickupPhase] = useState<'reveal' | 'ready' | 'committing' | 'toInventory'>('reveal');
+  const [pickupFlight, setPickupFlight] = useState<{ dx: number; dy: number; scale: number } | null>(null);
+  const [inventoryPulse, setInventoryPulse] = useState(false);
+  const [puzzleModal, setPuzzleModal] = useState<{ open: boolean; type: string; config?: any }>({ open: false, type: "info", config: {} });
+
+  const clearPickupTimer = useCallback(() => {
+    if (pickupAnimTimerRef.current !== null) {
+      window.clearTimeout(pickupAnimTimerRef.current);
+      pickupAnimTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearPickupTimer();
+    };
+  }, [clearPickupTimer]);
 
   const handleHotspotAction = useCallback(async (hotspotId: string) => {
     try {
       if (!teamId) return;
       if (!runStartedAt) return;
       if (failedAt || completedAt) return;
+      if (pendingPickup) return;
       // find hotspot in current layout
       const curLayout = layout as any;
       const hs = curLayout?.hotspots?.find((h: any) => h.id === hotspotId);
@@ -767,25 +861,51 @@ export function EscapeRoomPuzzle({
         return;
       }
 
-      // default: send action to server (pickup)
+      // default: preview pickup animation first; commit to inventory only on explicit confirmation
       const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'pickup', hotspotId, teamId }),
+        body: JSON.stringify({ action: 'pickupPreview', hotspotId, teamId }),
       });
       const jb = await r.json().catch(() => null);
       playSfx(jb?.sfx);
-      if (r.ok && jb?.inventory) setInventory(jb.inventory || []);
-      if (r.ok && jb?.inventoryItems) setInventoryItems(jb.inventoryItems || {});
       if (!r.ok) {
         setActionModalTitle(hsMeta?.label || 'Unable to pick up');
         setActionModalMessage(jb?.error || 'Please try again.');
         setActionModalOpen(true);
+        return;
       }
+
+      const preview = jb?.preview && typeof jb.preview === 'object' ? jb.preview : null;
+      if (!preview?.id || !preview?.key || !preview?.name) {
+        setActionModalTitle(hsMeta?.label || 'Unable to pick up');
+        setActionModalMessage('No pickup item was found for this interaction.');
+        setActionModalOpen(true);
+        return;
+      }
+
+      clearPickupTimer();
+      setPickupFlight(null);
+      setPickupPhase('reveal');
+      setPendingPickup({
+        hotspotId,
+        itemId: String(preview.id),
+        itemKey: String(preview.key),
+        itemName: String(preview.name),
+        imageUrl: typeof preview.imageUrl === 'string' ? preview.imageUrl : null,
+        label: hotspotLabel === 'here' ? String(preview.name) : hotspotLabel,
+        animationPreset: preview?.pickupAnimationPreset === 'quickSpin' || preview?.pickupAnimationPreset === 'floatIn' || preview?.pickupAnimationPreset === 'powerDrop'
+          ? preview.pickupAnimationPreset
+          : 'cinematic',
+      });
+      pickupAnimTimerRef.current = window.setTimeout(() => {
+        setPickupPhase('ready');
+        pickupAnimTimerRef.current = null;
+      }, 950);
     } catch (e) {
       console.error('Hotspot action failed', e);
     }
-  }, [teamId, runStartedAt, failedAt, completedAt, layout, puzzleId, playSfx, selectedInventoryKey, inventory, inventoryItems, inventoryLocks, currentUserId]);
+  }, [teamId, runStartedAt, failedAt, completedAt, pendingPickup, layout, puzzleId, playSfx, selectedInventoryKey, inventory, inventoryItems, inventoryLocks, currentUserId, clearPickupTimer]);
 
   const handleActionModalChoice = useCallback((index: number) => {
     if (!actionModalChoices || actionModalChoices.length === 0) return;
@@ -794,7 +914,88 @@ export function EscapeRoomPuzzle({
     setActionModalMessage(actionModalChoices[idx]?.modalContent || '');
   }, [actionModalChoices]);
 
-  const canInteract = !!runStartedAt && !failedAt && !completedAt && !clientTimedOut;
+  const dismissPendingPickup = useCallback(() => {
+    clearPickupTimer();
+    setPendingPickup(null);
+    setPickupFlight(null);
+    setPickupPhase('reveal');
+  }, [clearPickupTimer]);
+
+  const confirmPendingPickup = useCallback(async () => {
+    if (!pendingPickup) return;
+    if (!teamId) return;
+    try {
+      setPickupPhase('committing');
+      const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pickup', hotspotId: pendingPickup.hotspotId, teamId }),
+      });
+      const jb = await r.json().catch(() => null);
+      playSfx(jb?.sfx);
+
+      if (!r.ok) {
+        dismissPendingPickup();
+        setActionModalTitle(pendingPickup.label || 'Unable to pick up');
+        setActionModalMessage(jb?.error || 'Please try again.');
+        setActionModalOpen(true);
+        return;
+      }
+
+      if (Array.isArray(jb?.inventory)) setInventory(jb.inventory || []);
+      if (jb?.inventoryItems) setInventoryItems(jb.inventoryItems || {});
+
+      setSideTab('inventory');
+      setInventoryPulse(true);
+
+      const startX = window.innerWidth * 0.5;
+      const startY = window.innerHeight * 0.52;
+      const invRect = inventoryPanelRef.current?.getBoundingClientRect();
+      const targetX = invRect ? invRect.left + Math.min(90, invRect.width * 0.28) : window.innerWidth - 220;
+      const targetY = invRect ? invRect.top + 100 : window.innerHeight - 220;
+
+      setPickupFlight({
+        dx: targetX - startX,
+        dy: targetY - startY,
+        scale: 0.34,
+      });
+      setPickupPhase('toInventory');
+
+      clearPickupTimer();
+      pickupAnimTimerRef.current = window.setTimeout(() => {
+        setInventoryPulse(false);
+        dismissPendingPickup();
+        pickupAnimTimerRef.current = null;
+      }, 780);
+    } catch {
+      dismissPendingPickup();
+      setActionModalTitle(pendingPickup.label || 'Unable to pick up');
+      setActionModalMessage('Please try again.');
+      setActionModalOpen(true);
+    }
+  }, [pendingPickup, teamId, puzzleId, playSfx, dismissPendingPickup, clearPickupTimer]);
+
+  const canInteract = !!runStartedAt && !failedAt && !completedAt && !clientTimedOut && !pendingPickup;
+
+  const pickupRevealClass = pendingPickup
+    ? pendingPickup.animationPreset === 'quickSpin'
+      ? 'pickup-reveal-quick-spin'
+      : pendingPickup.animationPreset === 'floatIn'
+      ? 'pickup-reveal-float-in'
+      : pendingPickup.animationPreset === 'powerDrop'
+      ? 'pickup-reveal-power-drop'
+      : 'pickup-cinematic-reveal'
+    : '';
+
+  const pickupToInventoryClass = pendingPickup
+    ? pendingPickup.animationPreset === 'quickSpin'
+      ? 'pickup-to-inventory-quick-spin'
+      : pendingPickup.animationPreset === 'floatIn'
+      ? 'pickup-to-inventory-float-in'
+      : pendingPickup.animationPreset === 'powerDrop'
+      ? 'pickup-to-inventory-power-drop'
+      : 'pickup-cinematic-to-inventory'
+    : '';
 
   const resolveHotspotAtClientPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -888,6 +1089,24 @@ export function EscapeRoomPuzzle({
     },
     [canInteract, handleHotspotAction]
   );
+
+  const contributionProgress = useMemo(() => {
+    const stageKey = String(Math.max(1, Number(stageIndex || 1)));
+    const stageMapRaw = (sceneState as any)?.stageContributions?.[stageKey];
+    const stageMap = (stageMapRaw && typeof stageMapRaw === 'object') ? (stageMapRaw as Record<string, unknown>) : {};
+    const counts = Object.values(stageMap).map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0);
+    const distinct = counts.length;
+    const requiredDistinct = 4;
+    const minActionsPerPlayer = 1;
+    const metMinimum = counts.filter((n) => n >= minActionsPerPlayer).length;
+    return {
+      distinct,
+      requiredDistinct,
+      metMinimum,
+      minActionsPerPlayer,
+      complete: distinct >= requiredDistinct && metMinimum >= requiredDistinct,
+    };
+  }, [sceneState, stageIndex]);
 
   if (loading) return <div className="text-gray-300">Loading escape room…</div>;
   if (error) return <div className="text-red-300">{error}</div>;
@@ -995,8 +1214,6 @@ export function EscapeRoomPuzzle({
     }
   };
 
-  const [puzzleModal, setPuzzleModal] = useState<{ open: boolean; type: string; config?: any }>({ open: false, type: "info", config: {} });
-
   // Example handler to open modal (to be called from hotspot/item logic)
   const openPuzzleModal = (type: string, config?: any) => {
     setPuzzleModal({ open: true, type, config });
@@ -1064,6 +1281,22 @@ export function EscapeRoomPuzzle({
           </div>
         </div>
       ) : null}
+
+      <div className="mb-3 rounded border border-slate-700 bg-slate-950/30 p-3">
+        <div className="text-white font-semibold">Team Collaboration Progress</div>
+        <div className="mt-2 text-sm text-gray-300">
+          Stage {stageIndex}: {contributionProgress.distinct}/{contributionProgress.requiredDistinct} players have contributed.
+        </div>
+        <div className="mt-1 text-xs text-gray-400">
+          Requirement: each player contributes at least {contributionProgress.minActionsPerPlayer} action before stage advance.
+        </div>
+        <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-800">
+          <div
+            className={"h-full transition-all " + (contributionProgress.complete ? 'bg-emerald-500' : 'bg-amber-500')}
+            style={{ width: `${Math.max(0, Math.min(100, (contributionProgress.distinct / Math.max(1, contributionProgress.requiredDistinct)) * 100))}%` }}
+          />
+        </div>
+      </div>
 
       {!runStartedAt && !failedAt && !completedAt ? (
         <div className="mb-3 rounded border border-slate-700 bg-slate-950/30 p-3">
@@ -1160,7 +1393,11 @@ export function EscapeRoomPuzzle({
 
             <div className="rounded-2xl bg-gradient-to-r from-amber-900 via-amber-700 to-amber-950 p-[3px]">
               <div
-                className="rounded-[14px] bg-neutral-950/90 ring-1 ring-amber-500/20 border border-amber-900/40 p-3"
+                ref={inventoryPanelRef}
+                className={
+                  'rounded-[14px] bg-neutral-950/90 ring-1 ring-amber-500/20 border border-amber-900/40 p-3 ' +
+                  (inventoryPulse ? 'pickup-inventory-pulse' : '')
+                }
                 style={{ maxHeight: 650, overflowY: 'auto' }}
               >
             <div className="mb-3 flex gap-2">
@@ -1381,6 +1618,67 @@ export function EscapeRoomPuzzle({
         </div>
       ) : null}
 
+      {pendingPickup ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 backdrop-blur-[1px]">
+          <div className="absolute inset-0 pointer-events-none" />
+          <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-amber-500/40 bg-neutral-950/95 shadow-2xl overflow-hidden">
+            <div className="px-5 pt-5 pb-2 text-center">
+              <div className="text-xs uppercase tracking-[0.18em] text-amber-300/70">Discovery</div>
+              <h3 className="mt-1 text-2xl font-bold text-amber-50">You found {pendingPickup.itemName}</h3>
+              <p className="mt-2 text-sm text-amber-100/70">Secure it now and add it to your inventory.</p>
+            </div>
+
+            <div className="relative h-64 flex items-center justify-center">
+              <div
+                className={
+                  'pickup-cinematic-item rounded-xl border border-amber-400/30 bg-neutral-900/80 p-4 shadow-[0_0_35px_rgba(251,191,36,0.35)] ' +
+                  (pickupPhase === 'reveal' ? pickupRevealClass : '') +
+                  (pickupPhase === 'toInventory' ? ` ${pickupToInventoryClass}` : '')
+                }
+                style={
+                  pickupPhase === 'toInventory' && pickupFlight
+                    ? ({
+                        ['--pickup-dx' as any]: `${pickupFlight.dx}px`,
+                        ['--pickup-dy' as any]: `${pickupFlight.dy}px`,
+                        ['--pickup-scale' as any]: `${pickupFlight.scale}`,
+                      } as React.CSSProperties)
+                    : undefined
+                }
+              >
+                {pendingPickup.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pendingPickup.imageUrl} alt={pendingPickup.itemName} className="h-36 w-36 object-contain" />
+                ) : (
+                  <div className="h-36 w-36 rounded-lg border border-amber-500/25 bg-neutral-900/80" />
+                )}
+              </div>
+            </div>
+
+            <div className="px-5 pb-5 pt-1 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={dismissPendingPickup}
+                disabled={pickupPhase === 'committing' || pickupPhase === 'toInventory'}
+                className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40 disabled:opacity-50"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmPendingPickup()}
+                disabled={pickupPhase !== 'ready'}
+                className={
+                  'px-4 py-2 rounded font-semibold text-white transition ' +
+                  (pickupPhase === 'ready' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-amber-900/70 cursor-not-allowed')
+                }
+              >
+                {pickupPhase === 'committing' ? 'Adding…' : pickupPhase === 'toInventory' ? 'Storing…' : 'Add to Inventory'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ActionModal
         isOpen={actionModalOpen}
         title={actionModalTitle}
@@ -1408,6 +1706,152 @@ export function EscapeRoomPuzzle({
         onClose={() => setPuzzleModal({ ...puzzleModal, open: false })}
         onComplete={() => setPuzzleModal({ ...puzzleModal, open: false })}
       />
+      <style jsx global>{`
+        .pickup-cinematic-reveal {
+          animation: pickupReveal 0.95s cubic-bezier(0.2, 0.7, 0.15, 1) forwards;
+        }
+
+        .pickup-cinematic-to-inventory {
+          animation: pickupToInventory 0.78s cubic-bezier(0.3, 0.7, 0.2, 1) forwards;
+        }
+
+        .pickup-reveal-quick-spin {
+          animation: pickupRevealQuickSpin 0.62s cubic-bezier(0.2, 0.7, 0.25, 1) forwards;
+        }
+
+        .pickup-reveal-float-in {
+          animation: pickupRevealFloatIn 0.9s cubic-bezier(0.22, 0.7, 0.2, 1) forwards;
+        }
+
+        .pickup-reveal-power-drop {
+          animation: pickupRevealPowerDrop 0.86s cubic-bezier(0.18, 0.82, 0.24, 1) forwards;
+        }
+
+        .pickup-to-inventory-quick-spin {
+          animation: pickupToInventoryQuickSpin 0.55s cubic-bezier(0.24, 0.66, 0.2, 1) forwards;
+        }
+
+        .pickup-to-inventory-float-in {
+          animation: pickupToInventoryFloatIn 0.9s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+
+        .pickup-to-inventory-power-drop {
+          animation: pickupToInventoryPowerDrop 0.72s cubic-bezier(0.27, 0.78, 0.22, 1) forwards;
+        }
+
+        .pickup-inventory-pulse {
+          animation: inventoryPulse 0.8s ease-out;
+        }
+
+        @keyframes pickupReveal {
+          0% {
+            transform: translateY(18px) scale(0.58) rotate(0deg);
+            opacity: 0;
+          }
+          55% {
+            transform: translateY(-8px) scale(1.26) rotate(540deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(0) scale(1) rotate(720deg);
+            opacity: 1;
+          }
+        }
+
+        @keyframes pickupToInventory {
+          0% {
+            transform: translate(0px, 0px) scale(1) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(var(--pickup-dx, 0px), var(--pickup-dy, 0px)) scale(var(--pickup-scale, 0.34)) rotate(560deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pickupRevealQuickSpin {
+          0% {
+            transform: translateY(10px) scale(0.72) rotate(0deg);
+            opacity: 0;
+          }
+          100% {
+            transform: translateY(0) scale(1.04) rotate(540deg);
+            opacity: 1;
+          }
+        }
+
+        @keyframes pickupRevealFloatIn {
+          0% {
+            transform: translateY(34px) scale(0.84) rotate(-22deg);
+            opacity: 0;
+          }
+          100% {
+            transform: translateY(0) scale(1) rotate(0deg);
+            opacity: 1;
+          }
+        }
+
+        @keyframes pickupRevealPowerDrop {
+          0% {
+            transform: translateY(-52px) scale(1.35) rotate(90deg);
+            opacity: 0;
+          }
+          64% {
+            transform: translateY(9px) scale(0.94) rotate(320deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(0) scale(1) rotate(360deg);
+            opacity: 1;
+          }
+        }
+
+        @keyframes pickupToInventoryQuickSpin {
+          0% {
+            transform: translate(0px, 0px) scale(1.02) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(var(--pickup-dx, 0px), var(--pickup-dy, 0px)) scale(calc(var(--pickup-scale, 0.34) * 0.92)) rotate(720deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pickupToInventoryFloatIn {
+          0% {
+            transform: translate(0px, 0px) scale(1) rotate(0deg);
+            opacity: 1;
+          }
+          55% {
+            transform: translate(calc(var(--pickup-dx, 0px) * 0.45), calc(var(--pickup-dy, 0px) * 0.35 - 18px)) scale(0.72) rotate(140deg);
+            opacity: 0.88;
+          }
+          100% {
+            transform: translate(var(--pickup-dx, 0px), var(--pickup-dy, 0px)) scale(var(--pickup-scale, 0.34)) rotate(220deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pickupToInventoryPowerDrop {
+          0% {
+            transform: translate(0px, 0px) scale(1.08) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(var(--pickup-dx, 0px), var(--pickup-dy, 0px)) scale(calc(var(--pickup-scale, 0.34) * 1.05)) rotate(460deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes inventoryPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55);
+          }
+          100% {
+            box-shadow: 0 0 0 20px rgba(251, 191, 36, 0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

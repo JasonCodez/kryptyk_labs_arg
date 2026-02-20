@@ -32,7 +32,6 @@ export async function GET(
           sceneState: true,
           solvedStages: true,
           currentStageIndex: true,
-          roles: true,
           briefingAcks: true,
           inventoryLocks: true,
           runStartedAt: true,
@@ -46,7 +45,9 @@ export async function GET(
     ]);
 
     const lobbyLeaderId = getLobbyLeaderId(ctx.teamId, puzzleId);
-    const isLeader = !!lobbyLeaderId && lobbyLeaderId === ctx.userId;
+    // Keep leader resolution consistent with session endpoint:
+    // if lobby state is missing after restart, allow team members to proceed.
+    const isLeader = lobbyLeaderId ? lobbyLeaderId === ctx.userId : true;
 
     const markUsersFailed = async (failedAt: Date, failedReason: string) => {
       try {
@@ -127,7 +128,6 @@ export async function GET(
       inventoryItems = {};
     }
 
-    const roles = safeJsonParse<Record<string, string>>(progress?.roles, {});
     const briefingAcks = safeJsonParse<Record<string, string>>(progress?.briefingAcks, {});
     const inventoryLocks = safeJsonParse<Record<string, any>>(progress?.inventoryLocks, {});
     const sceneState = safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {});
@@ -136,9 +136,8 @@ export async function GET(
       inventory,
       inventoryItems,
       sceneState,
-      currentStageIndex: progress?.currentStageIndex ?? 0,
+      currentStageIndex: Math.max(1, Number(progress?.currentStageIndex ?? 1)),
       solvedStages: progress?.solvedStages ?? "[]",
-      roles,
       briefingAcks,
       inventoryLocks,
       runStartedAt: progress?.runStartedAt ?? null,

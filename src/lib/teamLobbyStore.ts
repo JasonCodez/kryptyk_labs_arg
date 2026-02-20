@@ -12,11 +12,6 @@ export type LobbyState = {
     status: string; // pending/accepted/declined
     createdAt: number;
   }>;
-  // role assignments for planning: userId -> role name
-  assignments?: Record<string, string>;
-  // Once true, roles are considered saved/finalized for this lobby.
-  assignmentsFinalized?: boolean;
-  assignmentsFinalizedAt?: number;
   started?: boolean;
   // When set, the leader has opened the puzzle and clients should navigate to the puzzle page.
   puzzleOpenedAt?: number;
@@ -42,7 +37,7 @@ export function ensureLobby(teamId: string, puzzleId: string) {
   let lobby = lobbies.get(key);
   const wasNew = !lobby;
   if (!lobby) {
-    lobby = { teamId, puzzleId, ready: {}, participants: [], invites: [], assignments: {}, assignmentsFinalized: false, started: false, enteredPuzzleAt: {}, createdAt: Date.now() };
+    lobby = { teamId, puzzleId, ready: {}, participants: [], invites: [], started: false, enteredPuzzleAt: {}, createdAt: Date.now() };
     lobbies.set(key, lobby);
   }
   return { lobby, wasNew };

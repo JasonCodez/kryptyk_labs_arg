@@ -83,7 +83,6 @@ export async function POST(
         select: {
           id: true,
           inventory: true,
-          roles: true,
           briefingAcks: true,
           inventoryLocks: true,
           runStartedAt: true,

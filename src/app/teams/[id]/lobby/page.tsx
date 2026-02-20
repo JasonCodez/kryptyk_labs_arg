@@ -390,7 +390,7 @@ export default function TeamLobbyPage() {
 
         socket.on('puzzleStarting', ({ teamId: t, puzzleId: p }) => {
           if (!mounted) return;
-          // navigate to planning/role assignment screen
+          // navigate to planning screen
           skipLeaveOnUnmountRef.current = true;
           const effectiveTeamId = t || teamId;
           const effectivePuzzleId = p || puzzleId;
@@ -655,7 +655,7 @@ export default function TeamLobbyPage() {
         const res = await fetch("/api/team/lobby", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", teamId, puzzleId }) });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) return openActionModal("error", "Start Failed", j?.error || res.statusText);
-        // success -> navigate to team planning so leader can assign roles
+        // success -> navigate to team planning so leader can open the puzzle
         skipLeaveOnUnmountRef.current = true;
         if (!teamId || !puzzleId) {
           return openActionModal('error', 'Navigation Error', 'Missing team or puzzle id; unable to open planning page.');

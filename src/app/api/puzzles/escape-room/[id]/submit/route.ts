@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireEscapeRoomTeamContext } from "@/lib/escapeRoomTeamAuth";
+import {
+  isContributionGateSatisfied,
+  parseContributionGate,
+  recordStageContribution,
+  summarizeStageContributions,
+} from "@/lib/escape-room-contribution";
+
+function safeJsonParse<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== 'string') return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -33,8 +48,38 @@ export async function POST(
         try {
           const progress = await (prisma as any).teamEscapeProgress.findUnique({
             where: { teamId_escapeRoomId: { teamId: ctx.teamId, escapeRoomId: ctx.escapeRoomId } },
-            select: { solvedStages: true, currentStageIndex: true },
+            select: { solvedStages: true, currentStageIndex: true, sceneState: true },
           });
+
+          const teamRows = await prisma.teamMember.findMany({ where: { teamId: ctx.teamId }, select: { userId: true } });
+          const teamUserIds = teamRows.map((m) => m.userId).filter(Boolean);
+
+          const stageMeta = safeJsonParse<Record<string, unknown>>(stage.puzzleData, {});
+          const currentStage = Math.max(1, Number(progress?.currentStageIndex ?? stage.order));
+          const sceneStateWithContribution = recordStageContribution({
+            sceneStateRaw: safeJsonParse<Record<string, unknown>>(progress?.sceneState, {}),
+            stageIndex: currentStage,
+            userId: ctx.userId,
+          });
+          const contributionGate = parseContributionGate(stageMeta, {
+            requiredDistinct: Math.max(1, teamUserIds.length),
+            minActionsPerPlayer: 1,
+          });
+          const contributionSummary = summarizeStageContributions({
+            sceneStateRaw: sceneStateWithContribution,
+            stageIndex: currentStage,
+            teamUserIds,
+            gate: contributionGate,
+          });
+          if (!isContributionGateSatisfied(contributionSummary)) {
+            return NextResponse.json(
+              {
+                error: `All teammates must contribute before advancing. Progress: ${contributionSummary.distinctContributors}/${contributionSummary.requiredDistinct} contributors with at least ${contributionSummary.minActionsPerPlayer} action(s).`,
+                contribution: contributionSummary,
+              },
+              { status: 409 }
+            );
+          }
 
           let solvedStages: number[] = [];
           try {
@@ -52,6 +97,7 @@ export async function POST(
             data: {
               solvedStages: JSON.stringify(solvedStages),
               currentStageIndex: Math.max(progress?.currentStageIndex ?? 0, stage.order),
+              sceneState: JSON.stringify(sceneStateWithContribution),
             },
           });
         } catch (e) {

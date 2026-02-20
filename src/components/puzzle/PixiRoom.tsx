@@ -59,6 +59,28 @@ export default function PixiRoom({
   const layoutBg = layout?.backgroundUrl ?? null;
   const layoutW = layout?.width ?? null;
   const layoutH = layout?.height ?? null;
+  const layoutItemsSignature = (() => {
+    try {
+      const items = Array.isArray((layout as any)?.items) ? (layout as any).items : [];
+      return JSON.stringify(
+        items.map((it: any) => ({
+          id: it?.id ?? null,
+          imageUrl: it?.imageUrl ?? null,
+          x: it?.x ?? null,
+          y: it?.y ?? null,
+          w: it?.w ?? null,
+          h: it?.h ?? null,
+          zIndex: it?.zIndex ?? it?.z ?? null,
+          visualAlpha: it?.visualAlpha ?? null,
+          visualScale: it?.visualScale ?? null,
+          visualRotationDeg: it?.visualRotationDeg ?? null,
+          visualTint: it?.visualTint ?? null,
+        }))
+      );
+    } catch {
+      return '[]';
+    }
+  })();
 
   const isEditor = typeof onHotspotMove === 'function' || typeof onHotspotTransform === 'function';
 
@@ -815,26 +837,58 @@ export default function PixiRoom({
                     const sizeScale = (scaleTarget || 1) / (scalePreview || 1);
                     const iW = Math.max(1, Math.floor(iw * sizeScale));
                     const iH = Math.max(1, Math.floor(ih * sizeScale));
+                    const alphaRaw = Number((it as any)?.visualAlpha);
+                    const visualAlpha = Number.isFinite(alphaRaw) ? Math.max(0, Math.min(1, alphaRaw)) : 1;
+                    const scaleRaw = Number((it as any)?.visualScale);
+                    const visualScale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? Math.max(0.1, Math.min(5, scaleRaw)) : 1;
+                    const rotationRaw = Number((it as any)?.visualRotationDeg);
+                    const visualRotationDeg = Number.isFinite(rotationRaw) ? rotationRaw : 0;
+                    const tintRaw = typeof (it as any)?.visualTint === 'string' ? String((it as any).visualTint).trim() : '';
+                    const scaledW = Math.max(1, Math.floor(iW * visualScale));
+                    const scaledH = Math.max(1, Math.floor(iH * visualScale));
                     if (img.complete && img.naturalWidth) {
                       try {
                         // Match Designer preview: <img style={{ objectFit: 'contain' }}>
                         // Draw the image inside the item box without distortion.
-                        const srcW = img.naturalWidth || iW;
-                        const srcH = img.naturalHeight || iH;
+                        const srcW = img.naturalWidth || scaledW;
+                        const srcH = img.naturalHeight || scaledH;
                         const srcAspect = srcW / Math.max(1, srcH);
-                        const boxAspect = iW / Math.max(1, iH);
-                        let dW = iW;
-                        let dH = iH;
+                        const boxAspect = scaledW / Math.max(1, scaledH);
+                        let dW = scaledW;
+                        let dH = scaledH;
                         if (srcAspect > boxAspect) {
-                          dW = iW;
-                          dH = Math.max(1, Math.round(iW / srcAspect));
+                          dW = scaledW;
+                          dH = Math.max(1, Math.round(scaledW / srcAspect));
                         } else {
-                          dH = iH;
-                          dW = Math.max(1, Math.round(iH * srcAspect));
+                          dH = scaledH;
+                          dW = Math.max(1, Math.round(scaledH * srcAspect));
                         }
-                        const dx = Math.floor(ix + (iW - dW) / 2);
-                        const dy = Math.floor(iy + (iH - dH) / 2);
-                        ctx.drawImage(img, 0, 0, srcW, srcH, dx, dy, dW, dH);
+                        const localX = Math.floor((scaledW - dW) / 2);
+                        const localY = Math.floor((scaledH - dH) / 2);
+                        const cx = Math.floor(ix + iW / 2);
+                        const cy = Math.floor(iy + iH / 2);
+                        ctx.save();
+                        ctx.translate(cx, cy);
+                        if (visualRotationDeg !== 0) {
+                          ctx.rotate((visualRotationDeg * Math.PI) / 180);
+                        }
+                        ctx.globalAlpha = Math.max(0, Math.min(1, (ctx.globalAlpha || 1) * visualAlpha));
+                        // Deep dramatic drop shadow
+                        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+                        ctx.shadowBlur = 6;
+                        ctx.shadowOffsetX = 5;
+                        ctx.shadowOffsetY = 10;
+                        ctx.drawImage(img, 0, 0, srcW, srcH, -Math.floor(scaledW / 2) + localX, -Math.floor(scaledH / 2) + localY, dW, dH);
+                        ctx.shadowColor = 'transparent'; // prevent shadow bleeding onto tint layer
+                        if (tintRaw) {
+                          ctx.save();
+                          ctx.globalCompositeOperation = 'source-atop';
+                          ctx.globalAlpha = Math.max(0, Math.min(1, visualAlpha * 0.35));
+                          ctx.fillStyle = tintRaw;
+                          ctx.fillRect(-Math.floor(scaledW / 2), -Math.floor(scaledH / 2), scaledW, scaledH);
+                          ctx.restore();
+                        }
+                        ctx.restore();
                       } catch (_) {
                         /* ignore */
                       }
@@ -984,15 +1038,78 @@ export default function PixiRoom({
                 const offsetTargetY = (targetH - itemLayoutH * scaleTarget) / 2;
                 const iw = (typeof it.w === 'number' && it.w > 0) ? it.w : 32;
                 const ih = (typeof it.h === 'number' && it.h > 0) ? it.h : 32;
+                const alphaRaw = Number((it as any)?.visualAlpha);
+                const visualAlpha = Number.isFinite(alphaRaw) ? Math.max(0, Math.min(1, alphaRaw)) : 1;
+                const scaleRaw = Number((it as any)?.visualScale);
+                const visualScale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? Math.max(0.1, Math.min(5, scaleRaw)) : 1;
+                const rotationRaw = Number((it as any)?.visualRotationDeg);
+                const visualRotationDeg = Number.isFinite(rotationRaw) ? rotationRaw : 0;
+                const tintRaw = typeof (it as any)?.visualTint === 'string' ? String((it as any).visualTint).trim() : '';
+                let tintParsed: number | null = null;
+                if (tintRaw) {
+                  const m = tintRaw.match(/^#?([0-9a-fA-F]{6})$/);
+                  if (m) {
+                    try { tintParsed = parseInt(m[1], 16); } catch (_) { tintParsed = null; }
+                  }
+                }
                 // convert designer preview coords -> layout coords -> target coords
                 const itemXInLayout = ((it.x || 0) - offsetPreviewX) / (scalePreview || 1);
                 const itemYInLayout = ((it.y || 0) - offsetPreviewY) / (scalePreview || 1);
                 // Item w/h are stored in Designer preview pixels; convert through layout coords.
                 const sizeScale = (scaleTarget || 1) / (scalePreview || 1);
-                sprIt.width = iw * sizeScale;
-                sprIt.height = ih * sizeScale;
-                sprIt.x = offsetTargetX + itemXInLayout * scaleTarget;
-                sprIt.y = offsetTargetY + itemYInLayout * scaleTarget;
+                const scaledW = Math.max(1, iw * sizeScale * visualScale);
+                const scaledH = Math.max(1, ih * sizeScale * visualScale);
+                const baseX = offsetTargetX + itemXInLayout * scaleTarget;
+                const baseY = offsetTargetY + itemYInLayout * scaleTarget;
+                sprIt.width = scaledW;
+                sprIt.height = scaledH;
+                sprIt.anchor.set(0.5);
+                sprIt.x = baseX + scaledW / 2;
+                sprIt.y = baseY + scaledH / 2;
+                sprIt.rotation = (visualRotationDeg * Math.PI) / 180;
+                if (tintParsed !== null) {
+                  try { (sprIt as any).tint = tintParsed; } catch (_) { /* ignore */ }
+                }
+                // Deep dramatic drop shadow — draw a blurred black copy beneath the sprite
+                try {
+                  const sprShadow = new PIXI.Sprite(texIt);
+                  sprShadow.width = scaledW;
+                  sprShadow.height = scaledH;
+                  sprShadow.anchor.set(0.5);
+                  sprShadow.x = sprIt.x + 5;
+                  sprShadow.y = sprIt.y + 10;
+                  sprShadow.rotation = sprIt.rotation;
+                  try { (sprShadow as any).tint = 0x000000; } catch (_) { /* ignore */ }
+                  sprShadow.alpha = 0;
+                  try { sprShadow.filters = [new PIXI.BlurFilter({ strength: 6, quality: 3 })]; } catch (_) { sprShadow.filters = []; }
+                  try { (sprShadow as any).zIndex = sortedIdx * 2; } catch (_) { /* ignore */ }
+                  try { (sprIt as any).zIndex = sortedIdx * 2 + 1; } catch (_) { /* ignore */ }
+                  appInst.stage.addChild(sprShadow);
+                  // Fade shadow in sync with the main sprite
+                  const shadowFadeTick = () => {
+                    sprShadow.alpha = sprIt.alpha * 0.55 * visualAlpha;
+                  };
+                  try { appInst.ticker.add(shadowFadeTick); } catch (_) { sprShadow.alpha = 0.55 * visualAlpha; }
+                  // Clean up shadow ticker when main sprite fades in
+                  const origFadeTickRemover = () => {
+                    try { appInst.ticker.remove(shadowFadeTick); } catch (_) { /* ignore */ }
+                  };
+                  setTimeout(origFadeTickRemover, 1500);
+                } catch (_) { /* shadow not critical */ }
+                const transitionMsRaw = Number((it as any)?.properties?.stateTransitionMs);
+                const transitionMs = Number.isFinite(transitionMsRaw) && transitionMsRaw > 0
+                  ? Math.min(1200, Math.max(80, Math.floor(transitionMsRaw)))
+                  : 180;
+                const fadeStart = performance.now();
+                sprIt.alpha = 0;
+                const fadeTick = () => {
+                  const t = Math.max(0, Math.min(1, (performance.now() - fadeStart) / transitionMs));
+                  sprIt.alpha = visualAlpha * t;
+                  if (t >= 1) {
+                    try { appInst.ticker.remove(fadeTick); } catch (_) { /* ignore */ }
+                  }
+                };
+                try { appInst.ticker.add(fadeTick); } catch (_) { sprIt.alpha = 1; }
                 // use sorted index so Designer ordering is preserved
                 try { (sprIt as any).zIndex = sortedIdx; } catch (_) { /* ignore */ }
 
@@ -1012,8 +1129,8 @@ export default function PixiRoom({
                       const ly = (typeof gy === 'number') ? ((gy - offsetTargetY) / (scaleTarget || 1)) : null;
 
                       // Fall back to the item center in layout coords if we couldn't read event coords.
-                      const iwInLayout = iw / (scalePreview || 1);
-                      const ihInLayout = ih / (scalePreview || 1);
+                      const iwInLayout = (iw * visualScale) / (scalePreview || 1);
+                      const ihInLayout = (ih * visualScale) / (scalePreview || 1);
                       const cx = itemXInLayout + iwInLayout / 2;
                       const cy = itemYInLayout + ihInLayout / 2;
                       const px = (lx == null ? cx : lx);
@@ -1523,7 +1640,7 @@ export default function PixiRoom({
         console.error('[PixiRoom] cleanup wrapper failed', err);
       }
     };
-  }, [layoutKey, layoutBg, layoutW, layoutH, puzzleId, runtimeForceCanvas]);
+  }, [layoutKey, layoutBg, layoutW, layoutH, layoutItemsSignature, puzzleId, runtimeForceCanvas]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 300 }} />
