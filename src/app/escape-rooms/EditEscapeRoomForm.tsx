@@ -54,7 +54,7 @@ export default function EditEscapeRoomForm({ room, onUpdated }: { room: any, onU
       </div>
       <div className="mb-2">
         <label className="block text-sm">Team Size</label>
-        <div className="text-sm text-gray-700">Fixed: 4 players (team-only)</div>
+        <div className="text-sm text-gray-700">Team-only puzzle (min players set below)</div>
       </div>
       <div className="mb-2">
         <label className="block text-sm">Time Limit (seconds)</label>

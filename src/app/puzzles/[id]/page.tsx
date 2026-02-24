@@ -1360,6 +1360,7 @@ export default function PuzzleDetailPage() {
                         style={{ margin: "0 auto" }}
                       >
                         <JigsawPuzzle
+                          puzzleId={puzzleId as string}
                           imageUrl={jigsawPlayable.imageUrl}
                           rows={jigsawPlayable.data.gridRows}
                           cols={jigsawPlayable.data.gridCols}

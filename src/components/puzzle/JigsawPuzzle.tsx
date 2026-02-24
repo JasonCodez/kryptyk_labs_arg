@@ -61,6 +61,8 @@ interface JigsawPuzzleSVGWithTrayProps {
   onShowRatingModal?: () => void;
   suppressInternalCongrats?: boolean;
   onControlsReady?: (api: { reset: () => void; sendLooseToTray: () => void; enterFullscreen: () => void; exitFullscreen: () => void; isFullscreen: boolean }) => void;
+  /** Unique identifier used to key the localStorage save slot. Strongly recommended. */
+  puzzleId?: string;
 }
 
 interface Piece {
@@ -127,6 +129,61 @@ function buildEdges(rows: number, cols: number): EdgesMap {
   }
   return edges;
 }
+
+// ---------------------------------------------------------------------------
+// Save / Resume helpers
+// ---------------------------------------------------------------------------
+type SavedPieceData = { relX: number; relY: number; groupId: string; snapped: boolean; z: number };
+interface SavedJigsawProgress {
+  pieces: Record<string, SavedPieceData>;
+  elapsedMs: number;
+  savedAt: number;
+}
+
+function getJigsawStorageKey(puzzleId: string | undefined, imageUrl: string, rows: number, cols: number): string {
+  if (puzzleId) return `jigsaw-progress-${puzzleId}`;
+  // Fallback: derive a key from imageUrl tail + dimensions
+  const urlSlug = imageUrl.replace(/[^a-zA-Z0-9]/g, '').slice(-24);
+  return `jigsaw-progress-${rows}x${cols}-${urlSlug}`;
+}
+
+function saveJigsawProgress(key: string, pieces: Piece[], elapsedMs: number): void {
+  try {
+    const data: SavedJigsawProgress = {
+      pieces: Object.fromEntries(
+        pieces.map((p) => [
+          p.id,
+          { relX: p.pos.x - p.correct.x, relY: p.pos.y - p.correct.y, groupId: p.groupId, snapped: p.snapped, z: p.z },
+        ])
+      ),
+      elapsedMs,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch { /* ignore quota / SSR errors */ }
+}
+
+function loadJigsawProgress(key: string): SavedJigsawProgress | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as SavedJigsawProgress;
+  } catch { return null; }
+}
+
+function clearJigsawProgress(key: string): void {
+  try { localStorage.removeItem(key); } catch {}
+}
+
+function applyJigsawProgress(initial: Piece[], saved: SavedJigsawProgress): Piece[] {
+  return initial.map((p) => {
+    const s = saved.pieces[p.id];
+    if (!s) return p;
+    return { ...p, pos: { x: p.correct.x + s.relX, y: p.correct.y + s.relY }, groupId: s.groupId, snapped: s.snapped, z: s.z };
+  });
+}
+// ---------------------------------------------------------------------------
 
 interface PiecePathEdges {
   top?: number;
@@ -679,6 +736,7 @@ export default function JigsawPuzzleSVGWithTray({
   suppressInternalCongrats = false,
   containerStyle = {},
   onControlsReady,
+  puzzleId,
 }: JigsawPuzzleSVGWithTrayProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -707,6 +765,10 @@ export default function JigsawPuzzleSVGWithTray({
   const completedRef = useRef<boolean>(false);
   const [showCongrats, setShowCongrats] = useState(false);
   const [awardedPoints, setAwardedPoints] = useState<number | null>(null);
+  const storageKeyRef = useRef<string>('');
+  const savedElapsedMsRef = useRef<number>(0);
+  const [resumedFromSave, setResumedFromSave] = useState(false);
+  const resumedTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Allow panning/zooming in fullscreen but clamp to content bounds.
   const fullscreenPanEnabled = true;
 
@@ -997,20 +1059,72 @@ export default function JigsawPuzzleSVGWithTray({
     edgesMap,
   ]);
 
-  const [pieces, setPieces] = useState(initialPieces);
+  // Compute storage key whenever identity-inputs change. Use a ref so helpers can access it.
+  React.useEffect(() => {
+    storageKeyRef.current = getJigsawStorageKey(puzzleId, imageUrl, rows, cols);
+  }, [puzzleId, imageUrl, rows, cols]);
+
+  const [pieces, setPieces] = useState<Piece[]>(() => {
+    // Lazy init: try to restore saved progress on first render
+    const key = getJigsawStorageKey(puzzleId, imageUrl, rows, cols);
+    storageKeyRef.current = key;
+    const saved = loadJigsawProgress(key);
+    if (saved && Object.keys(saved.pieces).length === rows * cols) {
+      savedElapsedMsRef.current = saved.elapsedMs ?? 0;
+      return applyJigsawProgress(initialPieces, saved);
+    }
+    return initialPieces;
+  });
   const piecesRef = useRef<Piece[]>(initialPieces);
+
+  // Adjust startTimeRef to account for previously saved elapsed time (set once after mount)
+  React.useEffect(() => {
+    if (savedElapsedMsRef.current > 0) {
+      startTimeRef.current = Date.now() - savedElapsedMsRef.current;
+      setResumedFromSave(true);
+      if (resumedTimerRef.current) clearTimeout(resumedTimerRef.current);
+      resumedTimerRef.current = setTimeout(() => setResumedFromSave(false), 3500);
+    }
+    return () => { if (resumedTimerRef.current) clearTimeout(resumedTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     piecesRef.current = pieces;
   }, [pieces]);
+
+  // Auto-save whenever pieces change (debounced 800 ms)
+  React.useEffect(() => {
+    if (completedRef.current) return; // don't overwrite after completion
+    const key = storageKeyRef.current;
+    if (!key) return;
+    const elapsedMs = Math.max(0, Date.now() - startTimeRef.current);
+    const id = setTimeout(() => saveJigsawProgress(key, piecesRef.current, elapsedMs), 800);
+    return () => clearTimeout(id);
+  }, [pieces]);
+
   // Reset pieces when initialPieces changes (e.g., layout switches stacked vs side-by-side)
   // Initialize pieces when core puzzle inputs change (rows/cols/image).
   // Avoid resetting pieces on layout/scale changes to prevent mid-play resets.
   React.useEffect(() => {
-    setPieces(initialPieces);
+    const key = getJigsawStorageKey(puzzleId, imageUrl, rows, cols);
+    storageKeyRef.current = key;
+    const saved = loadJigsawProgress(key);
+    if (saved && Object.keys(saved.pieces).length === rows * cols) {
+      savedElapsedMsRef.current = saved.elapsedMs ?? 0;
+      startTimeRef.current = Date.now() - savedElapsedMsRef.current;
+      setPieces(applyJigsawProgress(initialPieces, saved));
+      setResumedFromSave(true);
+      if (resumedTimerRef.current) clearTimeout(resumedTimerRef.current);
+      resumedTimerRef.current = setTimeout(() => setResumedFromSave(false), 3500);
+    } else {
+      savedElapsedMsRef.current = 0;
+      setPieces(initialPieces);
+      startTimeRef.current = Date.now();
+    }
     completedRef.current = false;
-    startTimeRef.current = Date.now();
     hasInteractedRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, cols, imageUrl]);
 
   // The board is centered based on wrapper size, so `boardLeft/boardTop` can change after mount
@@ -1792,6 +1906,8 @@ export default function JigsawPuzzleSVGWithTray({
   React.useEffect(() => {
     if (!solved || completedRef.current) return;
     completedRef.current = true;
+    // Clear saved progress now that the puzzle is fully completed
+    clearJigsawProgress(storageKeyRef.current);
     const elapsedSeconds = Math.max(0, Math.round((Date.now() - startTimeRef.current) / 1000));
 
     const runCompletion = async () => {
@@ -2305,9 +2421,11 @@ export default function JigsawPuzzleSVGWithTray({
 
     const api = {
       reset: () => {
+        clearJigsawProgress(storageKeyRef.current);
         setPieces(initialPiecesRef.current);
         completedRef.current = false;
         startTimeRef.current = Date.now();
+        savedElapsedMsRef.current = 0;
       },
       sendLooseToTray: () => {
         // Delegate to the live implementation so it uses current layout/tray coords
@@ -2380,6 +2498,30 @@ export default function JigsawPuzzleSVGWithTray({
         transform: 'none',
       }}
       >
+        {/* Resumed-from-save banner */}
+        {resumedFromSave && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 9000,
+              background: 'rgba(16, 185, 129, 0.92)',
+              color: 'white',
+              fontSize: 13,
+              fontWeight: 600,
+              padding: '6px 14px',
+              borderRadius: 20,
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              letterSpacing: '0.01em',
+            }}
+          >
+            ✓ Progress restored — pick up where you left off
+          </div>
+        )}
         {/* contentRef sits inside the static outer stage and receives transform for pan/zoom */}
         <div
           ref={contentRef}

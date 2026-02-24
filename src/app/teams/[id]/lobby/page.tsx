@@ -114,7 +114,8 @@ export default function TeamLobbyPage() {
         const partsCount = Array.isArray(p.parts) ? p.parts.length : 0;
         const minTeamSize = typeof p.minTeamSize === 'number' ? p.minTeamSize : 0;
         const isEscapeRoom = p?.puzzleType === 'escape_room' || !!p?.escapeRoom;
-        const requiredPlayers = isEscapeRoom ? 4 : ((partsCount > 0 ? partsCount : minTeamSize) || 1);
+        const escaperoomMinPlayers = typeof p?.minTeamSize === 'number' && p.minTeamSize > 0 ? p.minTeamSize : 1;
+        const requiredPlayers = isEscapeRoom ? escaperoomMinPlayers : ((partsCount > 0 ? partsCount : minTeamSize) || 1);
         const isLocked = isEscapeRoom && p?.escapeRoomFailed === true;
         return { ...p, partsCount, requiredPlayers, isLocked };
       });
@@ -558,7 +559,10 @@ export default function TeamLobbyPage() {
 
   const getRequiredPlayersForPuzzle = (puzzle: any): number => {
     if (!puzzle) return 0;
-    if (puzzle?.puzzleType === 'escape_room' || puzzle?.escapeRoom) return 4;
+    if (puzzle?.puzzleType === 'escape_room' || puzzle?.escapeRoom) {
+      const m = typeof puzzle.minTeamSize === 'number' && puzzle.minTeamSize > 0 ? puzzle.minTeamSize : 1;
+      return m;
+    }
     const partsCount = typeof puzzle.partsCount === 'number'
       ? puzzle.partsCount
       : (Array.isArray(puzzle.parts) ? puzzle.parts.length : 0);
@@ -937,13 +941,13 @@ export default function TeamLobbyPage() {
           {isLeader && (
             <button
               onClick={onStartClick}
-              disabled={!selectedPuzzle || !hasExactPlayers || !allReady}
+              disabled={!selectedPuzzle || !hasEnoughPlayers || !allReady}
               className="w-full sm:w-auto text-sm px-3 py-2 bg-emerald-600 text-white rounded disabled:opacity-50"
               title={
                 !selectedPuzzle
                   ? 'Select a puzzle to start'
-                  : !hasExactPlayers
-                    ? `Player count mismatch: requires exactly ${requiredPlayers} players`
+                  : !hasEnoughPlayers
+                    ? `Requires at least ${requiredPlayers} player${requiredPlayers !== 1 ? 's' : ''}`
                     : !allReady
                       ? 'All participants must be marked ready before starting'
                       : undefined

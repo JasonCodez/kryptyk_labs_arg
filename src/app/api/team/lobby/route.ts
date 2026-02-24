@@ -488,20 +488,14 @@ export async function POST(req: NextRequest) {
         if (!puzzle) return NextResponse.json({ error: 'Puzzle not found' }, { status: 404 });
 
         // Determine required players.
-        // Escape rooms are team-only and always require exactly 4 players.
         let requiredPlayers = (puzzle.parts || []).length || puzzle.minTeamSize || 1;
         if (puzzle.escapeRoom) {
-          requiredPlayers = 4;
-
-          const memberCount = await prisma.teamMember.count({ where: { teamId } });
-          if (memberCount !== 4) {
-            return NextResponse.json({ error: `Escape rooms require exactly 4 team members (team has ${memberCount})` }, { status: 400 });
-          }
+          requiredPlayers = puzzle.minTeamSize > 0 ? puzzle.minTeamSize : 1;
         }
 
-        // enforce exact match for start
-        if (participants.length !== requiredPlayers) {
-          return NextResponse.json({ error: `Player count mismatch: puzzle requires exactly ${requiredPlayers} players but lobby has ${participants.length}` }, { status: 400 });
+        // enforce at-least match for start
+        if (participants.length < requiredPlayers) {
+          return NextResponse.json({ error: `Not enough players: puzzle requires at least ${requiredPlayers} player(s) but lobby has ${participants.length}` }, { status: 400 });
         }
 
         // require all participants to be marked ready
@@ -621,7 +615,7 @@ export async function POST(req: NextRequest) {
         try {
           const puzzle = await prisma.puzzle.findUnique({ where: { id: puzzleId }, include: { parts: { select: { id: true } }, escapeRoom: true } });
           let requiredPlayers = (puzzle?.parts || []).length || puzzle?.minTeamSize || 1;
-          if (puzzle?.escapeRoom) requiredPlayers = 4;
+          if (puzzle?.escapeRoom) requiredPlayers = puzzle?.minTeamSize > 0 ? puzzle.minTeamSize : 1;
           const participants = lobby.participants || [];
           const pendingInvites = (lobby.invites || []).length;
           if (requiredPlayers > 0 && participants.length + pendingInvites >= requiredPlayers) {
@@ -731,9 +725,7 @@ export async function POST(req: NextRequest) {
         }
 
         const participants = Array.isArray(lobby.participants) ? lobby.participants : [];
-        if (participants.length !== 4) {
-          return NextResponse.json({ error: 'Exactly 4 participants must be in the lobby before opening the puzzle' }, { status: 400 });
-        }
+        // Participant count was already validated at start; no hard-coded check here.
 
         lobby.started = true;
         lobby.puzzleOpenedAt = Date.now();

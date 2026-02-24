@@ -43,6 +43,7 @@ export async function proxy(request: NextRequest) {
       : "connect-src 'self' data: https: ws: http://localhost:4000 ws://localhost:4000 https://sandpack.codesandbox.io wss://sandpack.codesandbox.io",
     "frame-src 'self' https://sandpack.codesandbox.io https://codesandbox.io",
     "frame-ancestors 'none'",
+    "media-src 'self' https: blob:",
   ].join('; ');
 
   response.headers.set('Content-Security-Policy', csp);

@@ -75,15 +75,15 @@ export async function GET(req: NextRequest) {
       errors: [] as string[],
     };
 
-    // Escape rooms are team-only and always require exactly 4 players.
+    // Escape rooms are team-only; min players comes from puzzle.minTeamSize.
     if (puzzle.puzzleType === 'escape_room') {
       validations.isSoloPuzzle = false;
       validations.isTeamPuzzle = true;
-      validations.minTeamSize = 4;
+      validations.minTeamSize = puzzle.minTeamSize > 0 ? puzzle.minTeamSize : 1;
 
-      if (teamMembers.length !== 4) {
+      if (teamMembers.length < validations.minTeamSize) {
         validations.errors.push(
-          `This escape room requires exactly 4 team members. Your team has ${teamMembers.length}.`
+          `This escape room requires at least ${validations.minTeamSize} team member(s). Your team has ${teamMembers.length}.`
         );
       }
 

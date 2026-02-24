@@ -50,7 +50,7 @@ export default function EscapeRoomsPage() {
                 {room.roomTitle}
               </Link>
               <div className="text-sm text-gray-600">{room.roomDescription}</div>
-              <div className="text-xs mt-2">Team size: 4 players (fixed)</div>
+              <div className="text-xs mt-2">Multiplayer team puzzle</div>
             </li>
           ))}
         </ul>

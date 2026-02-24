@@ -48,9 +48,11 @@ export async function requireEscapeRoomTeamContext(
   }
 
   const memberCount = await prisma.teamMember.count({ where: { teamId } });
-  if (memberCount !== 4) {
+  const puzzleForMin = await prisma.puzzle.findUnique({ where: { id: puzzleId }, select: { minTeamSize: true } });
+  const minRequired = (puzzleForMin?.minTeamSize ?? 0) > 0 ? puzzleForMin!.minTeamSize : 1;
+  if (memberCount < minRequired) {
     return NextResponse.json(
-      { error: `Escape rooms require exactly 4 team members (team has ${memberCount})` },
+      { error: `Escape room requires at least ${minRequired} team member(s) (team has ${memberCount})` },
       { status: 403 }
     );
   }

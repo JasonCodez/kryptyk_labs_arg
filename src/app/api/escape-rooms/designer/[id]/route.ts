@@ -93,10 +93,11 @@ export async function GET(
     return NextResponse.json({
       title: escapeRoomData?.title || er.roomTitle,
       description: escapeRoomData?.description || er.roomDescription,
-      minPlayers: 4,
-      maxPlayers: 4,
+      minTeamSize: escapeRoomData?.minTeamSize || er.minTeamSize || 1,
+      maxPlayers: er.maxTeamSize || 8,
       timeLimit: escapeRoomData?.timeLimit ?? er.timeLimitSeconds,
       startMode: escapeRoomData?.startMode || 'leader-start',
+      playerMode: escapeRoomData?.playerMode || 'shared',
       intro: escapeRoomData?.intro || undefined,
       outro: escapeRoomData?.outro || undefined,
       scenes,
@@ -117,7 +118,7 @@ export async function PUT(
     const escapeRoomId = resolved.id;
 
     const data = await req.json();
-    const { title, description, timeLimit, startMode, scenes, intro, outro } = data;
+    const { title, description, timeLimit, startMode, minTeamSize, playerMode, scenes, intro, outro } = data;
     if (!escapeRoomId) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     if (!Array.isArray(scenes)) return NextResponse.json({ error: 'Missing scenes' }, { status: 400 });
 
@@ -133,9 +134,8 @@ export async function PUT(
     const updateData: any = {
       roomTitle: title,
       roomDescription: description,
-      // Escape rooms are team-only and always require exactly 4 players.
-      minTeamSize: 4,
-      maxTeamSize: 4,
+      minTeamSize: (typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : 1,
+      maxTeamSize: Math.max((typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : 1, 8),
     };
     if (typeof timeLimit !== 'undefined' && timeLimit !== null) updateData.timeLimitSeconds = Number(timeLimit);
 
@@ -239,12 +239,14 @@ export async function PUT(
           description,
           timeLimit,
           startMode: startMode || curData?.escapeRoomData?.startMode || 'leader-start',
+          minTeamSize: (typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : (curData?.escapeRoomData?.minTeamSize || 1),
+          playerMode: playerMode || curData?.escapeRoomData?.playerMode || 'shared',
           intro: intro || undefined,
           outro: outro || undefined,
           scenes,
         },
       };
-      await tx.puzzle.update({ where: { id: puzzleId }, data: { data: nextData } });
+      await tx.puzzle.update({ where: { id: puzzleId }, data: { data: nextData, minTeamSize: (typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : 1 } });
     });
 
     return NextResponse.json({ success: true });

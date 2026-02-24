@@ -168,6 +168,9 @@ type PlaytestPickupRevealMotion = {
   dx: number;
   dy: number;
   scale: number;
+  /** Visual width (px) the item reaches at end of reveal animation — used to seed the video start size. */
+  targetW: number;
+  targetH: number;
 };
 
 type PlaytestCodeEntry = {
@@ -233,6 +236,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [description, setDescription] = useState(initialData?.description || "");
   const [timeLimit, setTimeLimit] = useState(initialData?.timeLimit || 1200);
   const [startMode, setStartMode] = useState(initialData?.startMode || 'leader-start');
+  const [minTeamSize, setMinTeamSize] = useState<number>(initialData?.minTeamSize > 0 ? initialData.minTeamSize : 1);
   const [intro, setIntro] = useState<{
     videoUrl?: string;
     posterUrl?: string;
@@ -560,10 +564,10 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const notifyParent = () => {
     const serializableScenes = getSerializableScenes();
     if (typeof window !== 'undefined' && typeof (window as any).onEscapeRoomDesignerChange === 'function') {
-      (window as any).onEscapeRoomDesignerChange({ title, description, timeLimit, startMode, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
+      (window as any).onEscapeRoomDesignerChange({ title, description, timeLimit, startMode, minTeamSize, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
     }
     if (typeof onChangeRef.current === 'function') {
-      onChangeRef.current({ title, description, timeLimit, startMode, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
+      onChangeRef.current({ title, description, timeLimit, startMode, minTeamSize, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
     }
   };
 
@@ -575,6 +579,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       if (initialData.description !== undefined && initialData.description !== description) setDescription(initialData.description || "");
       if (initialData.timeLimit !== undefined && initialData.timeLimit !== timeLimit) setTimeLimit(initialData.timeLimit || 1200);
       if (initialData.startMode !== undefined && initialData.startMode !== startMode) setStartMode(initialData.startMode || 'leader-start');
+      if (initialData.minTeamSize !== undefined) setMinTeamSize(initialData.minTeamSize > 0 ? initialData.minTeamSize : 1);
       if (initialData.intro !== undefined && JSON.stringify(initialData.intro) !== JSON.stringify(intro)) setIntro(initialData.intro || {});
       if (initialData.outro !== undefined && JSON.stringify(initialData.outro) !== JSON.stringify(outro)) setOutro(initialData.outro || {});
       if (initialData.playerMode !== undefined && initialData.playerMode !== playerMode) setPlayerMode(initialData.playerMode || 'shared');
@@ -598,6 +603,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       if (draft.description !== undefined) setDescription(draft.description || '');
       if (draft.timeLimit !== undefined) setTimeLimit(draft.timeLimit || 1200);
       if (draft.startMode !== undefined) setStartMode(draft.startMode || 'leader-start');
+      if (draft.minTeamSize !== undefined) setMinTeamSize(draft.minTeamSize > 0 ? draft.minTeamSize : 1);
       if (draft.playerMode !== undefined) setPlayerMode(draft.playerMode || 'shared');
       if (draft.intro !== undefined) setIntro(draft.intro || {});
       if (draft.outro !== undefined) setOutro(draft.outro || {});
@@ -617,7 +623,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       try {
         const serializableScenes = getSerializableScenes();
         const draft = { title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, minTeamSize }));
         setLastSavedAt(new Date());
       } catch {
         // ignore storage errors
@@ -625,7 +631,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
     }, 2000);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId, title, description, timeLimit, startMode, playerMode, intro, outro, scenes, userSpecialties]);
+  }, [editId, title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties]);
 
   // ── doSave ───────────────────────────────────────────────────────────────────
   const doSave = React.useCallback(async (silent = false) => {
@@ -640,7 +646,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       const res = await fetch(`/api/escape-rooms/designer/${encodeURIComponent(editId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties }),
+        body: JSON.stringify({ title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes: serializableScenes, userSpecialties }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) {
@@ -658,7 +664,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       setIsSaving(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId, title, description, timeLimit, startMode, playerMode, intro, outro, scenes, userSpecialties]);
+  }, [editId, title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties]);
 
   // For EDIT rooms: auto-save with a 15-second debounce after any change.
   useEffect(() => {
@@ -671,7 +677,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [editId, title, description, timeLimit, startMode, playerMode, intro, outro, scenes, userSpecialties, doSave]);
+  }, [editId, title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties, doSave]);
 
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -736,7 +742,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   useEffect(() => {
     notifyParent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, description, timeLimit, startMode, playerMode, scenes, userSpecialties, intro, outro]);
+  }, [title, description, timeLimit, startMode, minTeamSize, playerMode, scenes, userSpecialties, intro, outro]);
 
   return (
     <div className="max-w-4xl mx-auto py-8 text-white">
@@ -761,14 +767,17 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
             <input type="number" min={60} value={timeLimit} onChange={e => setTimeLimit(Number(e.target.value))} className="border rounded px-2 py-1 w-full bg-slate-800 text-white" />
           </div>
           <div>
-            <label className="block text-sm text-white">Team Size</label>
-            <div className="text-sm text-gray-200">Fixed: 4 players (team-only)</div>
+            <label className="block text-sm text-white">Min Players Required</label>
+            <input type="number" min={1} max={8} value={minTeamSize}
+              onChange={e => setMinTeamSize(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+              className="border rounded px-2 py-1 w-full bg-slate-800 text-white" />
+            <div className="text-xs text-gray-400 mt-1">Set to 1 to allow solo testing</div>
           </div>
           <div>
             <label className="block text-sm text-white">Start Mode</label>
             <select value={startMode} onChange={e => setStartMode(e.target.value)} className="border rounded px-2 py-1 w-full bg-slate-800 text-white">
               <option value="leader-start">Leader starts the session</option>
-              <option value="auto-on-4">Auto start when 4 players joined</option>
+              <option value="auto-on-join">Auto start when min players joined</option>
             </select>
           </div>
           <div>
@@ -1575,6 +1584,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                         dx: centerX - itemCenterX,
                         dy: centerY - itemCenterY,
                         scale: presetScale,
+                        targetW: Math.round(itemW * presetScale),
+                        targetH: Math.round(itemH * presetScale),
                       });
                     } else {
                       setPlaytestPickupRevealMotion(null);
@@ -1657,6 +1668,13 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                           !!playtestPendingPickup &&
                           playtestPickupPhase === 'reveal' &&
                           playtestPendingPickup.itemId === item.id;
+                        // While the video plays or item flies to inventory, hide the source item
+                        const isPickupHidden =
+                          !!playtestPendingPickup &&
+                          playtestPendingPickup.itemId === item.id &&
+                          (playtestPickupPhase === 'ready' || playtestPickupPhase === 'toInventory') &&
+                          !!playtestPendingPickup.pickupAnimationUrl;
+                        if (isPickupHidden) return null;
                         const pickupRevealClass = isPickupRevealItem
                           ? playtestPendingPickup.preset === 'quickSpin' ? 'designer-pickup-reveal-quick-spin'
                             : playtestPendingPickup.preset === 'floatIn' ? 'designer-pickup-reveal-float-in'
@@ -1683,12 +1701,18 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                         style={(() => {
                           const ptBaseW = item.w ?? 48;
                           const ptBaseH = item.h ?? 48;
-                          const ptOffsetX = (ptBaseW * visual.scale - ptBaseW) / 2;
-                          const ptOffsetY = (ptBaseH * visual.scale - ptBaseH) / 2;
+                          const ptWrapperTransform = isPickupRevealItem ? undefined : [
+                            visual.scale !== 1 ? `scale(${visual.scale})` : '',
+                            visual.rotationDeg ? `rotate(${visual.rotationDeg}deg)` : '',
+                            visual.skewX ? `skewX(${visual.skewX}deg)` : '',
+                            visual.skewY ? `skewY(${visual.skewY}deg)` : '',
+                          ].filter(Boolean).join(' ') || undefined;
                           return {
                             position: 'absolute' as const,
-                            left: (item.x ?? (20 + i * 60)) - ptOffsetX,
-                            top: (item.y ?? 20) - ptOffsetY,
+                            left: isPickupRevealItem ? (item.x ?? (20 + i * 60)) - (ptBaseW * visual.scale - ptBaseW) / 2 : (item.x ?? (20 + i * 60)),
+                            top: isPickupRevealItem ? (item.y ?? 20) - (ptBaseH * visual.scale - ptBaseH) / 2 : (item.y ?? 20),
+                            width: ptBaseW,
+                            height: ptBaseH,
                             zIndex: isPickupRevealItem ? 80 : 2,
                             borderRadius: 4,
                             cursor: 'default' as const,
@@ -1696,20 +1720,18 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             touchAction: 'none' as const,
                             opacity: isPickupRevealItem ? 1 : visual.alpha,
                             pointerEvents: (isPickupRevealItem ? 'none' : 'auto') as React.CSSProperties['pointerEvents'],
+                            transform: ptWrapperTransform,
+                            transformOrigin: 'center center',
+                            willChange: ptWrapperTransform ? 'transform' : undefined,
                             ...pickupRevealStyle,
                           };
                         })()}
                       >
                         {resolveItemImage(item) ? (
                           (() => {
-                            const ptScaledW = (item.w ?? 48) * visual.scale;
-                            const ptScaledH = (item.h ?? 48) * visual.scale;
+                            const ptScaledW = isPickupRevealItem ? (item.w ?? 48) * visual.scale : (item.w ?? 48);
+                            const ptScaledH = isPickupRevealItem ? (item.h ?? 48) * visual.scale : (item.h ?? 48);
                             const ptSrc = resolveItemImage(item);
-                            const ptCssTransform = isPickupRevealItem ? undefined : [
-                              visual.rotationDeg ? `rotate(${visual.rotationDeg}deg)` : '',
-                              visual.skewX ? `skewX(${visual.skewX}deg)` : '',
-                              visual.skewY ? `skewY(${visual.skewY}deg)` : '',
-                            ].filter(Boolean).join(' ') || undefined;
                             const ptFilter = visual.tint ? `drop-shadow(5px 10px 6px rgba(0,0,0,0.55)) drop-shadow(0 0 0 ${visual.tint}) saturate(1.1)` : 'drop-shadow(5px 10px 6px rgba(0,0,0,0.55))';
                             const ptImgStyle: React.CSSProperties = {
                               width: ptScaledW,
@@ -1718,9 +1740,6 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               display: 'block',
                               borderRadius: 4,
                               boxSizing: 'border-box' as const,
-                              transform: ptCssTransform,
-                              transformOrigin: 'center center',
-                              willChange: ptCssTransform ? 'transform' : undefined,
                               filter: ptFilter,
                             };
                             return (
@@ -1880,42 +1899,72 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   </>
                 );
               })()}
-            </div>
 
             {playtestPendingPickup ? (
-              <div className="fixed inset-0 z-[80] flex items-center justify-center">
+              <div className="absolute inset-0 z-[80] flex items-center justify-center">
                 {playtestPickupPhase === 'ready' || playtestPickupPhase === 'toInventory' ? (
                   <div className={`absolute inset-0 z-[82] flex items-center justify-center ${playtestPendingPickup.pickupAnimationUrl && playtestPickupPhase === 'ready' ? '' : 'bg-black/65 backdrop-blur-[1px]'}`}>
                     {playtestPendingPickup.pickupAnimationUrl && playtestPickupPhase === 'ready' ? (
-                      /* Seamless full-size video layout — no card wrapper, video matches reveal size */
-                      <div className="flex flex-col items-center justify-center w-full h-full" style={{ background: 'transparent' }}>
-                        <video
-                          src={/^https?:\/\//i.test(playtestPendingPickup.pickupAnimationUrl) ? `/api/image-proxy?url=${encodeURIComponent(playtestPendingPickup.pickupAnimationUrl)}` : playtestPendingPickup.pickupAnimationUrl}
-                          autoPlay
-                          muted
-                          playsInline
-                          className="max-h-[55vh] max-w-[65vw] object-contain rounded-lg drop-shadow-[0_0_40px_rgba(251,191,36,0.3)]"
-                        />
-                        <div className="mt-5 text-center">
-                          <h3 className="text-xl font-bold text-amber-50 drop-shadow-lg">You found {playtestPendingPickup.itemName}</h3>
-                          <div className="mt-3 flex gap-3 justify-center">
-                            <button
-                              type="button"
-                              onClick={dismissPlaytestPendingPickup}
-                              className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40"
-                            >
-                              Not now
-                            </button>
-                            <button
-                              type="button"
-                              onClick={confirmPlaytestPendingPickup}
-                              className="px-4 py-2 rounded font-semibold text-white bg-amber-600 hover:bg-amber-500"
-                            >
-                              Add to Inventory
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                      /* Seamless: video starts at exact same size/position as item at end of reveal animation,
+                         then smoothly grows to fill the canvas. */
+                      (() => {
+                        const canvasW = previewRef.current?.clientWidth ?? 600;
+                        const canvasH = previewRef.current?.clientHeight ?? 320;
+                        const tw = playtestPickupRevealMotion?.targetW;
+                        const th = playtestPickupRevealMotion?.targetH;
+                        const startW = (tw && isFinite(tw) && tw > 0) ? tw : Math.round(canvasW * 0.45);
+                        const startH = (th && isFinite(th) && th > 0) ? th : Math.round(canvasH * 0.45);
+                        const growFactor = Math.max(1, Math.min(
+                          (canvasW * 0.86) / startW,
+                          (canvasH * 0.78) / startH,
+                          4
+                        ));
+                        return (
+                          <>
+                            <video
+                              key={playtestPendingPickup.itemId}
+                              src={/^https?:\/\//i.test(playtestPendingPickup.pickupAnimationUrl) ? `/api/image-proxy?url=${encodeURIComponent(playtestPendingPickup.pickupAnimationUrl)}` : playtestPendingPickup.pickupAnimationUrl}
+                              autoPlay
+                              muted
+                              playsInline
+                              style={{
+                                position: 'absolute',
+                                left: '50%',
+                                top: '50%',
+                                width: startW,
+                                height: startH,
+                                objectFit: 'contain',
+                                borderRadius: 8,
+                                filter: 'drop-shadow(0 0 40px rgba(251,191,36,0.3))',
+                                ...({
+                                  ['--pickup-video-grow' as any]: growFactor,
+                                  animation: 'pickupVideoGrow 0.4s cubic-bezier(0.22,0.7,0.2,1) forwards',
+                                } as React.CSSProperties),
+                              }}
+                            />
+                            {/* Buttons float at canvas bottom — independent of video position */}
+                            <div style={{ position: 'absolute', bottom: 14, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, pointerEvents: 'auto', zIndex: 83 }}>
+                              <h3 className="text-base font-bold text-amber-50 drop-shadow-lg">You found {playtestPendingPickup.itemName}</h3>
+                              <div className="flex gap-3">
+                                <button
+                                  type="button"
+                                  onClick={dismissPlaytestPendingPickup}
+                                  className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40"
+                                >
+                                  Not now
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={confirmPlaytestPendingPickup}
+                                  className="px-4 py-2 rounded font-semibold text-white bg-amber-600 hover:bg-amber-500"
+                                >
+                                  Add to Inventory
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()
                     ) : (
                     <div className="relative w-full max-w-md mx-4 rounded-2xl border border-amber-500/40 bg-neutral-950/95 shadow-2xl overflow-hidden">
                       <div className="px-5 pt-5 pb-2 text-center">
@@ -1992,6 +2041,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                 ) : null}
               </div>
             ) : null}
+            </div>
 
             {/* Code Entry Overlay */}
             {playtestCodeEntry ? (
@@ -2267,28 +2317,30 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   const sf = (item.scale != null && item.scale > 0) ? item.scale : 1;
                   const baseW = item.w ?? 48;
                   const baseH = item.h ?? 48;
-                  const offsetX = (baseW * sf - baseW) / 2;
-                  const offsetY = (baseH * sf - baseH) / 2;
+                  const wt = [sf !== 1 ? `scale(${sf})` : '', item.rotation ? `rotate(${item.rotation}deg)` : '', item.skewX ? `skewX(${item.skewX}deg)` : '', item.skewY ? `skewY(${item.skewY}deg)` : ''].filter(Boolean).join(' ') || undefined;
                   return {
                     position: 'absolute' as const,
-                    left: (item.x ?? (20 + i * 60)) - offsetX,
-                    top: (item.y ?? 20) - offsetY,
+                    left: item.x ?? (20 + i * 60),
+                    top: item.y ?? 20,
+                    width: baseW,
+                    height: baseH,
                     zIndex: 2,
                     borderRadius: 4,
                     cursor: 'move',
                     userSelect: 'none' as const,
                     touchAction: 'none' as const,
+                    transform: wt,
+                    transformOrigin: 'center center',
+                    willChange: wt ? 'transform' : undefined,
                   };
                 })()}
               >
                 {item.imageUrl ? (
                   <div style={{ position: 'relative', display: 'inline-block' }}>
                     {(() => {
-                      const scaleFactor = (item.scale != null && item.scale > 0) ? item.scale : 1;
-                      const scaledW = (item.w ?? 48) * scaleFactor;
-                      const scaledH = (item.h ?? 48) * scaleFactor;
-                      const cssTransform = [item.rotation ? `rotate(${item.rotation}deg)` : '', item.skewX ? `skewX(${item.skewX}deg)` : '', item.skewY ? `skewY(${item.skewY}deg)` : ''].filter(Boolean).join(' ') || undefined;
-                      const itemStyle: React.CSSProperties = { width: scaledW, height: scaledH, objectFit: 'contain' as const, display: 'block', borderRadius: 4, boxSizing: 'border-box' as const, outline: selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i ? '2px solid rgba(99,102,241,0.9)' : 'none', transform: cssTransform, transformOrigin: 'center center', willChange: cssTransform ? 'transform' : undefined };
+                      const baseW = item.w ?? 48;
+                      const baseH = item.h ?? 48;
+                      const itemStyle: React.CSSProperties = { width: baseW, height: baseH, objectFit: 'contain' as const, display: 'block', borderRadius: 4, boxSizing: 'border-box' as const, outline: selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i ? '2px solid rgba(99,102,241,0.9)' : 'none' };
                       return isVideoUrl(item.imageUrl) ? (
                         <video src={item.imageUrl} autoPlay loop muted playsInline style={itemStyle} draggable={false} />
                       ) : (
@@ -2298,9 +2350,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                     {selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i && (
                       // resize handles (se, sw, ne, nw)
                       (() => {
-                        const handleScale = (item.scale != null && item.scale > 0) ? item.scale : 1;
-                        const handleW = (item.w ?? 48) * handleScale;
-                        const handleH = (item.h ?? 48) * handleScale;
+                        const handleW = item.w ?? 48;
+                        const handleH = item.h ?? 48;
                         return (
                       <>
                         {(['nw','ne','sw','se'] as const).map(h => {
@@ -4985,7 +5036,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   if (scenes.length === 0) { setValidationError('At least one scene/room is required.'); return; }
                   try {
                     const serializableScenes = getSerializableScenes();
-                    const draft = { title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
+                    const draft = { title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
                     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
                     setLastSavedAt(new Date());
                   } catch {}
@@ -5007,6 +5058,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   setDescription('');
                   setTimeLimit(1200);
                   setStartMode('leader-start');
+                  setMinTeamSize(1);
                   setPlayerMode('shared');
                   setIntro({});
                   setOutro({});
@@ -5024,6 +5076,11 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
         </div>
       </section>
       <style jsx global>{`
+        @keyframes pickupVideoGrow {
+          0%   { transform: translate(-50%, -50%) scale(1); }
+          100% { transform: translate(-50%, -50%) scale(var(--pickup-video-grow, 1)); }
+        }
+
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }

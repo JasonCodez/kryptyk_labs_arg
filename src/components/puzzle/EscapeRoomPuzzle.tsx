@@ -1710,7 +1710,7 @@ export function EscapeRoomPuzzle({
       {layout ? (
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
           <div className="flex flex-col gap-4">
-            <div className="flex justify-center">
+            <div className="flex justify-center" style={{ position: 'relative' }}>
               <div
                 className={`w-full bg-slate-950${sceneShake ? ' scene-shake' : ''}`}
                 ref={stageDropRef}
@@ -2005,39 +2005,39 @@ export function EscapeRoomPuzzle({
       ) : null}
 
       {pendingPickup ? (
-        <div className={`fixed inset-0 z-[70] flex items-center justify-center ${pendingPickup.pickupAnimationUrl && pickupPhase === 'ready' ? '' : 'bg-black/65 backdrop-blur-[1px]'}`}>
-          <div className="absolute inset-0 pointer-events-none" />
+        /* Single fixed overlay used for ALL phases — reveal, video, and toInventory.
+           Keeping everything in one container means the visual center never jumps. */
+        <div className={`fixed inset-0 z-[70] flex items-center justify-center ${
+          pendingPickup.pickupAnimationUrl && pickupPhase === 'ready' ? '' : 'bg-black/65 backdrop-blur-[1px]'
+        }`}>
           {pendingPickup.pickupAnimationUrl && pickupPhase === 'ready' ? (
-            /* Seamless full-size video layout — no card wrapper, video matches reveal size */
-            <div className="relative flex flex-col items-center justify-center w-full h-full">
+            /* Video phase — same center point as the card; fades in over the reveal */
+            <>
               <video
+                key={pendingPickup.itemId}
                 src={/^https?:\/\//i.test(pendingPickup.pickupAnimationUrl) ? `/api/image-proxy?url=${encodeURIComponent(pendingPickup.pickupAnimationUrl)}` : pendingPickup.pickupAnimationUrl}
                 autoPlay
                 muted
                 playsInline
-                className="max-h-[55vh] max-w-[65vw] object-contain rounded-lg drop-shadow-[0_0_40px_rgba(251,191,36,0.3)]"
+                style={{
+                  maxHeight: '72vh',
+                  maxWidth: '82vw',
+                  objectFit: 'contain',
+                  borderRadius: 12,
+                  filter: 'drop-shadow(0 0 48px rgba(251,191,36,0.35))',
+                  ...({
+                    animation: 'pickupVideoFadeGrow 0.35s cubic-bezier(0.22,0.7,0.2,1) forwards',
+                  } as React.CSSProperties),
+                }}
               />
-              <div className="mt-5 text-center">
-                <h3 className="text-2xl font-bold text-amber-50 drop-shadow-lg">You found {pendingPickup.itemName}</h3>
-                <p className="mt-2 text-sm text-amber-100/70">Secure it now and add it to your inventory.</p>
-                <div className="mt-3 flex gap-3 justify-center">
-                  <button
-                    type="button"
-                    onClick={dismissPendingPickup}
-                    className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40"
-                  >
-                    Not now
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void confirmPendingPickup()}
-                    className="px-4 py-2 rounded font-semibold text-white bg-amber-600 hover:bg-amber-500"
-                  >
-                    Add to Inventory
-                  </button>
+              <div style={{ position: 'fixed', bottom: 32, left: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, zIndex: 71 }}>
+                <h3 className="text-lg font-bold text-amber-50 drop-shadow-lg">You found {pendingPickup.itemName}</h3>
+                <div className="flex gap-3">
+                  <button type="button" onClick={dismissPendingPickup} className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40">Not now</button>
+                  <button type="button" onClick={() => void confirmPendingPickup()} className="px-4 py-2 rounded font-semibold text-white bg-amber-600 hover:bg-amber-500">Add to Inventory</button>
                 </div>
               </div>
-            </div>
+            </>
           ) : (
           <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-amber-500/40 bg-neutral-950/95 shadow-2xl overflow-hidden">
             <div className="px-5 pt-5 pb-2 text-center">
@@ -2173,6 +2173,11 @@ export function EscapeRoomPuzzle({
         />
       )}
       <style jsx global>{`
+        @keyframes pickupVideoFadeGrow {
+          0%   { opacity: 0; transform: scale(0.82); }
+          40%  { opacity: 1; }
+          100% { opacity: 1; transform: scale(1); }
+        }
         .pickup-cinematic-item {
           transition: opacity 0.35s ease-out;
         }

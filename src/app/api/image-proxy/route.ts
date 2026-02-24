@@ -170,6 +170,14 @@ export async function GET(req: Request) {
     if (!resp.ok) return NextResponse.json({ error: 'fetch failed', status: resp.status }, { status: 502 });
 
     const contentType = resp.headers.get('content-type') || 'application/octet-stream';
+
+    // For streaming media (video/audio), redirect the browser to the source URL directly.
+    // Buffering video through this proxy kills HTTP range-request support, causing choppy playback.
+    // <video> elements don't send CORS preflights (no crossOrigin attr), so redirecting is safe.
+    if (/^(video|audio)\//.test(contentType) || /\.(mp4|webm|mov|avi|ogg|mp3|wav|aac)$/i.test(resolvedUrl.split(/[?#]/)[0])) {
+      return NextResponse.redirect(resolvedUrl, { status: 302 });
+    }
+
     const body = await resp.arrayBuffer();
 
     return new NextResponse(Buffer.from(body), {

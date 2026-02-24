@@ -155,8 +155,8 @@ export async function POST(
 
       const acks = safeJsonParse<BriefingAcksMap>(progress.briefingAcks, {});
       const ackedCount = Object.keys(acks).filter((uid) => memberIds.has(uid)).length;
-      if (ackedCount !== 4) {
-        return NextResponse.json({ error: `All 4 players must acknowledge the briefing (${ackedCount}/4)` }, { status: 409 });
+      if (ackedCount < members.length) {
+        return NextResponse.json({ error: `All players must acknowledge the briefing (${ackedCount}/${members.length})` }, { status: 409 });
       }
 
       const escapeRoom = await prisma.escapeRoomPuzzle.findUnique({
