@@ -9,9 +9,19 @@ export const runtime = 'nodejs';
 // on third-party hosts. SECURITY: restrict allowed hosts via ALLOWED_IMAGE_HOSTS
 // env var (comma-separated). If unset, only allow same-origin (relative URLs).
 
-const ALLOWED = process.env.ALLOWED_IMAGE_HOSTS
-  ? process.env.ALLOWED_IMAGE_HOSTS.split(',').map((s) => s.trim()).filter(Boolean)
-  : null;
+const ALLOWED = (() => {
+  const hosts = process.env.ALLOWED_IMAGE_HOSTS
+    ? process.env.ALLOWED_IMAGE_HOSTS.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  // Auto-allow the configured R2 public URL host so uploaded media can be proxied
+  if (process.env.R2_PUBLIC_URL) {
+    try {
+      const r2Host = new URL(process.env.R2_PUBLIC_URL).hostname;
+      if (r2Host && !hosts.includes(r2Host)) hosts.push(r2Host);
+    } catch { /* ignore bad URL */ }
+  }
+  return hosts.length > 0 ? hosts : null;
+})();
 
 function contentTypeForFile(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -29,6 +39,14 @@ function contentTypeForFile(filePath: string): string {
       return 'image/svg+xml';
     case '.avif':
       return 'image/avif';
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
+    case '.ogg':
+      return 'video/ogg';
+    case '.mp3':
+      return 'audio/mpeg';
     default:
       return 'application/octet-stream';
   }

@@ -47,6 +47,12 @@ export default function ActionModal({
     return raw;
   }, [imageUrl, forceProxyImage]);
 
+  const isVideo = useMemo(() => {
+    if (!resolvedImageSrc) return false;
+    const clean = resolvedImageSrc.split(/[?#]/)[0].toLowerCase();
+    return /\.(mp4|webm|mov|avi)$/.test(clean);
+  }, [resolvedImageSrc]);
+
   if (!isOpen) return null;
 
   const headerBgDefault =
@@ -87,13 +93,25 @@ export default function ActionModal({
 
               <div className="px-6 py-5">
                 {resolvedImageSrc ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={resolvedImageSrc}
-                    alt={resolvedTitle}
-                    className="mb-4 w-full max-h-56 object-contain rounded-lg bg-neutral-900/60 border border-amber-600/30"
-                    onError={() => setForceProxyImage(true)}
-                  />
+                  isVideo ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video
+                      src={resolvedImageSrc}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="mb-4 w-full max-h-56 object-contain rounded-lg bg-neutral-900/60 border border-amber-600/30"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={resolvedImageSrc}
+                      alt={resolvedTitle}
+                      className="mb-4 w-full max-h-56 object-contain rounded-lg bg-neutral-900/60 border border-amber-600/30"
+                      onError={() => setForceProxyImage(true)}
+                    />
+                  )
                 ) : null}
 
                 {description ? <p className="text-amber-100/90 mb-2">{description}</p> : null}
@@ -160,13 +178,25 @@ export default function ActionModal({
 
               <div className="px-6 py-5">
                 {resolvedImageSrc ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={resolvedImageSrc}
-                    alt={resolvedTitle}
-                    className="mb-4 w-full max-h-56 object-contain rounded-lg bg-neutral-900/60 border border-amber-600/25"
-                    onError={() => setForceProxyImage(true)}
-                  />
+                  isVideo ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video
+                      src={resolvedImageSrc}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="mb-4 w-full max-h-56 object-contain rounded-lg bg-neutral-900/60 border border-amber-600/25"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={resolvedImageSrc}
+                      alt={resolvedTitle}
+                      className="mb-4 w-full max-h-56 object-contain rounded-lg bg-neutral-900/60 border border-amber-600/25"
+                      onError={() => setForceProxyImage(true)}
+                    />
+                  )
                 ) : null}
 
                 {description ? <p className="text-amber-100/80 mb-2">{description}</p> : null}
@@ -221,13 +251,25 @@ export default function ActionModal({
         </div>
         <div className="bg-slate-900 p-6">
           {resolvedImageSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={resolvedImageSrc}
-              alt={resolvedTitle}
-              className="mb-4 w-full max-h-56 object-contain rounded-lg bg-slate-950/40 border border-slate-700"
-              onError={() => setForceProxyImage(true)}
-            />
+            isVideo ? (
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <video
+                src={resolvedImageSrc}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="mb-4 w-full max-h-56 object-contain rounded-lg bg-slate-950/40 border border-slate-700"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={resolvedImageSrc}
+                alt={resolvedTitle}
+                className="mb-4 w-full max-h-56 object-contain rounded-lg bg-slate-950/40 border border-slate-700"
+                onError={() => setForceProxyImage(true)}
+              />
+            )
           ) : null}
           {description ? <p className="text-slate-300 mb-2">{description}</p> : null}
           <p className="text-slate-200 mb-4">{message}</p>

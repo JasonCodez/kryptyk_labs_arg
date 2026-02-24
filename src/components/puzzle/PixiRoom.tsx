@@ -3,6 +3,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as PIXI from "pixi.js";
 
+/** Check whether a URL points to a video file (mp4, webm, mov, avi). */
+const isVideoUrl = (url: string | undefined | null): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.split(/[?#]/)[0].toLowerCase();
+  return /\.(mp4|webm|mov|avi)$/.test(clean);
+};
+
 type Hotspot = {
   id: string;
   x: number;
@@ -185,6 +192,61 @@ export default function PixiRoom({
         }
         return null;
       };
+
+      // ---- Video texture support ----
+      // Cache for PIXI textures created from <video> elements
+      const videoTextureCache = new Map<string, { tex: PIXI.Texture; video: HTMLVideoElement }>();
+      // Cache for <video> elements used in Canvas2D fallback
+      const videoElementCache = new Map<string, HTMLVideoElement>();
+
+      /** Create (or retrieve cached) a looping autoplay <video> element for a given URL. */
+      const getOrCreateVideoElement = (url: string): HTMLVideoElement | null => {
+        const src = normalizeImageUrl(url);
+        if (!src) return null;
+        const cached = videoElementCache.get(src);
+        if (cached) return cached;
+        const vid = document.createElement('video');
+        vid.src = src;
+        vid.crossOrigin = 'anonymous';
+        vid.autoplay = true;
+        vid.loop = true;
+        vid.muted = true;
+        vid.playsInline = true;
+        vid.preload = 'auto';
+        vid.play().catch(() => { /* autoplay may be blocked */ });
+        videoElementCache.set(src, vid);
+        return vid;
+      };
+
+      /** Get or create a PIXI.Texture from a video URL. Returns null if not ready. */
+      const getOrLoadVideoTexture = (url: string): PIXI.Texture | null => {
+        const src = normalizeImageUrl(url);
+        if (!src) return null;
+        const cached = videoTextureCache.get(src);
+        if (cached) return cached.tex;
+        const vid = getOrCreateVideoElement(url);
+        if (!vid) return null;
+        try {
+          const tex = PIXI.Texture.from(vid);
+          videoTextureCache.set(src, { tex, video: vid });
+          // Re-draw periodically while video plays so it stays animated
+          const onPlaying = () => {
+            if (!isStale()) {
+              const animate = () => {
+                if (isStale() || vid.paused || vid.ended) return;
+                try { draw(); } catch (_) { /* ignore */ }
+                requestAnimationFrame(animate);
+              };
+              requestAnimationFrame(animate);
+            }
+          };
+          vid.addEventListener('playing', onPlaying, { once: true });
+          return tex;
+        } catch (_) {
+          return null;
+        }
+      };
+
       try {
         // create a canvas element and pass it explicitly to PIXI.Application to avoid
         // using the deprecated `view` getter which accesses internal `canvas`.
@@ -809,16 +871,34 @@ export default function PixiRoom({
                   try {
                     const src = it?.imageUrl || '';
                     if (!src) continue;
-                    // reuse or create cached HTMLImageElement so we can draw items in order
-                    let img = imageCache.get(src);
-                    if (!img) {
-                      img = new Image();
-                      img.crossOrigin = 'anonymous';
+                    const isVid = isVideoUrl(src);
+                    // For video items use a <video> element; for images use HTMLImageElement
+                    let drawSource: HTMLImageElement | HTMLVideoElement | null = null;
+                    let sourceReady = false;
+                    if (isVid) {
+                      const vid = getOrCreateVideoElement(src);
+                      if (vid) {
+                        drawSource = vid;
+                        sourceReady = vid.readyState >= 2; // HAVE_CURRENT_DATA
+                        if (!sourceReady) {
+                          // Request redraw once video has data
+                          vid.addEventListener('canplay', () => { try { draw(); } catch (_) { /* ignore */ } }, { once: true });
+                        }
+                      }
+                    } else {
+                      // reuse or create cached HTMLImageElement so we can draw items in order
+                      let img = imageCache.get(src);
+                      if (!img) {
+                        img = new Image();
+                        img.crossOrigin = 'anonymous';
                         img.src = normalizeImageUrl(src);
-                      // when any image finishes loading, request a full redraw so draw() will render all items in order
-                      img.onload = () => { try { draw(); } catch (_) { /* ignore */ } };
-                      img.onerror = () => { console.info('[PixiRoom] item image load failed', src); };
-                      imageCache.set(src, img);
+                        // when any image finishes loading, request a full redraw so draw() will render all items in order
+                        img.onload = () => { try { draw(); } catch (_) { /* ignore */ } };
+                        img.onerror = () => { console.info('[PixiRoom] item image load failed', src); };
+                        imageCache.set(src, img);
+                      }
+                      drawSource = img;
+                      sourceReady = img.complete && !!img.naturalWidth;
                     }
                     const itemLayoutW = effectiveLayoutW;
                     const itemLayoutH = effectiveLayoutH;
@@ -844,14 +924,23 @@ export default function PixiRoom({
                     const rotationRaw = Number((it as any)?.visualRotationDeg);
                     const visualRotationDeg = Number.isFinite(rotationRaw) ? rotationRaw : 0;
                     const tintRaw = typeof (it as any)?.visualTint === 'string' ? String((it as any).visualTint).trim() : '';
-                    const scaledW = Math.max(1, Math.floor(iW * visualScale));
-                    const scaledH = Math.max(1, Math.floor(iH * visualScale));
-                    if (img.complete && img.naturalWidth) {
+                    // Base transforms from Designer
+                    const canvasBaseRotation = Number((it as any)?.rotation);
+                    const canvasBaseScale = Number((it as any)?.scale);
+                    const canvasBaseSkewX = Number((it as any)?.skewX);
+                    const canvasBaseSkewY = Number((it as any)?.skewY);
+                    const canvasTotalRotationDeg = (Number.isFinite(canvasBaseRotation) ? canvasBaseRotation : 0) + visualRotationDeg;
+                    const canvasTotalScale = (Number.isFinite(canvasBaseScale) && canvasBaseScale > 0 ? canvasBaseScale : 1) * visualScale;
+                    const canvasSkewXRad = Number.isFinite(canvasBaseSkewX) ? (canvasBaseSkewX * Math.PI) / 180 : 0;
+                    const canvasSkewYRad = Number.isFinite(canvasBaseSkewY) ? (canvasBaseSkewY * Math.PI) / 180 : 0;
+                    const scaledW = Math.max(1, Math.floor(iW * canvasTotalScale));
+                    const scaledH = Math.max(1, Math.floor(iH * canvasTotalScale));
+                    if (sourceReady && drawSource) {
                       try {
                         // Match Designer preview: <img style={{ objectFit: 'contain' }}>
-                        // Draw the image inside the item box without distortion.
-                        const srcW = img.naturalWidth || scaledW;
-                        const srcH = img.naturalHeight || scaledH;
+                        // Draw the image/video inside the item box without distortion.
+                        const srcW = (drawSource as HTMLImageElement).naturalWidth || (drawSource as HTMLVideoElement).videoWidth || scaledW;
+                        const srcH = (drawSource as HTMLImageElement).naturalHeight || (drawSource as HTMLVideoElement).videoHeight || scaledH;
                         const srcAspect = srcW / Math.max(1, srcH);
                         const boxAspect = scaledW / Math.max(1, scaledH);
                         let dW = scaledW;
@@ -869,8 +958,12 @@ export default function PixiRoom({
                         const cy = Math.floor(iy + iH / 2);
                         ctx.save();
                         ctx.translate(cx, cy);
-                        if (visualRotationDeg !== 0) {
-                          ctx.rotate((visualRotationDeg * Math.PI) / 180);
+                        if (canvasTotalRotationDeg !== 0) {
+                          ctx.rotate((canvasTotalRotationDeg * Math.PI) / 180);
+                        }
+                        if (canvasSkewXRad !== 0 || canvasSkewYRad !== 0) {
+                          // Apply skew via 2D transform matrix: [1, tan(skewY), tan(skewX), 1, 0, 0]
+                          ctx.transform(1, Math.tan(canvasSkewYRad), Math.tan(canvasSkewXRad), 1, 0, 0);
                         }
                         ctx.globalAlpha = Math.max(0, Math.min(1, (ctx.globalAlpha || 1) * visualAlpha));
                         // Deep dramatic drop shadow
@@ -878,7 +971,7 @@ export default function PixiRoom({
                         ctx.shadowBlur = 6;
                         ctx.shadowOffsetX = 5;
                         ctx.shadowOffsetY = 10;
-                        ctx.drawImage(img, 0, 0, srcW, srcH, -Math.floor(scaledW / 2) + localX, -Math.floor(scaledH / 2) + localY, dW, dH);
+                        ctx.drawImage(drawSource, 0, 0, srcW, srcH, -Math.floor(scaledW / 2) + localX, -Math.floor(scaledH / 2) + localY, dW, dH);
                         ctx.shadowColor = 'transparent'; // prevent shadow bleeding onto tint layer
                         if (tintRaw) {
                           ctx.save();
@@ -1021,7 +1114,8 @@ export default function PixiRoom({
             for (let sortedIdx = 0; sortedIdx < itemsSorted.length; sortedIdx++) {
               const it = itemsSorted[sortedIdx];
               try {
-                const texIt = getOrLoadPixiTexture(it.imageUrl || '');
+                const itemUrl = it.imageUrl || '';
+                const texIt = isVideoUrl(itemUrl) ? getOrLoadVideoTexture(itemUrl) : getOrLoadPixiTexture(itemUrl);
                 if (!texIt) continue;
                 const sprIt = new PIXI.Sprite(texIt);
                 const itemLayoutW = layoutW || 800;
@@ -1044,6 +1138,15 @@ export default function PixiRoom({
                 const visualScale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? Math.max(0.1, Math.min(5, scaleRaw)) : 1;
                 const rotationRaw = Number((it as any)?.visualRotationDeg);
                 const visualRotationDeg = Number.isFinite(rotationRaw) ? rotationRaw : 0;
+                // Base transform properties from Designer (rotation, scale, skew)
+                const baseRotation = Number((it as any)?.rotation);
+                const baseScale = Number((it as any)?.scale);
+                const baseSkewX = Number((it as any)?.skewX);
+                const baseSkewY = Number((it as any)?.skewY);
+                const totalRotationDeg = (Number.isFinite(baseRotation) ? baseRotation : 0) + visualRotationDeg;
+                const totalScale = (Number.isFinite(baseScale) && baseScale > 0 ? baseScale : 1) * visualScale;
+                const skewXRad = Number.isFinite(baseSkewX) ? (baseSkewX * Math.PI) / 180 : 0;
+                const skewYRad = Number.isFinite(baseSkewY) ? (baseSkewY * Math.PI) / 180 : 0;
                 const tintRaw = typeof (it as any)?.visualTint === 'string' ? String((it as any).visualTint).trim() : '';
                 let tintParsed: number | null = null;
                 if (tintRaw) {
@@ -1057,8 +1160,8 @@ export default function PixiRoom({
                 const itemYInLayout = ((it.y || 0) - offsetPreviewY) / (scalePreview || 1);
                 // Item w/h are stored in Designer preview pixels; convert through layout coords.
                 const sizeScale = (scaleTarget || 1) / (scalePreview || 1);
-                const scaledW = Math.max(1, iw * sizeScale * visualScale);
-                const scaledH = Math.max(1, ih * sizeScale * visualScale);
+                const scaledW = Math.max(1, iw * sizeScale * totalScale);
+                const scaledH = Math.max(1, ih * sizeScale * totalScale);
                 const baseX = offsetTargetX + itemXInLayout * scaleTarget;
                 const baseY = offsetTargetY + itemYInLayout * scaleTarget;
                 sprIt.width = scaledW;
@@ -1066,7 +1169,10 @@ export default function PixiRoom({
                 sprIt.anchor.set(0.5);
                 sprIt.x = baseX + scaledW / 2;
                 sprIt.y = baseY + scaledH / 2;
-                sprIt.rotation = (visualRotationDeg * Math.PI) / 180;
+                sprIt.rotation = (totalRotationDeg * Math.PI) / 180;
+                if (skewXRad !== 0 || skewYRad !== 0) {
+                  try { sprIt.skew.set(skewXRad, skewYRad); } catch (_) { /* ignore */ }
+                }
                 if (tintParsed !== null) {
                   try { (sprIt as any).tint = tintParsed; } catch (_) { /* ignore */ }
                 }
@@ -1079,6 +1185,9 @@ export default function PixiRoom({
                   sprShadow.x = sprIt.x + 5;
                   sprShadow.y = sprIt.y + 10;
                   sprShadow.rotation = sprIt.rotation;
+                  if (skewXRad !== 0 || skewYRad !== 0) {
+                    try { sprShadow.skew.set(skewXRad, skewYRad); } catch (_) { /* ignore */ }
+                  }
                   try { (sprShadow as any).tint = 0x000000; } catch (_) { /* ignore */ }
                   sprShadow.alpha = 0;
                   try { sprShadow.filters = [new PIXI.BlurFilter({ strength: 6, quality: 3 })]; } catch (_) { sprShadow.filters = []; }
@@ -1573,6 +1682,14 @@ export default function PixiRoom({
           } catch (err) {
             console.error('[PixiRoom] resizeObserver.disconnect failed', err);
           }
+          // Pause & clean up cached video elements
+          try {
+            for (const [, vid] of videoElementCache) {
+              try { vid.pause(); vid.src = ''; vid.load(); } catch (_) { /* ignore */ }
+            }
+            videoElementCache.clear();
+            videoTextureCache.clear();
+          } catch (_) { /* ignore */ }
           try {
             // Stop/destroy PIXI app first (important for React StrictMode which mounts/unmounts twice in dev).
             // If we leave the ticker running, it can continue rendering to a detached canvas and spam WebGL errors.

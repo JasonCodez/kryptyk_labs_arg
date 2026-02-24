@@ -64,8 +64,7 @@ export async function POST(req: NextRequest) {
               interactions: (zone as any).interactions,
               linkedPuzzleId: zone.linkedPuzzleId,
               eventId: zone.eventId,
-              pickupAnimationPreset: (zone as any).pickupAnimationPreset,
-            }),
+              pickupAnimationPreset: (zone as any).pickupAnimationPreset,              sfx: (zone as any).sfx || undefined,              penaltySeconds: (zone as any).penaltySeconds || undefined,              miniPuzzle: (zone as any).miniPuzzle || undefined,            }),
           },
         });
       }

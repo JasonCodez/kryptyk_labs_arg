@@ -115,6 +115,31 @@ async function emitEscapeActivity(teamId: string, puzzleId: string, payload: any
   }
 }
 
+/**
+ * Deducts `penaltySecs` seconds from the run timer by advancing runExpiresAt backward.
+ * Returns the applied penalty and the new expiry ISO string (or nulls if no-op).
+ */
+async function applyTimePenalty(
+  teamId: string,
+  escapeRoomId: string,
+  penaltySecs: number,
+  currentRunExpiresAt: Date | null
+): Promise<{ penaltyApplied: number; newRunExpiresAt: string | null }> {
+  if (penaltySecs <= 0 || !currentRunExpiresAt) {
+    return { penaltyApplied: 0, newRunExpiresAt: null };
+  }
+  const newExpiry = new Date(currentRunExpiresAt.getTime() - penaltySecs * 1000);
+  try {
+    await (prisma as any).teamEscapeProgress.update({
+      where: { teamId_escapeRoomId: { teamId, escapeRoomId } },
+      data: { runExpiresAt: newExpiry },
+    });
+  } catch {
+    return { penaltyApplied: 0, newRunExpiresAt: null };
+  }
+  return { penaltyApplied: penaltySecs, newRunExpiresAt: newExpiry.toISOString() };
+}
+
 function makeActivityId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -206,6 +231,7 @@ export async function POST(
         currentStageIndex: true,
         solvedStages: true,
         runStartedAt: true,
+        runExpiresAt: true,
         failedAt: true,
         completedAt: true,
       },
@@ -239,9 +265,10 @@ export async function POST(
       const pickupMeta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
       const pickupSfx = extractSfx(pickupMeta, 'pickup');
       const presetRaw = typeof pickupMeta?.pickupAnimationPreset === 'string' ? pickupMeta.pickupAnimationPreset : 'cinematic';
-      const pickupAnimationPreset = ['cinematic', 'quickSpin', 'floatIn', 'powerDrop'].includes(presetRaw)
+      const pickupAnimationPreset = ['cinematic', 'quickSpin', 'floatIn', 'powerDrop', 'spiral', 'bounce', 'glitch', 'flash'].includes(presetRaw)
         ? presetRaw
         : 'cinematic';
+      const pickupAnimationUrl = typeof pickupMeta?.pickupAnimationUrl === 'string' && pickupMeta.pickupAnimationUrl ? pickupMeta.pickupAnimationUrl : null;
 
       return NextResponse.json({
         success: true,
@@ -251,6 +278,7 @@ export async function POST(
           name: item.name,
           imageUrl: item.imageUrl ?? null,
           pickupAnimationPreset,
+          pickupAnimationUrl,
         },
         ...(pickupSfx ? { sfx: pickupSfx } : {}),
       });
@@ -444,18 +472,36 @@ export async function POST(
 
       const useEffect = (meta && typeof meta.useEffect === 'object' && meta.useEffect) ? (meta.useEffect as any) : null;
 
+      // Seconds to deduct from the run timer on a wrong/failed interaction.
+      const usePenaltySecs = typeof meta.penaltySeconds === 'number' && meta.penaltySeconds > 0
+        ? Math.min(Math.floor(meta.penaltySeconds), 300)
+        : 0;
+      const currentRunExpiresAt: Date | null = progress?.runExpiresAt ? new Date(progress.runExpiresAt) : null;
+
       // If hotspot specifies required items, enforce that the dragged item is one of them.
       if (requiredItemKey && requiredItemKey !== itemKey) {
-        return NextResponse.json({ error: `That item doesn't work here.` }, { status: 409 });
+        const penalty = await applyTimePenalty(ctx.teamId, escapeRoom.id, usePenaltySecs, currentRunExpiresAt);
+        return NextResponse.json({
+          error: `That item doesn't work here.`,
+          ...(penalty.penaltyApplied > 0 ? { penaltyApplied: penalty.penaltyApplied, newRunExpiresAt: penalty.newRunExpiresAt } : {}),
+        }, { status: 409 });
       }
       if (requiresItems.length > 0 && !requiresItems.includes(itemKey)) {
-        return NextResponse.json({ error: `That item doesn't work here.` }, { status: 409 });
+        const penalty = await applyTimePenalty(ctx.teamId, escapeRoom.id, usePenaltySecs, currentRunExpiresAt);
+        return NextResponse.json({
+          error: `That item doesn't work here.`,
+          ...(penalty.penaltyApplied > 0 ? { penaltyApplied: penalty.penaltyApplied, newRunExpiresAt: penalty.newRunExpiresAt } : {}),
+        }, { status: 409 });
       }
 
       // If multiple items are required, ensure all are present.
       const missingRequiredForUse = requiresItems.filter((k) => !inventory.includes(k));
       if (requiresItems.length > 0 && missingRequiredForUse.length > 0) {
-        return NextResponse.json({ error: `Missing required item(s): ${missingRequiredForUse.join(', ')}` }, { status: 409 });
+        const penalty = await applyTimePenalty(ctx.teamId, escapeRoom.id, usePenaltySecs, currentRunExpiresAt);
+        return NextResponse.json({
+          error: `Missing required item(s): ${missingRequiredForUse.join(', ')}`,
+          ...(penalty.penaltyApplied > 0 ? { penaltyApplied: penalty.penaltyApplied, newRunExpiresAt: penalty.newRunExpiresAt } : {}),
+        }, { status: 409 });
       }
 
       // If a useEffect is configured, apply it even for non-trigger hotspots.
@@ -925,12 +971,22 @@ export async function POST(
         inventory = [];
       }
 
+      // Seconds to deduct from the run timer on a failed trigger (missing required items).
+      const triggerPenaltySecs = typeof meta.penaltySeconds === 'number' && meta.penaltySeconds > 0
+        ? Math.min(Math.floor(meta.penaltySeconds), 300)
+        : 0;
+      const triggerRunExpiresAt: Date | null = progress?.runExpiresAt ? new Date(progress.runExpiresAt) : null;
+
       // Optional gating: require items to be present in inventory
       const requiresItems: string[] = Array.isArray(meta.requiresItems) ? meta.requiresItems.filter((x: any) => typeof x === 'string') : [];
       if (requiresItems.length > 0) {
         const missing = requiresItems.filter((k) => !inventory.includes(k));
         if (missing.length > 0) {
-          return NextResponse.json({ error: `Missing required item(s): ${missing.join(', ')}` }, { status: 409 });
+          const penalty = await applyTimePenalty(ctx.teamId, escapeRoom.id, triggerPenaltySecs, triggerRunExpiresAt);
+          return NextResponse.json({
+            error: `Missing required item(s): ${missing.join(', ')}`,
+            ...(penalty.penaltyApplied > 0 ? { penaltyApplied: penalty.penaltyApplied, newRunExpiresAt: penalty.newRunExpiresAt } : {}),
+          }, { status: 409 });
         }
       }
 
@@ -1057,6 +1113,32 @@ export async function POST(
         sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
         contribution: contributionSummary,
         ...(triggerSfx ? { sfx: triggerSfx } : {}),
+      });
+    }
+
+    if (action === 'miniPuzzlePenalty') {
+      const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+      const penaltySecs =
+        typeof meta?.miniPuzzle?.config?.timePenaltySeconds === 'number' &&
+        meta.miniPuzzle.config.timePenaltySeconds > 0
+          ? Math.min(Math.floor(meta.miniPuzzle.config.timePenaltySeconds), 300)
+          : 0;
+      const runExpiry: Date | null = progress?.runExpiresAt ? new Date(progress.runExpiresAt) : null;
+      const penalty = await applyTimePenalty(ctx.teamId, escapeRoom.id, penaltySecs, runExpiry);
+
+      // Broadcast updated expiry so all teammates' timers sync immediately
+      if (penalty.penaltyApplied > 0 && penalty.newRunExpiresAt) {
+        await emitEscapeSession(ctx.teamId, puzzleId, {
+          teamId: ctx.teamId,
+          puzzleId,
+          runExpiresAt: penalty.newRunExpiresAt,
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        penaltyApplied: penalty.penaltyApplied,
+        newRunExpiresAt: penalty.newRunExpiresAt,
       });
     }
 

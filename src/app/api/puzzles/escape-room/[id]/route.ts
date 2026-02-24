@@ -162,6 +162,7 @@ export async function GET(
                   w: it.w,
                   h: it.h,
                   properties: it.properties || {},
+                  ambientEffect: it.ambientEffect || null,
                 }));
             }
           } catch (err) {
@@ -189,7 +190,9 @@ export async function GET(
       puzzle: {
         title: escapeRoomData.title || puzzle.title,
         description: escapeRoomData.description || puzzle.description,
-        startMode: (escapeRoomData && escapeRoomData.startMode) ? escapeRoomData.startMode : 'leader-start'
+        startMode: (escapeRoomData && escapeRoomData.startMode) ? escapeRoomData.startMode : 'leader-start',
+        intro: escapeRoomData.intro || null,
+        outro: escapeRoomData.outro || null,
       },
       layouts
     });

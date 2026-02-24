@@ -4,6 +4,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation";
 import ActionModal from "@/components/ActionModal";
 import PuzzleModal from "@/components/puzzle/PuzzleModal";
+import StageCelebration from "@/components/puzzle/StageCelebration";
+import MiniPuzzleModal from "@/components/puzzle/mini/MiniPuzzleModal";
+import type { MiniPuzzleType } from "@/components/puzzle/mini/MiniPuzzleModal";
+import RoomIntroPlayer from "@/components/puzzle/RoomIntroPlayer";
+import type { RoomIntro } from "@/components/puzzle/RoomIntroPlayer";
+
+/** Check whether a URL points to a video file (mp4, webm, mov, avi). */
+const isVideoUrl = (url: string | undefined | null): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.split(/[?#]/)[0].toLowerCase();
+  return /\.(mp4|webm|mov|avi)$/.test(clean);
+};
 
 // IMPORTANT: keep this at module scope.
 // Defining React.lazy() inside the component recreates a new component type on every render,
@@ -34,7 +46,8 @@ type PendingPickup = {
   itemName: string;
   imageUrl: string | null;
   label: string;
-  animationPreset: 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop';
+  animationPreset: 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop' | 'spiral' | 'bounce' | 'glitch' | 'flash';
+  pickupAnimationUrl?: string;
 };
 
 type EscapeActivityEntry = {
@@ -74,6 +87,8 @@ type EscapeRoomResponse = {
   puzzle?: {
     title: string;
     description: string | null;
+    intro?: RoomIntro | null;
+    outro?: RoomIntro | null;
   };
   layouts?: Array<{
     id: string;
@@ -115,6 +130,10 @@ export function EscapeRoomPuzzle({
   const [failedAt, setFailedAt] = useState<string | null>(null);
   const [failedReason, setFailedReason] = useState<string | null>(null);
   const [completedAt, setCompletedAt] = useState<string | null>(null);
+  // Per-session local state: has this player watched/skipped the intro?
+  const [introWatched, setIntroWatched] = useState(false);
+  // Outro: shown once when the run completes live (not on re-join of completed run).
+  const [outroActive, setOutroActive] = useState(false);
   const [isLeader, setIsLeader] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -532,14 +551,41 @@ export function EscapeRoomPuzzle({
     if (!completedAt) return;
 
     completedRef.current = true;
-    onComplete?.();
-  }, [loading, completedAt, onComplete]);
+    // If an outro is configured, show it first; onComplete fires after dismissal.
+    const outro = data?.puzzle?.outro;
+    const hasOutro = !!(outro && (outro.videoUrl || outro.posterUrl || outro.title || outro.bodyText));
+    if (hasOutro) {
+      setOutroActive(true);
+    } else {
+      onComplete?.();
+    }
+  }, [loading, completedAt, onComplete, data]);
 
   const hints = useMemo(() => {
     if (!stage) return [] as string[];
     const raw = stage.hints;
     if (Array.isArray(raw)) return raw.map((h) => (typeof h === "string" ? h : JSON.stringify(h)));
     try { return typeof raw === "string" ? JSON.parse(raw) : []; } catch { return [] as string[]; }
+  }, [stage]);
+
+  /** Animation config for the current scene (transitionIn, solveCelebration). */
+  const stageAnimConfig = useMemo(() => {
+    if (!stage) return null;
+    try {
+      const pd = typeof stage.puzzleData === 'string' ? JSON.parse(stage.puzzleData as string) : (stage.puzzleData || {});
+      const scene = (pd as any)?.scene || {};
+      return {
+        transitionIn: typeof scene.transitionIn === 'string' ? scene.transitionIn : 'fade',
+        solveCelebration: typeof scene.solveCelebration === 'string' ? scene.solveCelebration : 'confetti',
+        bgm: scene.bgm && typeof scene.bgm.url === 'string' && scene.bgm.url
+          ? { url: scene.bgm.url, volume: typeof scene.bgm.volume === 'number' ? scene.bgm.volume : 0.5 }
+          : null,
+        enterSfx: typeof scene.enterSfx === 'string' && scene.enterSfx ? scene.enterSfx : null,
+        solveSfx: typeof scene.solveSfx === 'string' && scene.solveSfx ? scene.solveSfx : null,
+      };
+    } catch {
+      return { transitionIn: 'fade', solveCelebration: 'confetti', bgm: null, enterSfx: null, solveSfx: null };
+    }
   }, [stage]);
 
   // submit handler removed — stage answers are not used in this variant
@@ -682,9 +728,130 @@ export function EscapeRoomPuzzle({
     setStageAspect(null);
   }, [stageIndex, (layout as any)?.id]);
 
+  // Refs for scene transition & celebration tracking
+  const prevStageIndexRef = useRef<number>(stageIndex);
+  const prevStageAnimConfigRef = useRef<typeof stageAnimConfig>(null);
+  const sceneTransTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const penaltyToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bgmRef = useRef<HTMLAudioElement | null>(null);
+  const bgmFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const prev = prevStageIndexRef.current;
+    prevStageIndexRef.current = stageIndex;
+    const prevCfg = prevStageAnimConfigRef.current;
+    prevStageAnimConfigRef.current = stageAnimConfig;
+
+    // Skip the initial mount (prevCfg is null and stageIndex hasn't changed)
+    if (prevCfg === null) return;
+    if (prev === stageIndex) return;
+
+    // Stage advanced — show solve celebration for the just-completed scene
+    if (stageIndex > prev && prevCfg?.solveCelebration && prevCfg.solveCelebration !== 'none' && runStartedAt) {
+      setCelebration({ variant: prevCfg.solveCelebration, key: Date.now() });
+    }
+    // Solve SFX
+    if (stageIndex > prev && prevCfg?.solveSfx && runStartedAt) {
+      playSfx(prevCfg.solveSfx);
+    }
+
+    // Trigger transition-in animation for the incoming scene
+    const transType = stageAnimConfig?.transitionIn || 'fade';
+    if (transType !== 'none') {
+      setSceneTransitionType(transType);
+      setSceneTransitionPhase('in');
+      if (sceneTransTimerRef.current) clearTimeout(sceneTransTimerRef.current);
+      sceneTransTimerRef.current = setTimeout(() => {
+        setSceneTransitionPhase('idle');
+        sceneTransTimerRef.current = null;
+      }, 700);
+    }
+    // Enter SFX for incoming scene
+    if (stageAnimConfig?.enterSfx) {
+      playSfx(stageAnimConfig.enterSfx);
+    }
+  }, [stageIndex, stageAnimConfig, runStartedAt]);
+
+  // Cleanup transition timer on unmount
+  useEffect(() => {
+    return () => {
+      if (sceneTransTimerRef.current) clearTimeout(sceneTransTimerRef.current);
+      if (sceneShakeTimerRef.current) clearTimeout(sceneShakeTimerRef.current);
+      if (penaltyToastTimerRef.current) clearTimeout(penaltyToastTimerRef.current);
+      if (bgmFadeRef.current) clearInterval(bgmFadeRef.current);
+      if (bgmRef.current) { bgmRef.current.pause(); bgmRef.current = null; }
+    };
+  }, []);
+
+  // BGM crossfade — starts/stops looping background music when scene changes
+  useEffect(() => {
+    if (!soundEnabledRef.current) {
+      if (bgmRef.current) { bgmRef.current.pause(); bgmRef.current = null; }
+      return;
+    }
+    const cfg = stageAnimConfig?.bgm;
+    const newUrl = cfg?.url || '';
+    const newVol = cfg?.volume ?? 0.5;
+    const cur = bgmRef.current;
+    const isSameTrack = cur && !cur.paused && cur.dataset.src === newUrl && !!newUrl;
+    if (isSameTrack) return;
+    // Fade out existing track
+    if (cur && !cur.paused) {
+      if (bgmFadeRef.current) clearInterval(bgmFadeRef.current);
+      const startVol = cur.volume;
+      let step = 0;
+      const steps = 20;
+      bgmFadeRef.current = setInterval(() => {
+        step++;
+        cur.volume = Math.max(0, startVol * (1 - step / steps));
+        if (step >= steps) {
+          cur.pause();
+          clearInterval(bgmFadeRef.current!);
+          bgmFadeRef.current = null;
+        }
+      }, 30) as unknown as ReturnType<typeof setInterval>;
+    }
+    // Start new track
+    if (newUrl) {
+      const el = new Audio(newUrl);
+      el.loop = true;
+      el.volume = 0;
+      el.dataset.src = newUrl;
+      bgmRef.current = el;
+      void el.play().catch(() => {});
+      if (bgmFadeRef.current) clearInterval(bgmFadeRef.current);
+      let step = 0;
+      const steps = 20;
+      bgmFadeRef.current = setInterval(() => {
+        step++;
+        el.volume = Math.min(newVol, newVol * (step / steps));
+        if (step >= steps) {
+          clearInterval(bgmFadeRef.current!);
+          bgmFadeRef.current = null;
+        }
+      }, 30) as unknown as ReturnType<typeof setInterval>;
+    } else {
+      bgmRef.current = null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageAnimConfig]);
+
+  // Pause/resume BGM when soundEnabled toggles
+  useEffect(() => {
+    if (!soundEnabled && bgmRef.current) {
+      bgmRef.current.pause();
+    } else if (soundEnabled && bgmRef.current?.paused && bgmRef.current.src) {
+      void bgmRef.current.play().catch(() => {});
+    }
+  }, [soundEnabled]);
+
   const stageDropRef = useRef<HTMLDivElement | null>(null);
   const inventoryPanelRef = useRef<HTMLDivElement | null>(null);
   const pickupAnimTimerRef = useRef<number | null>(null);
+  const actionInFlightRef = useRef(false);
+  const hotspotCooldownRef = useRef<Map<string, number>>(new Map());
+  const [isActionInFlight, setIsActionInFlight] = useState(false);
   const [effectiveLayoutSize, setEffectiveLayoutSize] = useState<{ w: number; h: number } | null>(null);
 
   const onEffectiveLayoutSize = useCallback((w: number, h: number) => {
@@ -709,12 +876,25 @@ export function EscapeRoomPuzzle({
   const [actionModalMessage, setActionModalMessage] = useState<string | undefined>(undefined);
   const [actionModalImageUrl, setActionModalImageUrl] = useState<string | null>(null);
   const [actionModalDescription, setActionModalDescription] = useState<string | undefined>(undefined);
-  const [actionModalChoices, setActionModalChoices] = useState<Array<{ label: string; modalContent: string }> | null>(null);
+  const [actionModalChoices, setActionModalChoices] = useState<Array<{ label: string; modalContent: string; imageUrl?: string }> | null>(null);
   const [actionModalChoiceIndex, setActionModalChoiceIndex] = useState<number>(0);
   const [pendingPickup, setPendingPickup] = useState<PendingPickup | null>(null);
   const [pickupPhase, setPickupPhase] = useState<'reveal' | 'ready' | 'committing' | 'toInventory'>('reveal');
   const [pickupFlight, setPickupFlight] = useState<{ dx: number; dy: number; scale: number } | null>(null);
   const [inventoryPulse, setInventoryPulse] = useState(false);
+  // Scene transition & celebration state
+  const [sceneTransitionPhase, setSceneTransitionPhase] = useState<'idle' | 'in'>('idle');
+  const [sceneTransitionType, setSceneTransitionType] = useState<string>('fade');
+  const [celebration, setCelebration] = useState<{ variant: string; key: number } | null>(null);
+  const [sceneShake, setSceneShake] = useState(false);
+  const [penaltyToast, setPenaltyToast] = useState<string | null>(null);
+  const [miniPuzzleState, setMiniPuzzleState] = useState<{
+    open: boolean;
+    puzzleType: MiniPuzzleType;
+    config: any;
+    hotspotId: string;
+    label: string;
+  } | null>(null);
   const [puzzleModal, setPuzzleModal] = useState<{ open: boolean; type: string; config?: any }>({ open: false, type: "info", config: {} });
 
   const clearPickupTimer = useCallback(() => {
@@ -724,6 +904,84 @@ export function EscapeRoomPuzzle({
     }
   }, []);
 
+  // Procedural SFX via Web Audio API — no external files needed
+  const playBuiltinSfx = useCallback((kind: 'error' | 'pickup' | 'inventory') => {
+    if (!soundEnabledRef.current) return;
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      if (kind === 'error') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.25);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+      } else if (kind === 'pickup') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now); osc.stop(now + 0.2);
+      } else {
+        // inventory
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(990, now + 0.1);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now); osc.stop(now + 0.15);
+      }
+      osc.onended = () => { ctx.close().catch(() => {}); };
+    } catch { /* ignore */ }
+  }, []);
+
+  const triggerSceneShake = useCallback(() => {
+    playBuiltinSfx('error');
+    setSceneShake(true);
+    if (sceneShakeTimerRef.current) clearTimeout(sceneShakeTimerRef.current);
+    sceneShakeTimerRef.current = setTimeout(() => {
+      setSceneShake(false);
+      sceneShakeTimerRef.current = null;
+    }, 500);
+  }, [playBuiltinSfx]);
+
+  /** Show a "-Xs" penalty toast for 2.5 seconds and, if provided, update the run expiry. */
+  const showPenaltyToast = useCallback((penaltySecs: number, newExpiry?: string | null) => {
+    if (penaltySecs <= 0) return;
+    if (newExpiry) setRunExpiresAt(newExpiry);
+    setPenaltyToast(`-${penaltySecs}s`);
+    if (penaltyToastTimerRef.current) clearTimeout(penaltyToastTimerRef.current);
+    penaltyToastTimerRef.current = setTimeout(() => {
+      setPenaltyToast(null);
+      penaltyToastTimerRef.current = null;
+    }, 2500);
+  }, []);
+
+  /**
+   * Called when the player solves a mini-puzzle.
+   * Fires the same `action:"trigger"` pipeline as clicking a trigger hotspot,
+   * which runs useEffect (grant items, advance stage, etc.) on the server.
+   */
+  const handleMiniPuzzleSolve = useCallback(async (hotspotId: string) => {
+    const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'trigger', hotspotId, teamId }),
+    });
+    const jb = await r.json().catch(() => null);
+    setMiniPuzzleState(null);
+    if (r.ok) {
+      playSfx(jb?.sfx);
+    }
+    // stage advancement comes via socket as usual
+  }, [puzzleId, teamId, playSfx]);
+
   useEffect(() => {
     return () => {
       clearPickupTimer();
@@ -731,11 +989,21 @@ export function EscapeRoomPuzzle({
   }, [clearPickupTimer]);
 
   const handleHotspotAction = useCallback(async (hotspotId: string) => {
+    // Fast synchronous guards — no async, safe before locking
+    if (!teamId) return;
+    if (!runStartedAt) return;
+    if (failedAt || completedAt) return;
+    if (pendingPickup) return;
+    if (actionInFlightRef.current) return;
+    // Per-hotspot 600 ms cooldown prevents double-tap spam
+    const now = Date.now();
+    const lastClick = hotspotCooldownRef.current.get(hotspotId) ?? 0;
+    if (now - lastClick < 600) return;
+    hotspotCooldownRef.current.set(hotspotId, now);
+
+    actionInFlightRef.current = true;
+    setIsActionInFlight(true);
     try {
-      if (!teamId) return;
-      if (!runStartedAt) return;
-      if (failedAt || completedAt) return;
-      if (pendingPickup) return;
       // find hotspot in current layout
       const curLayout = layout as any;
       const hs = curLayout?.hotspots?.find((h: any) => h.id === hotspotId);
@@ -796,6 +1064,8 @@ export function EscapeRoomPuzzle({
             }
             return;
           }
+          triggerSceneShake();
+          if (jb?.penaltyApplied > 0) showPenaltyToast(jb.penaltyApplied, jb?.newRunExpiresAt);
           setActionModalTitle('Unable to use item');
           setActionModalMessage(jb?.error || 'Please try again.');
           setActionModalOpen(true);
@@ -831,15 +1101,32 @@ export function EscapeRoomPuzzle({
         // Optional: multiple interaction choices for a single item/zone
         const extra = Array.isArray(hsMeta?.interactions)
           ? (hsMeta.interactions as any[])
-              .map((x) => ({ label: x?.label, modalContent: x?.modalContent }))
+              .map((x) => ({ label: x?.label, modalContent: x?.modalContent, imageUrl: typeof x?.imageUrl === 'string' ? x.imageUrl : undefined }))
               .filter((x) => typeof x.label === 'string' && typeof x.modalContent === 'string')
           : [];
-        const choices = [{ label: 'Inspect', modalContent: baseMessage }, ...extra];
+        const baseImageUrl =
+          (typeof hsMeta?.imageUrl === 'string' && hsMeta.imageUrl) ||
+            (typeof assocItem?.imageUrl === 'string' && assocItem.imageUrl) ||
+            undefined;
+        const choices = [{ label: 'Inspect', modalContent: baseMessage, imageUrl: baseImageUrl }, ...extra];
 
         setActionModalChoices(choices.length > 1 ? choices : null);
         setActionModalChoiceIndex(0);
         setActionModalMessage(baseMessage);
         setActionModalOpen(true);
+        return;
+      }
+
+      if (actionType === 'miniPuzzle') {
+        const mp = hsMeta?.miniPuzzle;
+        const puzzleType: MiniPuzzleType = (mp?.type === 'wire' || mp?.type === 'dial') ? mp.type : 'keypad';
+        setMiniPuzzleState({
+          open: true,
+          puzzleType,
+          config: mp?.config || {},
+          hotspotId,
+          label: hotspotLabel,
+        });
         return;
       }
 
@@ -851,6 +1138,8 @@ export function EscapeRoomPuzzle({
         });
         const jb = await r.json().catch(() => null);
         if (!r.ok) {
+          triggerSceneShake();
+          if (jb?.penaltyApplied > 0) showPenaltyToast(jb.penaltyApplied, jb?.newRunExpiresAt);
           setActionModalTitle(hsMeta?.label || 'Locked');
           setActionModalMessage(jb?.error || 'Unable to open.' );
           setActionModalOpen(true);
@@ -870,6 +1159,7 @@ export function EscapeRoomPuzzle({
       const jb = await r.json().catch(() => null);
       playSfx(jb?.sfx);
       if (!r.ok) {
+        triggerSceneShake();
         setActionModalTitle(hsMeta?.label || 'Unable to pick up');
         setActionModalMessage(jb?.error || 'Please try again.');
         setActionModalOpen(true);
@@ -886,6 +1176,7 @@ export function EscapeRoomPuzzle({
 
       clearPickupTimer();
       setPickupFlight(null);
+      playBuiltinSfx('pickup');
       setPickupPhase('reveal');
       setPendingPickup({
         hotspotId,
@@ -894,24 +1185,48 @@ export function EscapeRoomPuzzle({
         itemName: String(preview.name),
         imageUrl: typeof preview.imageUrl === 'string' ? preview.imageUrl : null,
         label: hotspotLabel === 'here' ? String(preview.name) : hotspotLabel,
-        animationPreset: preview?.pickupAnimationPreset === 'quickSpin' || preview?.pickupAnimationPreset === 'floatIn' || preview?.pickupAnimationPreset === 'powerDrop'
+        animationPreset: ['cinematic','quickSpin','floatIn','powerDrop','spiral','bounce','glitch','flash'].includes(preview?.pickupAnimationPreset)
           ? preview.pickupAnimationPreset
           : 'cinematic',
+        pickupAnimationUrl: typeof preview.pickupAnimationUrl === 'string' && preview.pickupAnimationUrl ? preview.pickupAnimationUrl : undefined,
       });
       pickupAnimTimerRef.current = window.setTimeout(() => {
         setPickupPhase('ready');
         pickupAnimTimerRef.current = null;
-      }, 950);
+      }, (() => {
+        // Match timer to each preset's actual CSS animation duration + small buffer
+        const presetMs: Record<string, number> = {
+          cinematic: 1000,
+          quickSpin: 670,
+          floatIn: 950,
+          powerDrop: 910,
+          spiral: 800,
+          bounce: 870,
+          glitch: 600,
+          flash: 700,
+        };
+        const preset = ['cinematic','quickSpin','floatIn','powerDrop','spiral','bounce','glitch','flash'].includes(preview?.pickupAnimationPreset)
+          ? preview.pickupAnimationPreset : 'cinematic';
+        return presetMs[preset] ?? 1000;
+      })());
     } catch (e) {
       console.error('Hotspot action failed', e);
+    } finally {
+      actionInFlightRef.current = false;
+      setIsActionInFlight(false);
     }
-  }, [teamId, runStartedAt, failedAt, completedAt, pendingPickup, layout, puzzleId, playSfx, selectedInventoryKey, inventory, inventoryItems, inventoryLocks, currentUserId, clearPickupTimer]);
+  }, [teamId, runStartedAt, failedAt, completedAt, pendingPickup, layout, puzzleId, playSfx, playBuiltinSfx, selectedInventoryKey, inventory, inventoryItems, inventoryLocks, currentUserId, clearPickupTimer, triggerSceneShake, showPenaltyToast, handleMiniPuzzleSolve]);
 
   const handleActionModalChoice = useCallback((index: number) => {
     if (!actionModalChoices || actionModalChoices.length === 0) return;
     const idx = Math.max(0, Math.min(index, actionModalChoices.length - 1));
     setActionModalChoiceIndex(idx);
     setActionModalMessage(actionModalChoices[idx]?.modalContent || '');
+    // Update the modal image/video when switching interaction choices
+    const choiceImg = (actionModalChoices[idx] as any)?.imageUrl;
+    if (typeof choiceImg === 'string' && choiceImg) {
+      setActionModalImageUrl(choiceImg);
+    }
   }, [actionModalChoices]);
 
   const dismissPendingPickup = useCallback(() => {
@@ -946,6 +1261,7 @@ export function EscapeRoomPuzzle({
       if (jb?.inventoryItems) setInventoryItems(jb.inventoryItems || {});
 
       setSideTab('inventory');
+      playBuiltinSfx('inventory');
       setInventoryPulse(true);
 
       const startX = window.innerWidth * 0.5;
@@ -978,22 +1294,24 @@ export function EscapeRoomPuzzle({
   const canInteract = !!runStartedAt && !failedAt && !completedAt && !clientTimedOut && !pendingPickup;
 
   const pickupRevealClass = pendingPickup
-    ? pendingPickup.animationPreset === 'quickSpin'
-      ? 'pickup-reveal-quick-spin'
-      : pendingPickup.animationPreset === 'floatIn'
-      ? 'pickup-reveal-float-in'
-      : pendingPickup.animationPreset === 'powerDrop'
-      ? 'pickup-reveal-power-drop'
+    ? pendingPickup.animationPreset === 'quickSpin' ? 'pickup-reveal-quick-spin'
+      : pendingPickup.animationPreset === 'floatIn' ? 'pickup-reveal-float-in'
+      : pendingPickup.animationPreset === 'powerDrop' ? 'pickup-reveal-power-drop'
+      : pendingPickup.animationPreset === 'spiral' ? 'pickup-reveal-spiral'
+      : pendingPickup.animationPreset === 'bounce' ? 'pickup-reveal-bounce'
+      : pendingPickup.animationPreset === 'glitch' ? 'pickup-reveal-glitch'
+      : pendingPickup.animationPreset === 'flash' ? 'pickup-reveal-flash'
       : 'pickup-cinematic-reveal'
     : '';
 
   const pickupToInventoryClass = pendingPickup
-    ? pendingPickup.animationPreset === 'quickSpin'
-      ? 'pickup-to-inventory-quick-spin'
-      : pendingPickup.animationPreset === 'floatIn'
-      ? 'pickup-to-inventory-float-in'
-      : pendingPickup.animationPreset === 'powerDrop'
-      ? 'pickup-to-inventory-power-drop'
+    ? pendingPickup.animationPreset === 'quickSpin' ? 'pickup-to-inventory-quick-spin'
+      : pendingPickup.animationPreset === 'floatIn' ? 'pickup-to-inventory-float-in'
+      : pendingPickup.animationPreset === 'powerDrop' ? 'pickup-to-inventory-power-drop'
+      : pendingPickup.animationPreset === 'spiral' ? 'pickup-to-inventory-spiral'
+      : pendingPickup.animationPreset === 'bounce' ? 'pickup-to-inventory-bounce'
+      : pendingPickup.animationPreset === 'glitch' ? 'pickup-to-inventory-glitch'
+      : pendingPickup.animationPreset === 'flash' ? 'pickup-to-inventory-flash'
       : 'pickup-cinematic-to-inventory'
     : '';
 
@@ -1230,6 +1548,31 @@ export function EscapeRoomPuzzle({
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 relative">
+      {/* ── Room Intro overlay (shown once per session before the briefing) ── */}
+      {(() => {
+        const intro = data?.puzzle?.intro;
+        const hasIntro = !!(intro && (intro.videoUrl || intro.posterUrl || intro.title || intro.bodyText));
+        if (!hasIntro || introWatched || runStartedAt || failedAt || completedAt) return null;
+        return (
+          <RoomIntroPlayer
+            intro={intro!}
+            onComplete={() => setIntroWatched(true)}
+          />
+        );
+      })()}
+
+      {/* ── Room Outro overlay (shown once when the run is freshly completed) ── */}
+      {outroActive && data?.puzzle?.outro && (
+        <RoomIntroPlayer
+          intro={data.puzzle.outro}
+          completeLabel="🏆 Leave the Room"
+          onComplete={() => {
+            setOutroActive(false);
+            onComplete?.();
+          }}
+        />
+      )}
+
       {timeExpiredModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/70" />
@@ -1369,14 +1712,16 @@ export function EscapeRoomPuzzle({
           <div className="flex flex-col gap-4">
             <div className="flex justify-center">
               <div
-                className="w-full bg-slate-950"
+                className={`w-full bg-slate-950${sceneShake ? ' scene-shake' : ''}`}
                 ref={stageDropRef}
                 style={{
+                  position: 'relative',
                   // Let the canvas grow on larger screens while preserving the room ratio.
                   // Match the Designer's logical coordinate space when layout dimensions are missing.
                   aspectRatio: stageAspect || `${(layout as any)?.width || 600} / ${(layout as any)?.height || 320}`,
                   overflow: 'hidden',
                   borderRadius: 8,
+                  cursor: isActionInFlight ? 'wait' : undefined,
                 }}
               >
                 <React.Suspense fallback={<div className="text-gray-400">Loading room...</div>}>
@@ -1388,6 +1733,42 @@ export function EscapeRoomPuzzle({
                     onEffectiveLayoutSize={onEffectiveLayoutSize}
                   />
                 </React.Suspense>
+
+                {/* Ambient item effect overlays — glowing auras positioned over items */}
+                {effectiveLayoutSize && (layout as any)?.items?.some((it: any) => it.ambientEffect && it.ambientEffect !== 'none') && (
+                  <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 5 }}>
+                    {((layout as any).items as any[])
+                      .filter((it: any) => it.ambientEffect && it.ambientEffect !== 'none')
+                      .map((it: any) => (
+                        <div
+                          key={`ambient-${it.id}`}
+                          className={`escape-ambient-${it.ambientEffect}`}
+                          style={{
+                            position: 'absolute',
+                            left: `${(it.x / effectiveLayoutSize.w) * 100}%`,
+                            top: `${(it.y / effectiveLayoutSize.h) * 100}%`,
+                            width: `${((it.w || 48) / effectiveLayoutSize.w) * 100}%`,
+                            height: `${((it.h || 48) / effectiveLayoutSize.h) * 100}%`,
+                            borderRadius: 4,
+                            transform: [
+                              it.scale != null && it.scale !== 1 ? `scale(${it.scale})` : '',
+                              it.rotation ? `rotate(${it.rotation}deg)` : '',
+                              it.skewX ? `skewX(${it.skewX}deg)` : '',
+                              it.skewY ? `skewY(${it.skewY}deg)` : '',
+                            ].filter(Boolean).join(' ') || undefined,
+                            transformOrigin: 'center center',
+                          }}
+                        />
+                      ))}
+                  </div>
+                )}
+
+                {/* Scene transition overlay — fires when stageIndex changes */}
+                {sceneTransitionPhase === 'in' && (
+                  <div
+                    className={`absolute inset-0 pointer-events-none z-20 scene-transition-${sceneTransitionType}`}
+                  />
+                )}
               </div>
             </div>
 
@@ -1485,8 +1866,13 @@ export function EscapeRoomPuzzle({
                         >
                           <div className="flex items-center gap-2">
                             {imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={imageUrl} alt={displayName} className="h-9 w-9 rounded object-contain bg-neutral-900/60 border border-amber-600/25" />
+                              isVideoUrl(imageUrl) ? (
+                                // eslint-disable-next-line jsx-a11y/media-has-caption
+                                <video src={imageUrl} autoPlay loop muted playsInline className="h-9 w-9 rounded object-contain bg-neutral-900/60 border border-amber-600/25" />
+                              ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={imageUrl} alt={displayName} className="h-9 w-9 rounded object-contain bg-neutral-900/60 border border-amber-600/25" />
+                              )
                             ) : (
                               <div className="h-9 w-9 rounded bg-neutral-900/60 border border-amber-600/25" />
                             )}
@@ -1619,8 +2005,40 @@ export function EscapeRoomPuzzle({
       ) : null}
 
       {pendingPickup ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 backdrop-blur-[1px]">
+        <div className={`fixed inset-0 z-[70] flex items-center justify-center ${pendingPickup.pickupAnimationUrl && pickupPhase === 'ready' ? '' : 'bg-black/65 backdrop-blur-[1px]'}`}>
           <div className="absolute inset-0 pointer-events-none" />
+          {pendingPickup.pickupAnimationUrl && pickupPhase === 'ready' ? (
+            /* Seamless full-size video layout — no card wrapper, video matches reveal size */
+            <div className="relative flex flex-col items-center justify-center w-full h-full">
+              <video
+                src={/^https?:\/\//i.test(pendingPickup.pickupAnimationUrl) ? `/api/image-proxy?url=${encodeURIComponent(pendingPickup.pickupAnimationUrl)}` : pendingPickup.pickupAnimationUrl}
+                autoPlay
+                muted
+                playsInline
+                className="max-h-[55vh] max-w-[65vw] object-contain rounded-lg drop-shadow-[0_0_40px_rgba(251,191,36,0.3)]"
+              />
+              <div className="mt-5 text-center">
+                <h3 className="text-2xl font-bold text-amber-50 drop-shadow-lg">You found {pendingPickup.itemName}</h3>
+                <p className="mt-2 text-sm text-amber-100/70">Secure it now and add it to your inventory.</p>
+                <div className="mt-3 flex gap-3 justify-center">
+                  <button
+                    type="button"
+                    onClick={dismissPendingPickup}
+                    className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40"
+                  >
+                    Not now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmPendingPickup()}
+                    className="px-4 py-2 rounded font-semibold text-white bg-amber-600 hover:bg-amber-500"
+                  >
+                    Add to Inventory
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-amber-500/40 bg-neutral-950/95 shadow-2xl overflow-hidden">
             <div className="px-5 pt-5 pb-2 text-center">
               <div className="text-xs uppercase tracking-[0.18em] text-amber-300/70">Discovery</div>
@@ -1646,8 +2064,13 @@ export function EscapeRoomPuzzle({
                 }
               >
                 {pendingPickup.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={pendingPickup.imageUrl} alt={pendingPickup.itemName} className="h-36 w-36 object-contain" />
+                  isVideoUrl(pendingPickup.imageUrl) ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video src={pendingPickup.imageUrl} autoPlay loop muted playsInline className="h-36 w-36 object-contain" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={pendingPickup.imageUrl} alt={pendingPickup.itemName} className="h-36 w-36 object-contain" />
+                  )
                 ) : (
                   <div className="h-36 w-36 rounded-lg border border-amber-500/25 bg-neutral-900/80" />
                 )}
@@ -1676,6 +2099,7 @@ export function EscapeRoomPuzzle({
               </button>
             </div>
           </div>
+          )}
         </div>
       ) : null}
 
@@ -1706,9 +2130,75 @@ export function EscapeRoomPuzzle({
         onClose={() => setPuzzleModal({ ...puzzleModal, open: false })}
         onComplete={() => setPuzzleModal({ ...puzzleModal, open: false })}
       />
+      {/* Stage solve celebration overlay */}
+      {celebration && (
+        <StageCelebration
+          key={celebration.key}
+          variant={celebration.variant as any}
+          onDone={() => setCelebration(null)}
+        />
+      )}
+      {/* Time penalty toast — shown when a wrong action costs run time */}
+      {penaltyToast && (
+        <div
+          className="penalty-toast"
+          aria-live="assertive"
+          style={{
+            position: 'fixed',
+            top: '72px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+        >
+          <div className="penalty-toast-inner">
+            ⏱ {penaltyToast}
+          </div>
+        </div>
+      )}
+      {/* Mini-puzzle modal (keypad / wire / dial) */}
+      {miniPuzzleState?.open && miniPuzzleState.config && (
+        <MiniPuzzleModal
+          open={miniPuzzleState.open}
+          puzzleType={miniPuzzleState.puzzleType}
+          config={miniPuzzleState.config}
+          label={miniPuzzleState.label}
+          hotspotId={miniPuzzleState.hotspotId}
+          puzzleId={puzzleId}
+          teamId={teamId || ''}
+          onSolve={handleMiniPuzzleSolve}
+          onPenalty={showPenaltyToast}
+          onClose={() => setMiniPuzzleState(null)}
+        />
+      )}
       <style jsx global>{`
+        .pickup-cinematic-item {
+          transition: opacity 0.35s ease-out;
+        }
         .pickup-cinematic-reveal {
           animation: pickupReveal 0.95s cubic-bezier(0.2, 0.7, 0.15, 1) forwards;
+        }
+
+        /* ── Time penalty toast ── */
+        .penalty-toast-inner {
+          background: rgba(220, 38, 38, 0.92);
+          color: #fff;
+          font-size: 1.5rem;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          padding: 0.45rem 1.4rem;
+          border-radius: 999px;
+          box-shadow: 0 4px 24px rgba(220, 38, 38, 0.55);
+          animation: penaltyToastAnim 2.5s cubic-bezier(0.25, 0.9, 0.4, 1) forwards;
+          white-space: nowrap;
+        }
+        @keyframes penaltyToastAnim {
+          0%   { opacity: 0; transform: translateY(10px) scale(0.88); }
+          12%  { opacity: 1; transform: translateY(-4px) scale(1.08); }
+          22%  { transform: translateY(0) scale(1); }
+          70%  { opacity: 1; }
+          100% { opacity: 0; transform: translateY(-20px) scale(0.92); }
         }
 
         .pickup-cinematic-to-inventory {
@@ -1725,6 +2215,33 @@ export function EscapeRoomPuzzle({
 
         .pickup-reveal-power-drop {
           animation: pickupRevealPowerDrop 0.86s cubic-bezier(0.18, 0.82, 0.24, 1) forwards;
+        }
+
+        /* ── New pickup reveal presets ── */
+        .pickup-reveal-spiral {
+          animation: pickupRevealSpiral 0.75s cubic-bezier(0.18, 0.9, 0.25, 1) forwards;
+        }
+        .pickup-reveal-bounce {
+          animation: pickupRevealBounce 0.82s cubic-bezier(0.22, 1.2, 0.36, 1) forwards;
+        }
+        .pickup-reveal-glitch {
+          animation: pickupRevealGlitch 0.55s steps(6, end) forwards;
+        }
+        .pickup-reveal-flash {
+          animation: pickupRevealFlash 0.65s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        /* ── New pickup to-inventory presets ── */
+        .pickup-to-inventory-spiral {
+          animation: pickupToInventorySpiral 0.65s cubic-bezier(0.24, 0.66, 0.2, 1) forwards;
+        }
+        .pickup-to-inventory-bounce {
+          animation: pickupToInventoryBounce 0.62s cubic-bezier(0.27, 0.78, 0.22, 1) forwards;
+        }
+        .pickup-to-inventory-glitch {
+          animation: pickupToInventoryGlitch 0.5s steps(5, end) forwards;
+        }
+        .pickup-to-inventory-flash {
+          animation: pickupToInventoryFlash 0.55s ease-out forwards;
         }
 
         .pickup-to-inventory-quick-spin {
@@ -1745,15 +2262,19 @@ export function EscapeRoomPuzzle({
 
         @keyframes pickupReveal {
           0% {
-            transform: translateY(18px) scale(0.58) rotate(0deg);
+            transform: translateY(40px) scale(0.3);
             opacity: 0;
           }
-          55% {
-            transform: translateY(-8px) scale(1.26) rotate(540deg);
+          50% {
+            transform: translateY(-12px) scale(1.12);
+            opacity: 1;
+          }
+          75% {
+            transform: translateY(4px) scale(0.96);
             opacity: 1;
           }
           100% {
-            transform: translateY(0) scale(1) rotate(720deg);
+            transform: translateY(0) scale(1);
             opacity: 1;
           }
         }
@@ -1771,37 +2292,45 @@ export function EscapeRoomPuzzle({
 
         @keyframes pickupRevealQuickSpin {
           0% {
-            transform: translateY(10px) scale(0.72) rotate(0deg);
+            transform: translateY(14px) scale(0.5);
             opacity: 0;
           }
+          70% {
+            transform: translateY(-4px) scale(1.08);
+            opacity: 1;
+          }
           100% {
-            transform: translateY(0) scale(1.04) rotate(540deg);
+            transform: translateY(0) scale(1);
             opacity: 1;
           }
         }
 
         @keyframes pickupRevealFloatIn {
           0% {
-            transform: translateY(34px) scale(0.84) rotate(-22deg);
+            transform: translateY(34px) scale(0.84);
             opacity: 0;
           }
           100% {
-            transform: translateY(0) scale(1) rotate(0deg);
+            transform: translateY(0) scale(1);
             opacity: 1;
           }
         }
 
         @keyframes pickupRevealPowerDrop {
           0% {
-            transform: translateY(-52px) scale(1.35) rotate(90deg);
+            transform: translateY(-60px) scale(1.35);
             opacity: 0;
           }
-          64% {
-            transform: translateY(9px) scale(0.94) rotate(320deg);
+          60% {
+            transform: translateY(8px) scale(0.92);
+            opacity: 1;
+          }
+          80% {
+            transform: translateY(-3px) scale(1.04);
             opacity: 1;
           }
           100% {
-            transform: translateY(0) scale(1) rotate(360deg);
+            transform: translateY(0) scale(1);
             opacity: 1;
           }
         }
@@ -1850,6 +2379,175 @@ export function EscapeRoomPuzzle({
           100% {
             box-shadow: 0 0 0 20px rgba(251, 191, 36, 0);
           }
+        }
+
+        /* ── New pickup keyframes ── */
+        @keyframes pickupRevealSpiral {
+          0%   { transform: translate(0,0) scale(0.12); opacity: 0; }
+          55%  { transform: translate(0,0) scale(1.15); opacity: 1; }
+          75%  { transform: translate(0,0) scale(0.95); opacity: 1; }
+          100% { transform: translate(0,0) scale(1); opacity: 1; }
+        }
+        @keyframes pickupRevealBounce {
+          0%   { transform: translateY(-70px) scale(0.55); opacity: 0; }
+          52%  { transform: translateY(12px) scale(1.05); opacity: 1; }
+          72%  { transform: translateY(-6px) scale(0.97); opacity: 1; }
+          88%  { transform: translateY(4px) scale(1.01); }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes pickupRevealGlitch {
+          0%   { transform: translate(10px, 0) scale(0.7); opacity: 0.2; filter: hue-rotate(0deg); }
+          18%  { transform: translate(-8px, 2px) scale(1.05); opacity: 0.65; filter: hue-rotate(90deg); }
+          36%  { transform: translate(6px, -2px) scale(0.96); opacity: 0.85; filter: hue-rotate(180deg); }
+          60%  { transform: translate(-3px, 1px) scale(1.02); opacity: 0.95; filter: hue-rotate(260deg); }
+          100% { transform: translate(0,0) scale(1); opacity: 1; filter: hue-rotate(0deg); }
+        }
+        @keyframes pickupRevealFlash {
+          0%   { transform: scale(1.4); opacity: 0; filter: brightness(4); }
+          28%  { filter: brightness(2.5); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; filter: brightness(1); }
+        }
+        @keyframes pickupToInventorySpiral {
+          0%   { transform: translate(0,0) scale(1) rotate(0deg); opacity: 1; }
+          100% { transform: translate(var(--pickup-dx,0px), var(--pickup-dy,0px)) scale(var(--pickup-scale,0.34)) rotate(720deg); opacity: 0; }
+        }
+        @keyframes pickupToInventoryBounce {
+          0%   { transform: translate(0,0) scale(1); opacity: 1; }
+          38%  { transform: translate(calc(var(--pickup-dx,0px)*0.38), calc(var(--pickup-dy,0px)*0.18 - 24px)) scale(0.78); opacity: 0.9; }
+          100% { transform: translate(var(--pickup-dx,0px), var(--pickup-dy,0px)) scale(var(--pickup-scale,0.34)); opacity: 0; }
+        }
+        @keyframes pickupToInventoryGlitch {
+          0%   { transform: translate(0,0) scale(1); opacity: 1; filter: hue-rotate(0deg); }
+          22%  { transform: translate(calc(var(--pickup-dx,0px)*0.28+7px), calc(var(--pickup-dy,0px)*0.2)); filter: hue-rotate(120deg); opacity: 0.8; }
+          55%  { transform: translate(calc(var(--pickup-dx,0px)*0.62-4px), calc(var(--pickup-dy,0px)*0.52)); filter: hue-rotate(240deg); opacity: 0.6; }
+          100% { transform: translate(var(--pickup-dx,0px), var(--pickup-dy,0px)) scale(var(--pickup-scale,0.34)); opacity: 0; filter: hue-rotate(360deg); }
+        }
+        @keyframes pickupToInventoryFlash {
+          0%   { transform: translate(0,0) scale(1.08); opacity: 1; filter: brightness(2.8); }
+          22%  { filter: brightness(1); }
+          100% { transform: translate(var(--pickup-dx,0px), var(--pickup-dy,0px)) scale(var(--pickup-scale,0.34)); opacity: 0; }
+        }
+
+        /* ── Scene shake feedback (blocked/locked interaction) ── */
+        .scene-shake {
+          animation: sceneShake 0.48s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+        }
+        @keyframes sceneShake {
+          0%, 100% { transform: translateX(0); }
+          14%  { transform: translateX(-7px); }
+          28%  { transform: translateX(7px); }
+          42%  { transform: translateX(-5px); }
+          57%  { transform: translateX(5px); }
+          71%  { transform: translateX(-3px); }
+          85%  { transform: translateX(3px); }
+        }
+
+        /* ── Scene transition overlays ── */
+        .scene-transition-fade {
+          background: #000;
+          animation: sceneTransFade 0.65s ease-out forwards;
+        }
+        .scene-transition-slideLeft {
+          background: linear-gradient(to right, #000 80%, transparent);
+          animation: sceneTransSlideLeft 0.55s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .scene-transition-slideRight {
+          background: linear-gradient(to left, #000 80%, transparent);
+          animation: sceneTransSlideRight 0.55s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .scene-transition-slideUp {
+          background: linear-gradient(to bottom, #000 80%, transparent);
+          animation: sceneTransSlideUp 0.55s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .scene-transition-zoomIn {
+          background: #000;
+          animation: sceneTransZoomIn 0.6s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
+        }
+        .scene-transition-wipe {
+          background: #000;
+          animation: sceneTransWipe 0.5s ease-out forwards;
+        }
+        .scene-transition-glitch {
+          background: rgba(0,255,100,0.06);
+          animation: sceneTransGlitch 0.45s steps(5, end) forwards;
+          mix-blend-mode: screen;
+        }
+        @keyframes sceneTransFade {
+          0%   { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes sceneTransSlideLeft {
+          0%   { transform: translateX(0); opacity: 1; }
+          100% { transform: translateX(-100%); opacity: 0; }
+        }
+        @keyframes sceneTransSlideRight {
+          0%   { transform: translateX(0); opacity: 1; }
+          100% { transform: translateX(100%); opacity: 0; }
+        }
+        @keyframes sceneTransSlideUp {
+          0%   { transform: translateY(0); opacity: 1; }
+          100% { transform: translateY(-100%); opacity: 0; }
+        }
+        @keyframes sceneTransZoomIn {
+          0%   { transform: scale(1); opacity: 0.85; }
+          100% { transform: scale(1.12); opacity: 0; }
+        }
+        @keyframes sceneTransWipe {
+          0%   { clip-path: inset(0 0 0 0); }
+          100% { clip-path: inset(0 0 0 100%); }
+        }
+        @keyframes sceneTransGlitch {
+          0%   { transform: translate(5px, -3px) skewX(-5deg); opacity: 0.9; }
+          20%  { transform: translate(-4px, 2px) skewX(4deg); opacity: 0.7; }
+          40%  { transform: translate(3px, -1px) skewX(-2deg); opacity: 0.55; }
+          70%  { transform: translate(-2px, 1px); opacity: 0.3; }
+          100% { transform: translate(0,0) skewX(0); opacity: 0; }
+        }
+
+        /* ── Ambient item effect overlays (player) ── */
+        .escape-ambient-glow {
+          animation: escapeAmbientGlowPlayer 2.3s ease-in-out infinite;
+          border-radius: 6px;
+        }
+        .escape-ambient-pulse {
+          animation: escapeAmbientPulsePlayer 1.9s ease-in-out infinite;
+          border-radius: 6px;
+        }
+        .escape-ambient-float {
+          animation: escapeAmbientFloatPlayer 3.2s ease-in-out infinite;
+          border-radius: 6px;
+        }
+        .escape-ambient-sparkle {
+          animation: escapeAmbientSparklePlayer 2.6s ease-in-out infinite;
+          border-radius: 6px;
+        }
+        .escape-ambient-shimmer {
+          background: linear-gradient(108deg, transparent 25%, rgba(255,255,255,0.18) 50%, transparent 75%);
+          background-size: 300% 100%;
+          animation: escapeAmbientShimmerPlayer 2.8s ease-in-out infinite;
+          border-radius: 6px;
+        }
+        @keyframes escapeAmbientGlowPlayer {
+          0%, 100% { box-shadow: 0 0 8px 3px rgba(251,191,36,0.45), 0 0 22px 6px rgba(251,191,36,0.18); }
+          50%       { box-shadow: 0 0 22px 9px rgba(251,191,36,0.85), 0 0 46px 18px rgba(251,191,36,0.42); }
+        }
+        @keyframes escapeAmbientPulsePlayer {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); border: 2px solid rgba(251,191,36,0.3); }
+          50%       { box-shadow: 0 0 14px 6px rgba(251,191,36,0.5); border: 2px solid rgba(251,191,36,0.7); }
+        }
+        @keyframes escapeAmbientFloatPlayer {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-8%); }
+        }
+        @keyframes escapeAmbientSparklePlayer {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0), 0 0 0 0 rgba(255,255,255,0); }
+          22%       { box-shadow: 0 0 14px 5px rgba(251,191,36,0.9), 0 0 6px 2px rgba(255,255,255,0.6); }
+          44%       { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
+          66%       { box-shadow: 0 0 10px 4px rgba(255,255,255,0.55); }
+        }
+        @keyframes escapeAmbientShimmerPlayer {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -100% 0; }
         }
       `}</style>
     </div>

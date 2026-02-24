@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import StageCelebration from '@/components/puzzle/StageCelebration';
 
 // Types for the escape room builder
 interface EscapeRoomScene {
@@ -17,6 +18,13 @@ interface EscapeRoomScene {
   // 'assignedOnly'    = only the assigned player slot(s) can view it
   // 'lockedUntilUnlocked' = no one can enter until a useEffect enables it
   accessRule?: 'open' | 'assignedOnly' | 'lockedUntilUnlocked';
+  // Animation & FX
+  transitionIn?: 'none' | 'fade' | 'slideLeft' | 'slideRight' | 'slideUp' | 'zoomIn' | 'wipe' | 'glitch';
+  solveCelebration?: 'none' | 'confetti' | 'flash' | 'starburst' | 'dramatic';
+  // Audio
+  bgm?: { url: string; volume?: number };
+  enterSfx?: string;
+  solveSfx?: string;
 }
 
 interface EscapeRoomItem {
@@ -28,7 +36,17 @@ interface EscapeRoomItem {
   y: number;
   w?: number;
   h?: number;
+  /** Base rotation in degrees (applied before runtime overrides). */
+  rotation?: number;
+  /** Base uniform scale (applied before runtime overrides). Default 1. */
+  scale?: number;
+  /** CSS skewX in degrees — tilt an item to match room perspective. */
+  skewX?: number;
+  /** CSS skewY in degrees — tilt an item to match room perspective. */
+  skewY?: number;
   properties: Record<string, any>;
+  /** Ambient animation effect shown on this item in the player. */
+  ambientEffect?: 'none' | 'glow' | 'pulse' | 'float' | 'sparkle' | 'shimmer';
 }
 
 interface InteractiveZone {
@@ -38,7 +56,7 @@ interface InteractiveZone {
   y: number;
   width: number;
   height: number;
-  actionType: "modal" | "collect" | "trigger" | "codeEntry";
+  actionType: "modal" | "collect" | "trigger" | "codeEntry" | "miniPuzzle";
   // Optional: override whether the dragged/used item is consumed when using it on this zone.
   // Default behavior is to consume the item; set to false to keep the item.
   consumeItemOnUse?: boolean;
@@ -57,6 +75,7 @@ interface InteractiveZone {
   interactions?: Array<{
     label: string;
     modalContent: string;
+    imageUrl?: string;
     triggersEffect?: InteractiveZone['useEffect'];
     completesRoom?: boolean;
     completionVariant?: string;
@@ -89,7 +108,34 @@ interface InteractiveZone {
   eventId?: string;
   linkedPuzzleId?: string;
   collectItemId?: string;
-  pickupAnimationPreset?: 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop';
+  pickupAnimationPreset?: 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop' | 'spiral' | 'bounce' | 'glitch' | 'flash';
+  pickupAnimationUrl?: string;
+  // Custom sound effects per interaction type. URL strings (mp3/ogg).
+  sfx?: {
+    pickup?: string;
+    use?: string;
+    trigger?: string;
+    loot?: string;
+  };
+  // Seconds deducted from the run timer when a player fails this interaction (wrong item / locked door).
+  penaltySeconds?: number;
+  // Mini-puzzle embedded in this zone (keypad, wire connector, or dial).
+  miniPuzzle?: {
+    type: 'keypad' | 'wire' | 'dial';
+    config: {
+      // Keypad
+      correctCode?: string;
+      hint?: string;
+      hintImageUrl?: string;
+      // Wire
+      pairs?: Array<{ leftLabel: string; rightLabel: string; color?: string }>;
+      // Dial
+      dials?: Array<{ label: string; min: number; max: number; step?: number; target: number; startValue?: number }>;
+      // Shared
+      maxAttempts?: number;
+      timePenaltySeconds?: number;
+    };
+  };
   // Code-entry zone configuration.
   codeEntry?: {
     correctCode: string;
@@ -108,13 +154,14 @@ interface UserSpecialty {
   description: string;
 }
 
-type PickupAnimationPreset = 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop';
+type PickupAnimationPreset = 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop' | 'spiral' | 'bounce' | 'glitch' | 'flash';
 
 type PlaytestPendingPickup = {
   itemId: string;
   itemName: string;
   imageUrl: string;
   preset: PickupAnimationPreset;
+  pickupAnimationUrl?: string;
 };
 
 type PlaytestPickupRevealMotion = {
@@ -135,6 +182,9 @@ type PlaytestCodeEntry = {
   triggerEffect: any;
   completesRoom: boolean;
   completionVariant: string;
+  // Custom sounds
+  sfxSuccess?: string;
+  sfxFailure?: string;
   // ID of the scene item that acts as the in-world terminal display.
   displayItemId?: string;
 };
@@ -146,12 +196,24 @@ const dummyPuzzles = [
   { id: 'pz3', title: 'Logic Grid' },
 ];
 
-const pickupAnimationPresetOptions: Array<{ value: 'cinematic' | 'quickSpin' | 'floatIn' | 'powerDrop'; label: string }> = [
-  { value: 'cinematic', label: 'Cinematic Spin + Zoom' },
-  { value: 'quickSpin', label: 'Quick Spin' },
-  { value: 'floatIn', label: 'Float In' },
-  { value: 'powerDrop', label: 'Power Drop' },
+const pickupAnimationPresetOptions: Array<{ value: PickupAnimationPreset; label: string }> = [
+  { value: 'cinematic', label: '🎬 Cinematic Spin + Zoom' },
+  { value: 'quickSpin', label: '💫 Quick Spin' },
+  { value: 'floatIn', label: '🌊 Float In' },
+  { value: 'powerDrop', label: '⚡ Power Drop' },
+  { value: 'spiral', label: '🌀 Spiral' },
+  { value: 'bounce', label: '🏀 Bounce' },
+  { value: 'glitch', label: '📺 Glitch' },
+  { value: 'flash', label: '✨ Flash' },
 ];
+
+/** Check whether a URL points to a video file (mp4, webm, mov, avi). */
+const isVideoUrl = (url: string | undefined | null): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  // Strip query string / hash, then check extension
+  const clean = url.split(/[?#]/)[0].toLowerCase();
+  return /\.(mp4|webm|mov|avi)$/.test(clean);
+};
 
 interface EscapeRoomDesignerProps {
   initialData?: any;
@@ -160,16 +222,48 @@ interface EscapeRoomDesignerProps {
 }
 
 export default function EscapeRoomDesigner({ initialData, editId, onChange }: EscapeRoomDesignerProps) {
+  // Stable ref for onChange so it never destabilises effects or useCallback deps
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  // Gate: only apply initialData once per mount (prevents infinite loop when parent
+  // passes a new object reference on every render).
+  const initialDataAppliedRef = useRef(false);
+
   const [title, setTitle] = useState(initialData?.title || "");
   const [description, setDescription] = useState(initialData?.description || "");
   const [timeLimit, setTimeLimit] = useState(initialData?.timeLimit || 1200);
   const [startMode, setStartMode] = useState(initialData?.startMode || 'leader-start');
+  const [intro, setIntro] = useState<{
+    videoUrl?: string;
+    posterUrl?: string;
+    voiceoverUrl?: string;
+    title?: string;
+    bodyText?: string;
+    skipAllowed?: boolean;
+    skipDelaySeconds?: number;
+  }>(initialData?.intro || {});
+  const [introOpen, setIntroOpen] = useState(false);
+  const [outro, setOutro] = useState<{
+    videoUrl?: string;
+    posterUrl?: string;
+    voiceoverUrl?: string;
+    title?: string;
+    bodyText?: string;
+    skipAllowed?: boolean;
+    skipDelaySeconds?: number;
+  }>(initialData?.outro || {});
+  const [outroOpen, setOutroOpen] = useState(false);
   // 'shared' = all players see the same scene at once (classic mode)
   // 'assigned' = each player is assigned to a starting scene (multi-room co-op)
   const [playerMode, setPlayerMode] = useState<'shared' | 'assigned'>(initialData?.playerMode || 'shared');
   const [scenes, setScenes] = useState<EscapeRoomScene[]>(initialData?.scenes || []);
   const [userSpecialties, setUserSpecialties] = useState<UserSpecialty[]>(initialData?.userSpecialties || []);
   const [validationError, setValidationError] = useState("");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [draftRestoredAt, setDraftRestoredAt] = useState<Date | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const DRAFT_KEY = 'escape-room-designer-draft';
   const [previewSceneIdx, setPreviewSceneIdx] = useState(0);
   const [previewMode, setPreviewMode] = useState<'edit' | 'playtest'>('edit');
 
@@ -191,6 +285,97 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [playtestCodeError, setPlaytestCodeError] = useState('');
   const [playtestCodeCooldownRemaining, setPlaytestCodeCooldownRemaining] = useState(0);
   const playtestCodeCooldownIntervalRef = useRef<number | null>(null);
+  // Playtest scene transitions & celebrations
+  const [playtestTransitionPhase, setPlaytestTransitionPhase] = useState<'idle' | 'in'>('idle');
+  const [playtestTransitionType, setPlaytestTransitionType] = useState<string>('fade');
+  const [playtestCelebration, setPlaytestCelebration] = useState<{ variant: string; key: number } | null>(null);
+  const prevPlaytestSceneIdxRef = useRef<number>(0);
+  const playtestTransTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playtestBgmRef = useRef<HTMLAudioElement | null>(null);
+  const playtestBgmFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fire playtest scene transition + celebration + audio when playtestSceneIdx changes
+  useEffect(() => {
+    const prev = prevPlaytestSceneIdxRef.current;
+    prevPlaytestSceneIdxRef.current = playtestSceneIdx;
+    if (prev === playtestSceneIdx) return;
+
+    // Celebration for the just-completed scene
+    const prevScene = scenes[prev];
+    if (prevScene?.solveCelebration && prevScene.solveCelebration !== 'none') {
+      setPlaytestCelebration({ variant: prevScene.solveCelebration, key: Date.now() });
+    }
+    // Solve SFX
+    if (prevScene?.solveSfx) {
+      try { new Audio(prevScene.solveSfx).play().catch(() => {}); } catch {}
+    }
+
+    // Transition-in for incoming scene
+    const newScene = scenes[playtestSceneIdx];
+    const transType = newScene?.transitionIn || 'fade';
+    if (transType !== 'none') {
+      setPlaytestTransitionType(transType);
+      setPlaytestTransitionPhase('in');
+      if (playtestTransTimerRef.current) clearTimeout(playtestTransTimerRef.current);
+      playtestTransTimerRef.current = setTimeout(() => {
+        setPlaytestTransitionPhase('idle');
+        playtestTransTimerRef.current = null;
+      }, 700);
+    }
+
+    // Enter SFX
+    if (newScene?.enterSfx) {
+      try { new Audio(newScene.enterSfx).play().catch(() => {}); } catch {}
+    }
+
+    // BGM crossfade
+    const newBgmUrl = newScene?.bgm?.url || '';
+    const newBgmVol = typeof newScene?.bgm?.volume === 'number' ? newScene.bgm!.volume : 0.5;
+    const cur = playtestBgmRef.current;
+    const isSameTrack = cur && !cur.paused && cur.dataset.src === newBgmUrl && newBgmUrl;
+    if (!isSameTrack) {
+      // Fade out current
+      if (cur && !cur.paused) {
+        if (playtestBgmFadeRef.current) clearInterval(playtestBgmFadeRef.current);
+        const startVol = cur.volume;
+        let step = 0;
+        const steps = 15;
+        playtestBgmFadeRef.current = setInterval(() => {
+          step++;
+          cur.volume = Math.max(0, startVol * (1 - step / steps));
+          if (step >= steps) {
+            cur.pause();
+            clearInterval(playtestBgmFadeRef.current!);
+            playtestBgmFadeRef.current = null;
+          }
+        }, 30) as unknown as ReturnType<typeof setInterval>;
+      }
+      // Start new
+      if (newBgmUrl) {
+        const el = new Audio(newBgmUrl);
+        el.loop = true;
+        el.volume = 0;
+        el.dataset.src = newBgmUrl;
+        playtestBgmRef.current = el;
+        el.play().catch(() => {});
+        if (playtestBgmFadeRef.current) clearInterval(playtestBgmFadeRef.current);
+        let step = 0;
+        const steps = 20;
+        playtestBgmFadeRef.current = setInterval(() => {
+          step++;
+          el.volume = Math.min(newBgmVol, newBgmVol * (step / steps));
+          if (step >= steps) {
+            clearInterval(playtestBgmFadeRef.current!);
+            playtestBgmFadeRef.current = null;
+          }
+        }, 30) as unknown as ReturnType<typeof setInterval>;
+      } else {
+        playtestBgmRef.current = null;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playtestSceneIdx]);
+
   // Ref so the code-entry overlay (rendered outside the scene IIFE) can call applyUseEffect.
   const applyUseEffectRef = useRef<((ue: any) => void) | null>(null);
   // Per-scene states: track cross-scene effect results.
@@ -287,6 +472,38 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [bgUploadState, setBgUploadState] = useState<Record<number, { uploading: boolean; error?: string }>>({});
   const MAX_CLIENT_UPLOAD = 50 * 1024 * 1024; // 50MB client-side quick check
 
+  // Audio file upload state (keyed by a unique string per field, e.g. "bgm-0", "enterSfx-2", "zone-0-1-pickup")
+  const [audioUploadState, setAudioUploadState] = useState<Record<string, { uploading: boolean; error?: string }>>({});
+
+  /**
+   * Upload an audio file via the media API and return the resulting URL.
+   * `stateKey` identifies which field is uploading (for spinner state).
+   * `onSuccess` is called with the uploaded URL.
+   */
+  const uploadAudioFile = useCallback(async (file: File, stateKey: string, onSuccess: (url: string) => void) => {
+    if (file.size > MAX_CLIENT_UPLOAD) {
+      setAudioUploadState(prev => ({ ...prev, [stateKey]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024 * 1024))}MB)` } }));
+      return;
+    }
+    setAudioUploadState(prev => ({ ...prev, [stateKey]: { uploading: true } }));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (editId) formData.append('puzzleId', editId);
+      const res = await fetch('/api/admin/media', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok && (data.mediaUrl || data.url)) {
+        const url = data.mediaUrl || data.url;
+        onSuccess(url);
+        setAudioUploadState(prev => ({ ...prev, [stateKey]: { uploading: false } }));
+      } else {
+        setAudioUploadState(prev => ({ ...prev, [stateKey]: { uploading: false, error: data.error || 'Upload failed' } }));
+      }
+    } catch (err) {
+      setAudioUploadState(prev => ({ ...prev, [stateKey]: { uploading: false, error: err instanceof Error ? err.message : 'Upload failed' } }));
+    }
+  }, [editId, MAX_CLIENT_UPLOAD]);
+
   // selection & resizing state for items/zones in the canvas preview
   const [selectedItem, setSelectedItem] = useState<{ sceneIdx: number; itemIdx: number } | null>(null);
   const [selectedZone, setSelectedZone] = useState<{ sceneIdx: number; zoneIdx: number } | null>(null);
@@ -339,28 +556,124 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       interactiveZones: scene.interactiveZones,
     }));
 
-  // Notify parent of changes
+  // Notify parent of changes (uses ref to avoid re-render loop)
   const notifyParent = () => {
     const serializableScenes = getSerializableScenes();
     if (typeof window !== 'undefined' && typeof (window as any).onEscapeRoomDesignerChange === 'function') {
-      (window as any).onEscapeRoomDesignerChange({ title, description, timeLimit, startMode, playerMode, scenes: serializableScenes, userSpecialties });
+      (window as any).onEscapeRoomDesignerChange({ title, description, timeLimit, startMode, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
     }
-    if (typeof onChange === 'function') {
-      onChange({ title, description, timeLimit, startMode, playerMode, scenes: serializableScenes, userSpecialties });
+    if (typeof onChangeRef.current === 'function') {
+      onChangeRef.current({ title, description, timeLimit, startMode, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
     }
   };
 
   useEffect(() => {
+    if (initialDataAppliedRef.current) return; // only apply once
     if (initialData) {
+      initialDataAppliedRef.current = true;
       if (initialData.title !== undefined && initialData.title !== title) setTitle(initialData.title || "");
       if (initialData.description !== undefined && initialData.description !== description) setDescription(initialData.description || "");
       if (initialData.timeLimit !== undefined && initialData.timeLimit !== timeLimit) setTimeLimit(initialData.timeLimit || 1200);
       if (initialData.startMode !== undefined && initialData.startMode !== startMode) setStartMode(initialData.startMode || 'leader-start');
+      if (initialData.intro !== undefined && JSON.stringify(initialData.intro) !== JSON.stringify(intro)) setIntro(initialData.intro || {});
+      if (initialData.outro !== undefined && JSON.stringify(initialData.outro) !== JSON.stringify(outro)) setOutro(initialData.outro || {});
       if (initialData.playerMode !== undefined && initialData.playerMode !== playerMode) setPlayerMode(initialData.playerMode || 'shared');
       if (initialData.scenes && JSON.stringify(initialData.scenes) !== JSON.stringify(scenes)) setScenes(initialData.scenes || []);
       if (initialData.userSpecialties && JSON.stringify(initialData.userSpecialties) !== JSON.stringify(userSpecialties)) setUserSpecialties(initialData.userSpecialties || []);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData]);
+
+  // ── Persist / auto-save ────────────────────────────────────────────────────
+
+  // Restore localStorage draft for NEW rooms (no editId) on first mount.
+  useEffect(() => {
+    if (editId) return; // only for brand-new rooms
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(DRAFT_KEY) : null;
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (!draft || typeof draft !== 'object') return;
+      if (draft.title !== undefined) setTitle(draft.title || '');
+      if (draft.description !== undefined) setDescription(draft.description || '');
+      if (draft.timeLimit !== undefined) setTimeLimit(draft.timeLimit || 1200);
+      if (draft.startMode !== undefined) setStartMode(draft.startMode || 'leader-start');
+      if (draft.playerMode !== undefined) setPlayerMode(draft.playerMode || 'shared');
+      if (draft.intro !== undefined) setIntro(draft.intro || {});
+      if (draft.outro !== undefined) setOutro(draft.outro || {});
+      if (Array.isArray(draft.scenes)) setScenes(draft.scenes);
+      if (Array.isArray(draft.userSpecialties)) setUserSpecialties(draft.userSpecialties);
+      if (draft._savedAt) setDraftRestoredAt(new Date(draft._savedAt));
+    } catch {
+      // ignore corrupt draft
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // For NEW rooms: debounce-save everything to localStorage on every change.
+  useEffect(() => {
+    if (editId) return;
+    const t = setTimeout(() => {
+      try {
+        const serializableScenes = getSerializableScenes();
+        const draft = { title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        setLastSavedAt(new Date());
+      } catch {
+        // ignore storage errors
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, title, description, timeLimit, startMode, playerMode, intro, outro, scenes, userSpecialties]);
+
+  // ── doSave ───────────────────────────────────────────────────────────────────
+  const doSave = React.useCallback(async (silent = false) => {
+    if (!editId) return false;
+    if (!silent) {
+      if (!title.trim()) { setValidationError('Title is required.'); return false; }
+      if (scenes.length === 0) { setValidationError('At least one scene/room is required.'); return false; }
+    }
+    setIsSaving(true);
+    try {
+      const serializableScenes = getSerializableScenes();
+      const res = await fetch(`/api/escape-rooms/designer/${encodeURIComponent(editId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (!silent) setValidationError(j?.error || `Save failed (${res.status})`);
+        return false;
+      }
+      setLastSavedAt(new Date());
+      if (!silent) setValidationError('Escape room saved.');
+      if (typeof onChangeRef.current === 'function') onChangeRef.current({ title, description, timeLimit, scenes: serializableScenes, userSpecialties });
+      return true;
+    } catch {
+      if (!silent) setValidationError('Save failed: network error');
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, title, description, timeLimit, startMode, playerMode, intro, outro, scenes, userSpecialties]);
+
+  // For EDIT rooms: auto-save with a 15-second debounce after any change.
+  useEffect(() => {
+    if (!editId) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      void doSave(true); // silent auto-save
+      autoSaveTimerRef.current = null;
+    }, 15_000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [editId, title, description, timeLimit, startMode, playerMode, intro, outro, scenes, userSpecialties, doSave]);
+
+  // ────────────────────────────────────────────────────────────────────────────
 
   // Debug: log preview scene backgroundUrl whenever scenes or preview index change
   useEffect(() => {
@@ -423,7 +736,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   useEffect(() => {
     notifyParent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, description, timeLimit, startMode, playerMode, scenes, userSpecialties]);
+  }, [title, description, timeLimit, startMode, playerMode, scenes, userSpecialties, intro, outro]);
 
   return (
     <div className="max-w-4xl mx-auto py-8 text-white">
@@ -471,6 +784,376 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
             </p>
           </div>
         </div>
+      </section>
+
+      {/* ─── Room Intro ────────────────────────────────────────────────── */}
+      <section className="mb-6">
+        <button
+          type="button"
+          className="flex items-center gap-2 text-xl font-semibold text-white w-full text-left mb-2"
+          onClick={() => setIntroOpen(v => !v)}
+        >
+          <span>{introOpen ? '▼' : '▶'}</span>
+          <span>🎬 Room Intro</span>
+          {(intro.videoUrl || intro.bodyText) && (
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-indigo-600 text-white font-normal">configured</span>
+          )}
+        </button>
+        {introOpen && (
+          <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 space-y-4">
+            <p className="text-sm text-gray-400">
+              The intro plays in fullscreen before players reach the briefing screen. You can provide a teaser video (direct URL or YouTube link), a voiceover audio URL, and/or lore text that establishes the history and backstory of the location.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-white mb-1">Video URL <span className="text-gray-500 font-normal">(mp4 / webm / YouTube)</span></label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/intro.mp4 or YouTube URL"
+                    value={intro.videoUrl || ''}
+                    onChange={e => setIntro(v => ({ ...v, videoUrl: e.target.value || undefined }))}
+                    className="border rounded px-2 py-1 flex-1 bg-slate-800 text-white text-sm"
+                  />
+                  <label className="relative cursor-pointer text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded inline-flex items-center gap-1 shrink-0">
+                    {zoneUploadState['intro-video']?.uploading ? '⏳' : '📁'} Upload
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const key = 'intro-video';
+                        setZoneUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                        try {
+                          if (file.size > MAX_CLIENT_UPLOAD) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } })); return; }
+                          const fd = new FormData(); fd.append('file', file); if (editId) fd.append('puzzleId', editId);
+                          const res = await fetch('/api/admin/media', { method: 'POST', body: fd });
+                          const data = await res.json().catch(() => ({}));
+                          if (res.ok && (data.mediaUrl || data.url)) { setIntro(v => ({ ...v, videoUrl: data.mediaUrl || data.url })); setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: '' } })); }
+                          else { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: (data?.error || data?.message) || `Upload failed (${res.status})` } })); }
+                        } catch (err) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: err instanceof Error ? err.message : String(err) } })); }
+                      }}
+                    />
+                  </label>
+                </div>
+                {zoneUploadState['intro-video']?.error && <span className="text-xs text-red-400">{zoneUploadState['intro-video'].error}</span>}
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Poster / Thumbnail</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/poster.jpg"
+                    value={intro.posterUrl || ''}
+                    onChange={e => setIntro(v => ({ ...v, posterUrl: e.target.value || undefined }))}
+                    className="border rounded px-2 py-1 flex-1 bg-slate-800 text-white text-sm"
+                  />
+                  <label className="relative cursor-pointer text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded inline-flex items-center gap-1 shrink-0">
+                    {zoneUploadState['intro-poster']?.uploading ? '⏳' : '📁'} Upload
+                    <input
+                      type="file"
+                      accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const key = 'intro-poster';
+                        setZoneUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                        try {
+                          if (file.size > MAX_CLIENT_UPLOAD) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } })); return; }
+                          const fd = new FormData(); fd.append('file', file); if (editId) fd.append('puzzleId', editId);
+                          const res = await fetch('/api/admin/media', { method: 'POST', body: fd });
+                          const data = await res.json().catch(() => ({}));
+                          if (res.ok && (data.mediaUrl || data.url)) { setIntro(v => ({ ...v, posterUrl: data.mediaUrl || data.url })); setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: '' } })); }
+                          else { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: (data?.error || data?.message) || `Upload failed (${res.status})` } })); }
+                        } catch (err) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: err instanceof Error ? err.message : String(err) } })); }
+                      }}
+                    />
+                  </label>
+                </div>
+                {zoneUploadState['intro-poster']?.error && <span className="text-xs text-red-400">{zoneUploadState['intro-poster'].error}</span>}
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Voiceover Audio <span className="text-gray-500 font-normal">(mp3 / ogg, plays alongside video)</span></label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/voiceover.mp3"
+                    value={intro.voiceoverUrl || ''}
+                    onChange={e => setIntro(v => ({ ...v, voiceoverUrl: e.target.value || undefined }))}
+                    className="border rounded px-2 py-1 flex-1 bg-slate-800 text-white text-sm"
+                  />
+                  <label className="relative cursor-pointer text-xs bg-purple-700 hover:bg-purple-600 text-white px-2 py-1 rounded inline-flex items-center gap-1 shrink-0">
+                    {audioUploadState['intro-vo']?.uploading ? '⏳' : '📁'} Upload
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        uploadAudioFile(file, 'intro-vo', url => setIntro(v => ({ ...v, voiceoverUrl: url })));
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {intro.voiceoverUrl && (
+                    <button type="button" className="text-xs text-purple-300 hover:text-purple-100 px-1" title="Preview" onClick={() => { try { new Audio(intro.voiceoverUrl!).play().catch(() => {}); } catch {} }}>▶</button>
+                  )}
+                </div>
+                {audioUploadState['intro-vo']?.error && <span className="text-xs text-red-400">{audioUploadState['intro-vo'].error}</span>}
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Intro Headline <span className="text-gray-500 font-normal">(shown below video)</span></label>
+                <input
+                  type="text"
+                  placeholder="The Lost Laboratory of Dr. Voss"
+                  value={intro.title || ''}
+                  onChange={e => setIntro(v => ({ ...v, title: e.target.value || undefined }))}
+                  className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white mb-1">Lore / History Text <span className="text-gray-500 font-normal">(multi-line description of the location &amp; backstory)</span></label>
+              <textarea
+                rows={5}
+                placeholder="In 1943, deep beneath the cliffs of Ravenscourt…"
+                value={intro.bodyText || ''}
+                onChange={e => setIntro(v => ({ ...v, bodyText: e.target.value || undefined }))}
+                className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm resize-y"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="intro-skip-allowed"
+                  checked={intro.skipAllowed !== false}
+                  onChange={e => setIntro(v => ({ ...v, skipAllowed: e.target.checked }))}
+                  className="w-4 h-4 accent-indigo-500"
+                />
+                <label htmlFor="intro-skip-allowed" className="text-sm text-white">Allow players to skip</label>
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Skip delay (seconds)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={intro.skipDelaySeconds ?? 5}
+                  onChange={e => setIntro(v => ({ ...v, skipDelaySeconds: Number(e.target.value) }))}
+                  className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-0.5">Wait this many seconds before the skip button appears.</p>
+              </div>
+            </div>
+
+            {/* Clear all button */}
+            {(intro.videoUrl || intro.posterUrl || intro.voiceoverUrl || intro.title || intro.bodyText) && (
+              <div className="pt-2 border-t border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setIntro({})}
+                  className="text-sm text-red-400 hover:text-red-300 underline"
+                >
+                  Clear intro
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ─── Room Outro ───────────────────────────────────────────────────── */}
+      <section className="mb-6">
+        <button
+          type="button"
+          className="flex items-center gap-2 text-xl font-semibold text-white w-full text-left mb-2"
+          onClick={() => setOutroOpen(v => !v)}
+        >
+          <span>{outroOpen ? '▼' : '▶'}</span>
+          <span>🏆 Room Outro</span>
+          {(outro.videoUrl || outro.bodyText) && (
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-amber-600 text-white font-normal">configured</span>
+          )}
+        </button>
+        {outroOpen && (
+          <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 space-y-4">
+            <p className="text-sm text-gray-400">
+              The outro plays in fullscreen immediately after the team successfully escapes. Use it to reveal a conclusion, show a reward cutscene, or deliver a final voiceover message.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-white mb-1">Video URL <span className="text-gray-500 font-normal">(mp4 / webm / YouTube)</span></label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/outro.mp4 or YouTube URL"
+                    value={outro.videoUrl || ''}
+                    onChange={e => setOutro(v => ({ ...v, videoUrl: e.target.value || undefined }))}
+                    className="border rounded px-2 py-1 flex-1 bg-slate-800 text-white text-sm"
+                  />
+                  <label className="relative cursor-pointer text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded inline-flex items-center gap-1 shrink-0">
+                    {zoneUploadState['outro-video']?.uploading ? '⏳' : '📁'} Upload
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const key = 'outro-video';
+                        setZoneUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                        try {
+                          if (file.size > MAX_CLIENT_UPLOAD) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } })); return; }
+                          const fd = new FormData(); fd.append('file', file); if (editId) fd.append('puzzleId', editId);
+                          const res = await fetch('/api/admin/media', { method: 'POST', body: fd });
+                          const data = await res.json().catch(() => ({}));
+                          if (res.ok && (data.mediaUrl || data.url)) { setOutro(v => ({ ...v, videoUrl: data.mediaUrl || data.url })); setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: '' } })); }
+                          else { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: (data?.error || data?.message) || `Upload failed (${res.status})` } })); }
+                        } catch (err) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: err instanceof Error ? err.message : String(err) } })); }
+                      }}
+                    />
+                  </label>
+                </div>
+                {zoneUploadState['outro-video']?.error && <span className="text-xs text-red-400">{zoneUploadState['outro-video'].error}</span>}
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Poster / Thumbnail</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/outro-poster.jpg"
+                    value={outro.posterUrl || ''}
+                    onChange={e => setOutro(v => ({ ...v, posterUrl: e.target.value || undefined }))}
+                    className="border rounded px-2 py-1 flex-1 bg-slate-800 text-white text-sm"
+                  />
+                  <label className="relative cursor-pointer text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded inline-flex items-center gap-1 shrink-0">
+                    {zoneUploadState['outro-poster']?.uploading ? '⏳' : '📁'} Upload
+                    <input
+                      type="file"
+                      accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        const key = 'outro-poster';
+                        setZoneUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                        try {
+                          if (file.size > MAX_CLIENT_UPLOAD) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } })); return; }
+                          const fd = new FormData(); fd.append('file', file); if (editId) fd.append('puzzleId', editId);
+                          const res = await fetch('/api/admin/media', { method: 'POST', body: fd });
+                          const data = await res.json().catch(() => ({}));
+                          if (res.ok && (data.mediaUrl || data.url)) { setOutro(v => ({ ...v, posterUrl: data.mediaUrl || data.url })); setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: '' } })); }
+                          else { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: (data?.error || data?.message) || `Upload failed (${res.status})` } })); }
+                        } catch (err) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: err instanceof Error ? err.message : String(err) } })); }
+                      }}
+                    />
+                  </label>
+                </div>
+                {zoneUploadState['outro-poster']?.error && <span className="text-xs text-red-400">{zoneUploadState['outro-poster'].error}</span>}
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Voiceover Audio <span className="text-gray-500 font-normal">(mp3 / ogg)</span></label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://example.com/outro-vo.mp3"
+                    value={outro.voiceoverUrl || ''}
+                    onChange={e => setOutro(v => ({ ...v, voiceoverUrl: e.target.value || undefined }))}
+                    className="border rounded px-2 py-1 flex-1 bg-slate-800 text-white text-sm"
+                  />
+                  <label className="relative cursor-pointer text-xs bg-purple-700 hover:bg-purple-600 text-white px-2 py-1 rounded inline-flex items-center gap-1 shrink-0">
+                    {audioUploadState['outro-vo']?.uploading ? '⏳' : '📁'} Upload
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        uploadAudioFile(file, 'outro-vo', url => setOutro(v => ({ ...v, voiceoverUrl: url })));
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {outro.voiceoverUrl && (
+                    <button type="button" className="text-xs text-purple-300 hover:text-purple-100 px-1" title="Preview" onClick={() => { try { new Audio(outro.voiceoverUrl!).play().catch(() => {}); } catch {} }}>▶</button>
+                  )}
+                </div>
+                {audioUploadState['outro-vo']?.error && <span className="text-xs text-red-400">{audioUploadState['outro-vo'].error}</span>}
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Outro Headline</label>
+                <input
+                  type="text"
+                  placeholder="You Escaped!"
+                  value={outro.title || ''}
+                  onChange={e => setOutro(v => ({ ...v, title: e.target.value || undefined }))}
+                  className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-white mb-1">Closing Narrative <span className="text-gray-500 font-normal">(resolution, aftermath, reward text)</span></label>
+              <textarea
+                rows={4}
+                placeholder="The vault swings open. The ancient artefact is yours…"
+                value={outro.bodyText || ''}
+                onChange={e => setOutro(v => ({ ...v, bodyText: e.target.value || undefined }))}
+                className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm resize-y"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="outro-skip-allowed"
+                  checked={outro.skipAllowed !== false}
+                  onChange={e => setOutro(v => ({ ...v, skipAllowed: e.target.checked }))}
+                  className="w-4 h-4 accent-amber-500"
+                />
+                <label htmlFor="outro-skip-allowed" className="text-sm text-white">Allow players to skip</label>
+              </div>
+              <div>
+                <label className="block text-sm text-white mb-1">Skip delay (seconds)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={outro.skipDelaySeconds ?? 5}
+                  onChange={e => setOutro(v => ({ ...v, skipDelaySeconds: Number(e.target.value) }))}
+                  className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm"
+                />
+              </div>
+            </div>
+
+            {(outro.videoUrl || outro.posterUrl || outro.voiceoverUrl || outro.title || outro.bodyText) && (
+              <div className="pt-2 border-t border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setOutro({})}
+                  className="text-sm text-red-400 hover:text-red-300 underline"
+                >
+                  Clear outro
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="mb-6">
@@ -573,6 +1256,14 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                 </>
               ) : null}
 
+              {/* Scene transition overlay */}
+              {playtestTransitionPhase === 'in' && (
+                <div
+                  className={`designer-scene-${playtestTransitionType}-in`}
+                  style={{ position: 'absolute', inset: 0, zIndex: 90, pointerEvents: 'none' }}
+                />
+              )}
+
               {(() => {
                 const scene = scenes[playtestSceneIdx];
                 if (!scene) return null;
@@ -641,10 +1332,16 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   const rotationRaw = itemId ? Number(itemRotationOverrides[itemId]) : NaN;
                   const tintRaw = itemId ? itemTintOverrides[itemId] : '';
                   const alpha = Number.isFinite(alphaRaw) ? Math.max(0, Math.min(1, alphaRaw)) : 1;
-                  const scale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? Math.max(0.1, Math.min(5, scaleRaw)) : 1;
-                  const rotationDeg = Number.isFinite(rotationRaw) ? rotationRaw : 0;
+                  const runtimeScale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? Math.max(0.1, Math.min(5, scaleRaw)) : 1;
+                  const baseScale = Number.isFinite(Number(item?.scale)) && Number(item.scale) > 0 ? Number(item.scale) : 1;
+                  const scale = baseScale * runtimeScale;
+                  const runtimeRotation = Number.isFinite(rotationRaw) ? rotationRaw : 0;
+                  const baseRotation = Number.isFinite(Number(item?.rotation)) ? Number(item.rotation) : 0;
+                  const rotationDeg = baseRotation + runtimeRotation;
+                  const skewX = Number.isFinite(Number(item?.skewX)) ? Number(item.skewX) : 0;
+                  const skewY = Number.isFinite(Number(item?.skewY)) ? Number(item.skewY) : 0;
                   const tint = typeof tintRaw === 'string' && tintRaw.trim().length > 0 ? tintRaw.trim() : '';
-                  return { alpha, scale, rotationDeg, tint };
+                  return { alpha, scale, rotationDeg, skewX, skewY, tint };
                 };
 
                 const applyUseEffect = (useEffect: any, sourceZone?: any) => {
@@ -808,6 +1505,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                         setPlaytestInventoryItemIds(prev => prev.filter(x => x !== selectedId));
                       }
                       const item = findItemById(selectedId);
+                      if (z?.sfx?.use) { try { new Audio(z.sfx.use).play().catch(() => {}); } catch {} }
                       setPlaytestMessage(`Used ${(item?.name || selectedId)} on ${label}.`);
                       setPlaytestSelectedInventoryItemId(null);
                       return;
@@ -842,13 +1540,14 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                       setPlaytestMessage('Collect zone has no item configured.');
                       return;
                     }
+                    if (z?.sfx?.pickup) { try { new Audio(z.sfx.pickup).play().catch(() => {}); } catch {} }
                     const sceneItem = scene?.items?.find((it: any) => it?.id === collectItemId) || null;
                     const item = sceneItem || findItemById(collectItemId);
                     const presetRaw = typeof z?.pickupAnimationPreset === 'string' ? z.pickupAnimationPreset : 'cinematic';
-                    const preset: PickupAnimationPreset =
-                      presetRaw === 'quickSpin' || presetRaw === 'floatIn' || presetRaw === 'powerDrop'
-                        ? presetRaw
-                        : 'cinematic';
+                    const validPresets: PickupAnimationPreset[] = ['cinematic', 'quickSpin', 'floatIn', 'powerDrop', 'spiral', 'bounce', 'glitch', 'flash'];
+                    const preset: PickupAnimationPreset = validPresets.includes(presetRaw as PickupAnimationPreset)
+                      ? (presetRaw as PickupAnimationPreset)
+                      : 'cinematic';
                     clearPlaytestPickupTimer();
                     setPlaytestPickupFlight(null);
                     const itemX = typeof sceneItem?.x === 'number' ? sceneItem.x : 20;
@@ -858,18 +1557,19 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                     const previewRect = previewRef.current?.getBoundingClientRect();
                     if (previewRect) {
                       const centerX = previewRect.width * 0.5;
-                      const centerY = previewRect.height * 0.46;
+                      const centerY = previewRect.height * 0.5;
                       const itemCenterX = itemX + itemW * 0.5;
                       const itemCenterY = itemY + itemH * 0.5;
                       const targetWidth = previewRect.width * 0.5;
                       const baseScale = Math.max(2.4, Math.min(8.5, targetWidth / Math.max(16, itemW)));
                       const presetScale =
-                        preset === 'quickSpin'
-                          ? baseScale * 0.95
-                          : preset === 'floatIn'
-                          ? baseScale * 0.92
-                          : preset === 'powerDrop'
-                          ? baseScale * 1.03
+                        preset === 'quickSpin' ? baseScale * 0.95
+                          : preset === 'floatIn' ? baseScale * 0.92
+                          : preset === 'powerDrop' ? baseScale * 1.03
+                          : preset === 'spiral' ? baseScale * 0.88
+                          : preset === 'bounce' ? baseScale * 1.06
+                          : preset === 'glitch' ? baseScale * 0.97
+                          : preset === 'flash' ? baseScale * 1.12
                           : baseScale;
                       setPlaytestPickupRevealMotion({
                         dx: centerX - itemCenterX,
@@ -885,6 +1585,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                       itemName: item?.name || collectItemId,
                       imageUrl: item?.imageUrl || '',
                       preset,
+                      pickupAnimationUrl: typeof z?.pickupAnimationUrl === 'string' && z.pickupAnimationUrl ? z.pickupAnimationUrl : undefined,
                     });
                     setPlaytestMessage('');
                     if (!sceneItem) {
@@ -897,12 +1598,14 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                     const content = typeof z?.modalContent === 'string' ? z.modalContent : '';
                     const imageUrl = typeof z?.imageUrl === 'string' ? z.imageUrl : (typeof z?.itemId === 'string' ? (findItemById(z.itemId)?.imageUrl || null) : null);
                     const choices = Array.isArray(z?.interactions) ? z.interactions.filter((c: any) => c && typeof c.label === 'string' && typeof c.modalContent === 'string') : [];
+                    if (z?.sfx?.use) { try { new Audio(z.sfx.use).play().catch(() => {}); } catch {} }
                     setPlaytestModal({ title: label, content, imageUrl, choices });
                     setPlaytestMessage('');
                     return;
                   }
 
                   if ((z?.actionType || '') === 'trigger') {
+                    if (z?.sfx?.trigger) { try { new Audio(z.sfx.trigger).play().catch(() => {}); } catch {} }
                     const nextIdx = playtestSceneIdx + 1;
                     if (nextIdx >= scenes.length) {
                       setPlaytestCompleted(true);
@@ -933,6 +1636,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                       triggerEffect: z?.useEffect || null,
                       completesRoom: !!(z?.useEffect?.completesRoom),
                       completionVariant: typeof z?.useEffect?.completionVariant === 'string' ? z.useEffect.completionVariant : '',
+                      sfxSuccess: z?.sfx?.trigger,
+                      sfxFailure: z?.sfx?.loot,
                       displayItemId: typeof ce.displayItemId === 'string' && ce.displayItemId.trim() ? ce.displayItemId.trim() : undefined,
                     });
                     setPlaytestCodeInput('');
@@ -953,12 +1658,13 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                           playtestPickupPhase === 'reveal' &&
                           playtestPendingPickup.itemId === item.id;
                         const pickupRevealClass = isPickupRevealItem
-                          ? playtestPendingPickup.preset === 'quickSpin'
-                            ? 'designer-pickup-reveal-quick-spin'
-                            : playtestPendingPickup.preset === 'floatIn'
-                            ? 'designer-pickup-reveal-float-in'
-                            : playtestPendingPickup.preset === 'powerDrop'
-                            ? 'designer-pickup-reveal-power-drop'
+                          ? playtestPendingPickup.preset === 'quickSpin' ? 'designer-pickup-reveal-quick-spin'
+                            : playtestPendingPickup.preset === 'floatIn' ? 'designer-pickup-reveal-float-in'
+                            : playtestPendingPickup.preset === 'powerDrop' ? 'designer-pickup-reveal-power-drop'
+                            : playtestPendingPickup.preset === 'spiral' ? 'designer-pickup-reveal-spiral'
+                            : playtestPendingPickup.preset === 'bounce' ? 'designer-pickup-reveal-bounce'
+                            : playtestPendingPickup.preset === 'glitch' ? 'designer-pickup-reveal-glitch'
+                            : playtestPendingPickup.preset === 'flash' ? 'designer-pickup-reveal-flash'
                             : 'designer-pickup-reveal-cinematic'
                           : '';
                         const pickupRevealStyle =
@@ -972,34 +1678,61 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                         return (
                       <div
                         key={item.id}
-                        className={pickupRevealClass}
+                        className={[pickupRevealClass, !isPickupRevealItem && item.ambientEffect && item.ambientEffect !== 'none' ? `escape-ambient-${item.ambientEffect}` : ''].filter(Boolean).join(' ')}
                         onAnimationEnd={isPickupRevealItem ? () => setPlaytestPickupPhase('ready') : undefined}
-                        style={{
-                          position: 'absolute',
-                          left: item.x ?? (20 + i * 60),
-                          top: item.y ?? 20,
-                          zIndex: isPickupRevealItem ? 80 : 2,
-                          borderRadius: 4,
-                          padding: 2,
-                          minWidth: 40,
-                          textAlign: 'center',
-                          userSelect: 'none',
-                          touchAction: 'none',
-                          opacity: isPickupRevealItem ? 1 : visual.alpha,
-                          transform: isPickupRevealItem ? undefined : `scale(${visual.scale}) rotate(${visual.rotationDeg}deg)`,
-                          transformOrigin: 'center center',
-                          filter: visual.tint ? `drop-shadow(5px 10px 6px rgba(0,0,0,0.55)) drop-shadow(0 0 0 ${visual.tint}) saturate(1.1)` : 'drop-shadow(5px 10px 6px rgba(0,0,0,0.55))',
-                          pointerEvents: isPickupRevealItem ? 'none' : 'auto',
-                          ...pickupRevealStyle,
-                        }}
+                        style={(() => {
+                          const ptBaseW = item.w ?? 48;
+                          const ptBaseH = item.h ?? 48;
+                          const ptOffsetX = (ptBaseW * visual.scale - ptBaseW) / 2;
+                          const ptOffsetY = (ptBaseH * visual.scale - ptBaseH) / 2;
+                          return {
+                            position: 'absolute' as const,
+                            left: (item.x ?? (20 + i * 60)) - ptOffsetX,
+                            top: (item.y ?? 20) - ptOffsetY,
+                            zIndex: isPickupRevealItem ? 80 : 2,
+                            borderRadius: 4,
+                            cursor: 'default' as const,
+                            userSelect: 'none' as const,
+                            touchAction: 'none' as const,
+                            opacity: isPickupRevealItem ? 1 : visual.alpha,
+                            pointerEvents: (isPickupRevealItem ? 'none' : 'auto') as React.CSSProperties['pointerEvents'],
+                            ...pickupRevealStyle,
+                          };
+                        })()}
                       >
                         {resolveItemImage(item) ? (
-                          <img
-                            src={resolveItemImage(item)}
-                            alt={item.name}
-                            style={{ width: (item.w ?? 48), height: (item.h ?? 48), objectFit: 'contain', display: 'block', borderRadius: 4 }}
-                            draggable={false}
-                          />
+                          (() => {
+                            const ptScaledW = (item.w ?? 48) * visual.scale;
+                            const ptScaledH = (item.h ?? 48) * visual.scale;
+                            const ptSrc = resolveItemImage(item);
+                            const ptCssTransform = isPickupRevealItem ? undefined : [
+                              visual.rotationDeg ? `rotate(${visual.rotationDeg}deg)` : '',
+                              visual.skewX ? `skewX(${visual.skewX}deg)` : '',
+                              visual.skewY ? `skewY(${visual.skewY}deg)` : '',
+                            ].filter(Boolean).join(' ') || undefined;
+                            const ptFilter = visual.tint ? `drop-shadow(5px 10px 6px rgba(0,0,0,0.55)) drop-shadow(0 0 0 ${visual.tint}) saturate(1.1)` : 'drop-shadow(5px 10px 6px rgba(0,0,0,0.55))';
+                            const ptImgStyle: React.CSSProperties = {
+                              width: ptScaledW,
+                              height: ptScaledH,
+                              objectFit: 'contain' as const,
+                              display: 'block',
+                              borderRadius: 4,
+                              boxSizing: 'border-box' as const,
+                              transform: ptCssTransform,
+                              transformOrigin: 'center center',
+                              willChange: ptCssTransform ? 'transform' : undefined,
+                              filter: ptFilter,
+                            };
+                            return (
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                {isVideoUrl(ptSrc) ? (
+                                  <video src={ptSrc} autoPlay loop muted playsInline style={ptImgStyle} draggable={false} />
+                                ) : (
+                                  <img src={ptSrc} alt={item.name} style={ptImgStyle} draggable={false} />
+                                )}
+                              </div>
+                            );
+                          })()
                         ) : (
                           <div style={{ width: 48, height: 48, background: 'rgba(255,255,255,0.15)', borderRadius: 4 }} />
                         )}
@@ -1152,7 +1885,38 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
             {playtestPendingPickup ? (
               <div className="fixed inset-0 z-[80] flex items-center justify-center">
                 {playtestPickupPhase === 'ready' || playtestPickupPhase === 'toInventory' ? (
-                  <div className="absolute inset-0 z-[82] flex items-center justify-center bg-black/65 backdrop-blur-[1px]">
+                  <div className={`absolute inset-0 z-[82] flex items-center justify-center ${playtestPendingPickup.pickupAnimationUrl && playtestPickupPhase === 'ready' ? '' : 'bg-black/65 backdrop-blur-[1px]'}`}>
+                    {playtestPendingPickup.pickupAnimationUrl && playtestPickupPhase === 'ready' ? (
+                      /* Seamless full-size video layout — no card wrapper, video matches reveal size */
+                      <div className="flex flex-col items-center justify-center w-full h-full" style={{ background: 'transparent' }}>
+                        <video
+                          src={/^https?:\/\//i.test(playtestPendingPickup.pickupAnimationUrl) ? `/api/image-proxy?url=${encodeURIComponent(playtestPendingPickup.pickupAnimationUrl)}` : playtestPendingPickup.pickupAnimationUrl}
+                          autoPlay
+                          muted
+                          playsInline
+                          className="max-h-[55vh] max-w-[65vw] object-contain rounded-lg drop-shadow-[0_0_40px_rgba(251,191,36,0.3)]"
+                        />
+                        <div className="mt-5 text-center">
+                          <h3 className="text-xl font-bold text-amber-50 drop-shadow-lg">You found {playtestPendingPickup.itemName}</h3>
+                          <div className="mt-3 flex gap-3 justify-center">
+                            <button
+                              type="button"
+                              onClick={dismissPlaytestPendingPickup}
+                              className="px-4 py-2 rounded border border-amber-700/50 text-amber-100 hover:bg-amber-950/40"
+                            >
+                              Not now
+                            </button>
+                            <button
+                              type="button"
+                              onClick={confirmPlaytestPendingPickup}
+                              className="px-4 py-2 rounded font-semibold text-white bg-amber-600 hover:bg-amber-500"
+                            >
+                              Add to Inventory
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
                     <div className="relative w-full max-w-md mx-4 rounded-2xl border border-amber-500/40 bg-neutral-950/95 shadow-2xl overflow-hidden">
                       <div className="px-5 pt-5 pb-2 text-center">
                         <div className="text-xs uppercase tracking-[0.18em] text-amber-300/70">Playtest Pickup</div>
@@ -1171,6 +1935,14 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                                     ? 'designer-pickup-to-inventory-float-in'
                                     : playtestPendingPickup.preset === 'powerDrop'
                                     ? 'designer-pickup-to-inventory-power-drop'
+                                    : playtestPendingPickup.preset === 'spiral'
+                                    ? 'designer-pickup-to-inventory-spiral'
+                                    : playtestPendingPickup.preset === 'bounce'
+                                    ? 'designer-pickup-to-inventory-bounce'
+                                    : playtestPendingPickup.preset === 'glitch'
+                                    ? 'designer-pickup-to-inventory-glitch'
+                                    : playtestPendingPickup.preset === 'flash'
+                                    ? 'designer-pickup-to-inventory-flash'
                                     : 'designer-pickup-to-inventory-cinematic'
                                 }`
                               : '')
@@ -1215,6 +1987,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -1244,12 +2017,14 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             ? input === entry.correctCode
                             : input.toLowerCase() === entry.correctCode.toLowerCase();
                           if (correct) {
+                            if (entry.sfxSuccess) { try { new Audio(entry.sfxSuccess).play().catch(() => {}); } catch {} }
                             if (entry.triggerEffect) applyUseEffectRef.current?.(entry.triggerEffect);
                             setPlaytestMessage(`✓ Correct code for '${entry.zoneLabel}'.`);
                             setPlaytestCodeEntry(null);
                             setPlaytestCodeInput('');
                             setPlaytestCodeError('');
                           } else {
+                            if (entry.sfxFailure) { try { new Audio(entry.sfxFailure).play().catch(() => {}); } catch {} }
                             const newAttemptsLeft = entry.attemptsLeft - 1;
                             if (newAttemptsLeft <= 0 && entry.maxAttempts > 0) {
                               setPlaytestCodeError(`${entry.errorMessage} No attempts remaining — code entry locked.`);
@@ -1296,12 +2071,14 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             ? input === entry.correctCode
                             : input.toLowerCase() === entry.correctCode.toLowerCase();
                           if (correct) {
+                            if (entry.sfxSuccess) { try { new Audio(entry.sfxSuccess).play().catch(() => {}); } catch {} }
                             if (entry.triggerEffect) applyUseEffectRef.current?.(entry.triggerEffect);
                             setPlaytestMessage(`✓ Correct code for '${entry.zoneLabel}'.`);
                             setPlaytestCodeEntry(null);
                             setPlaytestCodeInput('');
                             setPlaytestCodeError('');
                           } else {
+                            if (entry.sfxFailure) { try { new Audio(entry.sfxFailure).play().catch(() => {}); } catch {} }
                             const newAtt = entry.attemptsLeft - 1;
                             setPlaytestCodeEntry(prev => prev ? { ...prev, attemptsLeft: Math.max(0, newAtt) } : prev);
                             setPlaytestCodeError(entry.errorMessage + (entry.maxAttempts > 0 ? ` (${Math.max(0, newAtt)} left)` : ''));
@@ -1354,6 +2131,13 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                 )}
               </div>
               {playtestMessage ? <div className="mt-2 text-xs text-gray-200">{playtestMessage}</div> : null}
+              {playtestCelebration && playtestCelebration.variant !== 'none' && (
+                <StageCelebration
+                  key={playtestCelebration.key}
+                  variant={playtestCelebration.variant as any}
+                  onDone={() => setPlaytestCelebration(null)}
+                />
+              )}
             </div>
           </div>
         )}
@@ -1479,30 +2263,45 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   window.addEventListener('pointermove', onPointerMove);
                   window.addEventListener('pointerup', onPointerUp);
                 }}
-                style={{
-                  position: 'absolute',
-                  left: item.x ?? (20 + i * 60),
-                  top: item.y ?? 20,
-                  zIndex: 2,
-                  borderRadius: 4,
-                  padding: 2,
-                  minWidth: 40,
-                  textAlign: 'center',
-                  cursor: 'move',
-                  userSelect: 'none',
-                  touchAction: 'none'
-                }}
+                style={(() => {
+                  const sf = (item.scale != null && item.scale > 0) ? item.scale : 1;
+                  const baseW = item.w ?? 48;
+                  const baseH = item.h ?? 48;
+                  const offsetX = (baseW * sf - baseW) / 2;
+                  const offsetY = (baseH * sf - baseH) / 2;
+                  return {
+                    position: 'absolute' as const,
+                    left: (item.x ?? (20 + i * 60)) - offsetX,
+                    top: (item.y ?? 20) - offsetY,
+                    zIndex: 2,
+                    borderRadius: 4,
+                    cursor: 'move',
+                    userSelect: 'none' as const,
+                    touchAction: 'none' as const,
+                  };
+                })()}
               >
                 {item.imageUrl ? (
                   <div style={{ position: 'relative', display: 'inline-block' }}>
-                    <img
-                      src={item.imageUrl}
-                      alt={item.name}
-                      style={{ width: (item.w ?? 48), height: (item.h ?? 48), objectFit: 'contain', display: 'block', borderRadius: 4, boxSizing: 'border-box', outline: selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i ? '2px solid rgba(99,102,241,0.9)' : 'none' }}
-                      draggable={false}
-                    />
+                    {(() => {
+                      const scaleFactor = (item.scale != null && item.scale > 0) ? item.scale : 1;
+                      const scaledW = (item.w ?? 48) * scaleFactor;
+                      const scaledH = (item.h ?? 48) * scaleFactor;
+                      const cssTransform = [item.rotation ? `rotate(${item.rotation}deg)` : '', item.skewX ? `skewX(${item.skewX}deg)` : '', item.skewY ? `skewY(${item.skewY}deg)` : ''].filter(Boolean).join(' ') || undefined;
+                      const itemStyle: React.CSSProperties = { width: scaledW, height: scaledH, objectFit: 'contain' as const, display: 'block', borderRadius: 4, boxSizing: 'border-box' as const, outline: selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i ? '2px solid rgba(99,102,241,0.9)' : 'none', transform: cssTransform, transformOrigin: 'center center', willChange: cssTransform ? 'transform' : undefined };
+                      return isVideoUrl(item.imageUrl) ? (
+                        <video src={item.imageUrl} autoPlay loop muted playsInline style={itemStyle} draggable={false} />
+                      ) : (
+                        <img src={item.imageUrl} alt={item.name} style={itemStyle} draggable={false} />
+                      );
+                    })()}
                     {selectedItem && selectedItem.sceneIdx === previewSceneIdx && selectedItem.itemIdx === i && (
                       // resize handles (se, sw, ne, nw)
+                      (() => {
+                        const handleScale = (item.scale != null && item.scale > 0) ? item.scale : 1;
+                        const handleW = (item.w ?? 48) * handleScale;
+                        const handleH = (item.h ?? 48) * handleScale;
+                        return (
                       <>
                         {(['nw','ne','sw','se'] as const).map(h => {
                           const isCorner = true;
@@ -1519,9 +2318,9 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             cursor: h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize'
                           };
                           if (h === 'nw') Object.assign(style, { left: 0, top: 0 });
-                          if (h === 'ne') Object.assign(style, { left: (item.w ?? 48), top: 0 });
-                          if (h === 'sw') Object.assign(style, { left: 0, top: (item.h ?? 48) });
-                          if (h === 'se') Object.assign(style, { left: (item.w ?? 48), top: (item.h ?? 48) });
+                          if (h === 'ne') Object.assign(style, { left: handleW, top: 0 });
+                          if (h === 'sw') Object.assign(style, { left: 0, top: handleH });
+                          if (h === 'se') Object.assign(style, { left: handleW, top: handleH });
                           return (
                             <div
                               key={h}
@@ -1594,10 +2393,12 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                           );
                         })}
                       </>
+                        );
+                      })()
                     )}
                   </div>
                 ) : <span>🧩</span>}
-                <div style={{ fontSize: 10 }}>{item.name}</div>
+                {item.name ? <div style={{ position: 'absolute', left: 0, top: '100%', fontSize: 10, whiteSpace: 'nowrap', pointerEvents: 'none', color: 'rgba(255,255,255,0.7)' }}>{item.name}</div> : null}
               </div>
             ))}
             {/* Interactive zones */}
@@ -1752,6 +2553,78 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
             ))}
           </div>
         )}
+
+        {/* ── Floating Transform Quick-Panel (visible when an item is selected on the canvas) ── */}
+        {selectedItem && previewMode !== 'playtest' && scenes[selectedItem.sceneIdx]?.items[selectedItem.itemIdx] && (() => {
+          const _si = selectedItem.sceneIdx;
+          const _ii = selectedItem.itemIdx;
+          const _item = scenes[_si].items[_ii];
+          const _hasTransform = (_item.rotation ?? 0) !== 0 || (_item.scale ?? 1) !== 1 || (_item.skewX ?? 0) !== 0 || (_item.skewY ?? 0) !== 0;
+          const _updateField = (field: 'rotation' | 'scale' | 'skewX' | 'skewY', raw: string) => {
+            const val = Number(raw);
+            setScenes(prev => {
+              const copy = [...prev];
+              const defaults: Record<string, number> = { rotation: 0, scale: 1, skewX: 0, skewY: 0 };
+              copy[_si].items[_ii] = { ...copy[_si].items[_ii], [field]: val === defaults[field] ? undefined : val };
+              return copy;
+            });
+          };
+          return (
+            <div
+              className="mb-4 border border-indigo-500/60 rounded-lg bg-slate-900/95 backdrop-blur-sm shadow-lg shadow-indigo-500/10"
+              style={{ maxWidth: 600 }}
+            >
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-indigo-500/30 bg-indigo-950/40 rounded-t-lg">
+                <span className="text-xs font-semibold text-indigo-300">🔧 Transform</span>
+                <span className="text-[11px] text-gray-400 truncate flex-1">{_item.name || 'Unnamed Item'}</span>
+                {_hasTransform && (
+                  <button
+                    type="button"
+                    className="text-[10px] text-blue-400 hover:text-blue-300 underline"
+                    onClick={() => {
+                      setScenes(prev => {
+                        const copy = [...prev];
+                        copy[_si].items[_ii] = { ...copy[_si].items[_ii], rotation: undefined, scale: undefined, skewX: undefined, skewY: undefined };
+                        return copy;
+                      });
+                    }}
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-white text-sm leading-none px-1"
+                  title="Deselect item"
+                  onClick={() => setSelectedItem(null)}
+                >✕</button>
+              </div>
+              <div className="grid grid-cols-4 gap-3 px-3 py-2">
+                <label className="block text-[11px]">
+                  <span className="text-gray-300">Rotation</span>
+                  <input type="range" min={-180} max={180} step={1} value={_item.rotation ?? 0} onChange={e => _updateField('rotation', e.target.value)} className="w-full" />
+                  <div className="text-center text-[10px] text-gray-400">{_item.rotation ?? 0}°</div>
+                </label>
+                <label className="block text-[11px]">
+                  <span className="text-gray-300">Scale</span>
+                  <input type="range" min={0.1} max={3} step={0.05} value={_item.scale ?? 1} onChange={e => _updateField('scale', e.target.value)} className="w-full" />
+                  <div className="text-center text-[10px] text-gray-400">{(_item.scale ?? 1).toFixed(2)}×</div>
+                </label>
+                <label className="block text-[11px]">
+                  <span className="text-gray-300">Skew X</span>
+                  <input type="range" min={-45} max={45} step={1} value={_item.skewX ?? 0} onChange={e => _updateField('skewX', e.target.value)} className="w-full" />
+                  <div className="text-center text-[10px] text-gray-400">{_item.skewX ?? 0}°</div>
+                </label>
+                <label className="block text-[11px]">
+                  <span className="text-gray-300">Skew Y</span>
+                  <input type="range" min={-45} max={45} step={1} value={_item.skewY ?? 0} onChange={e => _updateField('skewY', e.target.value)} className="w-full" />
+                  <div className="text-center text-[10px] text-gray-400">{_item.skewY ?? 0}°</div>
+                </label>
+              </div>
+            </div>
+          );
+        })()}
+
         {scenes.length === 0 ? <div className="text-gray-500">No scenes added yet.</div> : (
           <ul className="space-y-4">
             {scenes.map((scene, idx) => (
@@ -1838,6 +2711,193 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                     </p>
                   </div>
                 </div>
+
+                {/* ── Animations & FX ── */}
+                <div className="mb-3 rounded border border-purple-700/50 bg-purple-950/20 p-3">
+                  <div className="text-xs font-semibold text-purple-300 mb-2">✨ Animations &amp; FX</div>
+                  <div className="flex gap-4 flex-wrap">
+                    <div>
+                      <label className="block text-xs text-gray-300 mb-1">Scene Transition In</label>
+                      <select
+                        value={(scene as any).transitionIn || 'fade'}
+                        onChange={e => {
+                          const updated = [...scenes];
+                          (updated[idx] as any).transitionIn = e.target.value;
+                          setScenes(updated);
+                        }}
+                        className="border rounded px-2 py-1 text-xs bg-slate-700 text-white"
+                      >
+                        <option value="none">None</option>
+                        <option value="fade">🌫 Fade</option>
+                        <option value="slideLeft">◀ Slide from Left</option>
+                        <option value="slideRight">▶ Slide from Right</option>
+                        <option value="slideUp">▲ Slide from Top</option>
+                        <option value="zoomIn">🔍 Zoom In</option>
+                        <option value="wipe">🪟 Wipe</option>
+                        <option value="glitch">📺 Glitch</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-300 mb-1">Solve Celebration</label>
+                      <select
+                        value={(scene as any).solveCelebration || 'confetti'}
+                        onChange={e => {
+                          const updated = [...scenes];
+                          (updated[idx] as any).solveCelebration = e.target.value;
+                          setScenes(updated);
+                        }}
+                        className="border rounded px-2 py-1 text-xs bg-slate-700 text-white"
+                      >
+                        <option value="none">None</option>
+                        <option value="confetti">🎉 Confetti</option>
+                        <option value="flash">⚡ Flash</option>
+                        <option value="starburst">⭐ Starburst</option>
+                        <option value="dramatic">🎬 Dramatic</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-purple-400/70 mt-2">Transition In fires when this scene is entered. Solve Celebration fires when the room is completed.</p>
+                  {/* Audio */}
+                  <div className="mt-3 border-t border-purple-700/30 pt-3">
+                    <div className="text-xs font-semibold text-purple-300 mb-2">🎵 Audio</div>
+                    <div className="flex flex-col gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-300 mb-1">Background Music</label>
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <input
+                            type="text"
+                            placeholder="https://... .mp3 / .ogg  (loops while in scene)"
+                            value={(scene as any).bgm?.url || ''}
+                            onChange={e => {
+                              const updated = [...scenes];
+                              const url = e.target.value.trim();
+                              (updated[idx] as any).bgm = url ? { url, volume: (scene as any).bgm?.volume ?? 0.5 } : undefined;
+                              setScenes(updated);
+                            }}
+                            className="border rounded px-2 py-1 text-xs bg-slate-700 text-white w-64"
+                          />
+                          <label className="relative cursor-pointer text-xs bg-purple-700 hover:bg-purple-600 text-white px-2 py-1 rounded inline-flex items-center gap-1">
+                            {audioUploadState[`bgm-${idx}`]?.uploading ? '⏳' : '📁'} Upload
+                            <input
+                              type="file"
+                              accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg"
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                uploadAudioFile(file, `bgm-${idx}`, url => {
+                                  const updated = [...scenes];
+                                  (updated[idx] as any).bgm = { url, volume: (scene as any).bgm?.volume ?? 0.5 };
+                                  setScenes(updated);
+                                });
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {audioUploadState[`bgm-${idx}`]?.error && <span className="text-xs text-red-400">{audioUploadState[`bgm-${idx}`].error}</span>}
+                          <label className="text-xs text-gray-400">Vol</label>
+                          <input
+                            type="range"
+                            min="0" max="1" step="0.05"
+                            value={(scene as any).bgm?.volume ?? 0.5}
+                            onChange={e => {
+                              const updated = [...scenes];
+                              const vol = parseFloat(e.target.value);
+                              if ((updated[idx] as any).bgm) {
+                                (updated[idx] as any).bgm.volume = vol;
+                              } else {
+                                (updated[idx] as any).bgm = { url: '', volume: vol };
+                              }
+                              setScenes(updated);
+                            }}
+                            className="w-20 accent-purple-400"
+                          />
+                          <span className="text-xs text-gray-400">{Math.round(((scene as any).bgm?.volume ?? 0.5) * 100)}%</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-4 flex-wrap">
+                        <div>
+                          <label className="block text-xs text-gray-300 mb-1">Enter SFX <span className="text-gray-500">(plays once on scene enter)</span></label>
+                          <div className="flex gap-1 items-center">
+                            <input
+                              type="text"
+                              placeholder="https://... .mp3"
+                              value={(scene as any).enterSfx || ''}
+                              onChange={e => {
+                                const updated = [...scenes];
+                                (updated[idx] as any).enterSfx = e.target.value.trim() || undefined;
+                                setScenes(updated);
+                              }}
+                              className="border rounded px-2 py-1 text-xs bg-slate-700 text-white w-48"
+                            />
+                            <label className="relative cursor-pointer text-xs bg-purple-700 hover:bg-purple-600 text-white px-2 py-1 rounded inline-flex items-center gap-1">
+                              {audioUploadState[`enterSfx-${idx}`]?.uploading ? '⏳' : '📁'}
+                              <input
+                                type="file"
+                                accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg"
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  uploadAudioFile(file, `enterSfx-${idx}`, url => {
+                                    const updated = [...scenes];
+                                    (updated[idx] as any).enterSfx = url;
+                                    setScenes(updated);
+                                  });
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {(scene as any).enterSfx && (
+                              <button type="button" className="text-xs text-purple-300 hover:text-purple-100 px-1" title="Preview" onClick={() => { try { new Audio((scene as any).enterSfx).play().catch(() => {}); } catch {} }}>▶</button>
+                            )}
+                          </div>
+                          {audioUploadState[`enterSfx-${idx}`]?.error && <span className="text-xs text-red-400">{audioUploadState[`enterSfx-${idx}`].error}</span>}
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-300 mb-1">Solve SFX <span className="text-gray-500">(plays on stage solve)</span></label>
+                          <div className="flex gap-1 items-center">
+                            <input
+                              type="text"
+                              placeholder="https://... .mp3"
+                              value={(scene as any).solveSfx || ''}
+                              onChange={e => {
+                                const updated = [...scenes];
+                                (updated[idx] as any).solveSfx = e.target.value.trim() || undefined;
+                                setScenes(updated);
+                              }}
+                              className="border rounded px-2 py-1 text-xs bg-slate-700 text-white w-48"
+                            />
+                            <label className="relative cursor-pointer text-xs bg-purple-700 hover:bg-purple-600 text-white px-2 py-1 rounded inline-flex items-center gap-1">
+                              {audioUploadState[`solveSfx-${idx}`]?.uploading ? '⏳' : '📁'}
+                              <input
+                                type="file"
+                                accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg"
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  uploadAudioFile(file, `solveSfx-${idx}`, url => {
+                                    const updated = [...scenes];
+                                    (updated[idx] as any).solveSfx = url;
+                                    setScenes(updated);
+                                  });
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {(scene as any).solveSfx && (
+                              <button type="button" className="text-xs text-purple-300 hover:text-purple-100 px-1" title="Preview" onClick={() => { try { new Audio((scene as any).solveSfx).play().catch(() => {}); } catch {} }}>▶</button>
+                            )}
+                          </div>
+                          {audioUploadState[`solveSfx-${idx}`]?.error && <span className="text-xs text-red-400">{audioUploadState[`solveSfx-${idx}`].error}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-purple-400/70 mt-1">BGM crossfades between scenes. Upload mp3/ogg files or paste a URL.</p>
+                  </div>
+                </div>
+
                 <div className="mb-2">
                   <label className="block text-sm">Background Image</label>
                   <div className="flex gap-2 items-center">
@@ -1889,7 +2949,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                       {/* New: upload background file and store under public/content/images */}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,video/mp4,video/webm"
                         id={`scene-bg-file-${idx}`}
                         style={{ display: 'none' }}
                         onChange={async (e) => {
@@ -1985,7 +3045,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                         <li key={item.id}>
                           <details className="border rounded">
                             <summary className="flex items-center gap-2 px-2 py-2 cursor-pointer select-none bg-slate-800/30 hover:bg-slate-800/50 [&::-webkit-details-marker]:hidden list-none rounded">
-                              {item.imageUrl && <img src={item.imageUrl} alt="" className="h-5 w-5 object-cover rounded shrink-0" />}
+                              {item.imageUrl && (isVideoUrl(item.imageUrl) ? <video src={item.imageUrl} autoPlay loop muted playsInline className="h-5 w-5 object-cover rounded shrink-0" /> : <img src={item.imageUrl} alt="" className="h-5 w-5 object-cover rounded shrink-0" />)}
                               <span className="text-xs font-semibold flex-1 truncate">{item.name || <span className="text-gray-400 italic font-normal">Unnamed Item</span>}</span>
                               <span className="text-[10px] text-gray-400 group-open:hidden">▸ edit</span>
                             </summary>
@@ -2000,7 +3060,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
 
                               <input
                                 type="file"
-                                accept="image/*"
+                                accept="image/*,video/mp4,video/webm"
                                 style={{ display: 'none' }}
                                 form=""
                                 id={`item-image-${idx}-${itemIdx}`}
@@ -2133,7 +3193,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                                 <div className="flex gap-2 items-center">
                                   <input
                                     type="file"
-                                    accept="image/*"
+                                    accept="image/*,video/mp4,video/webm"
                                     style={{ display: 'none' }}
                                     form=""
                                     id={`sprite-state-${idx}-${itemIdx}-${stateIdx}`}
@@ -2247,6 +3307,140 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               />
                             </div>
                           </div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <label className="text-xs text-gray-300">Ambient Effect:</label>
+                            <select
+                              value={item.ambientEffect || 'none'}
+                              onChange={e => {
+                                const updated = [...scenes];
+                                (updated[idx].items[itemIdx] as any).ambientEffect = e.target.value === 'none' ? undefined : e.target.value;
+                                setScenes(updated);
+                              }}
+                              className="border rounded px-2 py-1 text-xs bg-slate-700 text-white"
+                            >
+                              <option value="none">None</option>
+                              <option value="glow">✨ Glow</option>
+                              <option value="pulse">💓 Pulse</option>
+                              <option value="float">🌊 Float</option>
+                              <option value="sparkle">⭐ Sparkle</option>
+                              <option value="shimmer">🌟 Shimmer</option>
+                            </select>
+                            <span className="text-[11px] text-purple-400/80">Atmospheric effect in the player</span>
+                          </div>
+                          {/* Transform controls: rotation, scale, skew */}
+                          <div className="mt-2 border rounded p-2">
+                            <div className="text-xs font-semibold mb-1">Transform</div>
+                            <div className="text-[11px] text-gray-400 mb-2">Adjust to match room perspective angles.</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="block text-xs">
+                                <span className="text-gray-300">Rotation (°)</span>
+                                <input
+                                  type="range"
+                                  min={-180}
+                                  max={180}
+                                  step={1}
+                                  value={item.rotation ?? 0}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    const val = Number(e.target.value);
+                                    updated[idx].items[itemIdx] = { ...updated[idx].items[itemIdx], rotation: val === 0 ? undefined : val };
+                                    setScenes(updated);
+                                  }}
+                                  className="w-full"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500">
+                                  <span>-180</span>
+                                  <span className="font-semibold text-gray-300">{item.rotation ?? 0}°</span>
+                                  <span>180</span>
+                                </div>
+                              </label>
+                              <label className="block text-xs">
+                                <span className="text-gray-300">Scale</span>
+                                <input
+                                  type="range"
+                                  min={0.1}
+                                  max={3}
+                                  step={0.05}
+                                  value={item.scale ?? 1}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    const val = Number(e.target.value);
+                                    updated[idx].items[itemIdx] = { ...updated[idx].items[itemIdx], scale: val === 1 ? undefined : val };
+                                    setScenes(updated);
+                                  }}
+                                  className="w-full"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500">
+                                  <span>0.1×</span>
+                                  <span className="font-semibold text-gray-300">{(item.scale ?? 1).toFixed(2)}×</span>
+                                  <span>3×</span>
+                                </div>
+                              </label>
+                              <label className="block text-xs">
+                                <span className="text-gray-300">Skew X (°)</span>
+                                <input
+                                  type="range"
+                                  min={-45}
+                                  max={45}
+                                  step={1}
+                                  value={item.skewX ?? 0}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    const val = Number(e.target.value);
+                                    updated[idx].items[itemIdx] = { ...updated[idx].items[itemIdx], skewX: val === 0 ? undefined : val };
+                                    setScenes(updated);
+                                  }}
+                                  className="w-full"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500">
+                                  <span>-45</span>
+                                  <span className="font-semibold text-gray-300">{item.skewX ?? 0}°</span>
+                                  <span>45</span>
+                                </div>
+                              </label>
+                              <label className="block text-xs">
+                                <span className="text-gray-300">Skew Y (°)</span>
+                                <input
+                                  type="range"
+                                  min={-45}
+                                  max={45}
+                                  step={1}
+                                  value={item.skewY ?? 0}
+                                  onChange={(e) => {
+                                    const updated = [...scenes];
+                                    const val = Number(e.target.value);
+                                    updated[idx].items[itemIdx] = { ...updated[idx].items[itemIdx], skewY: val === 0 ? undefined : val };
+                                    setScenes(updated);
+                                  }}
+                                  className="w-full"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500">
+                                  <span>-45</span>
+                                  <span className="font-semibold text-gray-300">{item.skewY ?? 0}°</span>
+                                  <span>45</span>
+                                </div>
+                              </label>
+                            </div>
+                            {((item.rotation ?? 0) !== 0 || (item.scale ?? 1) !== 1 || (item.skewX ?? 0) !== 0 || (item.skewY ?? 0) !== 0) && (
+                              <button
+                                type="button"
+                                className="mt-1 text-[11px] text-blue-400 hover:text-blue-300 underline"
+                                onClick={() => {
+                                  const updated = [...scenes];
+                                  updated[idx].items[itemIdx] = {
+                                    ...updated[idx].items[itemIdx],
+                                    rotation: undefined,
+                                    scale: undefined,
+                                    skewX: undefined,
+                                    skewY: undefined,
+                                  };
+                                  setScenes(updated);
+                                }}
+                              >
+                                Reset all transforms
+                              </button>
+                            )}
+                          </div>
                           <div className="mt-1 flex gap-2 items-center">
                             <div className="text-xs text-gray-300">
                               <div>Size: {Math.round(item.w ?? 48)}×{Math.round(item.h ?? 48)}</div>
@@ -2279,8 +3473,9 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                                 zone.actionType === 'collect' ? 'bg-green-900/60 text-green-300' :
                                 zone.actionType === 'trigger' ? 'bg-amber-900/60 text-amber-300' :
                                 zone.actionType === 'codeEntry' ? 'bg-cyan-900/60 text-cyan-300' :
+                                zone.actionType === 'miniPuzzle' ? 'bg-purple-900/60 text-purple-300' :
                                 'bg-blue-900/60 text-blue-300'
-                              }`}>{zone.actionType === 'codeEntry' ? 'code entry' : zone.actionType}</span>
+                              }`}>{zone.actionType === 'codeEntry' ? 'code entry' : zone.actionType === 'miniPuzzle' ? 'mini puzzle' : zone.actionType}</span>
                               <span className="text-[10px] text-gray-400">▸ edit</span>
                             </summary>
                             <div className="px-2 pb-2 border-t border-slate-700/50">
@@ -2299,6 +3494,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               <option value="collect">Collect Item</option>
                               <option value="trigger">Trigger / Advance Scene</option>
                               <option value="codeEntry">Code Entry (Combination Lock)</option>
+                              <option value="miniPuzzle">🎮 Mini Puzzle (Keypad / Wire / Dial)</option>
                             </select>
                             <button className="text-red-500 text-xs" type="button" onClick={() => {
                               const updated = [...scenes];
@@ -2886,7 +4082,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
 
                                     <input
                                       type="file"
-                                      accept="image/*"
+                                      accept="image/*,video/mp4,video/webm"
                                       id={`zone-image-${idx}-${zoneIdx}`}
                                       style={{ display: 'none' }}
                                       onChange={async (e) => {
@@ -3021,6 +4217,77 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                                           placeholder="Modal content shown when this option is chosen"
                                           className="border rounded px-2 py-1 w-full text-xs"
                                         />
+                                        {/* Media (image / video) per interaction */}
+                                        <div className="mt-1">
+                                          <label className="block text-[11px] text-gray-400">Image / Video (optional)</label>
+                                          <div className="flex items-center gap-2 mt-0.5">
+                                            <input
+                                              type="text"
+                                              value={(itx as any).imageUrl || ''}
+                                              onChange={e => {
+                                                const updated = [...scenes];
+                                                const arr = updated[idx].interactiveZones[zoneIdx].interactions || [];
+                                                arr[itxIdx] = { ...arr[itxIdx], imageUrl: e.target.value || undefined };
+                                                updated[idx].interactiveZones[zoneIdx].interactions = [...arr];
+                                                setScenes(updated);
+                                              }}
+                                              placeholder="Paste URL or upload"
+                                              className="border rounded px-2 py-1 text-xs flex-1 min-w-0"
+                                            />
+                                            <input
+                                              type="file"
+                                              accept="image/*,video/mp4,video/webm,video/mov"
+                                              id={`itx-media-${idx}-${zoneIdx}-${itxIdx}`}
+                                              style={{ display: 'none' }}
+                                              onChange={async (ev) => {
+                                                ev.preventDefault();
+                                                ev.stopPropagation();
+                                                const file = ev.target.files?.[0];
+                                                const key = `itx-${idx}-${zoneIdx}-${itxIdx}`;
+                                                setZoneUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                                                try {
+                                                  if (!file) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: 'No file selected' } })); return; }
+                                                  if (file.size > MAX_CLIENT_UPLOAD) { setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: `File too large (> ${Math.round(MAX_CLIENT_UPLOAD / (1024*1024))}MB)` } })); return; }
+                                                  const fd = new FormData();
+                                                  fd.append('file', file);
+                                                  if (editId) fd.append('puzzleId', editId);
+                                                  const res = await fetch('/api/admin/media', { method: 'POST', body: fd });
+                                                  const data = await res.json().catch(() => ({}));
+                                                  if (res.ok && (data.mediaUrl || data.url)) {
+                                                    const uploadedUrl = data.mediaUrl || data.url;
+                                                    const updated = [...scenes];
+                                                    const arr = updated[idx].interactiveZones[zoneIdx].interactions || [];
+                                                    arr[itxIdx] = { ...arr[itxIdx], imageUrl: uploadedUrl };
+                                                    updated[idx].interactiveZones[zoneIdx].interactions = [...arr];
+                                                    setScenes(updated);
+                                                    setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: '' } }));
+                                                  } else {
+                                                    setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: (data?.error || data?.message) || `Upload failed (${res.status})` } }));
+                                                  }
+                                                } catch (err) {
+                                                  setZoneUploadState(prev => ({ ...prev, [key]: { uploading: false, error: err instanceof Error ? err.message : String(err) } }));
+                                                }
+                                              }}
+                                            />
+                                            <label
+                                              htmlFor={`itx-media-${idx}-${zoneIdx}-${itxIdx}`}
+                                              className="bg-blue-500 text-white px-2 py-1 rounded text-xs cursor-pointer whitespace-nowrap"
+                                            >
+                                              Upload
+                                            </label>
+                                            {zoneUploadState[`itx-${idx}-${zoneIdx}-${itxIdx}`]?.uploading && (
+                                              <span className="text-xs text-blue-400">Uploading…</span>
+                                            )}
+                                            {zoneUploadState[`itx-${idx}-${zoneIdx}-${itxIdx}`]?.error && (
+                                              <span className="text-xs text-red-400">{zoneUploadState[`itx-${idx}-${zoneIdx}-${itxIdx}`].error}</span>
+                                            )}
+                                            {(itx as any).imageUrl && !zoneUploadState[`itx-${idx}-${zoneIdx}-${itxIdx}`]?.uploading && (
+                                              /\.(mp4|webm|mov|avi)$/i.test(((itx as any).imageUrl || '').split(/[?#]/)[0])
+                                                ? <video src={(itx as any).imageUrl} muted className="h-8 w-8 object-cover rounded" />
+                                                : <img src={(itx as any).imageUrl} alt="" className="h-8 w-8 object-cover rounded" />
+                                            )}
+                                          </div>
+                                        </div>
                                         {/* Branch effects + completion flag per interaction */}
                                         <div className="rounded border border-slate-700 bg-slate-800/50 p-2 space-y-2">
                                           <div className="text-[11px] text-amber-200 font-semibold">On Choose: Effects &amp; Completion</div>
@@ -3101,6 +4368,64 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                                   ))}
                                 </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs">Pickup Animation Video (.mp4)</label>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    value={zone.pickupAnimationUrl || ''}
+                                    onChange={e => {
+                                      const updated = [...scenes];
+                                      updated[idx].interactiveZones[zoneIdx].pickupAnimationUrl = e.target.value || undefined;
+                                      setScenes(updated);
+                                    }}
+                                    placeholder="URL or upload →"
+                                    className="border rounded px-2 py-1 text-xs flex-1 min-w-0"
+                                  />
+                                  <label className="shrink-0 cursor-pointer rounded bg-indigo-700 px-2 py-1 text-[10px] font-semibold text-white hover:bg-indigo-600 transition">
+                                    {zoneUploadState[`collect-anim-${idx}-${zoneIdx}`]?.uploading ? '⏳' : '⬆ Upload'}
+                                    <input
+                                      type="button"
+                                      className="hidden"
+                                      onClick={async (ev) => {
+                                        ev.preventDefault();
+                                        const input = document.createElement('input');
+                                        input.type = 'file';
+                                        input.accept = 'video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov';
+                                        input.onchange = async () => {
+                                          const file = input.files?.[0];
+                                          if (!file) return;
+                                          if (file.size > MAX_CLIENT_UPLOAD) {
+                                            setZoneUploadState(p => ({ ...p, [`collect-anim-${idx}-${zoneIdx}`]: { uploading: false, error: 'File too large (50 MB max)' } }));
+                                            return;
+                                          }
+                                          setZoneUploadState(p => ({ ...p, [`collect-anim-${idx}-${zoneIdx}`]: { uploading: true, error: '' } }));
+                                          try {
+                                            const fd = new FormData();
+                                            fd.append('file', file);
+                                            const res = await fetch('/api/admin/media', { method: 'POST', body: fd });
+                                            const data = await res.json();
+                                            if (!res.ok) throw new Error(data?.error || 'Upload failed');
+                                            const updated = [...scenes];
+                                            updated[idx].interactiveZones[zoneIdx].pickupAnimationUrl = data.url;
+                                            setScenes(updated);
+                                            setZoneUploadState(p => ({ ...p, [`collect-anim-${idx}-${zoneIdx}`]: { uploading: false, error: '' } }));
+                                          } catch (err: any) {
+                                            setZoneUploadState(p => ({ ...p, [`collect-anim-${idx}-${zoneIdx}`]: { uploading: false, error: err?.message || 'Upload failed' } }));
+                                          }
+                                        };
+                                        input.click();
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                                {zoneUploadState[`collect-anim-${idx}-${zoneIdx}`]?.error && (
+                                  <div className="text-[10px] text-red-400 mt-0.5">{zoneUploadState[`collect-anim-${idx}-${zoneIdx}`].error}</div>
+                                )}
+                                {zone.pickupAnimationUrl && (
+                                  <video src={/^https?:\/\//i.test(zone.pickupAnimationUrl) ? `/api/image-proxy?url=${encodeURIComponent(zone.pickupAnimationUrl)}` : zone.pickupAnimationUrl} muted playsInline className="mt-1 h-16 rounded border border-gray-700" />
+                                )}
                               </div>
                             </div>
                           )}
@@ -3214,6 +4539,353 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               <p className="text-[11px] text-gray-400">On correct entry, the zone&apos;s Use Effects fire (see wiring above). Completion flag also applies.</p>
                             </div>
                           )}
+
+                          {zone.actionType === 'miniPuzzle' && (
+                            <div className="mb-2 space-y-3 rounded border border-purple-800/50 bg-purple-950/20 p-3">
+                              <div className="text-xs font-semibold text-purple-300 mb-1">🎮 Mini Puzzle Configuration</div>
+
+                              {/* Puzzle type selector */}
+                              <div>
+                                <label className="block text-xs text-gray-300 mb-0.5">Puzzle Type</label>
+                                <select
+                                  value={zone.miniPuzzle?.type || 'keypad'}
+                                  onChange={e => {
+                                    const updated = [...scenes];
+                                    const z = updated[idx].interactiveZones[zoneIdx];
+                                    z.miniPuzzle = { type: e.target.value as any, config: z.miniPuzzle?.config || {} };
+                                    setScenes(updated);
+                                  }}
+                                  className="border rounded px-2 py-1 text-xs bg-slate-700 text-white w-full"
+                                >
+                                  <option value="keypad">🔢 Keypad / PIN Lock</option>
+                                  <option value="wire">🔌 Wire Connector</option>
+                                  <option value="dial">⚙️ Multi-Dial Combination</option>
+                                </select>
+                              </div>
+
+                              {/* Shared: max attempts + time penalty */}
+                              <div className="flex gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-300 mb-0.5">Max attempts before lockout</label>
+                                  <input type="number" min={1} max={10} step={1}
+                                    value={zone.miniPuzzle?.config?.maxAttempts ?? 3}
+                                    onChange={e => {
+                                      const updated = [...scenes];
+                                      const z = updated[idx].interactiveZones[zoneIdx];
+                                      z.miniPuzzle = { type: z.miniPuzzle?.type || 'keypad', config: { ...(z.miniPuzzle?.config || {}), maxAttempts: parseInt(e.target.value) || 3 } };
+                                      setScenes(updated);
+                                    }}
+                                    className="border rounded px-2 py-1 text-xs w-20 bg-slate-700 text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-300 mb-0.5">Penalty on lockout (seconds)</label>
+                                  <input type="number" min={0} max={300} step={5}
+                                    value={zone.miniPuzzle?.config?.timePenaltySeconds ?? 30}
+                                    onChange={e => {
+                                      const updated = [...scenes];
+                                      const z = updated[idx].interactiveZones[zoneIdx];
+                                      z.miniPuzzle = { type: z.miniPuzzle?.type || 'keypad', config: { ...(z.miniPuzzle?.config || {}), timePenaltySeconds: parseInt(e.target.value) || 0 } };
+                                      setScenes(updated);
+                                    }}
+                                    className="border rounded px-2 py-1 text-xs w-24 bg-slate-700 text-white"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* ── Keypad config ── */}
+                              {(zone.miniPuzzle?.type || 'keypad') === 'keypad' && (
+                                <div className="space-y-2 border-t border-slate-700 pt-2">
+                                  <div>
+                                    <label className="block text-xs text-gray-300 mb-0.5">Correct PIN / Code (digits only)</label>
+                                    <input
+                                      value={zone.miniPuzzle?.config?.correctCode || ''}
+                                      onChange={e => {
+                                        const updated = [...scenes];
+                                        const z = updated[idx].interactiveZones[zoneIdx];
+                                        z.miniPuzzle = { type: 'keypad', config: { ...(z.miniPuzzle?.config || {}), correctCode: e.target.value.replace(/\D/g, '') } };
+                                        setScenes(updated);
+                                      }}
+                                      placeholder="e.g. 4271"
+                                      className="border rounded px-2 py-1 text-xs w-full bg-slate-700 text-white font-mono"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-300 mb-0.5">Hint text (optional)</label>
+                                    <input
+                                      value={zone.miniPuzzle?.config?.hint || ''}
+                                      onChange={e => {
+                                        const updated = [...scenes];
+                                        const z = updated[idx].interactiveZones[zoneIdx];
+                                        z.miniPuzzle = { type: 'keypad', config: { ...(z.miniPuzzle?.config || {}), hint: e.target.value } };
+                                        setScenes(updated);
+                                      }}
+                                      placeholder="The safe combination is hidden in the painting"
+                                      className="border rounded px-2 py-1 text-xs w-full bg-slate-700 text-white"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-300 mb-0.5">Clue image URL (optional)</label>
+                                    <input
+                                      value={zone.miniPuzzle?.config?.hintImageUrl || ''}
+                                      onChange={e => {
+                                        const updated = [...scenes];
+                                        const z = updated[idx].interactiveZones[zoneIdx];
+                                        z.miniPuzzle = { type: 'keypad', config: { ...(z.miniPuzzle?.config || {}), hintImageUrl: e.target.value.trim() } };
+                                        setScenes(updated);
+                                      }}
+                                      placeholder="https://... .jpg"
+                                      className="border rounded px-2 py-1 text-xs w-full bg-slate-700 text-white"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* ── Wire config ── */}
+                              {zone.miniPuzzle?.type === 'wire' && (
+                                <div className="space-y-2 border-t border-slate-700 pt-2">
+                                  <div className="text-xs text-gray-400">Define the source→target pairs that players must match.</div>
+                                  {(zone.miniPuzzle?.config?.pairs || []).map((pair: any, pi: number) => (
+                                    <div key={pi} className="flex gap-1 items-center">
+                                      <input
+                                        value={pair.leftLabel || ''}
+                                        onChange={e => {
+                                          const updated = [...scenes];
+                                          const z = updated[idx].interactiveZones[zoneIdx];
+                                          const pairs = [...(z.miniPuzzle?.config?.pairs || [])];
+                                          pairs[pi] = { ...pairs[pi], leftLabel: e.target.value };
+                                          z.miniPuzzle = { type: 'wire', config: { ...(z.miniPuzzle?.config || {}), pairs } };
+                                          setScenes(updated);
+                                        }}
+                                        placeholder="Source"
+                                        className="border rounded px-2 py-1 text-xs w-24 bg-slate-700 text-white"
+                                      />
+                                      <span className="text-gray-500 text-xs">→</span>
+                                      <input
+                                        value={pair.rightLabel || ''}
+                                        onChange={e => {
+                                          const updated = [...scenes];
+                                          const z = updated[idx].interactiveZones[zoneIdx];
+                                          const pairs = [...(z.miniPuzzle?.config?.pairs || [])];
+                                          pairs[pi] = { ...pairs[pi], rightLabel: e.target.value };
+                                          z.miniPuzzle = { type: 'wire', config: { ...(z.miniPuzzle?.config || {}), pairs } };
+                                          setScenes(updated);
+                                        }}
+                                        placeholder="Target"
+                                        className="border rounded px-2 py-1 text-xs w-24 bg-slate-700 text-white"
+                                      />
+                                      <input
+                                        type="color"
+                                        value={pair.color || '#60a5fa'}
+                                        onChange={e => {
+                                          const updated = [...scenes];
+                                          const z = updated[idx].interactiveZones[zoneIdx];
+                                          const pairs = [...(z.miniPuzzle?.config?.pairs || [])];
+                                          pairs[pi] = { ...pairs[pi], color: e.target.value };
+                                          z.miniPuzzle = { type: 'wire', config: { ...(z.miniPuzzle?.config || {}), pairs } };
+                                          setScenes(updated);
+                                        }}
+                                        className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent"
+                                        title="Wire color"
+                                      />
+                                      <button
+                                        type="button"
+                                        className="text-red-400 text-xs hover:text-red-300"
+                                        onClick={() => {
+                                          const updated = [...scenes];
+                                          const z = updated[idx].interactiveZones[zoneIdx];
+                                          const pairs = (z.miniPuzzle?.config?.pairs || []).filter((_: any, i: number) => i !== pi);
+                                          z.miniPuzzle = { type: 'wire', config: { ...(z.miniPuzzle?.config || {}), pairs } };
+                                          setScenes(updated);
+                                        }}
+                                      >✕</button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    className="text-xs text-purple-300 hover:text-purple-100 border border-purple-700/40 rounded px-2 py-1"
+                                    onClick={() => {
+                                      const updated = [...scenes];
+                                      const z = updated[idx].interactiveZones[zoneIdx];
+                                      const pairs = [...(z.miniPuzzle?.config?.pairs || []), { leftLabel: '', rightLabel: '', color: '#60a5fa' }];
+                                      z.miniPuzzle = { type: 'wire', config: { ...(z.miniPuzzle?.config || {}), pairs } };
+                                      setScenes(updated);
+                                    }}
+                                  >+ Add Pair</button>
+                                </div>
+                              )}
+
+                              {/* ── Dial config ── */}
+                              {zone.miniPuzzle?.type === 'dial' && (
+                                <div className="space-y-2 border-t border-slate-700 pt-2">
+                                  <div className="text-xs text-gray-400">Configure up to 4 dials. Players rotate each dial to its target value.</div>
+                                  <div>
+                                    <label className="block text-xs text-gray-300 mb-0.5">Hint text (optional)</label>
+                                    <input
+                                      value={zone.miniPuzzle?.config?.hint || ''}
+                                      onChange={e => {
+                                        const updated = [...scenes];
+                                        const z = updated[idx].interactiveZones[zoneIdx];
+                                        z.miniPuzzle = { type: 'dial', config: { ...(z.miniPuzzle?.config || {}), hint: e.target.value } };
+                                        setScenes(updated);
+                                      }}
+                                      placeholder="Look for the symbols on the control panel"
+                                      className="border rounded px-2 py-1 text-xs w-full bg-slate-700 text-white"
+                                    />
+                                  </div>
+                                  {(zone.miniPuzzle?.config?.dials || []).map((dial: any, di: number) => (
+                                    <div key={di} className="flex gap-1 flex-wrap items-end border border-slate-700 rounded p-2">
+                                      <div>
+                                        <label className="block text-[10px] text-gray-400">Label</label>
+                                        <input value={dial.label || ''}
+                                          onChange={e => {
+                                            const updated = [...scenes];
+                                            const z = updated[idx].interactiveZones[zoneIdx];
+                                            const dials = [...(z.miniPuzzle?.config?.dials || [])];
+                                            dials[di] = { ...dials[di], label: e.target.value };
+                                            z.miniPuzzle = { type: 'dial', config: { ...(z.miniPuzzle?.config || {}), dials } };
+                                            setScenes(updated);
+                                          }}
+                                          placeholder="I" className="border rounded px-2 py-1 text-xs w-16 bg-slate-700 text-white" />
+                                      </div>
+                                      {[['Min','min',0],['Max','max',9],['Target','target',0],['Start','startValue',0]].map(([lbl, field, def]) => (
+                                        <div key={String(field)}>
+                                          <label className="block text-[10px] text-gray-400">{lbl}</label>
+                                          <input type="number" value={(dial as any)[field as string] ?? def}
+                                            onChange={e => {
+                                              const updated = [...scenes];
+                                              const z = updated[idx].interactiveZones[zoneIdx];
+                                              const dials = [...(z.miniPuzzle?.config?.dials || [])];
+                                              dials[di] = { ...dials[di], [field as string]: parseInt(e.target.value) };
+                                              z.miniPuzzle = { type: 'dial', config: { ...(z.miniPuzzle?.config || {}), dials } };
+                                              setScenes(updated);
+                                            }}
+                                            className="border rounded px-2 py-1 text-xs w-14 bg-slate-700 text-white" />
+                                        </div>
+                                      ))}
+                                      <button type="button" className="text-red-400 text-xs hover:text-red-300 pb-1"
+                                        onClick={() => {
+                                          const updated = [...scenes];
+                                          const z = updated[idx].interactiveZones[zoneIdx];
+                                          const dials = (z.miniPuzzle?.config?.dials || []).filter((_: any, i: number) => i !== di);
+                                          z.miniPuzzle = { type: 'dial', config: { ...(z.miniPuzzle?.config || {}), dials } };
+                                          setScenes(updated);
+                                        }}
+                                      >✕</button>
+                                    </div>
+                                  ))}
+                                  {(zone.miniPuzzle?.config?.dials || []).length < 4 && (
+                                    <button type="button"
+                                      className="text-xs text-purple-300 hover:text-purple-100 border border-purple-700/40 rounded px-2 py-1"
+                                      onClick={() => {
+                                        const updated = [...scenes];
+                                        const z = updated[idx].interactiveZones[zoneIdx];
+                                        const dials = [...(z.miniPuzzle?.config?.dials || []), { label: 'I', min: 0, max: 9, step: 1, target: 0, startValue: 0 }];
+                                        z.miniPuzzle = { type: 'dial', config: { ...(z.miniPuzzle?.config || {}), dials } };
+                                        setScenes(updated);
+                                      }}
+                                    >+ Add Dial</button>
+                                  )}
+                                </div>
+                              )}
+
+                              <p className="text-[11px] text-gray-400 mt-1">On correct solve, the zone&apos;s Use Effects fire (grant items, advance scene, etc.).</p>
+                            </div>
+                          )}
+
+                          {/* ── Zone SFX ── */}
+                          <div className="mt-3 rounded border border-yellow-700/40 bg-yellow-950/20 p-3">
+                            <div className="text-xs font-semibold text-yellow-300 mb-2">🔊 Custom Sound Effects</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { key: 'pickup', label: 'Pickup SFX', hint: 'collect action' },
+                                { key: 'use', label: 'Use SFX', hint: 'item used on zone' },
+                                { key: 'trigger', label: 'Trigger SFX', hint: 'trigger / correct code' },
+                                { key: 'loot', label: 'Loot SFX', hint: 'after item added to inventory' },
+                              ].map(({ key, label, hint }) => {
+                                const sfxStateKey = `zone-${idx}-${zoneIdx}-${key}`;
+                                return (
+                                <div key={key}>
+                                  <label className="block text-xs text-gray-300 mb-0.5">{label} <span className="text-gray-500">({hint})</span></label>
+                                  <div className="flex gap-1 items-center">
+                                    <input
+                                      type="text"
+                                      placeholder="https://... .mp3"
+                                      value={(zone.sfx as any)?.[key] || ''}
+                                      onChange={e => {
+                                        const updated = [...scenes];
+                                        const z = updated[idx].interactiveZones[zoneIdx];
+                                        z.sfx = { ...(z.sfx || {}), [key]: e.target.value.trim() || undefined };
+                                        setScenes(updated);
+                                      }}
+                                      className="border rounded px-2 py-1 text-xs bg-slate-700 text-white flex-1"
+                                    />
+                                    <label className="relative cursor-pointer text-xs bg-yellow-700 hover:bg-yellow-600 text-white px-1.5 py-1 rounded inline-flex items-center shrink-0">
+                                      {audioUploadState[sfxStateKey]?.uploading ? '⏳' : '📁'}
+                                      <input
+                                        type="file"
+                                        accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg"
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                        onChange={e => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          uploadAudioFile(file, sfxStateKey, url => {
+                                            const updated = [...scenes];
+                                            const z = updated[idx].interactiveZones[zoneIdx];
+                                            z.sfx = { ...(z.sfx || {}), [key]: url };
+                                            setScenes(updated);
+                                          });
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
+                                    {(zone.sfx as any)?.[key] && (
+                                      <button
+                                        type="button"
+                                        className="text-xs text-yellow-300 hover:text-yellow-100 px-1"
+                                        title="Preview sound"
+                                        onClick={() => { try { new Audio((zone.sfx as any)[key]).play().catch(() => {}); } catch {} }}
+                                      >▶</button>
+                                    )}
+                                  </div>
+                                  {audioUploadState[sfxStateKey]?.error && <span className="text-xs text-red-400">{audioUploadState[sfxStateKey].error}</span>}
+                                </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[11px] text-yellow-400/60 mt-2">Upload mp3/ogg files or paste a URL. These override the built-in procedural sounds.</p>
+                          </div>
+
+                          {/* ── Time Penalty ── */}
+                          {(zone.actionType === 'trigger' || zone.actionType === 'modal') && (
+                            <div className="mt-3 rounded border border-red-700/40 bg-red-950/20 p-3">
+                              <div className="text-xs font-semibold text-red-300 mb-2">⏱ Time Penalty</div>
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1">
+                                  <label className="block text-xs text-gray-300 mb-0.5">Seconds deducted on wrong attempt</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={300}
+                                    step={5}
+                                    placeholder="0"
+                                    value={zone.penaltySeconds ?? ''}
+                                    onChange={e => {
+                                      const updated = [...scenes];
+                                      const z = updated[idx].interactiveZones[zoneIdx];
+                                      const v = parseInt(e.target.value, 10);
+                                      z.penaltySeconds = Number.isFinite(v) && v > 0 ? v : undefined;
+                                      setScenes(updated);
+                                    }}
+                                    className="border rounded px-2 py-1 text-xs bg-slate-700 text-white w-28"
+                                  />
+                                </div>
+                                <p className="text-[11px] text-red-400/70 max-w-[160px]">
+                                  When a player uses the wrong item or tries to open a locked door, this many seconds are removed from their run timer.
+                                </p>
+                              </div>
+                            </div>
+                          )}
                             </div>
                           </details>
                         </li>
@@ -3259,61 +4931,96 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
             ))}
           </ul>
         )}
-        {/* Save button for in-progress escape room design, now after player notes */}
-        <div className="mb-8 flex justify-end">
-          <button
-            className="bg-green-600 text-white px-6 py-2 rounded font-semibold hover:bg-green-700 transition"
-            type="button"
-            onClick={async () => {
-              setValidationError("");
-              // Basic validation (optional, can be expanded)
-              if (!title.trim()) {
-                setValidationError("Title is required.");
-                return;
-              }
-              if (scenes.length === 0) {
-                setValidationError("At least one scene/room is required.");
-                return;
-              }
-              // Notify parent (PuzzleTypeFields) of the latest data
-              if (typeof onChange === 'function') {
-                onChange({ title, description, timeLimit, scenes, userSpecialties });
-              }
-
-              // If we're in the standalone designer edit page, persist to the API.
-              if (editId) {
-                try {
-                  const res = await fetch(`/api/escape-rooms/designer/${encodeURIComponent(editId)}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      title,
-                      description,
-                      timeLimit,
-                      startMode,
-                      scenes,
-                      userSpecialties,
-                    }),
-                  });
-                  const j = await res.json().catch(() => null);
-                  if (!res.ok) {
-                    setValidationError(j?.error || `Save failed (${res.status})`);
-                    return;
-                  }
-                  setValidationError('Escape room saved.');
-                  return;
-                } catch (err) {
-                  setValidationError('Save failed: network error');
-                  return;
+        {/* Save / draft status bar */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {editId ? (
+                <>
+                  {isSaving && <span className="text-xs text-slate-400 animate-pulse">Saving…</span>}
+                  {!isSaving && lastSavedAt && (
+                    <span className="text-xs text-emerald-400">
+                      ✓ Auto-saved at {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  )}
+                  {!isSaving && !lastSavedAt && (
+                    <span className="text-xs text-slate-500">Auto-saves every 15 s after changes</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  {draftRestoredAt && (
+                    <span className="text-xs text-amber-400">
+                      ↩ Draft restored from {draftRestoredAt.toLocaleString()}
+                      <button
+                        type="button"
+                        className="ml-2 text-slate-400 hover:text-red-400 underline text-xs"
+                        onClick={() => {
+                          try { localStorage.removeItem(DRAFT_KEY); } catch {}
+                          setDraftRestoredAt(null);
+                        }}
+                      >Clear</button>
+                    </span>
+                  )}
+                  {!draftRestoredAt && lastSavedAt && (
+                    <span className="text-xs text-slate-400">Draft auto-saved locally</span>
+                  )}
+                  {!draftRestoredAt && !lastSavedAt && (
+                    <span className="text-xs text-slate-500">New room — draft saves locally every 2 s</span>
+                  )}
+                </>
+              )}
+            </div>
+            <button
+              className="bg-green-600 text-white px-6 py-2 rounded font-semibold hover:bg-green-700 transition disabled:opacity-60 flex items-center gap-2"
+              type="button"
+              disabled={isSaving}
+              onClick={async () => {
+                setValidationError('');
+                if (editId) {
+                  await doSave(false);
+                } else {
+                  // New room: no server save yet — just confirm the draft is current
+                  if (!title.trim()) { setValidationError('Title is required.'); return; }
+                  if (scenes.length === 0) { setValidationError('At least one scene/room is required.'); return; }
+                  try {
+                    const serializableScenes = getSerializableScenes();
+                    const draft = { title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
+                    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+                    setLastSavedAt(new Date());
+                  } catch {}
+                  if (typeof onChange === 'function') onChange({ title, description, timeLimit, scenes, userSpecialties });
+                  setValidationError('Draft saved locally. Create the puzzle to save it to the server.');
                 }
-              }
-
-              // Otherwise, just save the draft into the parent form.
-              setValidationError("Escape room draft saved (in form, not submitted yet).");
-            }}
-          >
-            Save Escape Room
-          </button>
+              }}
+            >
+              {isSaving ? 'Saving…' : editId ? 'Save Escape Room' : 'Save Draft'}
+            </button>
+            {!editId && (
+              <button
+                type="button"
+                className="px-4 py-2 rounded border border-red-600/50 text-red-400 hover:bg-red-950/40 hover:text-red-300 transition text-sm font-medium"
+                onClick={() => {
+                  if (!confirm('Clear all data and start from scratch? This cannot be undone.')) return;
+                  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+                  setTitle('');
+                  setDescription('');
+                  setTimeLimit(1200);
+                  setStartMode('leader-start');
+                  setPlayerMode('shared');
+                  setIntro({});
+                  setOutro({});
+                  setScenes([]);
+                  setUserSpecialties([]);
+                  setDraftRestoredAt(null);
+                  setLastSavedAt(null);
+                  setValidationError('');
+                }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </div>
       </section>
       <style jsx global>{`
@@ -3354,8 +5061,9 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
         }
 
         @keyframes designerPickupRevealCinematic {
-          0% { transform: translate(0px, 0px) scale(1) rotate(0deg); opacity: 1; }
-          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.68)) rotate(900deg); opacity: 1; }
+          0% { transform: translate(0px, 0px) scale(1); opacity: 1; }
+          50% { transform: translate(calc(var(--designer-pickup-reveal-dx, 0px) * 0.5), calc(var(--designer-pickup-reveal-dy, 0px) * 0.5)) scale(1.15); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.68)); opacity: 1; }
         }
 
         @keyframes designerPickupToInventoryCinematic {
@@ -3364,18 +5072,18 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
         }
 
         @keyframes designerPickupRevealQuickSpin {
-          0% { transform: translate(0px, 0px) scale(1) rotate(0deg); opacity: 1; }
-          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.45)) rotate(840deg); opacity: 1; }
+          0% { transform: translate(0px, 0px) scale(1); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.45)); opacity: 1; }
         }
 
         @keyframes designerPickupRevealFloatIn {
-          0% { transform: translate(0px, 0px) scale(1) rotate(-16deg); opacity: 1; }
-          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.35)) rotate(220deg); opacity: 1; }
+          0% { transform: translate(0px, 0px) scale(1); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.35)); opacity: 1; }
         }
 
         @keyframes designerPickupRevealPowerDrop {
-          0% { transform: translate(0px, 0px) scale(1.05) rotate(70deg); opacity: 1; }
-          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.52)) rotate(680deg); opacity: 1; }
+          0% { transform: translate(0px, 0px) scale(1.05); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx, 0px), var(--designer-pickup-reveal-dy, 0px)) scale(var(--designer-pickup-reveal-scale, 1.52)); opacity: 1; }
         }
 
         @keyframes designerPickupToInventoryQuickSpin {
@@ -3392,6 +5100,180 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
         @keyframes designerPickupToInventoryPowerDrop {
           0% { transform: translate(0px, 0px) scale(1.08) rotate(0deg); opacity: 1; }
           100% { transform: translate(var(--designer-pickup-dx, 0px), var(--designer-pickup-dy, 0px)) scale(calc(var(--designer-pickup-scale, 0.34) * 1.05)) rotate(460deg); opacity: 0; }
+        }
+
+        /* ── New pickup presets (Designer) ── */
+        .designer-pickup-reveal-spiral {
+          animation: designerPickupRevealSpiral 0.75s cubic-bezier(0.18, 0.9, 0.25, 1) forwards;
+        }
+        .designer-pickup-reveal-bounce {
+          animation: designerPickupRevealBounce 0.8s cubic-bezier(0.22, 1.2, 0.36, 1) forwards;
+        }
+        .designer-pickup-reveal-glitch {
+          animation: designerPickupRevealGlitch 0.55s steps(6, end) forwards;
+        }
+        .designer-pickup-reveal-flash {
+          animation: designerPickupRevealFlash 0.65s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .designer-pickup-to-inventory-spiral {
+          animation: designerPickupToInventorySpiral 0.65s cubic-bezier(0.24, 0.66, 0.2, 1) forwards;
+        }
+        .designer-pickup-to-inventory-bounce {
+          animation: designerPickupToInventoryBounce 0.6s cubic-bezier(0.27, 0.78, 0.22, 1) forwards;
+        }
+        .designer-pickup-to-inventory-glitch {
+          animation: designerPickupToInventoryGlitch 0.5s steps(5, end) forwards;
+        }
+        .designer-pickup-to-inventory-flash {
+          animation: designerPickupToInventoryFlash 0.55s ease-out forwards;
+        }
+        @keyframes designerPickupRevealSpiral {
+          0%   { transform: translate(0,0) scale(0.1); opacity: 0; }
+          60%  { transform: translate(calc(var(--designer-pickup-reveal-dx,0px)*0.5), calc(var(--designer-pickup-reveal-dy,0px)*0.5)) scale(calc(var(--designer-pickup-reveal-scale,1)*0.7)); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx,0px), var(--designer-pickup-reveal-dy,0px)) scale(var(--designer-pickup-reveal-scale,1)); opacity: 1; }
+        }
+        @keyframes designerPickupRevealBounce {
+          0%   { transform: translate(var(--designer-pickup-reveal-dx,0px), calc(var(--designer-pickup-reveal-dy,0px) - 80px)) scale(0.6); opacity: 0; }
+          55%  { transform: translate(var(--designer-pickup-reveal-dx,0px), calc(var(--designer-pickup-reveal-dy,0px) + 14px)) scale(var(--designer-pickup-reveal-scale,1.1)); opacity: 1; }
+          75%  { transform: translate(var(--designer-pickup-reveal-dx,0px), calc(var(--designer-pickup-reveal-dy,0px) - 8px)) scale(calc(var(--designer-pickup-reveal-scale,1)*0.96)); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx,0px), var(--designer-pickup-reveal-dy,0px)) scale(var(--designer-pickup-reveal-scale,1)); opacity: 1; }
+        }
+        @keyframes designerPickupRevealGlitch {
+          0%   { transform: translate(calc(var(--designer-pickup-reveal-dx,0px) + 12px), var(--designer-pickup-reveal-dy,0px)) scale(0.7); opacity: 0; filter: hue-rotate(0deg); }
+          20%  { transform: translate(calc(var(--designer-pickup-reveal-dx,0px) - 8px), var(--designer-pickup-reveal-dy,0px)) scale(1.1); opacity: 0.7; filter: hue-rotate(90deg); }
+          40%  { transform: translate(calc(var(--designer-pickup-reveal-dx,0px) + 5px), var(--designer-pickup-reveal-dy,0px)) scale(0.95); opacity: 0.9; filter: hue-rotate(160deg); }
+          70%  { transform: translate(calc(var(--designer-pickup-reveal-dx,0px) - 3px), var(--designer-pickup-reveal-dy,0px)) scale(1.02); opacity: 1; filter: hue-rotate(200deg); }
+          100% { transform: translate(var(--designer-pickup-reveal-dx,0px), var(--designer-pickup-reveal-dy,0px)) scale(var(--designer-pickup-reveal-scale,1)); opacity: 1; filter: hue-rotate(0deg); }
+        }
+        @keyframes designerPickupRevealFlash {
+          0%   { transform: translate(var(--designer-pickup-reveal-dx,0px), var(--designer-pickup-reveal-dy,0px)) scale(var(--designer-pickup-reveal-scale,1.4)); opacity: 0; filter: brightness(3); }
+          30%  { filter: brightness(2.5); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-reveal-dx,0px), var(--designer-pickup-reveal-dy,0px)) scale(var(--designer-pickup-reveal-scale,1)); opacity: 1; filter: brightness(1); }
+        }
+        @keyframes designerPickupToInventorySpiral {
+          0%   { transform: translate(0,0) scale(1) rotate(0deg); opacity: 1; }
+          100% { transform: translate(var(--designer-pickup-dx,0px), var(--designer-pickup-dy,0px)) scale(var(--designer-pickup-scale,0.34)) rotate(720deg); opacity: 0; }
+        }
+        @keyframes designerPickupToInventoryBounce {
+          0%   { transform: translate(0,0) scale(1) rotate(0deg); opacity: 1; }
+          40%  { transform: translate(calc(var(--designer-pickup-dx,0px)*0.4), calc(var(--designer-pickup-dy,0px)*0.2 - 22px)) scale(0.85); opacity: 0.9; }
+          100% { transform: translate(var(--designer-pickup-dx,0px), var(--designer-pickup-dy,0px)) scale(var(--designer-pickup-scale,0.34)); opacity: 0; }
+        }
+        @keyframes designerPickupToInventoryGlitch {
+          0%   { transform: translate(0,0) scale(1); opacity: 1; filter: hue-rotate(0deg); }
+          25%  { transform: translate(calc(var(--designer-pickup-dx,0px)*0.3 + 8px), calc(var(--designer-pickup-dy,0px)*0.2)); filter: hue-rotate(120deg); opacity: 0.8; }
+          50%  { transform: translate(calc(var(--designer-pickup-dx,0px)*0.6 - 5px), calc(var(--designer-pickup-dy,0px)*0.5)); filter: hue-rotate(240deg); opacity: 0.6; }
+          100% { transform: translate(var(--designer-pickup-dx,0px), var(--designer-pickup-dy,0px)) scale(var(--designer-pickup-scale,0.34)); opacity: 0; filter: hue-rotate(360deg); }
+        }
+        @keyframes designerPickupToInventoryFlash {
+          0%   { transform: translate(0,0) scale(1.05); opacity: 1; filter: brightness(2.5); }
+          20%  { filter: brightness(1); }
+          100% { transform: translate(var(--designer-pickup-dx,0px), var(--designer-pickup-dy,0px)) scale(var(--designer-pickup-scale,0.34)); opacity: 0; }
+        }
+
+        /* ── Ambient item effects ── */
+        .escape-ambient-glow {
+          box-shadow: 0 0 10px 3px rgba(251,191,36,0.6), 0 0 28px 8px rgba(251,191,36,0.25);
+          border-radius: 6px;
+          animation: escapeAmbientGlow 2.3s ease-in-out infinite;
+        }
+        .escape-ambient-pulse {
+          animation: escapeAmbientPulse 1.9s ease-in-out infinite;
+          transform-origin: center;
+        }
+        .escape-ambient-float {
+          animation: escapeAmbientFloat 3.2s ease-in-out infinite;
+        }
+        .escape-ambient-sparkle {
+          animation: escapeAmbientSparkle 2.6s ease-in-out infinite;
+        }
+        .escape-ambient-shimmer {
+          overflow: hidden;
+          position: relative;
+        }
+        .escape-ambient-shimmer::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(108deg, transparent 28%, rgba(255,255,255,0.55) 50%, transparent 72%);
+          animation: escapeAmbientShimmer 2.8s ease-in-out infinite;
+          pointer-events: none;
+        }
+        @keyframes escapeAmbientGlow {
+          0%, 100% { box-shadow: 0 0 8px 2px rgba(251,191,36,0.5), 0 0 20px 5px rgba(251,191,36,0.22); }
+          50%       { box-shadow: 0 0 22px 8px rgba(251,191,36,0.9), 0 0 44px 16px rgba(251,191,36,0.45); }
+        }
+        @keyframes escapeAmbientPulse {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50%       { transform: scale(1.07); filter: brightness(1.18); }
+        }
+        @keyframes escapeAmbientFloat {
+          0%, 100% { transform: translateY(0px); filter: drop-shadow(0 6px 8px rgba(0,0,0,0.5)); }
+          50%       { transform: translateY(-9px); filter: drop-shadow(0 14px 14px rgba(0,0,0,0.35)); }
+        }
+        @keyframes escapeAmbientSparkle {
+          0%, 100% { filter: brightness(1) drop-shadow(0 0 0 rgba(251,191,36,0)); }
+          22%       { filter: brightness(1.5) drop-shadow(0 0 10px rgba(251,191,36,1)); }
+          44%       { filter: brightness(1) drop-shadow(0 0 0 rgba(251,191,36,0)); }
+          66%       { filter: brightness(1.3) drop-shadow(0 0 6px rgba(255,255,255,0.8)); }
+        }
+        @keyframes escapeAmbientShimmer {
+          0%        { transform: translateX(-140%); }
+          50%, 100% { transform: translateX(240%); }
+        }
+
+        /* ── Scene transition overlays (Designer playtest) ── */
+        .designer-scene-fade-in {
+          animation: designerSceneFadeIn 0.55s ease-out forwards;
+        }
+        .designer-scene-slide-left-in {
+          animation: designerSceneSlideLeftIn 0.5s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .designer-scene-slide-right-in {
+          animation: designerSceneSlideRightIn 0.5s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .designer-scene-slide-up-in {
+          animation: designerSceneSlideUpIn 0.5s cubic-bezier(0.25, 0.8, 0.2, 1) forwards;
+        }
+        .designer-scene-zoom-in-in {
+          animation: designerSceneZoomIn 0.55s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
+        }
+        .designer-scene-wipe-in {
+          animation: designerSceneWipeIn 0.5s ease-out forwards;
+        }
+        .designer-scene-glitch-in {
+          animation: designerSceneGlitchIn 0.45s steps(5, end) forwards;
+        }
+        @keyframes designerSceneFadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes designerSceneSlideLeftIn {
+          from { transform: translateX(-60px); opacity: 0; }
+          to   { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes designerSceneSlideRightIn {
+          from { transform: translateX(60px); opacity: 0; }
+          to   { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes designerSceneSlideUpIn {
+          from { transform: translateY(-50px); opacity: 0; }
+          to   { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes designerSceneZoomIn {
+          from { transform: scale(0.82); opacity: 0; }
+          to   { transform: scale(1); opacity: 1; }
+        }
+        @keyframes designerSceneWipeIn {
+          from { clip-path: inset(0 100% 0 0); opacity: 1; }
+          to   { clip-path: inset(0 0% 0 0); opacity: 1; }
+        }
+        @keyframes designerSceneGlitchIn {
+          0%   { transform: translate(6px, -4px) skewX(-4deg); opacity: 0.3; filter: hue-rotate(90deg); }
+          20%  { transform: translate(-5px, 3px) skewX(3deg); opacity: 0.6; filter: hue-rotate(200deg); }
+          40%  { transform: translate(4px, -2px) skewX(-2deg); opacity: 0.8; filter: hue-rotate(100deg); }
+          70%  { transform: translate(-2px, 1px); opacity: 0.95; filter: hue-rotate(30deg); }
+          100% { transform: translate(0, 0) skewX(0); opacity: 1; filter: hue-rotate(0deg); }
         }
       `}</style>
       {/* Save/Preview section removed to prevent duplicate submit UI in main form */}

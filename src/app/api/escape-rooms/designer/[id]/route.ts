@@ -82,6 +82,8 @@ export async function GET(
             eventId: typeof meta.eventId === 'string' ? meta.eventId : undefined,
             collectItemId: zone.targetId,
             pickupAnimationPreset: typeof meta.pickupAnimationPreset === 'string' ? meta.pickupAnimationPreset : 'cinematic',
+            penaltySeconds: typeof meta.penaltySeconds === 'number' ? meta.penaltySeconds : undefined,
+            miniPuzzle: (meta.miniPuzzle && typeof meta.miniPuzzle === 'object') ? meta.miniPuzzle : undefined,
           };
         }),
       }));
@@ -95,6 +97,8 @@ export async function GET(
       maxPlayers: 4,
       timeLimit: escapeRoomData?.timeLimit ?? er.timeLimitSeconds,
       startMode: escapeRoomData?.startMode || 'leader-start',
+      intro: escapeRoomData?.intro || undefined,
+      outro: escapeRoomData?.outro || undefined,
       scenes,
       userSpecialties: [], // Not implemented yet
     });
@@ -113,7 +117,7 @@ export async function PUT(
     const escapeRoomId = resolved.id;
 
     const data = await req.json();
-    const { title, description, timeLimit, startMode, scenes } = data;
+    const { title, description, timeLimit, startMode, scenes, intro, outro } = data;
     if (!escapeRoomId) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     if (!Array.isArray(scenes)) return NextResponse.json({ error: 'Missing scenes' }, { status: 400 });
 
@@ -200,6 +204,9 @@ export async function PUT(
                 linkedPuzzleId: zone?.linkedPuzzleId,
                 eventId: zone?.eventId,
                 pickupAnimationPreset: zone?.pickupAnimationPreset,
+                sfx: zone?.sfx || undefined,
+                penaltySeconds: zone?.penaltySeconds || undefined,
+                miniPuzzle: zone?.miniPuzzle || undefined,
                 requiredItemId: zone?.requiredItemId,
                 consumeItemOnUse: zone?.consumeItemOnUse,
                 disabledByDefault: zone?.disabledByDefault,
@@ -232,6 +239,8 @@ export async function PUT(
           description,
           timeLimit,
           startMode: startMode || curData?.escapeRoomData?.startMode || 'leader-start',
+          intro: intro || undefined,
+          outro: outro || undefined,
           scenes,
         },
       };

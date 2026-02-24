@@ -658,6 +658,9 @@ export default function AdminPuzzlesPage() {
         setFormSuccess("✅ Puzzle created successfully!");
       }
 
+      // Clear the escape-room Designer localStorage draft so a new room starts fresh
+      try { localStorage.removeItem('escape-room-designer-draft'); } catch {}
+
       // Wait a bit longer for media to settle, then reset form
       setTimeout(() => {
         console.log("[SUBMIT] Resetting form");
