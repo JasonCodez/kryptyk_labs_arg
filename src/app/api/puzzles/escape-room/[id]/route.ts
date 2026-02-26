@@ -156,6 +156,7 @@ export async function GET(
                   id: it.id,
                   name: it.name,
                   imageUrl: it.imageUrl,
+                  animationVideoUrl: it.animationVideoUrl || null,
                   description: it.description || (it.properties && it.properties.description) || '',
                   x: it.x,
                   y: it.y,

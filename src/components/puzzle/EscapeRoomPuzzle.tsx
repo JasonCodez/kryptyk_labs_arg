@@ -878,6 +878,8 @@ export function EscapeRoomPuzzle({
   const [actionModalDescription, setActionModalDescription] = useState<string | undefined>(undefined);
   const [actionModalChoices, setActionModalChoices] = useState<Array<{ label: string; modalContent: string; imageUrl?: string }> | null>(null);
   const [actionModalChoiceIndex, setActionModalChoiceIndex] = useState<number>(0);
+  // Item IDs that have been triggered — PixiRoom swaps these to their animationVideoUrl in-place
+  const [triggeredItemIds, setTriggeredItemIds] = useState<Set<string>>(new Set());
   const [pendingPickup, setPendingPickup] = useState<PendingPickup | null>(null);
   const [pickupPhase, setPickupPhase] = useState<'reveal' | 'ready' | 'committing' | 'toInventory'>('reveal');
   const [pickupFlight, setPickupFlight] = useState<{ dx: number; dy: number; scale: number } | null>(null);
@@ -1147,6 +1149,18 @@ export function EscapeRoomPuzzle({
         }
         playSfx(jb?.sfx);
         // stageIndex + completedAt will be updated via socket payload (and/or jb)
+        return;
+      }
+
+      if (actionType === 'triggerItemAnimation') {
+        // Play the item's animation video in-place without opening any popup.
+        const assocItemId =
+          (typeof hsMeta?.itemId === 'string' && hsMeta.itemId) ||
+          (typeof hs?.targetId === 'string' && hs.targetId) ||
+          null;
+        if (assocItemId) {
+          setTriggeredItemIds(prev => new Set([...prev, assocItemId]));
+        }
         return;
       }
 
@@ -1731,6 +1745,7 @@ export function EscapeRoomPuzzle({
                     hotspots={hotspots}
                     onHotspotAction={onHotspotAction}
                     onEffectiveLayoutSize={onEffectiveLayoutSize}
+                    triggeredItemIds={triggeredItemIds}
                   />
                 </React.Suspense>
 

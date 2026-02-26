@@ -1356,7 +1356,7 @@ export default function PuzzleDetailPage() {
                       </div>
                     ) : (
                       <div
-                        className="rounded-none overflow-hidden border border-gray-700 bg-gray-900 w-screen relative left-1/2 -translate-x-1/2 sm:w-full sm:static sm:translate-x-0"
+                        className="rounded-none overflow-hidden border border-gray-700"
                         style={{ margin: "0 auto" }}
                       >
                         <JigsawPuzzle
@@ -1364,6 +1364,7 @@ export default function PuzzleDetailPage() {
                           imageUrl={jigsawPlayable.imageUrl}
                           rows={jigsawPlayable.data.gridRows}
                           cols={jigsawPlayable.data.gridCols}
+                          tableBackground="/images/table-bg.png"
                           onControlsReady={(api) => setJigsawControls(api)}
                           suppressInternalCongrats={true}
                           onComplete={async (timeSpentSeconds?: number) => {

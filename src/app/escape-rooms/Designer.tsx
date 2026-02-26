@@ -56,7 +56,7 @@ interface InteractiveZone {
   y: number;
   width: number;
   height: number;
-  actionType: "modal" | "collect" | "trigger" | "codeEntry" | "miniPuzzle";
+  actionType: "modal" | "collect" | "trigger" | "codeEntry" | "miniPuzzle" | "triggerItemAnimation";
   // Optional: override whether the dragged/used item is consumed when using it on this zone.
   // Default behavior is to consume the item; set to false to keep the item.
   consumeItemOnUse?: boolean;
@@ -3181,6 +3181,64 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                             updated[idx].items[itemIdx].description = e.target.value;
                             setScenes(updated);
                           }} placeholder="Description" className="border rounded px-2 py-1 w-full text-xs" />
+                          {/* Animation Video URL — plays in-place when a triggerItemAnimation zone fires */}
+                          <div className="mt-2 border border-orange-700/40 rounded bg-orange-950/20 p-2">
+                            <div className="text-xs font-semibold text-orange-300 mb-1">▶ Animation Video (plays in-place when triggered)</div>
+                            <div className="text-[11px] text-gray-400 mb-1.5">Upload an MP4 that plays seamlessly at the item’s position when a “Play Item Animation” zone is clicked.</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <input
+                                type="file"
+                                accept="video/mp4,video/webm"
+                                style={{ display: 'none' }}
+                                form=""
+                                id={`item-animvid-${idx}-${itemIdx}`}
+                                onChange={async (e) => {
+                                  e.preventDefault(); e.stopPropagation();
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const key = `${idx}-${itemIdx}-anim`;
+                                  setItemUploadState(prev => ({ ...prev, [key]: { uploading: true, error: '' } }));
+                                  let uploadError = '';
+                                  let videoUrl = '';
+                                  try {
+                                    const formData = new FormData();
+                                    formData.append('file', file);
+                                    if (editId) formData.append('puzzleId', editId);
+                                    const res = await fetch('/api/admin/media', { method: 'POST', body: formData });
+                                    const data = await res.json();
+                                    if (res.ok && (data.mediaUrl || data.url)) {
+                                      videoUrl = data.mediaUrl || data.url;
+                                    } else {
+                                      uploadError = data.error || 'Unknown error';
+                                    }
+                                  } catch (err) {
+                                    uploadError = err instanceof Error ? err.message : String(err);
+                                  }
+                                  if (videoUrl) {
+                                    const updated = [...scenes];
+                                    (updated[idx].items[itemIdx] as any).animationVideoUrl = videoUrl;
+                                    setScenes(updated);
+                                  }
+                                  setItemUploadState(prev => ({ ...prev, [key]: { uploading: false, error: uploadError } }));
+                                }}
+                              />
+                              <label
+                                htmlFor={`item-animvid-${idx}-${itemIdx}`}
+                                className="bg-orange-600 text-white px-2 py-1 rounded text-xs cursor-pointer inline-block"
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); document.getElementById(`item-animvid-${idx}-${itemIdx}`)?.click(); }}
+                              >
+                                Upload MP4
+                              </label>
+                              {itemUploadState[`${idx}-${itemIdx}-anim`]?.uploading && <span className="text-xs text-blue-400">Uploading...</span>}
+                              {itemUploadState[`${idx}-${itemIdx}-anim`]?.error && <span className="text-xs text-red-400">{itemUploadState[`${idx}-${itemIdx}-anim`].error}</span>}
+                              {(item as any).animationVideoUrl && !itemUploadState[`${idx}-${itemIdx}-anim`]?.uploading && (
+                                <>
+                                  <video src={(item as any).animationVideoUrl} autoPlay loop muted playsInline className="h-8 w-12 object-cover rounded" />
+                                  <button type="button" className="text-xs text-red-400" onClick={() => { const updated = [...scenes]; (updated[idx].items[itemIdx] as any).animationVideoUrl = ''; setScenes(updated); }}>Remove</button>
+                                </>
+                              )}
+                            </div>
+                          </div>
                           <div className="mt-1 flex items-center gap-2">
                             <label className="text-xs flex items-center gap-2">
                               <input
@@ -3523,10 +3581,11 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                                 zone.actionType === 'collect' ? 'bg-green-900/60 text-green-300' :
                                 zone.actionType === 'trigger' ? 'bg-amber-900/60 text-amber-300' :
+                                zone.actionType === 'triggerItemAnimation' ? 'bg-orange-900/60 text-orange-300' :
                                 zone.actionType === 'codeEntry' ? 'bg-cyan-900/60 text-cyan-300' :
                                 zone.actionType === 'miniPuzzle' ? 'bg-purple-900/60 text-purple-300' :
                                 'bg-blue-900/60 text-blue-300'
-                              }`}>{zone.actionType === 'codeEntry' ? 'code entry' : zone.actionType === 'miniPuzzle' ? 'mini puzzle' : zone.actionType}</span>
+                              }`}>{zone.actionType === 'codeEntry' ? 'code entry' : zone.actionType === 'miniPuzzle' ? 'mini puzzle' : zone.actionType === 'triggerItemAnimation' ? 'item animation' : zone.actionType}</span>
                               <span className="text-[10px] text-gray-400">▸ edit</span>
                             </summary>
                             <div className="px-2 pb-2 border-t border-slate-700/50">
@@ -3544,6 +3603,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               <option value="modal">Modal</option>
                               <option value="collect">Collect Item</option>
                               <option value="trigger">Trigger / Advance Scene</option>
+                              <option value="triggerItemAnimation">▶ Play Item Animation (in-place)</option>
                               <option value="codeEntry">Code Entry (Combination Lock)</option>
                               <option value="miniPuzzle">🎮 Mini Puzzle (Keypad / Wire / Dial)</option>
                             </select>
@@ -4841,6 +4901,36 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                               )}
 
                               <p className="text-[11px] text-gray-400 mt-1">On correct solve, the zone&apos;s Use Effects fire (grant items, advance scene, etc.).</p>
+                            </div>
+                          )}
+
+                          {zone.actionType === 'triggerItemAnimation' && (
+                            <div className="mb-2 space-y-2 rounded border border-orange-700/50 bg-orange-950/20 p-3">
+                              <div className="text-xs font-semibold text-orange-300 mb-1">▶ Play Item Animation</div>
+                              <div className="text-[11px] text-gray-400 mb-2">When clicked, the selected item swaps from its static image to its animation video — no popup, plays in-place in the scene.</div>
+                              <label className="block text-xs text-gray-300">Target Item (must have an Animation Video set)</label>
+                              <select
+                                value={zone.itemId || ''}
+                                onChange={e => {
+                                  const updated = [...scenes];
+                                  updated[idx].interactiveZones[zoneIdx].itemId = e.target.value || undefined;
+                                  setScenes(updated);
+                                }}
+                                className="border rounded px-2 py-1 text-xs w-full bg-slate-700 text-white"
+                              >
+                                <option value="">Select item…</option>
+                                {scene.items.map(it => (
+                                  <option key={it.id} value={it.id}>
+                                    {it.name || 'Unnamed Item'}{(it as any).animationVideoUrl ? ' ✓ has video' : ' ⚠ no video yet'}
+                                  </option>
+                                ))}
+                              </select>
+                              {zone.itemId && !scene.items.find(it => it.id === zone.itemId) && (
+                                <p className="text-[11px] text-red-400">Selected item not found in this scene.</p>
+                              )}
+                              {zone.itemId && scene.items.find(it => it.id === zone.itemId) && !(scene.items.find(it => it.id === zone.itemId) as any)?.animationVideoUrl && (
+                                <p className="text-[11px] text-yellow-400">Selected item has no animation video yet. Add one in the item’s “Animation Video” section above.</p>
+                              )}
                             </div>
                           )}
 

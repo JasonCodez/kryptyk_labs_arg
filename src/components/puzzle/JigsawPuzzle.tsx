@@ -63,6 +63,11 @@ interface JigsawPuzzleSVGWithTrayProps {
   onControlsReady?: (api: { reset: () => void; sendLooseToTray: () => void; enterFullscreen: () => void; exitFullscreen: () => void; isFullscreen: boolean }) => void;
   /** Unique identifier used to key the localStorage save slot. Strongly recommended. */
   puzzleId?: string;
+  /**
+   * URL of a background image to display as the "table" behind the puzzle pieces.
+   * E.g. "/images/table-bg.jpg". Falls back to a CSS wood-grain if omitted.
+   */
+  tableBackground?: string;
 }
 
 interface Piece {
@@ -401,39 +406,43 @@ function piecePath(w: number, h: number, edges: EdgeMap, opts: PiecePathOptions 
   const alongBot = unit(-1, 0), outBot = unit(0, 1);
   const alongL = unit(0, -1), outL = unit(-1, 0);
 
-  // inset endpoints
-  const TL_top = add(TL, mul(alongTop, inset));
-  const TR_top = add(TL, mul(alongTop, w - inset));
-
-  const TR_right = add(TR, mul(alongR, inset));
-  const BR_right = add(TR, mul(alongR, h - inset));
-
-  const BR_bot = add(BR, mul(alongBot, inset));
-  const BL_bot = add(BR, mul(alongBot, w - inset));
-
-  const BL_left = add(BL, mul(alongL, inset));
-  const TL_left = add(BL, mul(alongL, h - inset));
-
-  const topLen = w - 2 * inset;
-  const rightLen = h - 2 * inset;
-  const botLen = w - 2 * inset;
-  const leftLen = h - 2 * inset;
-
   const topDir = edges.top ?? 0;
   const rDir = edges.right ?? 0;
   const bDir = edges.bottom ?? 0;
   const lDir = edges.left ?? 0;
 
+  // Per-corner radius: only non-zero when BOTH edges meeting at that corner are flat (dir=0).
+  // This means only one corner of each true board-corner piece gets rounded.
+  const rTL = (lDir === 0 && topDir === 0) ? inset : 0;
+  const rTR = (topDir === 0 && rDir === 0) ? inset : 0;
+  const rBR = (rDir === 0 && bDir === 0) ? inset : 0;
+  const rBL = (bDir === 0 && lDir === 0) ? inset : 0;
+
+  // Inset endpoints — per-corner so non-rounded corners go exactly to the corner point
+  const TL_top   = add(TL, mul(alongTop, rTL));
+  const TR_right = add(TR, mul(alongR,   rTR));
+  const BR_bot   = add(BR, mul(alongBot, rBR));
+  const BL_left  = add(BL, mul(alongL,  rBL));
+
+  const topLen   = w - rTL - rTR;
+  const rightLen = h - rTR - rBR;
+  const botLen   = w - rBR - rBL;
+  const leftLen  = h - rBL - rTL;
+
+  // Emit a rounded corner with Q bezier, or a plain L if not rounded
+  const cc = (r: number, corner: {x:number,y:number}, end: {x:number,y:number}) =>
+    r > 0 ? `Q ${corner.x} ${corner.y} ${end.x} ${end.y}` : `L ${end.x} ${end.y}`;
+
   const d = [
     `M ${TL_top.x} ${TL_top.y}`,
     emitEdge(TL_top, alongTop, outTop, topLen, topDir),
-    `L ${TR_right.x} ${TR_right.y}`,
+    cc(rTR, TR, TR_right),
     emitEdge(TR_right, alongR, outR, rightLen, rDir),
-    `L ${BR_bot.x} ${BR_bot.y}`,
+    cc(rBR, BR, BR_bot),
     emitEdge(BR_bot, alongBot, outBot, botLen, bDir),
-    `L ${BL_left.x} ${BL_left.y}`,
+    cc(rBL, BL, BL_left),
     emitEdge(BL_left, alongL, outL, leftLen, lDir),
-    `L ${TL_top.x} ${TL_top.y}`,
+    cc(rTL, TL, TL_top),
     "Z",
   ].join(" ");
 
@@ -492,7 +501,7 @@ function JigsawPiece({
       neckPinch: Math.max(0.0008, Math.min(0.004, (neckDepth ?? 0.1) * 0.03)),
       shoulderSpan: Math.max(0.09, Math.min(0.14, (shoulderLen ?? 0.22) * 0.56)),
       shoulderDepth: Math.max(0.0006, Math.min(0.0025, (shoulderDepth ?? 0.08) * 0.02)),
-      cornerInset: Math.max(0, Math.min(minSide * 0.012, (cornerInset ?? 0.05) * minSide * 0.06)),
+      cornerInset: Math.max(0, Math.min(minSide * 0.08, (cornerInset ?? 1) * minSide * 0.06)),
       smooth: Math.max(0.72, Math.min(0.94, smooth ?? 0.55)),
     }),
     [pieceW, pieceH, edges, tabRadius, tabDepth, neckWidth, neckDepth, shoulderLen, shoulderDepth, cornerInset, smooth, minSide]
@@ -597,13 +606,13 @@ function JigsawPiece({
             <path d={d} />
           </clipPath>
           <linearGradient id={lightWashId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.34)" />
-            <stop offset="36%" stopColor="rgba(255,255,255,0.1)" />
+            <stop offset="0%" stopColor="rgba(255,255,255,0.18)" />
+            <stop offset="36%" stopColor="rgba(255,255,255,0.05)" />
             <stop offset="100%" stopColor="rgba(255,255,255,0)" />
           </linearGradient>
           <radialGradient id={shadeWashId} cx="72%" cy="78%" r="78%">
             <stop offset="35%" stopColor="rgba(0,0,0,0)" />
-            <stop offset="100%" stopColor="rgba(0,0,0,0.18)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.08)" />
           </radialGradient>
         </defs>
 
@@ -628,13 +637,13 @@ function JigsawPiece({
         )}
 
         <g clipPath={`url(#${clipId})`} style={{ pointerEvents: "none" }}>
-          <rect x={0} y={0} width={pieceW} height={pieceH} fill={`url(#${lightWashId})`} opacity={isDragging ? 0.2 : 0.14} />
-          <rect x={0} y={0} width={pieceW} height={pieceH} fill={`url(#${shadeWashId})`} opacity={isDragging ? 0.2 : 0.14} />
+          <rect x={0} y={0} width={pieceW} height={pieceH} fill={`url(#${lightWashId})`} opacity={isDragging ? 0.12 : 0.07} />
+          <rect x={0} y={0} width={pieceW} height={pieceH} fill={`url(#${shadeWashId})`} opacity={isDragging ? 0.12 : 0.07} />
         </g>
 
         <path
           d={d}
-          fill={imageOk === false ? "rgba(255,255,255,0.06)" : "rgba(0,128,255,0.25)"}
+          fill={imageOk === false ? "rgba(255,255,255,0.06)" : "none"}
           stroke={highlight ? "rgba(0,255,255,0.52)" : "rgba(255,255,255,0.2)"}
           strokeWidth={1.25}
           style={{ pointerEvents: "none" }}
@@ -729,7 +738,7 @@ export default function JigsawPuzzleSVGWithTray({
   neckDepth = 0.10,
   shoulderLen = 0.22,
   shoulderDepth = 0.08,
-  cornerInset = 0.05,
+  cornerInset = 1,
   smooth = 0.55,
   onComplete,
   onShowRatingModal,
@@ -737,6 +746,7 @@ export default function JigsawPuzzleSVGWithTray({
   containerStyle = {},
   onControlsReady,
   puzzleId,
+  tableBackground,
 }: JigsawPuzzleSVGWithTrayProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -759,6 +769,15 @@ export default function JigsawPuzzleSVGWithTray({
   const pinchRef = useRef<{ active: boolean; startDist: number; startScale: number; startPan: PiecePosition; centerClientX: number; centerClientY: number } | null>(null);
   const [scale, setScale] = useState<number>(1);
   const scaleRef = useRef<number>(1);
+  // Non-fullscreen user-controlled zoom (multiplied on top of the auto-fit scale) + pan
+  const [nfUserScale, setNfUserScale] = useState<number>(1);
+  const nfUserScaleRef = useRef<number>(1);
+  const [nfPan, setNfPan] = useState<PiecePosition>({ x: 0, y: 0 });
+  const nfPanRef = useRef<PiecePosition>({ x: 0, y: 0 });
+  // Detect touch/mobile device for UX hints
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [mobileFsHintDismissed, setMobileFsHintDismissed] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [wrapperWidth, setWrapperWidth] = useState<number | null>(null);
   const [wrapperHeight, setWrapperHeight] = useState<number | null>(null);
   const startTimeRef = useRef<number>(Date.now());
@@ -790,6 +809,20 @@ export default function JigsawPuzzleSVGWithTray({
   React.useEffect(() => {
     fsPanRef.current = fsPan;
   }, [fsPan]);
+
+  React.useEffect(() => {
+    nfUserScaleRef.current = nfUserScale;
+  }, [nfUserScale]);
+
+  React.useEffect(() => {
+    nfPanRef.current = nfPan;
+  }, [nfPan]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const coarse = window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+    setIsTouchDevice(coarse);
+  }, []);
 
   React.useEffect(() => {
     // Only portal fullscreen UI after mount (document available)
@@ -827,6 +860,23 @@ export default function JigsawPuzzleSVGWithTray({
       x: clamp(pan.x, minX, maxX),
       y: clamp(pan.y, minY, maxY),
     };
+  };
+
+  /** Clamp non-fullscreen user pan so content doesn't drift completely off-screen. */
+  const clampNfPan = (pan: PiecePosition, userScaleVal: number): PiecePosition => {
+    const wrapper = wrapperRef.current;
+    const wrapperW = wrapper?.clientWidth || stageWidth;
+    const wrapperH = wrapper?.clientHeight || (nonFullscreenHeight || stageHeight);
+    const totalScale = Math.max(0.01, (nonFullscreenScale || 1) * (userScaleVal || 1));
+    const visibleW = wrapperW / totalScale;
+    const visibleH = wrapperH / totalScale;
+    const centerX = (visibleW - stageWidth) / 2;
+    const centerY = (visibleH - stageHeight) / 2;
+    const minX = visibleW >= stageWidth ? centerX : (visibleW - stageWidth);
+    const maxX = visibleW >= stageWidth ? centerX : 0;
+    const minY = visibleH >= stageHeight ? centerY : (visibleH - stageHeight);
+    const maxY = visibleH >= stageHeight ? centerY : 0;
+    return { x: clamp(pan.x, minX, maxX), y: clamp(pan.y, minY, maxY) };
   };
 
   const pieceW = boardWidth / cols;
@@ -895,12 +945,12 @@ export default function JigsawPuzzleSVGWithTray({
   const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
 
   const nonFullscreenHeight = (() => {
-    if (typeof window === 'undefined') return 680;
+    if (typeof window === 'undefined') return 780;
     const vh = window.innerHeight || 800;
     // Give extra vertical space for scattered pieces around the board.
     // Clamp so it doesn't become absurdly tall on desktop.
     const target = Math.round(vh * 0.98);
-    return Math.max(720, Math.min(1600, target));
+    return Math.max(820, Math.min(1600, target));
   })();
 
   // Stage layout: board centered, loose pieces scattered around it (no tray).
@@ -1149,6 +1199,9 @@ export default function JigsawPuzzleSVGWithTray({
     }
     completedRef.current = false;
     hasInteractedRef.current = false;
+    // Reset user pan/zoom when the puzzle changes
+    setNfUserScale(1);
+    setNfPan({ x: 0, y: 0 });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, cols, imageUrl]);
 
@@ -1611,8 +1664,10 @@ export default function JigsawPuzzleSVGWithTray({
     const rect: DOMRect = el.getBoundingClientRect();
     const scaleVal = scaleRef.current;
     const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scaleVal) && scaleVal > 0 ? scaleVal : 1));
-    const effectiveScale = isFullscreenRef.current ? fsScaleRef.current : nonFullscreenScale;
-    const pan = isFullscreenRef.current ? fsPanRef.current : { x: 0, y: 0 };
+    const effectiveScale = isFullscreenRef.current
+      ? fsScaleRef.current
+      : nonFullscreenScale * Math.max(0.1, nfUserScaleRef.current);
+    const pan = isFullscreenRef.current ? fsPanRef.current : nfPanRef.current;
     const px: number = (e.clientX - rect.left) / effectiveScale - pan.x;
     const py: number = (e.clientY - rect.top) / effectiveScale - pan.y;
 
@@ -1667,8 +1722,10 @@ export default function JigsawPuzzleSVGWithTray({
 
     const rect: DOMRect = outer.getBoundingClientRect();
     const nonFullscreenScale = Math.max(0.06, (Number.isFinite(scale) && scale > 0 ? scale : 1));
-    const effectiveScale = isFullscreen ? fsScale : nonFullscreenScale;
-    const pan = isFullscreen ? fsPan : { x: 0, y: 0 };
+    const effectiveScale = isFullscreen
+      ? fsScale
+      : nonFullscreenScale * Math.max(0.1, nfUserScale);
+    const pan = isFullscreen ? fsPan : nfPan;
 
     // Visible viewport in content (stage) coordinates.
     const visibleW = rect.width / (effectiveScale || 1);
@@ -1819,6 +1876,8 @@ export default function JigsawPuzzleSVGWithTray({
   const onStagePointerDown = (e: React.PointerEvent) => {
     const outer = stageRef.current;
     if (!outer) return;
+    // Don't interfere with buttons or other interactive elements
+    if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
     hasInteractedRef.current = true;
     const targetIsPiece = (e.target as HTMLElement).closest('[data-piece-id]') !== null;
     if (isFullscreen && !fullscreenPanEnabled && !targetIsPiece) return;
@@ -1827,8 +1886,10 @@ export default function JigsawPuzzleSVGWithTray({
 
     const pts = Array.from(pointersRef.current.values()).filter(p => !p.targetIsPiece);
     if (pts.length === 1) {
-      // start pan
-      pinchRef.current = { active: false, startDist: 0, startScale: fsScale, startPan: fsPan, centerClientX: pts[0].x, centerClientY: pts[0].y };
+      // start pan — capture current scale+pan for whichever mode we're in
+      const startScale = isFullscreen ? fsScale : nfUserScale;
+      const startPan = isFullscreen ? fsPan : nfPan;
+      pinchRef.current = { active: false, startDist: 0, startScale, startPan, centerClientX: pts[0].x, centerClientY: pts[0].y };
     } else if (pts.length >= 2) {
       // start pinch
       const p1 = pts[0];
@@ -1838,7 +1899,9 @@ export default function JigsawPuzzleSVGWithTray({
       const dist = Math.hypot(dx, dy) || 1;
       const centerX = (p1.x + p2.x) / 2;
       const centerY = (p1.y + p2.y) / 2;
-      pinchRef.current = { active: true, startDist: dist, startScale: fsScale, startPan: fsPan, centerClientX: centerX, centerClientY: centerY };
+      const startScale = isFullscreen ? fsScale : nfUserScale;
+      const startPan = isFullscreen ? fsPan : nfPan;
+      pinchRef.current = { active: true, startDist: dist, startScale, startPan, centerClientX: centerX, centerClientY: centerY };
     }
   };
 
@@ -1858,29 +1921,50 @@ export default function JigsawPuzzleSVGWithTray({
       const dy = p2.y - p1.y;
       const dist = Math.hypot(dx, dy) || 1;
       const scaleFactor = dist / pinchRef.current.startDist;
+      const centerX = (p1.x + p2.x) / 2;
+      const centerY = (p1.y + p2.y) / 2;
+      if (isFullscreen) {
         const FS_SCALE_MIN = 0.1;
         const FS_SCALE_MAX = 4;
         const newScale = clamp(pinchRef.current.startScale * scaleFactor, FS_SCALE_MIN, FS_SCALE_MAX);
-
-      // keep focal point stable
-      const centerX = (p1.x + p2.x) / 2;
-      const centerY = (p1.y + p2.y) / 2;
-      const contentLocalX = (centerX - rect.left) / pinchRef.current.startScale - pinchRef.current.startPan.x;
-      const contentLocalY = (centerY - rect.top) / pinchRef.current.startScale - pinchRef.current.startPan.y;
-      const newPanX = (centerX - rect.left) / newScale - contentLocalX;
-      const newPanY = (centerY - rect.top) / newScale - contentLocalY;
-
-      setFsScale(newScale);
-      setFsPan(clampFullscreenPan({ x: newPanX, y: newPanY }, newScale));
+        // keep focal point stable
+        const contentLocalX = (centerX - rect.left) / pinchRef.current.startScale - pinchRef.current.startPan.x;
+        const contentLocalY = (centerY - rect.top) / pinchRef.current.startScale - pinchRef.current.startPan.y;
+        const newPanX = (centerX - rect.left) / newScale - contentLocalX;
+        const newPanY = (centerY - rect.top) / newScale - contentLocalY;
+        setFsScale(newScale);
+        setFsPan(clampFullscreenPan({ x: newPanX, y: newPanY }, newScale));
+      } else {
+        // Non-fullscreen pinch-to-zoom: scale is a multiplier on top of the auto-fit scale
+        const NF_USER_SCALE_MIN = 0.85;
+        const NF_USER_SCALE_MAX = 5;
+        const newNfScale = clamp(pinchRef.current.startScale * scaleFactor, NF_USER_SCALE_MIN, NF_USER_SCALE_MAX);
+        const nfBase = nonFullscreenScale || 1;
+        const startTotalScale = nfBase * (pinchRef.current.startScale || 1);
+        const newTotalScale = nfBase * newNfScale;
+        const contentLocalX = (centerX - rect.left) / startTotalScale - pinchRef.current.startPan.x;
+        const contentLocalY = (centerY - rect.top) / startTotalScale - pinchRef.current.startPan.y;
+        const newPanX = (centerX - rect.left) / newTotalScale - contentLocalX;
+        const newPanY = (centerY - rect.top) / newTotalScale - contentLocalY;
+        setNfUserScale(newNfScale);
+        setNfPan(clampNfPan({ x: newPanX, y: newPanY }, newNfScale));
+      }
       pinchRef.current.active = true;
     } else if (pts.length === 1 && pinchRef.current && !pinchRef.current.active) {
-      // handle pan with single finger
+      // handle pan with single finger (background only — not a piece drag)
       const p = pts[0];
       const startCenterX = pinchRef.current.centerClientX;
       const startCenterY = pinchRef.current.centerClientY;
-      const deltaX = (p.x - startCenterX) / fsScale;
-      const deltaY = (p.y - startCenterY) / fsScale;
-      setFsPan(clampFullscreenPan({ x: pinchRef.current.startPan.x + deltaX, y: pinchRef.current.startPan.y + deltaY }, fsScale));
+      if (isFullscreen) {
+        const deltaX = (p.x - startCenterX) / fsScale;
+        const deltaY = (p.y - startCenterY) / fsScale;
+        setFsPan(clampFullscreenPan({ x: pinchRef.current.startPan.x + deltaX, y: pinchRef.current.startPan.y + deltaY }, fsScale));
+      } else {
+        const totalScale = Math.max(0.01, (nonFullscreenScale || 1) * (nfUserScale || 1));
+        const deltaX = (p.x - startCenterX) / totalScale;
+        const deltaY = (p.y - startCenterY) / totalScale;
+        setNfPan(clampNfPan({ x: pinchRef.current.startPan.x + deltaX, y: pinchRef.current.startPan.y + deltaY }, nfUserScale));
+      }
     }
   };
 
@@ -2024,29 +2108,33 @@ export default function JigsawPuzzleSVGWithTray({
           }, '+=0.15');
         }
 
-        // Add piece-pop to timeline (runs before shimmer). Respect prefers-reduced-motion.
+        // Epic cinematic flare: subtle camera punch + shockwave ring + multi-pass light sweeps.
+        // All effects are transform/opacity only and confined to a small number of elements.
+        const flareLabel = 'flare';
+        tl.addLabel(flareLabel); // marks current end-of-timeline so all flare tweens start here
+
+        // Add piece-pop to timeline (fires at same time as flare burst). Respect prefers-reduced-motion.
         try {
           if (!prefersReduced && stageEl) {
             const piecesEls = stageEl.querySelectorAll('[data-piece-id]');
             if (piecesEls && piecesEls.length > 0) {
-              // staggered pop from center
+              // staggered pop from center — fires at the same time as the flare burst
               tl.to(piecesEls as any, {
-                scale: 1.06,
-                duration: 0.12,
-                ease: 'power2.out',
-                stagger: { each: 0.03, from: 'center' },
+                scale: 1.14,
+                y: -6,
+                duration: 0.22,
+                ease: 'back.out(2)',
+                stagger: { each: 0.025, from: 'center' },
                 yoyo: true,
                 repeat: 1,
-              });
+                clearProps: 'scale,y,transform',
+              }, flareLabel);
             }
           }
         } catch (e) {
           console.warn('[Jigsaw] failed to add piece-pop to timeline', e);
         }
 
-        // Epic cinematic flare: subtle camera punch + shockwave ring + multi-pass light sweeps.
-        // All effects are transform/opacity only and confined to a small number of elements.
-        const flareLabel = 'flare';
         if (!prefersReduced && wrapperEl) {
           tl.fromTo(
             wrapperEl,
@@ -2403,15 +2491,22 @@ export default function JigsawPuzzleSVGWithTray({
 
       if (isFullscreen) {
         setFsScale(next);
-        // Recalculate centered pan when the scale changes during fullscreen
+        // Recalculate centered pan when the scale changes during fullscreen.
+        // IMPORTANT: do NOT use `stageWidth`/`stageHeight` from the outer closure —
+        // those are computed from `wrapperWidth` and `fsScale` state variables that
+        // haven't been committed yet (we just called setFsScale / setWrapperWidth
+        // above, but React state is asynchronous).  Recalculate inline instead,
+        // mirroring the stageWidth/stageHeight useMemo formula exactly.
         const visibleW = availableWidth / (next || 1);
         const visibleH = availableHeight / (next || 1);
-        const centerX = (visibleW - stageWidth) / 2;
-        const centerY = (visibleH - stageHeight) / 2;
-        const minX = visibleW >= stageWidth ? centerX : (visibleW - stageWidth);
-        const maxX = visibleW >= stageWidth ? centerX : 0;
-        const minY = visibleH >= stageHeight ? centerY : (visibleH - stageHeight);
-        const maxY = visibleH >= stageHeight ? centerY : 0;
+        const freshStageW = Math.max(boardWidth + scatterMargin * 2, Math.round(wrapperW / (next || 1)));
+        const freshStageH = Math.max(boardHeight + scatterMargin * 2, Math.round(wrapperH / (next || 1)));
+        const centerX = (visibleW - freshStageW) / 2;
+        const centerY = (visibleH - freshStageH) / 2;
+        const minX = visibleW >= freshStageW ? centerX : (visibleW - freshStageW);
+        const maxX = visibleW >= freshStageW ? centerX : 0;
+        const minY = visibleH >= freshStageH ? centerY : (visibleH - freshStageH);
+        const maxY = visibleH >= freshStageH ? centerY : 0;
         setFsPan({
           x: clamp(fsPanRef.current.x, minX, maxX),
           y: clamp(fsPanRef.current.y, minY, maxY),
@@ -2487,7 +2582,11 @@ export default function JigsawPuzzleSVGWithTray({
         zIndex: isFullscreen ? 12000 : undefined,
         inset: isFullscreen ? '0px' : undefined,
         padding: isFullscreen ? 0 : undefined,
-        background: isFullscreen ? 'rgba(0,0,0,0.85)' : undefined,
+        background: tableBackground
+          ? 'transparent'
+          : isFullscreen
+            ? 'rgba(0,0,0,0.85)'
+            : undefined,
         fontFamily: "system-ui, sans-serif",
         width: isFullscreen ? '100vw' : '100%',
         minHeight: isFullscreen ? '100vh' : `${nonFullscreenHeight}px`,
@@ -2495,7 +2594,7 @@ export default function JigsawPuzzleSVGWithTray({
         margin: isFullscreen ? undefined : '0 auto',
         // Critical for mobile: prevent the (unscaled) stage box from creating
         // horizontal scrolling or appearing to escape its container.
-        overflow: isFullscreen ? 'hidden' : 'auto',
+        overflow: 'hidden',
         contain: isFullscreen ? undefined : 'layout paint',
         maxWidth: '100%',
         ...containerStyle,
@@ -2516,7 +2615,10 @@ export default function JigsawPuzzleSVGWithTray({
         maxWidth: '100%',
         borderRadius: 0,
         overflow: "hidden",
-        background: "#070a0f",
+        backgroundColor: tableBackground ? 'transparent' : '#070a0f',
+        backgroundImage: tableBackground ? `url(${tableBackground})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
         border: "1px solid rgba(255,255,255,0.14)",
         userSelect: "none",
         touchAction: 'none',
@@ -2527,6 +2629,26 @@ export default function JigsawPuzzleSVGWithTray({
         transform: 'none',
       }}
       >
+        {/* Table background image — absolutely fills the stage behind all content */}
+        {tableBackground && (
+          <img
+            src={tableBackground}
+            aria-hidden
+            alt=""
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'center',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              zIndex: 0,
+              display: 'block',
+            }}
+          />
+        )}
         {/* Resumed-from-save banner */}
         {resumedFromSave && (
           <div
@@ -2551,6 +2673,134 @@ export default function JigsawPuzzleSVGWithTray({
             ✓ Progress restored — pick up where you left off
           </div>
         )}
+
+        {/* Mobile fullscreen hint — shown on touch devices in normal mode */}
+        {isTouchDevice && !isFullscreen && !mobileFsHintDismissed && !solved && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 9100,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(10,20,40,0.88)',
+              color: 'white',
+              fontSize: 13,
+              fontWeight: 500,
+              padding: '8px 14px',
+              borderRadius: 22,
+              boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>📱 Pinch to zoom · drag to pan · </span>
+            <button
+              onClick={() => setIsFullscreen(true)}
+              style={{ background: 'rgba(99,102,241,0.9)', border: 'none', color: 'white', padding: '3px 10px', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: 12 }}
+            >
+              Fullscreen
+            </button>
+            <button
+              onClick={() => setMobileFsHintDismissed(true)}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* Reset view button — shown in non-fullscreen when user has panned/zoomed */}
+        {!isFullscreen && (nfUserScale !== 1 || nfPan.x !== 0 || nfPan.y !== 0) && (
+          <button
+            onClick={() => { setNfUserScale(1); setNfPan({ x: 0, y: 0 }); }}
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              zIndex: 9100,
+              background: 'rgba(10,20,40,0.80)',
+              color: 'rgba(255,255,255,0.85)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 14,
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ⤢ Reset View
+          </button>
+        )}
+
+        {/* Preview button — click to toggle the full puzzle image */}
+        {imageOk === true && effectiveImageUrl && !solved && (
+          <button
+            onClick={() => setShowPreview(v => !v)}
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              right: 12,
+              zIndex: 9100,
+              background: showPreview ? 'rgba(99,102,241,0.9)' : 'rgba(10,20,40,0.85)',
+              color: 'rgba(255,255,255,0.9)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: 14,
+              padding: '5px 13px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            🖼 {showPreview ? 'Hide Preview' : 'Preview Image'}
+          </button>
+        )}
+
+        {/* Full image preview overlay — click anywhere to dismiss */}
+        {showPreview && effectiveImageUrl && (
+          <div
+            onClick={() => setShowPreview(false)}
+            onPointerDown={e => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 9500,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(0,0,0,0.75)',
+              cursor: 'pointer',
+            }}
+          >
+            <img
+              src={effectiveImageUrl}
+              alt="Puzzle preview"
+              style={{
+                maxWidth: '80%',
+                maxHeight: '80%',
+                objectFit: 'contain',
+                borderRadius: 8,
+                boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+                border: '2px solid rgba(255,255,255,0.2)',
+                pointerEvents: 'none',
+              }}
+            />
+            <div style={{ position: 'absolute', top: 12, right: 12, color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 600 }}>
+              Click anywhere to close
+            </div>
+          </div>
+        )}
+
         {/* contentRef sits inside the static outer stage and receives transform for pan/zoom */}
         <div
           ref={contentRef}
@@ -2561,9 +2811,13 @@ export default function JigsawPuzzleSVGWithTray({
             width: stageWidth,
             height: stageHeight,
             transformOrigin: 'top left',
-            transform: isFullscreen
-              ? `scale(${fsScale}) translate(${fsPan.x}px, ${fsPan.y}px)`
-              : `scale(${nonFullscreenScale})`,
+            zIndex: 1,
+            transform: (() => {
+              if (isFullscreen) return `scale(${fsScale}) translate(${fsPan.x}px, ${fsPan.y}px)`;
+              const totalScale = nonFullscreenScale * Math.max(0.1, nfUserScale);
+              const clampedPan = clampNfPan(nfPan, nfUserScale);
+              return `scale(${totalScale}) translate(${clampedPan.x}px, ${clampedPan.y}px)`;
+            })(),
             willChange: 'transform',
           }}
         >
@@ -2576,9 +2830,10 @@ export default function JigsawPuzzleSVGWithTray({
             top: boardTop,
             width: boardWidth,
             height: boardHeight,
-            borderRadius: 0,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "rgba(255,255,255,0.03)",
+            borderRadius: Math.round(Math.min(pieceW, pieceH) * 0.06),
+            border: "1px solid rgba(255,255,255,0.35)",
+            background: solved ? "transparent" : "#d0d0d0",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 24px rgba(0,0,0,0.4)",
             overflow: "hidden",
           }}
         >
@@ -2586,10 +2841,10 @@ export default function JigsawPuzzleSVGWithTray({
             style={{
               position: "absolute",
               inset: 0,
-              backgroundImage: imageOk === true && effectiveImageUrl ? `url(${effectiveImageUrl})` : undefined,
+              backgroundImage: imageOk === true && effectiveImageUrl && !tableBackground ? `url(${effectiveImageUrl})` : undefined,
               backgroundSize: "100% 100%",
               backgroundColor: imageOk === false ? 'rgba(255,255,255,0.02)' : undefined,
-              opacity: imageOk === true ? 0.11 : 1,
+              opacity: solved ? 0 : (imageOk === true ? 0.11 : 1),
               pointerEvents: "none",
             }}
           />
@@ -2672,7 +2927,6 @@ export default function JigsawPuzzleSVGWithTray({
               height: '100%',
               background: 'linear-gradient(90deg, rgba(255,215,0,0) 0%, rgba(255,215,0,0.92) 52%, rgba(255,215,0,0) 100%)',
               transform: 'skewX(-20deg)',
-              mixBlendMode: 'screen',
               willChange: 'transform, opacity'
             }}
           />
@@ -2684,9 +2938,8 @@ export default function JigsawPuzzleSVGWithTray({
               top: 0,
               width: '85%',
               height: '100%',
-              background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,215,0,0.36) 35%, rgba(255,255,255,0.22) 52%, rgba(255,215,0,0.28) 68%, rgba(255,255,255,0) 100%)',
+              background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,215,0,0.36) 35%, rgba(255,215,0,0.22) 52%, rgba(255,215,0,0.28) 68%, rgba(255,255,255,0) 100%)',
               transform: 'skewX(-18deg)',
-              mixBlendMode: 'screen',
               opacity: 0,
               willChange: 'transform, opacity',
             }}
@@ -2699,9 +2952,8 @@ export default function JigsawPuzzleSVGWithTray({
               top: 0,
               width: '40%',
               height: '100%',
-              background: 'linear-gradient(90deg, rgba(255,215,0,0) 0%, rgba(255,255,255,0.72) 48%, rgba(255,215,0,0) 100%)',
+              background: 'linear-gradient(90deg, rgba(255,215,0,0) 0%, rgba(255,215,0,0.85) 48%, rgba(255,215,0,0) 100%)',
               transform: 'skewX(-22deg)',
-              mixBlendMode: 'screen',
               opacity: 0,
               willChange: 'transform, opacity',
             }}
@@ -2724,7 +2976,6 @@ export default function JigsawPuzzleSVGWithTray({
               transform: 'translate(-50%, -50%)',
               borderRadius: 9999,
               background: 'radial-gradient(circle, rgba(255,215,0,0.42) 0%, rgba(255,215,0,0.16) 36%, rgba(255,215,0,0) 72%)',
-              mixBlendMode: 'screen',
               opacity: 0,
               willChange: 'transform, opacity',
             }}
@@ -2741,26 +2992,11 @@ export default function JigsawPuzzleSVGWithTray({
               borderRadius: 9999,
               border: '2px solid rgba(255,215,0,0.80)',
               boxShadow: '0 0 22px 6px rgba(255,215,0,0.22)',
-              mixBlendMode: 'screen',
               opacity: 0,
               willChange: 'transform, opacity',
             }}
           />
         </div>
-
-        {solved && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "grid",
-              placeItems: "center",
-              background: "rgba(0,0,0,0.35)",
-              backdropFilter: "blur(6px)",
-            }}
-          >
-          </div>
-        )}
 
         </div>{/* end contentRef */}
 

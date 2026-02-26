@@ -28,6 +28,7 @@ export default function PixiRoom({
   onHotspotMove,
   onHotspotTransform,
   onEffectiveLayoutSize,
+  triggeredItemIds,
 }: {
   puzzleId: string;
   layout: { id: string; title?: string | null; backgroundUrl?: string | null; width?: number | null; height?: number | null } | null;
@@ -36,6 +37,8 @@ export default function PixiRoom({
   onHotspotMove?: (hotspotId: string, x: number, y: number) => void;
   onHotspotTransform?: (hotspotId: string, x: number, y: number, w: number, h: number) => void;
   onEffectiveLayoutSize?: (w: number, h: number) => void;
+  /** Set of item IDs that have been triggered — those items swap to their animationVideoUrl */
+  triggeredItemIds?: Set<string>;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<PIXI.Application | null>(null);
@@ -45,6 +48,8 @@ export default function PixiRoom({
   const [runtimeForceCanvas, setRuntimeForceCanvas] = useState(false);
   const hotspotsRef = useRef<Hotspot[]>(hotspots);
   const onHotspotActionRef = useRef<typeof onHotspotAction>(onHotspotAction);
+  const triggeredItemIdsRef = useRef<Set<string>>(new Set());
+  const drawFnRef = useRef<(() => void) | null>(null);
   // local handle for canvas created inside effect (so closures can reference it)
   let createdCanvasLocal: HTMLCanvasElement | null = null;
 
@@ -55,6 +60,12 @@ export default function PixiRoom({
   useEffect(() => {
     onHotspotActionRef.current = onHotspotAction;
   }, [onHotspotAction]);
+
+  // Sync triggered item ids ref and request a redraw whenever the set changes.
+  useEffect(() => {
+    triggeredItemIdsRef.current = triggeredItemIds ?? new Set();
+    drawFnRef.current?.();
+  }, [triggeredItemIds]);
 
   // If we auto-fallback to Canvas due to a WebGL crash, keep it for this puzzle.
   // Reset when navigating to a different puzzle.
@@ -73,6 +84,7 @@ export default function PixiRoom({
         items.map((it: any) => ({
           id: it?.id ?? null,
           imageUrl: it?.imageUrl ?? null,
+          animationVideoUrl: it?.animationVideoUrl ?? null,
           x: it?.x ?? null,
           y: it?.y ?? null,
           w: it?.w ?? null,
@@ -869,7 +881,9 @@ export default function PixiRoom({
                   });
                 for (const it of itemsSorted) {
                   try {
-                    const src = it?.imageUrl || '';
+                    // If this item has been triggered and has an animation video, swap to it.
+                    const isTriggered = triggeredItemIdsRef.current.has(String(it?.id));
+                    const src = (isTriggered && it?.animationVideoUrl) ? String(it.animationVideoUrl) : (it?.imageUrl || '');
                     if (!src) continue;
                     const isVid = isVideoUrl(src);
                     // For video items use a <video> element; for images use HTMLImageElement
@@ -1114,7 +1128,9 @@ export default function PixiRoom({
             for (let sortedIdx = 0; sortedIdx < itemsSorted.length; sortedIdx++) {
               const it = itemsSorted[sortedIdx];
               try {
-                const itemUrl = it.imageUrl || '';
+                // If this item has been triggered and has an animation video, swap to it.
+                const isTriggeredPixi = triggeredItemIdsRef.current.has(String(it?.id));
+                const itemUrl = (isTriggeredPixi && it?.animationVideoUrl) ? String(it.animationVideoUrl) : (it?.imageUrl || '');
                 const texIt = isVideoUrl(itemUrl) ? getOrLoadVideoTexture(itemUrl) : getOrLoadPixiTexture(itemUrl);
                 if (!texIt) continue;
                 const sprIt = new PIXI.Sprite(texIt);
@@ -1627,6 +1643,7 @@ export default function PixiRoom({
         }
     };
 
+    drawFnRef.current = draw;
     try { draw(); } catch (err) { console.error('[PixiRoom] draw() failed', err); }
 
     // Diagnostic pixel reads removed: extract.canvas can allocate huge buffers and break WebGL contexts.
