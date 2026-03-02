@@ -19,7 +19,7 @@ jobs:
       - name: Run npm audit
         run: npm audit --audit-level=moderate || true
       - name: Upload audit report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: npm-audit-report
           path: ./npm-audit-report.txt
