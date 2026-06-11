@@ -12,6 +12,8 @@ import { useModalQueueStore } from "@/lib/modal-queue-store";
 import TeamLobbyInviteModalProvider from "@/components/teams/TeamLobbyInviteModalProvider";
 
 const Navbar = dynamic(() => import("@/components/Navbar"), { ssr: false });
+const AppSplashScreen = dynamic(() => import("@/components/AppSplashScreen"), { ssr: false });
+const AppBottomNav = dynamic(() => import("@/components/AppBottomNav"), { ssr: false });
 
 let globalSocket: any = null;
 
@@ -228,6 +230,15 @@ function AuthenticatedEffects() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(display-mode: standalone)");
+    setIsStandalone(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsStandalone(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   // Ensure next-auth client always fetches from the current origin.
   // This avoids CLIENT_FETCH_ERROR when NEXTAUTH_URL is set to a different host
@@ -242,7 +253,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <PwaRegistration />
-      {pathname !== '/coming-soon' && <Navbar />}
+      <AppSplashScreen />
+      {pathname !== '/coming-soon' && !isStandalone && <Navbar />}
+      <AppBottomNav />
       <GlobalAchievementModal />
       <AuthenticatedEffects />
       {children}

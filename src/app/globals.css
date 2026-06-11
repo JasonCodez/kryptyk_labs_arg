@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Push page content above the bottom nav when running as an installed app */
+@media (display-mode: standalone) {
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
