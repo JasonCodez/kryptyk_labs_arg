@@ -163,8 +163,8 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
     <AnimatePresence>
       {visible && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-center justify-center"
-          style={{ backgroundColor: "rgba(2,2,2,0.88)", backdropFilter: "blur(10px)" }}
+          className="fixed inset-0 z-[200] overflow-y-auto"
+          style={{ backgroundColor: "rgba(2,2,2,0.55)", backdropFilter: "blur(4px)" }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -185,12 +185,15 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
             }}
           />
 
+          {/* Scrollable inner — centres card vertically, adds breathing room top & bottom */}
+          <div className="flex min-h-[100dvh] items-center justify-center px-4 py-8">
+
           {/* Card */}
           <motion.div
             className="relative w-full mx-4 rounded-3xl overflow-hidden flex flex-col items-center text-center"
             style={{
               maxWidth: 520,
-              background: "linear-gradient(160deg, #070f12 0%, #04080a 60%, #020202 100%)",
+              background: "linear-gradient(160deg, rgba(7,15,18,0.72) 0%, rgba(4,8,10,0.68) 60%, rgba(2,2,2,0.65) 100%)",
               border: "1px solid rgba(56,145,166,0.35)",
               zIndex: 2,
               boxShadow: "0 0 80px rgba(56,145,166,0.15), 0 32px 80px rgba(0,0,0,0.7)",
@@ -333,6 +336,7 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
               </p>
             </motion.div>
           </motion.div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
