@@ -103,9 +103,7 @@ export default function AppBottomNav() {
     >
       {TABS.map(({ href, label, Icon }) => {
         const resolvedHref =
-          href === "/profile" && session
-            ? `/profile/${(session.user as any)?.id ?? ""}`
-            : href === "/profile"
+          href === "/profile" && !session
             ? "/auth/signin"
             : href;
 
