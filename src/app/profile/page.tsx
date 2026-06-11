@@ -407,7 +407,7 @@ export default function ProfilePage() {
             <div className="flex-1 flex items-start justify-between gap-3">
               <div>
                 <h1
-                  className={`text-4xl font-extrabold mb-1${profile?.activeNameColor === 'rainbow' ? ' rainbow-name' : ''}`}
+                  className={`text-4xl font-extrabold mb-1 text-white${profile?.activeNameColor === 'rainbow' ? ' rainbow-name' : ''}`}
                   style={profile?.activeNameColor && profile.activeNameColor !== 'none' && profile.activeNameColor !== 'rainbow' ? { color: profile.activeNameColor } : undefined}
                 >{profile?.name || 'Player'}{flair}</h1>
                 <div className="flex items-center gap-3 flex-wrap">
