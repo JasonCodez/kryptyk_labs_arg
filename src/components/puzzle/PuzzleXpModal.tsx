@@ -493,21 +493,6 @@ function LevelUpModal({
             boxShadow: "0 0 60px rgba(253,231,76,0.25), 0 0 120px rgba(253,231,76,0.1)",
           }}
         >
-        {/* Spinning shimmer ring clipped inside the card */}
-        <motion.div
-          className="absolute rounded-full pointer-events-none"
-          style={{
-            width: 420,
-            height: 420,
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            background: "conic-gradient(from 0deg, #FDE74C33, #FFB86B55, #FDE74C33, #FF8C0055, #FDE74C33)",
-          }}
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
-        />
-
         {/* Inner glow overlay */}
         <div
           className="absolute inset-0 pointer-events-none rounded-3xl"

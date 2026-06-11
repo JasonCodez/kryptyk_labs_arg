@@ -37,6 +37,7 @@ function difficultyLabel(rate: number): string {
 export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Props) {
   const [barVisible, setBarVisible] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setBarVisible(true), 120);
@@ -47,27 +48,51 @@ export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Pr
   const hasGuessData = isWordCrack && stats.userGuesses !== null && stats.avgGuesses !== null;
   const hasPercentile = stats.guessPercentile !== null;
 
+  const puzzleUrl = `https://puzzlewarz.com/puzzles/${puzzleId}`;
   const shareText = hasGuessData
-    ? `I just cracked "${stats.puzzleTitle}" on PuzzleWarz in ${stats.userGuesses} guess${stats.userGuesses !== 1 ? "es" : ""}!${stats.guessPercentile !== null ? ` Beat ${stats.guessPercentile}% of players.` : ""} 🎯\n\nhttps://puzzlewarz.com/puzzles/${puzzleId}`
-    : `I just solved "${stats.puzzleTitle}" on PuzzleWarz! Only ${stats.solveRate}% of players crack this one 🧩\n\nhttps://puzzlewarz.com/puzzles/${puzzleId}`;
+    ? `I just cracked "${stats.puzzleTitle}" on PuzzleWarz in ${stats.userGuesses} guess${stats.userGuesses !== 1 ? "es" : ""}!${stats.guessPercentile !== null ? ` Beat ${stats.guessPercentile}% of players.` : ""} 🎯\n\n${puzzleUrl}`
+    : `I just solved "${stats.puzzleTitle}" on PuzzleWarz! Only ${stats.solveRate}% of players crack this one 🧩\n\n${puzzleUrl}`;
 
-  const handleShare = async () => {
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({ text: shareText });
-        return;
-      } catch {
-        // fallback to clipboard
-      }
-    }
+  const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(shareText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
-      // clipboard not available — silently fail
+      // clipboard not available
     }
   };
+
+  const PLATFORMS = [
+    {
+      label: "X / Twitter",
+      icon: "𝕏",
+      color: "#000",
+      bg: "rgba(255,255,255,0.08)",
+      href: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`,
+    },
+    {
+      label: "Facebook",
+      icon: "f",
+      color: "#fff",
+      bg: "#1877F2",
+      href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(puzzleUrl)}`,
+    },
+    {
+      label: "WhatsApp",
+      icon: "💬",
+      color: "#fff",
+      bg: "#25D366",
+      href: `https://wa.me/?text=${encodeURIComponent(shareText)}`,
+    },
+    {
+      label: "Reddit",
+      icon: "🤖",
+      color: "#fff",
+      bg: "#FF4500",
+      href: `https://reddit.com/submit?url=${encodeURIComponent(puzzleUrl)}&title=${encodeURIComponent(shareText)}`,
+    },
+  ];
 
   const solveBarColor =
     stats.solveRate >= 60 ? "#38D399" : stats.solveRate >= 35 ? "#FDE74C" : "#f97316";
@@ -180,10 +205,39 @@ export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Pr
           </div>
         )}
 
+        {/* Share sheet */}
+        {showShareSheet && (
+          <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <p className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: "#6b7280" }}>Share on</p>
+            <div className="grid grid-cols-2 gap-2">
+              {PLATFORMS.map((p) => (
+                <a
+                  key={p.label}
+                  href={p.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-opacity hover:opacity-80"
+                  style={{ background: p.bg, color: p.color }}
+                >
+                  <span className="text-base leading-none">{p.icon}</span>
+                  {p.label}
+                </a>
+              ))}
+            </div>
+            <button
+              onClick={handleCopy}
+              className="w-full py-2 rounded-lg text-sm font-bold transition-opacity hover:opacity-80 mt-1"
+              style={{ background: "rgba(56,145,166,0.15)", border: "1px solid rgba(56,145,166,0.4)", color: "#3891A6" }}
+            >
+              {copied ? "✓ Copied!" : "📋 Copy to Clipboard"}
+            </button>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className="flex gap-3 pt-1">
           <button
-            onClick={handleShare}
+            onClick={() => setShowShareSheet((v) => !v)}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
             style={{
               background: "rgba(56,145,166,0.15)",
@@ -191,7 +245,7 @@ export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Pr
               color: "#3891A6",
             }}
           >
-            {copied ? "✓ Copied!" : "📤 Share Result"}
+            📤 Share Result
           </button>
           <button
             onClick={onDismiss}
