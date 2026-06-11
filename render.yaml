@@ -12,6 +12,12 @@ services:
         value: "false"
       - key: BETA_ALLOWLIST_EMAILS
         value: ""
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "true"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        value: "Puzzle Warz <support@puzzlewarz.com>"
 
 # ── Leaderboard settlement cron jobs ─────────────────────────────────────────
 # Uncomment when you upgrade to a paid Render plan (cron jobs require paid tier).
