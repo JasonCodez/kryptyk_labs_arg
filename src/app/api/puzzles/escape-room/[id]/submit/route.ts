@@ -23,9 +23,9 @@ export async function POST(
     const puzzleId = resolved.id;
 
     const body = await request.json().catch(() => ({}));
-    const { stageIndex, answer, teamId, lobbyId } = body as { stageIndex?: number; answer?: string; teamId?: string; lobbyId?: string };
+    const { stageIndex, answer, teamId, lobbyId, solo } = body as { stageIndex?: number; answer?: string; teamId?: string; lobbyId?: string; solo?: boolean };
 
-    const ctx = await requireEscapeRoomTeamContext(request, puzzleId, { teamId: lobbyId ? undefined : teamId, lobbyId });
+    const ctx = await requireEscapeRoomTeamContext(request, puzzleId, { teamId: lobbyId ? undefined : teamId, lobbyId, solo: !!solo });
     if (ctx instanceof NextResponse) return ctx;
 
     if (typeof stageIndex !== 'number') {

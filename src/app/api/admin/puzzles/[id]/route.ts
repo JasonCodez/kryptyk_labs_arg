@@ -98,6 +98,7 @@ export async function PUT(
     crack_safe:     'Crack Safe',
     detective_case: 'Detective Case',
     escape_room:    'Escape Room',
+    jim_wyze_case:  'Jim Wyze Case',
     gridlock_file:  'Gridlock File',
     parasite_code:  'Parasite Code',
     crime_rpg:      'Crime RPG',
@@ -121,7 +122,7 @@ export async function PUT(
       ? sudokuDifficulty.toLowerCase()
       : (difficulty && validDifficulties.includes(difficulty) ? difficulty : "medium");
 
-  const isSpecialType = ["sudoku", "jigsaw", "escape_room", "code_master", "detective_case", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "vault"].includes(puzzleType);
+  const isSpecialType = ["sudoku", "jigsaw", "escape_room", "jim_wyze_case", "code_master", "detective_case", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "vault"].includes(puzzleType);
 
   if (puzzleType === 'gridlock_file') {
     const parsed = getGridlockFileData(puzzleData);
@@ -207,13 +208,19 @@ export async function PUT(
     );
   }
 
-  const escapeMinTeamSize = puzzleType === 'escape_room'
+  const isEscapeRoomType = puzzleType === 'escape_room';
+  const isJimWyzeType = puzzleType === 'jim_wyze_case';
+  const escapeMinTeamSize = isEscapeRoomType
     ? (toPositiveInt(minTeamSize, (puzzleData as any)?.minTeamSize, (puzzleData as any)?.escapeRoomData?.minTeamSize) ?? 1)
-    : undefined;
-  const escapeMaxTeamSize = puzzleType === 'escape_room'
+    : isJimWyzeType
+      ? 1
+      : undefined;
+  const escapeMaxTeamSize = isEscapeRoomType
     ? toPositiveInt(maxTeamSize, (puzzleData as any)?.maxTeamSize, (puzzleData as any)?.escapeRoomData?.maxTeamSize)
-    : undefined;
-  const escapeTimeLimitSeconds = puzzleType === 'escape_room'
+    : isJimWyzeType
+      ? 1
+      : undefined;
+  const escapeTimeLimitSeconds = (isEscapeRoomType || isJimWyzeType)
     ? toPositiveInt(timeLimitSeconds, (puzzleData as any)?.timeLimitSeconds, (puzzleData as any)?.escapeRoomData?.timeLimit)
     : undefined;
 
@@ -229,14 +236,18 @@ export async function PUT(
     if (categoryRecord) {
       puzzleUpdateData.categoryId = categoryRecord.id;
     }
-    if (puzzleType === 'escape_room' && typeof escapeMinTeamSize === 'number') {
+    if (isEscapeRoomType && typeof escapeMinTeamSize === 'number') {
       puzzleUpdateData.isTeamPuzzle = true;
       puzzleUpdateData.minTeamSize = escapeMinTeamSize;
+    }
+    if (isJimWyzeType) {
+      puzzleUpdateData.isTeamPuzzle = false;
+      puzzleUpdateData.minTeamSize = 1;
     }
     if (!isSpecialType) {
       puzzleUpdateData.riddleAnswer = correctAnswer;
     }
-    if (["escape_room", "code_master", "detective_case", "crack_safe", "word_crack", "word_search", "anagram_blitz", "arg", "blackout", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "crossword"].includes(puzzleType) && puzzleData != null) {
+    if (["escape_room", "jim_wyze_case", "code_master", "detective_case", "crack_safe", "word_crack", "word_search", "anagram_blitz", "arg", "blackout", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "crossword"].includes(puzzleType) && puzzleData != null) {
       puzzleUpdateData.data = puzzleData;
     }
     if (puzzleType === 'vault' && vaultData) {
@@ -357,9 +368,9 @@ export async function PUT(
     }
 
     // 6. Keep escape-room settings in sync with puzzle settings when editing via admin puzzle maker.
-    if (puzzleType === 'escape_room') {
-      const resolvedMin = typeof escapeMinTeamSize === 'number' ? escapeMinTeamSize : 1;
-      const resolvedMax = Math.max(resolvedMin, escapeMaxTeamSize ?? 8);
+    if (isEscapeRoomType || isJimWyzeType) {
+      const resolvedMin = isJimWyzeType ? 1 : (typeof escapeMinTeamSize === 'number' ? escapeMinTeamSize : 1);
+      const resolvedMax = isJimWyzeType ? 1 : Math.max(resolvedMin, escapeMaxTeamSize ?? 8);
       await tx.escapeRoomPuzzle.upsert({
         where: { puzzleId },
         update: {

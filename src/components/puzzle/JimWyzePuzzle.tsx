@@ -123,20 +123,16 @@ type EscapeRoomResponse = {
   }>;
 };
 
-export function EscapeRoomPuzzle({
+export default function JimWyzePuzzle({
   puzzleId,
-  teamId,
-  lobbyId,
-  soloMode,
   onComplete,
 }: {
   puzzleId: string;
-  teamId?: string;
-  lobbyId?: string;
-  soloMode?: boolean;
   onComplete?: () => void;
 }) {
-  const isSoloSession = !!soloMode;
+  const teamId: string | undefined = undefined;
+  const lobbyId: string | undefined = undefined;
+  const isSoloSession = true;
   // sessionId identifies the active run context (solo, lobby, or team)
   const sessionId = isSoloSession ? `solo:${puzzleId}` : (lobbyId ?? teamId ?? null);
   // sessionParam is the query string fragment used in GET fetch URLs
@@ -3242,5 +3238,3 @@ export function EscapeRoomPuzzle({
     </div>
   );
 }
-
-export default EscapeRoomPuzzle;

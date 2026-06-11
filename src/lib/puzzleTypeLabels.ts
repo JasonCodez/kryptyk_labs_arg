@@ -14,6 +14,7 @@ export const PUZZLE_TYPE_LABELS: Record<string, string> = {
   crack_safe:      "Crack the Safe",
   vault:           "The Vault",
   escape_room:     "Escape Room",
+  jim_wyze_case:   "Jim Wyze Case",
   detective_case:  "Wise Up",
   crime_rpg:       "Crime Case",
   parasite_code:   "Parasite Code",

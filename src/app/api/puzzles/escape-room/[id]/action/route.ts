@@ -245,10 +245,10 @@ export async function POST(
     const puzzleId = resolved.id;
 
     const body = await request.json().catch(() => ({}));
-    const { action, hotspotId, teamId, lobbyId, itemKey } = body as { action?: string; hotspotId?: string; teamId?: string; lobbyId?: string; itemKey?: string };
+    const { action, hotspotId, teamId, lobbyId, itemKey, solo } = body as { action?: string; hotspotId?: string; teamId?: string; lobbyId?: string; itemKey?: string; solo?: boolean };
     if (!action || !hotspotId) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const ctx = await requireEscapeRoomTeamContext(request, puzzleId, { teamId: lobbyId ? undefined : teamId, lobbyId });
+    const ctx = await requireEscapeRoomTeamContext(request, puzzleId, { teamId: lobbyId ? undefined : teamId, lobbyId, solo: !!solo });
     if (ctx instanceof NextResponse) return ctx;
 
     const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { id: true, name: true, email: true } });

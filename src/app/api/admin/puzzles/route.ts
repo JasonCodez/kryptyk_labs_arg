@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and WordScry
-    if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault') {
+    if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault') {
       return NextResponse.json(
         { error: "Missing required field: title" },
         { status: 400 }
@@ -288,6 +288,7 @@ export async function POST(request: NextRequest) {
       crack_safe:    'Crack Safe',
       detective_case:'Detective Case',
       escape_room:   'Escape Room',
+      jim_wyze_case: 'Jim Wyze Case',
       gridlock_file: 'Gridlock File',
       parasite_code: 'Parasite Code',
       crime_rpg:     'Crime RPG',
@@ -315,6 +316,7 @@ export async function POST(request: NextRequest) {
       puzzleType === 'word_search' ? 'Word Search' :
       puzzleType === 'anagram_blitz' ? 'Anagram Blitz' :
       puzzleType === 'arg' ? 'ARG' :
+      puzzleType === 'jim_wyze_case' ? 'Jim Wyze Case' :
       puzzleType === 'vault' ? 'The Vault' :
       'Untitled Puzzle');
 
@@ -338,8 +340,14 @@ export async function POST(request: NextRequest) {
             isActive: typeof isActive === 'boolean' ? isActive : true,
             minTeamSize: (() => { const v = puzzleData?.minTeamSize ?? (puzzleData as any)?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
           }
+        : puzzleType === 'jim_wyze_case'
+          ? {
+              isTeamPuzzle: false,
+              isActive: typeof isActive === 'boolean' ? isActive : true,
+              minTeamSize: 1,
+            }
         : {}),
-      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'code_master' && puzzleType !== 'detective_case' && puzzleType !== 'crime_rpg' && puzzleType !== 'blackout' && puzzleType !== 'gridlock_file' && puzzleType !== 'debrief' && puzzleType !== 'parasite_code' && puzzleType !== 'crossword' && puzzleType !== 'vault' ? correctAnswer : undefined,
+      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'code_master' && puzzleType !== 'detective_case' && puzzleType !== 'crime_rpg' && puzzleType !== 'blackout' && puzzleType !== 'gridlock_file' && puzzleType !== 'debrief' && puzzleType !== 'parasite_code' && puzzleType !== 'crossword' && puzzleType !== 'vault' ? correctAnswer : undefined,
       jigsaw:
         puzzleType === 'jigsaw'
           ? {
@@ -352,7 +360,7 @@ export async function POST(request: NextRequest) {
               },
             }
           : undefined,
-      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'jigsaw' || puzzleType === 'escape_room' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'parasite_code' || puzzleType === 'crossword' ? undefined : {
+      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'jigsaw' || puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'parasite_code' || puzzleType === 'crossword' ? undefined : {
         create: [
           {
             answer: correctAnswer,
@@ -396,7 +404,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     };
 
-    if ((puzzleType === 'escape_room' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'word_crack' || puzzleType === 'word_search' || puzzleType === 'anagram_blitz' || puzzleType === 'arg' || puzzleType === 'blackout' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'crossword' || puzzleType === 'vault' || puzzleType === 'parasite_code') && typeof puzzleData !== 'undefined') {
+    if ((puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'word_crack' || puzzleType === 'word_search' || puzzleType === 'anagram_blitz' || puzzleType === 'arg' || puzzleType === 'blackout' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'crossword' || puzzleType === 'vault' || puzzleType === 'parasite_code') && typeof puzzleData !== 'undefined') {
       createData.data = puzzleData;
     }
     // Persist jigsaw shape params (piece designer) into puzzle.data JSON
@@ -415,6 +423,20 @@ export async function POST(request: NextRequest) {
         create: [
           {
             answer: '__DETECTIVE_CASE__',
+            isCorrect: true,
+            points: pointsReward || 100,
+            ignoreCase: true,
+            ignoreWhitespace: false,
+          },
+        ],
+      };
+    }
+
+    if (puzzleType === 'jim_wyze_case') {
+      createData.solutions = {
+        create: [
+          {
+            answer: '__JIM_WYZE_CASE__',
             isCorrect: true,
             points: pointsReward || 100,
             ignoreCase: true,
@@ -528,21 +550,22 @@ export async function POST(request: NextRequest) {
       console.log(`[PUZZLE CREATE] Jigsaw record:`, jigsawRecord);
     }
 
-    // If this is an escape room, persist rooms/stages/layouts/hotspots (+ item definitions)
+    // If this is an escape-canvas puzzle, persist rooms/stages/layouts/hotspots (+ item definitions)
     // Note: the designer payload stores items/zones under puzzleData.escapeRoomData.scenes.
-    if (puzzle.puzzleType === 'escape_room' && puzzleData && Array.isArray(puzzleData.rooms)) {
+    if ((puzzle.puzzleType === 'escape_room' || puzzle.puzzleType === 'jim_wyze_case') && puzzleData && Array.isArray(puzzleData.rooms)) {
       try {
         // Create escape room and related records in a transaction
         const rooms = puzzleData.rooms as any[];
         await prisma.$transaction(async (tx) => {
+          const isJimWyze = puzzle.puzzleType === 'jim_wyze_case';
           const escapeRoom = await tx.escapeRoomPuzzle.create({
             data: {
               puzzleId: puzzle.id,
               roomTitle: puzzleData.roomTitle || (puzzle.title || 'Escape Room'),
               roomDescription: puzzleData.roomDescription || (puzzle.description || ''),
               timeLimitSeconds: typeof puzzleData.timeLimitSeconds !== 'undefined' && puzzleData.timeLimitSeconds !== null ? Number(puzzleData.timeLimitSeconds) : undefined,
-              minTeamSize: (() => { const v = puzzleData?.minTeamSize ?? (puzzleData as any)?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
-              maxTeamSize: (typeof puzzleData.maxTeamSize === 'number' && puzzleData.maxTeamSize > 0) ? puzzleData.maxTeamSize : 8,
+              minTeamSize: isJimWyze ? 1 : (() => { const v = puzzleData?.minTeamSize ?? (puzzleData as any)?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
+              maxTeamSize: isJimWyze ? 1 : ((typeof puzzleData.maxTeamSize === 'number' && puzzleData.maxTeamSize > 0) ? puzzleData.maxTeamSize : 8),
             },
           });
 

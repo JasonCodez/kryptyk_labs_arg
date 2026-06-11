@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
+import JimWyzePuzzle from "@/components/puzzle/JimWyzePuzzle";
 import DetectiveCasePuzzle from "@/components/puzzle/DetectiveCasePuzzle";
 import CrimeCasePuzzle from "@/components/puzzle/CrimeCasePuzzle";
 import ParasiteCodePuzzle from "@/components/puzzle/ParasiteCodePuzzle";
@@ -160,6 +161,22 @@ export function PuzzleTypeRenderer({
             />
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (puzzle.puzzleType === 'jim_wyze_case') {
+    return (
+      <div className="mb-8">
+        {progress?.solved && (
+          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
+            ✓ You have already solved this Jim Wyze case! Visit the puzzles page to start the next file.
+          </div>
+        )}
+        <JimWyzePuzzle
+          puzzleId={puzzleId}
+          onComplete={() => onSolved()}
+        />
       </div>
     );
   }

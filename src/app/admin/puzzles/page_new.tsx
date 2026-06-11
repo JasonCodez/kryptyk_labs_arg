@@ -71,6 +71,7 @@ const PUZZLE_TYPES = [
   { value: 'vault', label: 'The Vault 🔐' },
   { value: 'arg', label: 'ARG' },
   { value: 'escape_room', label: 'Escape Room' },
+  { value: 'jim_wyze_case', label: 'Jim Wyze Case 🕵️' },
 ];
 
 interface PuzzleListItem {
@@ -604,7 +605,7 @@ export default function AdminPuzzlesPage() {
       let cleanedPuzzleData: any = formData.puzzleData || {};
       // If the escape-room Designer stored data under `escapeRoomData`, map it into the shape
       // expected by the puzzle persistence route (puzzleData.rooms -> layouts.hotspots)
-      if (formData.puzzleType === 'escape_room') {
+      if (formData.puzzleType === 'escape_room' || formData.puzzleType === 'jim_wyze_case') {
         const designer = formData.puzzleData?.escapeRoomData || formData.puzzleData;
         console.log('[SUBMIT] Escape room designer payload:', designer);
         if (designer && typeof designer === 'object') {
@@ -707,6 +708,9 @@ export default function AdminPuzzlesPage() {
         delete submitBody.correctAnswer;
       }
       if (formData.puzzleType === 'detective_case') {
+        delete submitBody.correctAnswer;
+      }
+      if (formData.puzzleType === 'jim_wyze_case') {
         delete submitBody.correctAnswer;
       }
       if (formData.puzzleType === 'crime_rpg') {
@@ -1196,8 +1200,8 @@ export default function AdminPuzzlesPage() {
                   </div>
 
 
-                  {/* Only show the Escape Room Designer, Points, and Hints for escape_room */}
-                  {formData.puzzleType === 'escape_room' ? (
+                  {/* Escape-canvas puzzle types use the same designer/play data model. */}
+                  {formData.puzzleType === 'escape_room' || formData.puzzleType === 'jim_wyze_case' ? (
                     <>
                       <PuzzleTypeFields
                         puzzleType={formData.puzzleType}
@@ -1440,8 +1444,8 @@ export default function AdminPuzzlesPage() {
                     </div>
                   )}
 
-                  {/* Show Difficulty/Category for non-escape_room, non-crime_rpg types only */}
-                  {formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && (
+                  {/* Show Difficulty/Category for non-escape-canvas and non-mode-locked types only */}
+                  {formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && (
                     formData.puzzleType === 'sudoku' ? (
                       <div className="grid md:grid-cols-1 gap-4">
                         <div>
@@ -1512,7 +1516,7 @@ export default function AdminPuzzlesPage() {
                   )}
 
                   {/* Correct Answer is hidden for puzzle types that store/validate answers elsewhere. */}
-                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'code_master' && formData.puzzleType !== 'detective_case' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && formData.puzzleType !== 'crack_safe' && formData.puzzleType !== 'word_crack' && formData.puzzleType !== 'word_search' && formData.puzzleType !== 'anagram_blitz' && formData.puzzleType !== 'blackout' && formData.puzzleType !== 'vault' && formData.puzzleType !== 'crossword' && (
+                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && formData.puzzleType !== 'code_master' && formData.puzzleType !== 'detective_case' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && formData.puzzleType !== 'crack_safe' && formData.puzzleType !== 'word_crack' && formData.puzzleType !== 'word_search' && formData.puzzleType !== 'anagram_blitz' && formData.puzzleType !== 'blackout' && formData.puzzleType !== 'vault' && formData.puzzleType !== 'crossword' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         Correct Answer *
@@ -1599,8 +1603,8 @@ export default function AdminPuzzlesPage() {
                     </div>
                   )}
 
-                  {/* Submit button for non-escape_room types */}
-                  {formData.puzzleType !== 'escape_room' && (
+                  {/* Submit button for non-escape-canvas types */}
+                  {formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && (
                     <button
                       type="submit"
                       disabled={submitting}
@@ -1714,7 +1718,7 @@ export default function AdminPuzzlesPage() {
                             <td className="px-4 py-3 text-white font-medium max-w-[220px] truncate" title={p.title}>{(() => {
                                 const escapeTitle = p.escapeRoom?.roomTitle?.trim() || '';
                                 const t = p.title?.trim() || '';
-                                const display = (p.puzzleType === 'escape_room' && escapeTitle)
+                                const display = ((p.puzzleType === 'escape_room' || p.puzzleType === 'jim_wyze_case') && escapeTitle)
                                   ? escapeTitle
                                   : (!t || t === 'Untitled Puzzle') && escapeTitle
                                   ? escapeTitle

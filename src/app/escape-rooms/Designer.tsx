@@ -292,9 +292,10 @@ interface EscapeRoomDesignerProps {
   initialData?: any;
   editId?: string;
   onChange?: (data: any) => void;
+  singlePlayerOnly?: boolean;
 }
 
-export default function EscapeRoomDesigner({ initialData, editId, onChange }: EscapeRoomDesignerProps) {
+export default function EscapeRoomDesigner({ initialData, editId, onChange, singlePlayerOnly }: EscapeRoomDesignerProps) {
   // Stable ref for onChange so it never destabilises effects or useCallback deps
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
@@ -310,8 +311,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [title, setTitle] = useState(initialData?.title || "");
   const [description, setDescription] = useState(initialData?.description || "");
   const [timeLimit, setTimeLimit] = useState(initialData?.timeLimit || 1200);
-  const [startMode, setStartMode] = useState(initialData?.startMode || 'leader-start');
-  const [minTeamSize, setMinTeamSize] = useState<number>(initialData?.minTeamSize > 0 ? initialData.minTeamSize : 1);
+  const [startMode, setStartMode] = useState(singlePlayerOnly ? 'leader-start' : (initialData?.startMode || 'leader-start'));
+  const [minTeamSize, setMinTeamSize] = useState<number>(singlePlayerOnly ? 1 : (initialData?.minTeamSize > 0 ? initialData.minTeamSize : 1));
   const [intro, setIntro] = useState<{
     videoUrl?: string;
     posterUrl?: string;
@@ -334,7 +335,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const [outroOpen, setOutroOpen] = useState(false);
   // 'shared' = all players see the same scene at once (classic mode)
   // 'assigned' = each player is assigned to a starting scene (multi-room co-op)
-  const [playerMode, setPlayerMode] = useState<'shared' | 'assigned'>(initialData?.playerMode || 'shared');
+  const [playerMode, setPlayerMode] = useState<'shared' | 'assigned'>(singlePlayerOnly ? 'shared' : (initialData?.playerMode || 'shared'));
   const [scenes, setScenes] = useState<EscapeRoomScene[]>(initialData?.scenes || []);
   const [userSpecialties, setUserSpecialties] = useState<UserSpecialty[]>(initialData?.userSpecialties || []);
   const [validationError, setValidationError] = useState("");
@@ -378,6 +379,25 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const playtestTransTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playtestBgmRef = useRef<HTMLAudioElement | null>(null);
   const playtestBgmFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const effectiveStartMode = singlePlayerOnly ? 'leader-start' : startMode;
+  const effectiveMinTeamSize = singlePlayerOnly ? 1 : minTeamSize;
+  const effectivePlayerMode = singlePlayerOnly ? 'shared' : playerMode;
+
+  useEffect(() => {
+    if (singlePlayerOnly && minTeamSize !== 1) {
+      setMinTeamSize(1);
+    }
+  }, [singlePlayerOnly, minTeamSize]);
+
+  useEffect(() => {
+    if (!singlePlayerOnly) return;
+    if (startMode !== 'leader-start') {
+      setStartMode('leader-start');
+    }
+    if (playerMode !== 'shared') {
+      setPlayerMode('shared');
+    }
+  }, [singlePlayerOnly, startMode, playerMode]);
 
   // Fire playtest scene transition + celebration + audio when playtestSceneIdx changes
   useEffect(() => {
@@ -790,10 +810,10 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
   const notifyParent = () => {
     const serializableScenes = getSerializableScenes();
     if (typeof window !== 'undefined' && typeof (window as any).onEscapeRoomDesignerChange === 'function') {
-      (window as any).onEscapeRoomDesignerChange({ title, description, timeLimit, startMode, minTeamSize, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
+      (window as any).onEscapeRoomDesignerChange({ title, description, timeLimit, startMode: effectiveStartMode, minTeamSize: effectiveMinTeamSize, playerMode: effectivePlayerMode, scenes: serializableScenes, userSpecialties, intro, outro });
     }
     if (typeof onChangeRef.current === 'function') {
-      onChangeRef.current({ title, description, timeLimit, startMode, minTeamSize, playerMode, scenes: serializableScenes, userSpecialties, intro, outro });
+      onChangeRef.current({ title, description, timeLimit, startMode: effectiveStartMode, minTeamSize: effectiveMinTeamSize, playerMode: effectivePlayerMode, scenes: serializableScenes, userSpecialties, intro, outro });
     }
   };
 
@@ -804,11 +824,11 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       if (initialData.title !== undefined && initialData.title !== title) setTitle(initialData.title || "");
       if (initialData.description !== undefined && initialData.description !== description) setDescription(initialData.description || "");
       if (initialData.timeLimit !== undefined && initialData.timeLimit !== timeLimit) setTimeLimit(initialData.timeLimit || 1200);
-      if (initialData.startMode !== undefined && initialData.startMode !== startMode) setStartMode(initialData.startMode || 'leader-start');
-      if (initialData.minTeamSize !== undefined) setMinTeamSize(initialData.minTeamSize > 0 ? initialData.minTeamSize : 1);
+      if (initialData.startMode !== undefined && initialData.startMode !== startMode) setStartMode(singlePlayerOnly ? 'leader-start' : (initialData.startMode || 'leader-start'));
+      if (initialData.minTeamSize !== undefined) setMinTeamSize(singlePlayerOnly ? 1 : (initialData.minTeamSize > 0 ? initialData.minTeamSize : 1));
       if (initialData.intro !== undefined && JSON.stringify(initialData.intro) !== JSON.stringify(intro)) setIntro(initialData.intro || {});
       if (initialData.outro !== undefined && JSON.stringify(initialData.outro) !== JSON.stringify(outro)) setOutro(initialData.outro || {});
-      if (initialData.playerMode !== undefined && initialData.playerMode !== playerMode) setPlayerMode(initialData.playerMode || 'shared');
+      if (initialData.playerMode !== undefined && initialData.playerMode !== playerMode) setPlayerMode(singlePlayerOnly ? 'shared' : (initialData.playerMode || 'shared'));
       if (initialData.scenes && JSON.stringify(initialData.scenes) !== JSON.stringify(scenes)) setScenes(initialData.scenes || []);
       if (initialData.userSpecialties && JSON.stringify(initialData.userSpecialties) !== JSON.stringify(userSpecialties)) setUserSpecialties(initialData.userSpecialties || []);
       if (initialData.isPublished !== undefined) setIsPublished(!!initialData.isPublished);
@@ -846,9 +866,9 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       if (draft.title !== undefined) setTitle(draft.title || '');
       if (draft.description !== undefined) setDescription(draft.description || '');
       if (draft.timeLimit !== undefined) setTimeLimit(draft.timeLimit || 1200);
-      if (draft.startMode !== undefined) setStartMode(draft.startMode || 'leader-start');
-      if (draft.minTeamSize !== undefined) setMinTeamSize(draft.minTeamSize > 0 ? draft.minTeamSize : 1);
-      if (draft.playerMode !== undefined) setPlayerMode(draft.playerMode || 'shared');
+      if (draft.startMode !== undefined) setStartMode(singlePlayerOnly ? 'leader-start' : (draft.startMode || 'leader-start'));
+      if (draft.minTeamSize !== undefined) setMinTeamSize(singlePlayerOnly ? 1 : (draft.minTeamSize > 0 ? draft.minTeamSize : 1));
+      if (draft.playerMode !== undefined) setPlayerMode(singlePlayerOnly ? 'shared' : (draft.playerMode || 'shared'));
       if (draft.intro !== undefined) setIntro(draft.intro || {});
       if (draft.outro !== undefined) setOutro(draft.outro || {});
       if (Array.isArray(draft.scenes)) setScenes(draft.scenes);
@@ -866,8 +886,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
     const t = setTimeout(() => {
       try {
         const serializableScenes = getSerializableScenes();
-        const draft = { title, description, timeLimit, startMode, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, minTeamSize }));
+        const draft = { title, description, timeLimit, startMode: effectiveStartMode, playerMode: effectivePlayerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, minTeamSize: effectiveMinTeamSize }));
         setLastSavedAt(new Date());
       } catch {
         // ignore storage errors
@@ -875,7 +895,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
     }, 2000);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId, title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties]);
+  }, [editId, title, description, timeLimit, effectiveStartMode, effectiveMinTeamSize, effectivePlayerMode, intro, outro, scenes, userSpecialties]);
 
   // ── doSave ───────────────────────────────────────────────────────────────────
   const doSave = React.useCallback(async (silent = false) => {
@@ -890,7 +910,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       const res = await fetch(`/api/escape-rooms/designer/${encodeURIComponent(editId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes: serializableScenes, userSpecialties }),
+        body: JSON.stringify({ title, description, timeLimit, startMode: effectiveStartMode, minTeamSize: effectiveMinTeamSize, playerMode: effectivePlayerMode, intro, outro, scenes: serializableScenes, userSpecialties }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) {
@@ -908,7 +928,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       setIsSaving(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId, title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties]);
+  }, [editId, title, description, timeLimit, effectiveStartMode, effectiveMinTeamSize, effectivePlayerMode, intro, outro, scenes, userSpecialties]);
 
   // For EDIT rooms: auto-save with a 15-second debounce after any change.
   useEffect(() => {
@@ -921,7 +941,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [editId, title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties, doSave]);
+  }, [editId, title, description, timeLimit, effectiveStartMode, effectiveMinTeamSize, effectivePlayerMode, intro, outro, scenes, userSpecialties, doSave]);
 
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -1002,7 +1022,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, description, timeLimit, startMode, minTeamSize, playerMode, scenes, userSpecialties, intro, outro]);
+  }, [title, description, timeLimit, effectiveStartMode, effectiveMinTeamSize, effectivePlayerMode, scenes, userSpecialties, intro, outro]);
 
   // ── PixiRoom-powered edit preview ──────────────────────────────────────────
   // Build the layout object PixiRoom expects from the currently previewed scene.
@@ -1139,32 +1159,43 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
             <label className="block text-sm text-white">Time Limit (seconds)</label>
             <input type="number" min={60} value={timeLimit} onChange={e => setTimeLimit(Number(e.target.value))} className="border rounded px-2 py-1 w-full bg-slate-800 text-white" />
           </div>
-          <div>
-            <label className="block text-sm text-white">Min Players Required</label>
-            <input type="number" min={1} max={8} value={minTeamSize}
-              onChange={e => setMinTeamSize(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
-              className="border rounded px-2 py-1 w-full bg-slate-800 text-white" />
-            <div className="text-xs text-gray-400 mt-1">Set to 1 to allow solo testing</div>
-          </div>
-          <div>
-            <label className="block text-sm text-white">Start Mode</label>
-            <select value={startMode} onChange={e => setStartMode(e.target.value)} className="border rounded px-2 py-1 w-full bg-slate-800 text-white">
-              <option value="leader-start">Leader starts the session</option>
-              <option value="auto-on-join">Auto start when min players joined</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-white font-semibold">Player Mode</label>
-            <select value={playerMode} onChange={e => setPlayerMode(e.target.value as 'shared' | 'assigned')} className="border rounded px-2 py-1 w-full bg-slate-800 text-white">
-              <option value="shared">Shared Room — all players view the same scene</option>
-              <option value="assigned">Assigned Rooms — each player starts in a different scene</option>
-            </select>
-            <p className="mt-1 text-xs text-gray-400">
-              {playerMode === 'assigned'
-                ? 'Assign player slots (1–4) to scenes below. Players start in their assigned scene and must cooperate via chat.'
-                : 'Classic mode: all players are in the same room and see the same canvas.'}
-            </p>
-          </div>
+          {!singlePlayerOnly && (
+            <div>
+              <label className="block text-sm text-white">Min Players Required</label>
+              <input type="number" min={1} max={8} value={minTeamSize}
+                onChange={e => setMinTeamSize(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+                className="border rounded px-2 py-1 w-full bg-slate-800 text-white" />
+              <div className="text-xs text-gray-400 mt-1">Set to 1 to allow solo testing</div>
+            </div>
+          )}
+          {!singlePlayerOnly && (
+            <div>
+              <label className="block text-sm text-white">Start Mode</label>
+              <select value={startMode} onChange={e => setStartMode(e.target.value)} className="border rounded px-2 py-1 w-full bg-slate-800 text-white">
+                <option value="leader-start">Leader starts the session</option>
+                <option value="auto-on-join">Auto start when min players joined</option>
+              </select>
+            </div>
+          )}
+          {!singlePlayerOnly && (
+            <div>
+              <label className="block text-sm text-white font-semibold">Player Mode</label>
+              <select value={playerMode} onChange={e => setPlayerMode(e.target.value as 'shared' | 'assigned')} className="border rounded px-2 py-1 w-full bg-slate-800 text-white">
+                <option value="shared">Shared Room — all players view the same scene</option>
+                <option value="assigned">Assigned Rooms — each player starts in a different scene</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-400">
+                {playerMode === 'assigned'
+                  ? 'Assign player slots (1–4) to scenes below. Players start in their assigned scene and must cooperate via chat.'
+                  : 'Classic mode: all players are in the same room and see the same canvas.'}
+              </p>
+            </div>
+          )}
+          {singlePlayerOnly && (
+            <div className="md:col-span-2 text-xs text-gray-400 rounded border border-slate-700 bg-slate-900/60 px-3 py-2">
+              Solo mode enforced for this puzzle type: Start Mode = leader-start, Player Mode = shared, Min Players = 1.
+            </div>
+          )}
         </div>
       </section>
 
@@ -5833,7 +5864,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange }: Es
                   if (scenes.length === 0) { setValidationError('At least one scene/room is required.'); return; }
                   try {
                     const serializableScenes = getSerializableScenes();
-                    const draft = { title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
+                    const draft = { title, description, timeLimit, startMode: effectiveStartMode, minTeamSize: effectiveMinTeamSize, playerMode: effectivePlayerMode, intro, outro, scenes: serializableScenes, userSpecialties, _savedAt: new Date().toISOString() };
                     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
                     setLastSavedAt(new Date());
                   } catch {}

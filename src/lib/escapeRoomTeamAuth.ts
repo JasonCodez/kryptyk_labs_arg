@@ -9,6 +9,10 @@ export type EscapeRoomTeamContext = {
   teamId: string;
   userId: string;
   escapeRoomId: string;
+  /** Present for standalone Jim Wyze runs. */
+  isSolo?: boolean;
+  /** Active progress row id (used for deterministic lookups in solo mode). */
+  progressId?: string;
   /** True when this session was initiated from an EscapeRoomLobby (ad-hoc 1-4 player run). */
   isLobby?: boolean;
 };
@@ -23,6 +27,10 @@ async function getUserIdFromSessionEmail(email: string) {
  * In lobby mode teamId holds the lobbyId; use the lobbyId column instead.
  */
 export function progressWhereClause(ctx: EscapeRoomTeamContext) {
+  if (ctx.isSolo) {
+    if (ctx.progressId) return { id: ctx.progressId };
+    return { soloUserId: ctx.userId, escapeRoomId: ctx.escapeRoomId };
+  }
   if (ctx.isLobby) {
     return { lobbyId: ctx.teamId, escapeRoomId: ctx.escapeRoomId };
   }
@@ -33,6 +41,9 @@ export function progressWhereClause(ctx: EscapeRoomTeamContext) {
  * Returns the member user-IDs for this session (lobby members or team members).
  */
 export async function getSessionMembers(ctx: EscapeRoomTeamContext) {
+  if (ctx.isSolo) {
+    return [{ userId: ctx.userId }];
+  }
   if (ctx.isLobby) {
     const rows = await (prisma as any).escapeRoomLobbyMember.findMany({
       where: { lobbyId: ctx.teamId },
@@ -63,6 +74,7 @@ export async function requireEscapeRoomTeamContext(
   options?: {
     teamId?: string | null;
     lobbyId?: string | null;
+    solo?: boolean | null;
     requireStarted?: boolean;
     requireNotFinished?: boolean;
     allowUserFailed?: boolean;
@@ -85,6 +97,67 @@ export async function requireEscapeRoomTeamContext(
   const userId = await getUserIdFromSessionEmail(session.user.email);
   if (!userId) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const soloParam = request.nextUrl.searchParams.get("solo");
+  const soloRequested = options?.solo === true || soloParam === "1" || soloParam === "true";
+
+  // ── Solo mode (Jim Wyze standalone runs) ──
+  if (soloRequested) {
+    const puzzle = await prisma.puzzle.findUnique({
+      where: { id: puzzleId },
+      select: { id: true, puzzleType: true },
+    });
+    if (!puzzle) return NextResponse.json({ error: "Puzzle not found" }, { status: 404 });
+    if (puzzle.puzzleType !== "jim_wyze_case") {
+      return NextResponse.json({ error: "Solo mode is only supported for Jim Wyze cases" }, { status: 400 });
+    }
+
+    const escapeRoom = await prisma.escapeRoomPuzzle.findUnique({ where: { puzzleId }, select: { id: true } });
+    if (!escapeRoom) return NextResponse.json({ error: "Escape room not found" }, { status: 404 });
+
+    if (!allowUserFailed) {
+      try {
+        const up = await prisma.userEscapeProgress.findUnique({
+          where: { userId_escapeRoomId: { userId, escapeRoomId: escapeRoom.id } },
+          select: { failedAt: true },
+        });
+        if (up?.failedAt) {
+          return NextResponse.json({ error: "You have already failed this case." }, { status: 403 });
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
+    let progress = await (prisma as any).teamEscapeProgress.findFirst({
+      where: { soloUserId: userId, escapeRoomId: escapeRoom.id },
+      orderBy: { startedAt: "desc" },
+      select: { id: true, failedAt: true, completedAt: true },
+    });
+
+    if (!progress) {
+      progress = await (prisma as any).teamEscapeProgress.create({
+        data: {
+          escapeRoomId: escapeRoom.id,
+          soloUserId: userId,
+        },
+        select: { id: true, failedAt: true, completedAt: true },
+      });
+    }
+
+    if (requireNotFinished) {
+      if (progress.completedAt) return NextResponse.json({ error: "This run is already complete." }, { status: 409 });
+      if (progress.failedAt) return NextResponse.json({ error: "This run has already failed." }, { status: 409 });
+    }
+
+    return {
+      teamId: `solo:${userId}`,
+      userId,
+      escapeRoomId: escapeRoom.id,
+      isSolo: true,
+      progressId: progress.id,
+    };
   }
 
   // ── Lobby mode (ad-hoc 1-4 player run, no permanent team required) ──

@@ -91,6 +91,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   code_master: "💻",
   crack_safe: "🔒",
   detective_case: "🕵️",
+  jim_wyze_case: "🕵️",
   // Generic fallbacks
   logic: "🧠",
   crypto: "🔐",
@@ -115,7 +116,7 @@ function getDisplayTitle(puzzle: any) {
   const escapeTitle = typeof puzzle?.escapeRoom?.roomTitle === 'string' ? puzzle.escapeRoom.roomTitle.trim() : '';
 
   // Escape rooms should display their roomTitle even if the Puzzle row has a default fallback title.
-  if (puzzle?.puzzleType === 'escape_room' && escapeTitle) return escapeTitle;
+  if ((puzzle?.puzzleType === 'escape_room' || puzzle?.puzzleType === 'jim_wyze_case') && escapeTitle) return escapeTitle;
   if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
 
   const raw = (puzzle && (puzzle.title ?? puzzle.name ?? puzzle?.escapeRoom?.roomTitle)) as unknown;
@@ -845,6 +846,11 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
       setTeamModalConfirmAction(null);
       setTeamModalMessage("You already made an incorrect submission on this case. It is locked forever and cannot be retried.");
       setShowTeamModal(true);
+      return;
+    }
+
+    if (puzzle?.puzzleType === 'jim_wyze_case') {
+      router.push(`/puzzles/${puzzle.id}`);
       return;
     }
 

@@ -1181,6 +1181,35 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     // Only reset when switching types or when a new puzzleData object is passed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puzzleType]);
+
+  useEffect(() => {
+    if (puzzleType !== 'jim_wyze_case') return;
+
+    const raw = puzzleData as any;
+    const existingDesignerData = raw?.escapeRoomData;
+    const hasDesignerScenes = Array.isArray(existingDesignerData?.scenes) && existingDesignerData.scenes.length > 0;
+    const hasPersistedRooms = Array.isArray(raw?.rooms) && raw.rooms.length > 0;
+
+    if (hasDesignerScenes || hasPersistedRooms) return;
+
+    const starter = {
+      title: 'Jim Wyze Case 01: The Ashen Ledger',
+      description: 'Detective Jim Wyze follows a trail of coded evidence through a smoke-stained office and a locked archive room.',
+      minTeamSize: 1,
+      maxTeamSize: 1,
+      intro: {
+        title: 'Case Briefing',
+        bodyText: 'Rain chewed at the city windows when Detective Jim Wyze got the call. A missing ledger, a dead informant, and three locations tied together by a single symbol. Search the scene, collect evidence, and crack every lock before the trail goes cold.',
+        skipAllowed: true,
+        skipDelaySeconds: 3,
+      },
+      scenes: [],
+    };
+
+    onDataChange('escapeRoomData', starter);
+    // Initialize only when the puzzle type switches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puzzleType]);
   const asString = (value: unknown, fallback = ''): string => {
     if (typeof value === 'string') return value;
     if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -2890,6 +2919,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
       <EscapeRoomDesigner
         initialData={puzzleData}
         editId={typeof puzzleData === 'object' && puzzleData && 'editId' in puzzleData ? (puzzleData.editId as string) : undefined}
+        singlePlayerOnly={puzzleType === 'jim_wyze_case'}
         onChange={escapeRoomOnChange}
       />
     );
@@ -5359,6 +5389,7 @@ At [[23:30]], security found the room vacant. The window was unlatched. A single
     math: renderMathFields,
     pattern: renderPatternFields,
     escape_room: renderEscapeRoomFields,
+    jim_wyze_case: renderEscapeRoomFields,
     detective_case: renderDetectiveCaseFields,
     crime_rpg: renderCrimeCaseFields,
     parasite_code: renderParasiteCodeFields,
@@ -5376,8 +5407,8 @@ At [[23:30]], security found the room vacant. The window was unlatched. A single
 
   const renderer = typeSpecificRenders[puzzleType];
 
-  // For escape_room, do not wrap in config card or heading
-  if (puzzleType === 'escape_room') {
+  // For escape-room-canvas types, do not wrap in config card or heading.
+  if (puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case') {
     return renderer ? renderer() : null;
   }
   return (

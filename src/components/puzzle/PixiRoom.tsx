@@ -372,7 +372,12 @@ export default function PixiRoom({
         if (!forcePureCanvas) {
           try {
             // Pre-create diagnostics
-            try { console.info('[PixiRoom] PIXI.version/info', { VERSION: (PIXI as any).VERSION || (PIXI as any).version || null, AppType: typeof PIXI.Application }); } catch (_) { /* ignore */ }
+            try {
+              const pixiAny = PIXI as any;
+              // Use bracket access so bundlers don't rewrite this into a named `version` import.
+              const pixiVersion = pixiAny.VERSION ?? pixiAny["version"] ?? null;
+              console.info('[PixiRoom] PIXI.version/info', { VERSION: pixiVersion, AppType: typeof PIXI.Application });
+            } catch (_) { /* ignore */ }
             try { console.info('[PixiRoom] appOptions before create', { width, height, resolution: appOptions.resolution, forceCanvas: appOptions.forceCanvas || false }); } catch (_) { /* ignore */ }
             try { console.info('[PixiRoom] canvas present in DOM?', !!(canvas && canvas.parentNode), 'canvas size:', { cw: canvas.width, ch: canvas.height, cssW: canvas.style?.width, cssH: canvas.style?.height }); } catch (_) { /* ignore */ }
 

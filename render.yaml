@@ -9,7 +9,7 @@ services:
     autoDeploy: true
     envVars:
       - key: BETA_ONLY_MODE
-        value: "true"
+        value: "false"
       - key: BETA_ALLOWLIST_EMAILS
         value: ""
 

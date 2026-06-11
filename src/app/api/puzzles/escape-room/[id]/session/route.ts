@@ -61,11 +61,12 @@ export async function POST(
     const puzzleId = resolved.id;
 
     const body = await request.json().catch(() => ({}));
-    const { action, teamId, lobbyId, itemKey } = body as {
+    const { action, teamId, lobbyId, itemKey, solo } = body as {
       action?: string;
       teamId?: string;
       lobbyId?: string;
       itemKey?: string;
+      solo?: boolean;
     };
 
     if (!action) return NextResponse.json({ error: "action is required" }, { status: 400 });
@@ -74,6 +75,7 @@ export async function POST(
     const ctx = await requireEscapeRoomTeamContext(request, puzzleId, {
       teamId: lobbyId ? undefined : teamId,
       lobbyId,
+      solo: !!solo,
       requireStarted: true,
       requireNotFinished: true,
     });
@@ -107,7 +109,9 @@ export async function POST(
 
     // Leader: for lobby mode check DB host; for team mode use in-memory store.
     let isLeader = true;
-    if (ctx.isLobby) {
+    if (ctx.isSolo) {
+      isLeader = true;
+    } else if (ctx.isLobby) {
       const hostId = await getLobbyHostId(ctx);
       isLeader = !hostId || hostId === ctx.userId;
     } else {
@@ -179,7 +183,7 @@ export async function POST(
 
       // For team-mode runs: abandon any paused solo saves for team members on this escape room.
       // This resets their solo progress so it doesn't interfere with the shared team session.
-      if (!ctx.isLobby) {
+      if (!ctx.isLobby && !ctx.isSolo) {
         const memberIdList = Array.from(memberIds);
         if (memberIdList.length > 0) {
           await (prisma as any).teamEscapeProgress.updateMany({

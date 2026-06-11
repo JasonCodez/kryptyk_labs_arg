@@ -49,7 +49,9 @@ export async function GET(
 
     // Leader resolution: lobby runs use DB host; team runs use in-memory store.
     let isLeader = true;
-    if (ctx.isLobby) {
+    if (ctx.isSolo) {
+      isLeader = true;
+    } else if (ctx.isLobby) {
       const hostId = await getLobbyHostId(ctx);
       isLeader = !hostId || hostId === ctx.userId;
     } else {

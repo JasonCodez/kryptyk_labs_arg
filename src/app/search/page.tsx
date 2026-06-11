@@ -25,6 +25,7 @@ const PUZZLE_TYPES: { value: string; label: string }[] = [
   { value: "sudoku", label: "Sudoku" },
   { value: "jigsaw", label: "Jigsaw" },
   { value: "escape_room", label: "Escape Room" },
+  { value: "jim_wyze_case", label: "Jim Wyze Case" },
   { value: "gridlock_file", label: "Gridlock File" },
 ];
 

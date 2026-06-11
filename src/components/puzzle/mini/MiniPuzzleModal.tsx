@@ -23,7 +23,7 @@ export interface MiniPuzzleModalProps {
   /** DB hotspot id — used to call server actions. */
   hotspotId: string;
   puzzleId: string;
-  teamId: string;
+  sessionBody?: Record<string, unknown>;
   /**
    * Called when the player solves the puzzle.
    * The parent should POST `action:"trigger"` to the action route.
@@ -44,7 +44,7 @@ export default function MiniPuzzleModal({
   label,
   hotspotId,
   puzzleId,
-  teamId,
+  sessionBody,
   onSolve,
   onPenalty,
   onClose,
@@ -83,7 +83,7 @@ export default function MiniPuzzleModal({
         const r = await fetch(`/api/puzzles/escape-room/${puzzleId}/action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'miniPuzzlePenalty', hotspotId, teamId }),
+          body: JSON.stringify({ action: 'miniPuzzlePenalty', hotspotId, ...(sessionBody || {}) }),
         });
         const jb = await r.json().catch(() => null);
         penaltyApplied = jb?.penaltyApplied ?? 0;
@@ -105,7 +105,7 @@ export default function MiniPuzzleModal({
         setResetKey((k) => k + 1);
       }, 3000);
     }
-  }, [attempts, maxAttempts, hotspotId, puzzleId, teamId, onPenalty]);
+  }, [attempts, maxAttempts, hotspotId, puzzleId, sessionBody, onPenalty]);
 
   const handleSolve = useCallback(async () => {
     if (solving) return;
