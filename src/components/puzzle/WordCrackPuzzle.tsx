@@ -78,7 +78,7 @@ const COLORS = {
 
 const KEY_COLORS: Record<LetterStatus | "unused", string> = {
   correct: "#10b981",
-  present: "#d97706",
+  present: "#FDE74C",
   absent:  "rgba(56,145,166,0.4)",
   unused:  "#4b5563",
 };
@@ -235,7 +235,7 @@ export default function WordCrackPuzzle({
   const [submitting, setSubmitting] = useState(false);
   const [shakingRow, setShakingRow] = useState(false);
   const [revealingRow, setRevealingRow] = useState<number | null>(null);
-  const [revealDone, setRevealDone] = useState<number[]>([]);
+  const [revealDone, setRevealDone] = useState<number[]>(() => initialGuesses.map((_, i) => i));
   const [popCol, setPopCol] = useState<{ row: number; col: number } | null>(null);
   const [confetti, setConfetti] = useState<Particle[]>([]);
   const [bounceWin, setBounceWin] = useState(false);
@@ -316,13 +316,13 @@ export default function WordCrackPuzzle({
   const keyBg: Record<string, string> = {
     ...KEY_COLORS,
     unused: keySurface,
-    absent: skin.tileBg,
+    absent: "#374151",
   };
 
   const keyTextByState: Record<LetterStatus | "unused", string> = {
     correct: COLORS.correct.text,
     present: COLORS.present.text,
-    absent: "#E2E8F0",
+    absent: "#6b7280",
     unused: skin.tileText,
   };
 

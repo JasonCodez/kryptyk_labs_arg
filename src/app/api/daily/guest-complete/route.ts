@@ -25,6 +25,29 @@ function streakReward(streakDay: number) {
   };
 }
 
+export async function GET(request: NextRequest) {
+  try {
+    const anonId = request.nextUrl.searchParams.get('anonId');
+    if (!anonId || anonId.length < 8) {
+      return NextResponse.json({ completedToday: false });
+    }
+
+    const dayNumber = getTodayDayNumber();
+    const existing = await prisma.guestDailyWordSolve.findUnique({
+      where: { anonId_dayNumber: { anonId, dayNumber } },
+      select: { guesses: true, streakDay: true },
+    });
+
+    return NextResponse.json({
+      completedToday: !!existing,
+      todayRecord: existing ? { won: true, guesses: existing.guesses } : null,
+    });
+  } catch (error) {
+    console.error('[daily/guest-complete GET]', error);
+    return NextResponse.json({ completedToday: false });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const sameOriginError = validateSameOrigin(request);

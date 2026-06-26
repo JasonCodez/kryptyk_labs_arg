@@ -87,19 +87,33 @@ export default function DailyPage() {
     setEarnedReward(null);
     setShowRewardModal(false);
 
+    const anonId = getAnonId();
     Promise.all([
       fetch("/api/daily/word").then((response) => (response.ok ? response.json() as Promise<DailyWordResponse> : null)),
       fetch("/api/daily/complete").then((response) => (response.ok ? response.json() : null)).catch(() => null),
+      fetch(`/api/daily/guest-complete?anonId=${encodeURIComponent(anonId)}`).then((response) => (response.ok ? response.json() : null)).catch(() => null),
     ])
-      .then(([wordData, completeData]) => {
+      .then(([wordData, completeData, guestData]) => {
         if (cancelled || !wordData) return;
 
         setWord(wordData.word.toUpperCase());
         setDayNum(wordData.number);
 
         const saved = parseStoredWordScryState(localStorage.getItem(storeKey), wordData.word);
-        setGuessResults(saved?.guessResults ?? []);
-        setGameStatus(saved?.status ?? "playing");
+        const serverCompleted = completeData?.completedToday || guestData?.completedToday;
+        const serverRecord = completeData?.todayRecord ?? guestData?.todayRecord;
+
+        if (serverCompleted && serverRecord) {
+          const serverStatus: WordScryGameStatus = serverRecord.won ? "won" : "lost";
+          setGuessResults(saved?.guessResults ?? []);
+          setGameStatus(serverStatus);
+          if (!saved || saved.status === "playing") {
+            localStorage.setItem(storeKey, serializeWordScryState(saved?.guessResults ?? [], serverStatus));
+          }
+        } else {
+          setGuessResults(saved?.guessResults ?? []);
+          setGameStatus(saved?.status ?? "playing");
+        }
 
         setDailyStreak(completeData?.streak ?? 0);
         setSkipTokens(completeData?.skipTokens ?? 0);

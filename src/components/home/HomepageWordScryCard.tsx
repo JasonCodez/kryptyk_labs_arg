@@ -278,16 +278,20 @@ export default function HomepageWordScryCard() {
                       : 'No more guesses left here. The full daily page is ready if you want the dedicated daily view.'}
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <Link href="/daily" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#020202', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em', background: 'linear-gradient(135deg, #38D399 0%, #FDE74C 100%)', textAlign: 'center' }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <Link href="/daily" className="hw-btn-primary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#020202', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em', background: 'linear-gradient(135deg, #38D399 0%, #FDE74C 100%)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s' }}>
                   Open Full Daily Page →
                 </Link>
                 {!isAuthenticated && (
-                  <Link href="/auth/register?reason=rewards" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#fff', fontWeight: 800, fontSize: 14, letterSpacing: '0.03em', background: 'rgba(56,145,166,0.12)', border: '1px solid rgba(56,145,166,0.35)', textAlign: 'center' }}>
+                  <Link href="/auth/register?reason=rewards" className="hw-btn-secondary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#fff', fontWeight: 800, fontSize: 14, letterSpacing: '0.03em', background: 'rgba(56,145,166,0.12)', border: '1px solid rgba(56,145,166,0.35)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s, background 0.15s' }}>
                     Save rewards and streak →
                   </Link>
                 )}
               </div>
+              <style>{`
+                .hw-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+                .hw-btn-secondary:hover { background: rgba(56,145,166,0.22) !important; transform: translateY(-1px); }
+              `}</style>
             </div>
           </>
         )}

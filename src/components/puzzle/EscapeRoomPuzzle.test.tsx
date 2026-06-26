@@ -6,7 +6,7 @@ import { EscapeRoomPuzzle } from "./EscapeRoomPuzzle";
 type SocketHandler = (payload?: any) => void;
 const socketHandlers: Record<string, SocketHandler | undefined> = {};
 
-const mockSocket = {
+const mockSocket: { on: jest.Mock; emit: jest.Mock; disconnect: jest.Mock } = {
   on: jest.fn((event: string, handler: SocketHandler) => {
     socketHandlers[event] = handler;
     return mockSocket;
