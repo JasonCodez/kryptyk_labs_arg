@@ -250,24 +250,6 @@ function normalizeSolvedClueKeys(value: unknown, data: CrosswordData | null): Se
   return solved;
 }
 
-function applySolvedCluesToLetters(letters: string[][], data: CrosswordData | null, solvedClues: Set<string>): string[][] {
-  if (!data || solvedClues.size === 0) return letters;
-
-  const next = letters.map((row) => [...row]);
-  const fillClue = (direction: Direction, clue: CrosswordClue) => {
-    if (!solvedClues.has(`${direction}-${clue.number}`)) return;
-    for (let offset = 0; offset < clue.answer.length; offset++) {
-      const row = direction === "across" ? clue.row : clue.row + offset;
-      const col = direction === "across" ? clue.col + offset : clue.col;
-      if (next[row]?.[col] !== undefined) next[row][col] = clue.answer[offset] ?? "";
-    }
-  };
-
-  data.clues.across.forEach((clue) => fillClue("across", clue));
-  data.clues.down.forEach((clue) => fillClue("down", clue));
-  return next;
-}
-
 function buildSavedCrosswordProgress(
   signature: string,
   letters: string[][],
@@ -1008,14 +990,26 @@ export default function CrosswordPuzzle({
             activeClue: serverSnapshot.activeClue,
             elapsedMs: serverSnapshot.elapsedMs,
           });
-          setLetters(applySolvedCluesToLetters(serverSnapshot.letters, data, serverSolved));
+          setLetters(serverSnapshot.letters);
           setRevealed(new Set(serverSnapshot.revealedCells));
           setActiveClue(serverSnapshot.activeClue);
           setElapsedMs(serverSnapshot.elapsedMs);
           setShowInstructions(false);
           showRestoredProgressBanner();
+        } else if (hasNewSolved && serverLetters) {
+          setLetters((current) => {
+            const merged = current.map((row) => [...row]);
+            for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                if (!merged[r][c] && serverLetters[r]?.[c]) {
+                  merged[r][c] = serverLetters[r][c];
+                }
+              }
+            }
+            return merged;
+          });
+          showRestoredProgressBanner();
         } else if (hasNewSolved) {
-          setLetters((current) => applySolvedCluesToLetters(current, data, serverSolved));
           showRestoredProgressBanner();
         }
 

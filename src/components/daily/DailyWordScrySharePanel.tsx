@@ -44,8 +44,8 @@ async function svgToPngBlob(svg: string): Promise<Blob> {
     });
 
     const canvas = document.createElement("canvas");
-    canvas.width = DAILY_WORDSCRY_SNAPSHOT_WIDTH;
-    canvas.height = DAILY_WORDSCRY_SNAPSHOT_HEIGHT;
+    canvas.width = image.naturalWidth || DAILY_WORDSCRY_SNAPSHOT_WIDTH;
+    canvas.height = image.naturalHeight || DAILY_WORDSCRY_SNAPSHOT_HEIGHT;
 
     const context = canvas.getContext("2d");
     if (!context) {
@@ -224,13 +224,13 @@ export default function DailyWordScrySharePanel({
 
   return (
     <section
-      className="rounded-2xl border px-4 py-5 sm:px-5"
+      className="rounded-2xl border px-4 py-6 sm:px-5"
       style={{
         background: "rgba(255,255,255,0.03)",
         borderColor: "rgba(56,145,166,0.18)",
       }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
           <p className="text-xs font-bold tracking-[0.16em] uppercase" style={{ color: "#9BD6E4" }}>
             Share Snapshot
@@ -291,7 +291,7 @@ export default function DailyWordScrySharePanel({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 mt-4">
+      <div className="flex flex-wrap gap-2 mt-5">
         <button
           onClick={() => withBusyState("share", shareResult)}
           disabled={busyAction !== null}

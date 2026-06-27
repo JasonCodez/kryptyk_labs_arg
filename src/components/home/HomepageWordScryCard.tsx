@@ -178,7 +178,7 @@ export default function HomepageWordScryCard() {
 
   return (
     <>
-      <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'grid', gap: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38D399', marginBottom: 8 }}>
@@ -255,17 +255,19 @@ export default function HomepageWordScryCard() {
             />
 
             {gameStatus !== 'playing' && guessResults.length > 0 && (
-              <DailyWordScrySharePanel
-                puzzleNumber={dayNum}
-                guessResults={guessResults}
-                gameStatus={gameStatus}
-                maxGuesses={6}
-                wordLength={word.length || 5}
-                dailyStreak={dailyStreak}
-              />
+              <div style={{ marginTop: 12, marginBottom: 4 }}>
+                <DailyWordScrySharePanel
+                  puzzleNumber={dayNum}
+                  guessResults={guessResults}
+                  gameStatus={gameStatus}
+                  maxGuesses={6}
+                  wordLength={word.length || 5}
+                  dailyStreak={dailyStreak}
+                />
+              </div>
             )}
 
-            <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
+            <div style={{ display: 'grid', gap: 12, marginTop: gameStatus !== 'playing' ? 12 : 8 }}>
               <div style={{ padding: '14px 16px', borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
                 <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 8 }}>
                   {gameStatus === 'playing' ? 'Live on the homepage' : 'Next move'}

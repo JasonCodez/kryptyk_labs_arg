@@ -946,7 +946,7 @@ export default function JigsawPuzzleSVGWithTray({
       if (tableBackground && bgImg?.complete && bgImg.naturalWidth > 0) {
         ctx.drawImage(bgImg, 0, 0, W, H);
       } else {
-        ctx.fillStyle = "#0a0e14";
+        ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, W, H);
       }
 
@@ -960,7 +960,7 @@ export default function JigsawPuzzleSVGWithTray({
 
       // Board area background + faint reference image
       if (!solved) {
-        ctx.fillStyle = "#131720";
+        ctx.fillStyle = "#111111";
         ctx.fillRect(_bOffX, _bOffY, boardWidth, boardHeight);
         // Board border
         ctx.strokeStyle = "rgba(255,255,255,0.22)";
@@ -1604,7 +1604,7 @@ export default function JigsawPuzzleSVGWithTray({
         zIndex: isFullscreen ? 12000 : undefined,
         width: isFullscreen ? "100vw" : "100%",
         height: isFullscreen ? "100vh" : undefined,
-        backgroundColor: "#070a0f",
+        backgroundColor: "#000000",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",

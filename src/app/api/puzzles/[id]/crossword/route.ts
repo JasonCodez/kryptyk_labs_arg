@@ -227,12 +227,37 @@ export async function GET(
     const totalClues = allClueKeys.length;
     const solvedCount = solvedClues.length;
 
+    // Build a letter grid that includes correct letters for solved clues,
+    // so the client can restore them even though clue.answer is stripped.
+    let mergedLetters: string[][] | null = savedState?.letters ?? null;
+    if (solvedClues.length > 0) {
+      const solvedKeySet = new Set(solvedClues);
+      const base = mergedLetters
+        ? mergedLetters.map((row) => [...row])
+        : Array.from({ length: rows }, () => Array(cols).fill(""));
+
+      for (const clue of crossword.normalized!.clues.across) {
+        if (!solvedKeySet.has(`across:${clue.number}`)) continue;
+        for (let offset = 0; offset < clue.length; offset++) {
+          base[clue.row][clue.col + offset] = clue.answer?.[offset] ?? "";
+        }
+      }
+      for (const clue of crossword.normalized!.clues.down) {
+        if (!solvedKeySet.has(`down:${clue.number}`)) continue;
+        for (let offset = 0; offset < clue.length; offset++) {
+          base[clue.row + offset][clue.col] = clue.answer?.[offset] ?? "";
+        }
+      }
+
+      mergedLetters = base;
+    }
+
     return NextResponse.json({
       solvedClues,
       solvedCount,
       totalClues,
       allSolved: totalClues > 0 && solvedCount >= totalClues,
-      letters: savedState?.letters ?? null,
+      letters: mergedLetters,
       revealedCells: savedState?.revealedCells ?? [],
       activeClue: savedState?.activeClue ?? null,
       elapsedMs: savedState?.elapsedMs ?? 0,
