@@ -15,6 +15,7 @@ import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
 import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import VaultPuzzle from "@/components/puzzle/VaultPuzzle";
+import CipherClashPuzzle from "@/components/puzzle/CipherClashPuzzle";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
 
@@ -364,6 +365,19 @@ export function PuzzleTypeRenderer({
         <BlackoutPuzzle
           puzzleId={puzzleId}
           blackoutData={(puzzle.data ?? {}) as Record<string, unknown>}
+          alreadySolved={progress?.solved ?? false}
+          onSolved={() => onSolved()}
+        />
+      </div>
+    );
+  }
+
+  if (puzzle.puzzleType === 'cipher_clash') {
+    return (
+      <div className="mb-8">
+        <CipherClashPuzzle
+          puzzleId={puzzleId}
+          cipherClashData={(puzzle.data ?? {}) as Record<string, unknown>}
           alreadySolved={progress?.solved ?? false}
           onSolved={() => onSolved()}
         />

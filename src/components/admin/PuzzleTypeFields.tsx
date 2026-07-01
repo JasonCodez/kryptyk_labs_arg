@@ -2169,6 +2169,107 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puzzleType]);
 
+  // ── Cipher Clash ───────────────────────────────────────────────────────────
+  const [cipherPhrasesText, setCipherPhrasesText] = useState<string>(() => {
+    const init: string[] = Array.isArray(puzzleData.phrases) ? (puzzleData.phrases as string[]) : [];
+    return init.join('\n');
+  });
+
+  useEffect(() => {
+    if (puzzleType !== 'cipher_clash') return;
+    const stored: string[] = Array.isArray(puzzleData.phrases) ? (puzzleData.phrases as string[]) : [];
+    const joined = stored.join('\n');
+    if (joined !== cipherPhrasesText.split('\n').map(l => l.trim()).filter(Boolean).join('\n')) {
+      setCipherPhrasesText(joined);
+    }
+  }, [puzzleType]);
+
+  const renderCipherClashFields = () => {
+    const parsedPhrases = cipherPhrasesText.split('\n').map(l => l.trim()).filter(Boolean);
+    const roundTimeSec = Number(puzzleData.roundTimeSec ?? 180);
+    const revealedLetters = Number(puzzleData.revealedLetters ?? 3);
+    const comboMultiplier = Number(puzzleData.comboMultiplier ?? 1.5);
+
+    const uniqueLetters = new Set<string>();
+    parsedPhrases.forEach(p => p.toUpperCase().split('').forEach(ch => { if (/[A-Z]/.test(ch)) uniqueLetters.add(ch); }));
+
+    const commitPhrases = (text: string) => {
+      const phrases = text.split('\n').map(l => l.trim()).filter(Boolean);
+      onDataChange('phrases', phrases);
+    };
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-semibold text-gray-300 mb-1">Phrases to Encode <span className="text-red-400">*</span></label>
+          <textarea
+            value={cipherPhrasesText}
+            rows={8}
+            onChange={(e) => setCipherPhrasesText(e.target.value)}
+            onBlur={(e) => commitPhrases(e.target.value)}
+            placeholder={"THE QUICK BROWN FOX\nJUMPS OVER THE LAZY DOG\nCRACK THE CODE\nPUZZLE WARZ RULES\nSECRET MESSAGE UNLOCKED"}
+            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500 font-mono uppercase"
+          />
+          <p className="text-xs text-gray-500 mt-1">One phrase per line. The system auto-generates a random substitution cipher for each game session. Players decode phrases to claim letter mappings. Min 3 phrases recommended.</p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-1">Round Timer (seconds)</label>
+            <input
+              type="number"
+              min={30}
+              max={600}
+              value={roundTimeSec}
+              onChange={(e) => onDataChange('roundTimeSec', Number(e.target.value))}
+              className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+            />
+            <p className="text-xs text-gray-500 mt-1">How long players have to decode all phrases.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-1">Pre-Revealed Letters</label>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={revealedLetters}
+              onChange={(e) => onDataChange('revealedLetters', Number(e.target.value))}
+              className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+            />
+            <p className="text-xs text-gray-500 mt-1">Letter mappings given free at start. More = easier.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-1">Combo Multiplier</label>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              step={0.1}
+              value={comboMultiplier}
+              onChange={(e) => onDataChange('comboMultiplier', Number(e.target.value))}
+              className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+            />
+            <p className="text-xs text-gray-500 mt-1">Bonus multiplier for consecutive correct solves.</p>
+          </div>
+        </div>
+
+        {parsedPhrases.length > 0 && (
+          <div className="p-3 rounded-lg text-xs" style={{ background: 'rgba(56,145,166,0.1)', border: '1px solid rgba(56,145,166,0.3)', color: '#7dd3fc' }}>
+            <strong>{parsedPhrases.length}</strong> phrase{parsedPhrases.length !== 1 ? 's' : ''} ·{' '}
+            <strong>{uniqueLetters.size}</strong> unique letters ·{' '}
+            <strong>{roundTimeSec}s</strong> timer ·{' '}
+            <strong>{revealedLetters}</strong> pre-revealed ·{' '}
+            <strong>{comboMultiplier}x</strong> combo
+          </div>
+        )}
+
+        <div className="p-3 rounded-lg text-xs" style={{ background: 'rgba(253,231,76,0.06)', border: '1px solid rgba(253,231,76,0.2)', color: '#fcd34d' }}>
+          <strong>How it works:</strong> A random substitution cipher is generated each session. Players see the encoded text and must figure out the original phrases. Each solved phrase &quot;claims&quot; its letter mappings, which auto-reveal in future phrases. Consecutive correct solves build a combo multiplier. In Warz mode, claimed mappings are denied to the opponent.
+        </div>
+      </div>
+    );
+  };
+
   const renderVaultFields = () => {
     const parsed = getVaultPuzzleData((puzzleData as any)?.vault ?? puzzleData);
     const derived = parsed ? getVaultDerivedLetters(parsed) : [];
@@ -5403,6 +5504,7 @@ At [[23:30]], security found the room vacant. The window was unlatched. A single
     arg: renderArgFields,
     crossword: renderCrosswordFields,
     vault: renderVaultFields,
+    cipher_clash: renderCipherClashFields,
   };
 
   const renderer = typeSpecificRenders[puzzleType];

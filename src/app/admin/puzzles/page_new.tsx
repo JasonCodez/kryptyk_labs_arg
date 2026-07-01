@@ -69,6 +69,7 @@ const PUZZLE_TYPES = [
   { value: 'anagram_blitz', label: 'Anagram Blitz 🔀' },
   { value: 'blackout', label: 'Blackout ⬛' },
   { value: 'vault', label: 'The Vault 🔐' },
+  { value: 'cipher_clash', label: 'Cipher Clash 🔐' },
   { value: 'arg', label: 'ARG' },
   { value: 'escape_room', label: 'Escape Room' },
   { value: 'jim_wyze_case', label: 'Jim Wyze Case 🕵️' },
@@ -738,6 +739,9 @@ export default function AdminPuzzlesPage() {
         }
       }
       if (formData.puzzleType === 'parasite_code') {
+        delete submitBody.correctAnswer;
+      }
+      if (formData.puzzleType === 'cipher_clash') {
         delete submitBody.correctAnswer;
       }
       if (formData.puzzleType === 'crossword') {
@@ -1467,6 +1471,7 @@ export default function AdminPuzzlesPage() {
                             <option value="word_crack">Hidden Word</option>
                             <option value="word_search">Word Search</option>
                             <option value="anagram_blitz">Anagram Blitz</option>
+                            <option value="cipher_clash">Cipher Clash</option>
                             <option value="blackout">Blackout</option>
                           </select>
                         </div>
@@ -1492,6 +1497,7 @@ export default function AdminPuzzlesPage() {
                             <option value="word_crack">Hidden Word</option>
                             <option value="word_search">Word Search</option>
                             <option value="anagram_blitz">Anagram Blitz</option>
+                            <option value="cipher_clash">Cipher Clash</option>
                             <option value="blackout">Blackout</option>
                           </select>
                         </div>
@@ -1516,7 +1522,7 @@ export default function AdminPuzzlesPage() {
                   )}
 
                   {/* Correct Answer is hidden for puzzle types that store/validate answers elsewhere. */}
-                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && formData.puzzleType !== 'code_master' && formData.puzzleType !== 'detective_case' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && formData.puzzleType !== 'crack_safe' && formData.puzzleType !== 'word_crack' && formData.puzzleType !== 'word_search' && formData.puzzleType !== 'anagram_blitz' && formData.puzzleType !== 'blackout' && formData.puzzleType !== 'vault' && formData.puzzleType !== 'crossword' && (
+                  {formData.puzzleType !== 'jigsaw' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && formData.puzzleType !== 'code_master' && formData.puzzleType !== 'detective_case' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && formData.puzzleType !== 'crack_safe' && formData.puzzleType !== 'word_crack' && formData.puzzleType !== 'word_search' && formData.puzzleType !== 'anagram_blitz' && formData.puzzleType !== 'blackout' && formData.puzzleType !== 'vault' && formData.puzzleType !== 'crossword' && formData.puzzleType !== 'cipher_clash' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         Correct Answer *

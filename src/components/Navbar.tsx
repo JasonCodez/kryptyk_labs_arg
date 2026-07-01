@@ -49,7 +49,7 @@ const ALL_NAV_LINKS = [
   { href: "/puzzles",     label: "Puzzles",   emoji: null },
   { href: "/daily",       label: "Daily",     emoji: "🟩" },
   { href: "/warz",        label: "Warz",      emoji: "⚔️", accent: "#FDE74C" },
-  { href: "/season-pass", label: "Season",    emoji: "🏅",  enabled: FEATURE_SEASONS_ENABLED },
+  { href: "/season-pass", label: "Season",    emoji: "🏅",  enabled: FEATURE_SEASONS_ENABLED, tourId: "tour-season" },
   { href: "/store",       label: "Store",     emoji: "🛍️", accent: "#a78bfa", enabled: FEATURE_STORE_ENABLED },
   { href: "/leaderboards",label: "Ranks",     emoji: null },
 ];
@@ -62,6 +62,7 @@ const MORE_LINKS = [
   { href: "/teams",        label: "Teams" },
   { href: "/achievements", label: "Achievements" },
   { href: "/learn",        label: "Learn" },
+  { href: "/tutorial",     label: "Tutorial 📖" },
   { href: "/faq",          label: "FAQ" },
 ];
 
@@ -176,6 +177,7 @@ export default function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
+                  id={'tourId' in link ? (link as any).tourId : undefined}
                   className="relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1"
                   style={{
                     color: active

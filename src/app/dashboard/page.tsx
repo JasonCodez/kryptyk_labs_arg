@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
-import { AnimatePresence } from 'framer-motion';
 import WelcomeModal from '@/components/WelcomeModal';
-import OnboardingModal from '@/components/OnboardingModal';
+import DashboardTour from '@/components/DashboardTour';
 
 interface UserStats {
   totalPuzzlesSolved: number;
@@ -256,8 +255,9 @@ interface ActionCardProps {
   delay: number;
   visible: boolean;
   badge?: string;
+  tourId?: string;
 }
-function ActionCard({ href, icon, title, desc, accent, delay, visible, badge }: ActionCardProps) {
+function ActionCard({ href, icon, title, desc, accent, delay, visible, badge, tourId }: ActionCardProps) {
   const [hovered, setHovered] = useState(false);
   const colors = {
     teal:  { bg: 'rgba(0,212,255,0.10)',  border: 'rgba(0,212,255,0.35)',  hover: 'rgba(0,212,255,0.65)',  glow: 'rgba(0,212,255,0.25)',  icon: 'rgba(0,212,255,0.20)',  iconBorder: 'rgba(0,212,255,0.4)',  accent: '#00D4FF' },
@@ -269,6 +269,7 @@ function ActionCard({ href, icon, title, desc, accent, delay, visible, badge }: 
   return (
     <Link
       href={href}
+      id={tourId}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -418,16 +419,16 @@ export default function Dashboard() {
   ];
 
   const coreCards = [
-    { href: '/puzzles',             icon: '🧩', title: 'Solve Puzzles',       desc: 'Dive into active puzzles and earn points',                  accent: 'teal'  as const },
-    { href: '/warz',                icon: '⚔️', title: 'Warz',                desc: 'Challenge rivals head-to-head. Wager points on speed.',      accent: 'gold'  as const, badge: 'Live' },
-    { href: '/teams',               icon: '👥', title: 'My Teams',            desc: 'Manage your teams and invite players to collaborate.',       accent: 'gold'  as const },
-    { href: '/leaderboards',        icon: '🏆', title: 'Leaderboards',        desc: 'Check global rankings and see where you stand.',             accent: 'teal'  as const },
+    { href: '/puzzles',             icon: '🧩', title: 'Solve Puzzles',       desc: 'Dive into active puzzles and earn points',                  accent: 'teal'  as const, tourId: 'tour-card-puzzles' },
+    { href: '/warz',                icon: '⚔️', title: 'Warz',                desc: 'Challenge rivals head-to-head. Wager points on speed.',      accent: 'gold'  as const, badge: 'Live', tourId: 'tour-card-warz' },
+    { href: '/teams',               icon: '👥', title: 'My Teams',            desc: 'Manage your teams and invite players to collaborate.',       accent: 'gold'  as const, tourId: 'tour-card-teams' },
+    { href: '/leaderboards',        icon: '🏆', title: 'Leaderboards',        desc: 'Check global rankings and see where you stand.',             accent: 'teal'  as const, tourId: 'tour-card-leaderboards' },
     { href: '/categories',          icon: '📚', title: 'Browse Categories',   desc: 'Explore puzzles organised by topic and difficulty.',         accent: 'gold'  as const },
-    { href: '/achievements',        icon: '🎖️', title: 'Achievements',        desc: 'Unlock badges and earn recognition as you progress.',        accent: 'muted' as const },
-    { href: '/profile',             icon: '👤', title: 'My Profile',          desc: 'View your stats, badges, and customise your profile.',       accent: 'teal'  as const },
+    { href: '/achievements',        icon: '🎖️', title: 'Achievements',        desc: 'Unlock badges and earn recognition as you progress.',        accent: 'muted' as const, tourId: 'tour-card-achievements' },
+    { href: '/profile',             icon: '👤', title: 'My Profile',          desc: 'View your stats, badges, and customise your profile.',       accent: 'teal'  as const, tourId: 'tour-card-profile' },
     { href: '/dashboard/activity',  icon: '📋', title: 'Activity Feed',       desc: 'Review your recent actions and account history.',            accent: 'muted' as const },
-    { href: '/daily',               icon: '📅', title: 'Daily Challenge',     desc: 'Tackle today\'s featured puzzle and keep your streak alive.', accent: 'gold'  as const },
-    { href: '/frequency',           icon: '📡', title: 'Frequency',           desc: 'Think like the crowd. Score = how many people agreed with you.', accent: 'teal' as const, badge: 'New' },
+    { href: '/daily',               icon: '📅', title: 'Daily Challenge',     desc: 'Tackle today\'s featured puzzle and keep your streak alive.', accent: 'gold'  as const, tourId: 'tour-card-daily' },
+    { href: '/frequency',           icon: '📡', title: 'Frequency',           desc: 'Think like the crowd. Score = how many people agreed with you.', accent: 'teal' as const, badge: 'New', tourId: 'tour-card-frequency' },
     { href: '/faq',                 icon: '❓', title: 'FAQ',                 desc: 'Answers to common questions about puzzles, teams, and more.', accent: 'muted' as const },
   ];
 
@@ -499,10 +500,10 @@ export default function Dashboard() {
           </div>
 
           {/* ── Featured puzzle hero banner ─────────────────── */}
-          <FeaturedBanner visible={mounted} />
+          <div id="tour-featured"><FeaturedBanner visible={mounted} /></div>
 
           {/* ── Stat cards ──────────────────────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 48 }}>
+          <div id="tour-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 48 }}>
             {statCards.map((s, i) => (
               <StatCard key={i} {...s} delay={0.08 + i * 0.1} visible={mounted} />
             ))}
@@ -572,7 +573,7 @@ export default function Dashboard() {
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
               {coreCards.map((c, i) => (
-                <ActionCard key={i} {...c} delay={0.12 + i * 0.07} visible={mounted} />
+                <ActionCard key={i} {...c} delay={0.12 + i * 0.07} visible={mounted} tourId={c.tourId} />
               ))}
             </div>
           </div>
@@ -671,11 +672,9 @@ export default function Dashboard() {
         onTakeTour={() => setShowOnboarding(true)}
       />
 
-      <AnimatePresence>
-        {showOnboarding && (
-          <OnboardingModal onComplete={() => setShowOnboarding(false)} />
-        )}
-      </AnimatePresence>
+      {showOnboarding && (
+        <DashboardTour onComplete={() => setShowOnboarding(false)} />
+      )}
     </>
   );
 }

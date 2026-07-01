@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and WordScry
-    if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault') {
+    if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash') {
       return NextResponse.json(
         { error: "Missing required field: title" },
         { status: 400 }
@@ -294,6 +294,7 @@ export async function POST(request: NextRequest) {
       crime_rpg:     'Crime RPG',
       code_master:   'Code Master',
       debrief:       'The Debrief',
+      cipher_clash:  'Cipher Clash',
       anagram_blitz_blitz: 'Anagram Blitz',
     };
     const resolvedCategory = CATEGORY_DISPLAY_NAMES[category] ?? category;
@@ -318,6 +319,7 @@ export async function POST(request: NextRequest) {
       puzzleType === 'arg' ? 'ARG' :
       puzzleType === 'jim_wyze_case' ? 'Jim Wyze Case' :
       puzzleType === 'vault' ? 'The Vault' :
+      puzzleType === 'cipher_clash' ? 'Cipher Clash' :
       'Untitled Puzzle');
 
     // Create puzzle
@@ -347,7 +349,7 @@ export async function POST(request: NextRequest) {
               minTeamSize: 1,
             }
         : {}),
-      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'code_master' && puzzleType !== 'detective_case' && puzzleType !== 'crime_rpg' && puzzleType !== 'blackout' && puzzleType !== 'gridlock_file' && puzzleType !== 'debrief' && puzzleType !== 'parasite_code' && puzzleType !== 'crossword' && puzzleType !== 'vault' ? correctAnswer : undefined,
+      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'code_master' && puzzleType !== 'detective_case' && puzzleType !== 'crime_rpg' && puzzleType !== 'blackout' && puzzleType !== 'gridlock_file' && puzzleType !== 'debrief' && puzzleType !== 'parasite_code' && puzzleType !== 'crossword' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash' ? correctAnswer : undefined,
       jigsaw:
         puzzleType === 'jigsaw'
           ? {
@@ -360,7 +362,7 @@ export async function POST(request: NextRequest) {
               },
             }
           : undefined,
-      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'jigsaw' || puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'parasite_code' || puzzleType === 'crossword' ? undefined : {
+      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'jigsaw' || puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'parasite_code' || puzzleType === 'crossword' || puzzleType === 'cipher_clash' ? undefined : {
         create: [
           {
             answer: correctAnswer,
@@ -404,7 +406,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     };
 
-    if ((puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'word_crack' || puzzleType === 'word_search' || puzzleType === 'anagram_blitz' || puzzleType === 'arg' || puzzleType === 'blackout' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'crossword' || puzzleType === 'vault' || puzzleType === 'parasite_code') && typeof puzzleData !== 'undefined') {
+    if ((puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'word_crack' || puzzleType === 'word_search' || puzzleType === 'anagram_blitz' || puzzleType === 'arg' || puzzleType === 'blackout' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'crossword' || puzzleType === 'vault' || puzzleType === 'parasite_code' || puzzleType === 'cipher_clash') && typeof puzzleData !== 'undefined') {
       createData.data = puzzleData;
     }
     // Persist jigsaw shape params (piece designer) into puzzle.data JSON
