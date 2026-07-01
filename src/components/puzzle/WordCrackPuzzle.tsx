@@ -55,6 +55,7 @@ interface Props {
   showHeader?: boolean;
   showAttemptMeter?: boolean;
   showAnimatedBackdrops?: boolean;
+  solvedGuessCount?: number;
 }
 
 // â”€â”€â”€ Keyboard layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -219,6 +220,7 @@ export default function WordCrackPuzzle({
   showHeader = true,
   showAttemptMeter = true,
   showAnimatedBackdrops: showAnimatedBackdropsOverride,
+  solvedGuessCount,
 }: Props) {
   const skin = usePuzzleSkin();
   const wordLength = Math.max(3, Math.min(10, Number(wordCrackData.wordLength ?? 5)));
@@ -893,8 +895,8 @@ export default function WordCrackPuzzle({
                 {grade.grade}
               </div>
               <div className="text-sm" style={{ color: "#9ca3af" }}>
-                Solved in {guesses.length}<br />
-                {guesses.length === 1 ? "attempt" : "attempts"}
+                Solved in {guesses.length || solvedGuessCount || "?"}<br />
+                {(guesses.length || solvedGuessCount) === 1 ? "attempt" : "attempts"}
               </div>
             </div>
           </div>

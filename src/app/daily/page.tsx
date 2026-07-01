@@ -67,6 +67,7 @@ export default function DailyPage() {
   const [earnedReward, setEarnedReward] = useState<DailyReward | null>(null);
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [showUpgradeOffer, setShowUpgradeOffer] = useState(false);
+  const [serverGuessCount, setServerGuessCount] = useState<number | null>(null);
 
   useEffect(() => {
     setCountdown(getCountdown());
@@ -105,10 +106,14 @@ export default function DailyPage() {
 
         if (serverCompleted && serverRecord) {
           const serverStatus: WordScryGameStatus = serverRecord.won ? "won" : "lost";
-          setGuessResults(saved?.guessResults ?? []);
+          const resolvedGuesses = saved?.guessResults ?? [];
+          setGuessResults(resolvedGuesses);
           setGameStatus(serverStatus);
+          if (resolvedGuesses.length === 0 && serverRecord.guesses) {
+            setServerGuessCount(serverRecord.guesses);
+          }
           if (!saved || saved.status === "playing") {
-            localStorage.setItem(storeKey, serializeWordScryState(saved?.guessResults ?? [], serverStatus));
+            localStorage.setItem(storeKey, serializeWordScryState(resolvedGuesses, serverStatus));
           }
         } else {
           setGuessResults(saved?.guessResults ?? []);
@@ -288,6 +293,7 @@ export default function DailyPage() {
                 showHints={false}
                 disableRetry
                 recordGameLossOnFailure={false}
+                solvedGuessCount={serverGuessCount ?? undefined}
                 submitGuessRequest={async (guess) => {
                   const result = scoreWordScryGuess(guess, word);
                   return { result, solved: isSolvedWordScryResult(result) };
@@ -325,7 +331,7 @@ export default function DailyPage() {
 
                   <div className="w-full flex justify-center gap-6">
                     {[
-                      { label: "Guesses", value: gameStatus === "won" ? `${guessResults.length}/${MAX_ROWS}` : `X/${MAX_ROWS}` },
+                      { label: "Guesses", value: gameStatus === "won" ? `${guessResults.length || serverGuessCount || "?"}/${MAX_ROWS}` : `X/${MAX_ROWS}` },
                       { label: "Puzzle", value: `#${dayNum}` },
                     ].map(({ label, value }) => (
                       <div key={label} className="text-center">
@@ -336,7 +342,7 @@ export default function DailyPage() {
                   </div>
                 </div>
 
-                {guessResults.length > 0 && (
+                {guessResults.length > 0 ? (
                   <div className="w-full max-w-3xl mt-5">
                     <DailyWordScrySharePanel
                       puzzleNumber={dayNum}
@@ -347,6 +353,10 @@ export default function DailyPage() {
                       dailyStreak={dailyStreak}
                     />
                   </div>
+                ) : (
+                  <p className="mt-5 text-sm text-center" style={{ color: "#6b7280" }}>
+                    Refresh your browser to reload the share snapshot.
+                  </p>
                 )}
               </>
             )}
