@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import Link from 'next/link';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 export interface GuestRewardModalProps {
   xpEarned: number;
@@ -49,6 +50,7 @@ export default function GuestRewardModal({
   message,
   signupLabel,
 }: GuestRewardModalProps) {
+  useBodyScrollLock();
   const displayXp = useCountUp(xpEarned);
   const displayPoints = useCountUp(pointsEarned);
 

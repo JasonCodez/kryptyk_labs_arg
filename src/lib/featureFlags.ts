@@ -8,4 +8,4 @@
 
 export const FEATURE_STORE_ENABLED   = true;
 export const FEATURE_SEASONS_ENABLED = true;
-export const FEATURE_TOKENS_ENABLED  = false;
+export const FEATURE_TOKENS_ENABLED  = true;

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { RatingInput } from "./RatingInput";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface PuzzleCompletionRatingModalProps {
   puzzleId: string;
@@ -42,6 +43,7 @@ export default function PuzzleCompletionRatingModal({
   funFact,
 }: PuzzleCompletionRatingModalProps) {
   useRegisterModal('puzzle-rating-modal');
+  useBodyScrollLock();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [awardedPoints, setAwardedPoints] = useState<number | null>(initialAwardedPoints ?? null);
   const [copied, setCopied] = useState(false);
@@ -124,6 +126,8 @@ export default function PuzzleCompletionRatingModal({
               borderColor: "#FDE74C",
               borderWidth: "2px",
               fontFamily: "var(--font-geist-sans, sans-serif)",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
             }}
             onClick={(e) => e.stopPropagation()}
           >
