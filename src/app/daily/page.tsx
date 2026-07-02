@@ -8,6 +8,8 @@ import GuestRewardModal from "@/components/puzzle/GuestRewardModal";
 import StreakTimer from "@/components/StreakTimer";
 import WordCrackPuzzle from "@/components/puzzle/WordCrackPuzzle";
 import { addPendingRewards, getAnonId } from "@/lib/gridlockAnon";
+import { useReferralLink } from "@/hooks/useReferralLink";
+import { isValidWordScryGuess } from "@/lib/wordScryValidate";
 import {
   isSolvedWordScryResult,
   parseStoredWordScryState,
@@ -47,6 +49,7 @@ export default function DailyPage() {
   const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
   const sessionUid = session?.user?.email ?? session?.user?.name ?? "";
+  const referralLink = useReferralLink(isAuthenticated);
   const dateKey = new Date().toISOString().slice(0, 10);
   const storeKey = sessionUid ? `pw_daily_${dateKey}_${sessionUid}` : `pw_daily_${dateKey}`;
 
@@ -295,6 +298,9 @@ export default function DailyPage() {
                 recordGameLossOnFailure={false}
                 solvedGuessCount={serverGuessCount ?? undefined}
                 submitGuessRequest={async (guess) => {
+                  if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidWordScryGuess(guess))) {
+                    return { error: "Not a valid word" };
+                  }
                   const result = scoreWordScryGuess(guess, word);
                   return { result, solved: isSolvedWordScryResult(result) };
                 }}
@@ -351,6 +357,7 @@ export default function DailyPage() {
                       maxGuesses={MAX_ROWS}
                       wordLength={word.length || 5}
                       dailyStreak={dailyStreak}
+                      shareUrl={referralLink}
                     />
                   </div>
                 ) : (

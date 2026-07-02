@@ -7,6 +7,8 @@ import DailyWordScrySharePanel from '@/components/daily/DailyWordScrySharePanel'
 import WordCrackPuzzle from '@/components/puzzle/WordCrackPuzzle';
 import GuestRewardModal from '@/components/puzzle/GuestRewardModal';
 import { addPendingRewards, getAnonId } from '@/lib/gridlockAnon';
+import { useReferralLink } from '@/hooks/useReferralLink';
+import { isValidWordScryGuess } from '@/lib/wordScryValidate';
 import {
   isSolvedWordScryResult,
   parseStoredWordScryState,
@@ -43,6 +45,7 @@ export default function HomepageWordScryCard() {
   const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === 'authenticated';
   const sessionUid = session?.user?.email ?? session?.user?.name ?? '';
+  const referralLink = useReferralLink(isAuthenticated);
 
   const [word, setWord] = useState('');
   const [dayNum, setDayNum] = useState(0);
@@ -184,9 +187,6 @@ export default function HomepageWordScryCard() {
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38D399', marginBottom: 8 }}>
               Play today's word now
             </p>
-            <h2 style={{ fontSize: 28, fontWeight: 900, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1.05, marginBottom: 8 }}>
-              Daily Hidden Word
-            </h2>
             <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.7, maxWidth: 420 }}>
               {statusCopy}
             </p>
@@ -240,6 +240,9 @@ export default function HomepageWordScryCard() {
               recordGameLossOnFailure={false}
               showAnimatedBackdrops={false}
               submitGuessRequest={async (guess) => {
+                if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidWordScryGuess(guess))) {
+                  return { error: "Not a valid word" };
+                }
                 const result = scoreWordScryGuess(guess, word);
                 return { result, solved: isSolvedWordScryResult(result) };
               }}
@@ -263,6 +266,7 @@ export default function HomepageWordScryCard() {
                   maxGuesses={6}
                   wordLength={word.length || 5}
                   dailyStreak={dailyStreak}
+                  shareUrl={referralLink}
                 />
               </div>
             )}

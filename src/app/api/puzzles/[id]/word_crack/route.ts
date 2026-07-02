@@ -6,6 +6,7 @@ import { calcLevel } from "@/lib/levels";
 import { awardSeasonXp } from "@/lib/seasonXp";
 import { getXpMultiplier } from "@/lib/getXpMultiplier";
 import { isSolvedWordScryResult, scoreWordScryGuess } from "@/lib/wordScry";
+import { isValidDictionaryWord } from "@/lib/dictionary";
 // WordScry uses a stricter 2-game limit independent of the global MAX_PUZZLE_ATTEMPTS.
 // First failure: can retry with halved XP/points. Second failure: permanently locked.
 const WORD_CRACK_MAX_ATTEMPTS = 2;
@@ -81,6 +82,15 @@ export async function POST(
     if (!/^[A-Z]+$/.test(cleanGuess)) {
       return NextResponse.json(
         { error: "Guess must contain only letters" },
+        { status: 400 }
+      );
+    }
+
+    // Reject guesses that aren't real words (the answer itself is always allowed,
+    // even if it's obscure enough to not be in the dictionary list).
+    if (cleanGuess !== word && !isValidDictionaryWord(cleanGuess)) {
+      return NextResponse.json(
+        { error: "Not a valid word" },
         { status: 400 }
       );
     }

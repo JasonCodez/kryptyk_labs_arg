@@ -132,7 +132,8 @@ export default function DailyWordScrySharePanel({
     wordLength,
     dailyStreak,
     comparison: comparisonStats,
-  }), [comparisonStats, dailyStreak, gameStatus, guessResults, maxGuesses, puzzleNumber, wordLength]);
+    shareUrl,
+  }), [comparisonStats, dailyStreak, gameStatus, guessResults, maxGuesses, puzzleNumber, shareUrl, wordLength]);
 
   const previewSrc = useMemo(() => svgToDataUrl(snapshotSvg), [snapshotSvg]);
 

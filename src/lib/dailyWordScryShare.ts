@@ -54,6 +54,11 @@ interface SharePayload {
   wordLength: number;
   dailyStreak?: number;
   comparison?: DailyWordScryComparisonStats | null;
+  shareUrl?: string;
+}
+
+function displayUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "");
 }
 
 function formatGuessAverage(value: number): string {
@@ -89,7 +94,9 @@ export function buildDailyWordScrySnapshotSvg({
   wordLength,
   dailyStreak = 0,
   comparison = null,
+  shareUrl,
 }: SharePayload): string {
+  const footerUrl = shareUrl ? displayUrl(shareUrl) : "puzzlewarz.com/daily";
   const score = gameStatus === "won" ? `${guessResults.length}/${maxGuesses}` : `X/${maxGuesses}`;
   const title = `Daily Hidden Word #${puzzleNumber}`;
   const subtitle = gameStatus === "won" ? "Locked in." : "Result logged.";
@@ -199,6 +206,6 @@ export function buildDailyWordScrySnapshotSvg({
   ${rowsMarkup}
   ${comparisonMarkup}
 
-  <text x="${DAILY_WORDSCRY_SNAPSHOT_WIDTH / 2}" y="${footerTextY}" fill="#8FA9B2" font-size="24" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">puzzlewarz.com/daily</text>
+  <text x="${DAILY_WORDSCRY_SNAPSHOT_WIDTH / 2}" y="${footerTextY}" fill="#8FA9B2" font-size="24" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">${escapeXml(footerUrl)}</text>
 </svg>`.trim();
 }

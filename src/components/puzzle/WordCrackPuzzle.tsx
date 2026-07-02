@@ -419,6 +419,15 @@ export default function WordCrackPuzzle({
 
       if (submitGuessRequest) {
         data = await submitGuessRequest(word);
+
+        if (data.error) {
+          setError(data.error);
+          setShakingRow(true);
+          triggerHaptic([12, 30, 12]);
+          setTimeout(() => { setShakingRow(false); setError(""); }, 700);
+          setSubmitting(false);
+          return;
+        }
       } else {
         const resp = await fetch(`/api/puzzles/${puzzleId}/word_crack`, {
           method: "POST",

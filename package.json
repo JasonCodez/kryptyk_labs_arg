@@ -69,6 +69,7 @@
     "the-big-username-blacklist": "^1.0.0",
     "ts-jest": "^29.4.6",
     "uuid": "^13.0.0",
+    "word-list": "^4.1.0",
     "zod": "^4.2.1",
     "zustand": "^5.0.9"
   },

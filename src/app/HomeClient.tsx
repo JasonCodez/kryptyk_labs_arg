@@ -30,28 +30,6 @@ function useReveal(threshold = 0.1) {
   return { ref, visible };
 }
 
-function useCountdown() {
-  const [secs, setSecs] = useState(0);
-
-  useEffect(() => {
-    const calc = () => {
-      const now = new Date();
-      const next = new Date();
-      next.setUTCHours(24, 0, 0, 0);
-      setSecs(Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000)));
-    };
-
-    calc();
-    const id = setInterval(calc, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const h = String(Math.floor(secs / 3600)).padStart(2, "0");
-  const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
-  const s = String(secs % 60).padStart(2, "0");
-  return `${h}:${m}:${s}`;
-}
-
 const fade = (visible: boolean, delay = 0, y = 28): CSSProperties => ({
   opacity: visible ? 1 : 0,
   transform: visible ? "translateY(0)" : `translateY(${y}px)`,
@@ -60,7 +38,6 @@ const fade = (visible: boolean, delay = 0, y = 28): CSSProperties => ({
 
 export default function HomeClient() {
   const [heroVisible, setHeroVisible] = useState(false);
-  const countdown = useCountdown();
   const { data: session } = useSession();
   const competeHref = session ? "/warz" : "/auth/register";
 
@@ -120,16 +97,33 @@ export default function HomeClient() {
         .pw-feature { transition: transform 0.25s, border-color 0.22s, box-shadow 0.22s; }
         .pw-feature:hover { transform: translateY(-4px); }
         @media (max-width: 640px) {
-          .hw-hero { padding: 68px 16px 40px !important; }
+          .hw-hero {
+            padding: 32px 16px 24px !important;
+            min-height: 100vh !important;
+            min-height: 100dvh !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+          }
           .hw-orb-1 { width: 260px !important; height: 260px !important; top: 4% !important; left: -4% !important; }
           .hw-orb-2 { display: none !important; }
-          .hw-puzzle-card { padding: 18px !important; }
+          .hw-hero-badge { margin-bottom: 12px !important; }
+          .hw-hero-title { font-size: 30px !important; margin-bottom: 6px !important; }
+          .hw-hero-subtitle { margin-bottom: 16px !important; font-size: 13px !important; }
+          .hw-puzzle-card { padding: 16px !important; }
+          .hw-hero-links { margin-top: 18px !important; }
           .hw-features-grid { grid-template-columns: 1fr !important; }
           .hw-features-section { padding: 48px 16px !important; }
           .hw-footer-inner { flex-direction: column !important; gap: 28px !important; align-items: center !important; text-align: center !important; }
           .hw-footer-nav { flex-direction: column !important; gap: 28px !important; align-items: center !important; text-align: center !important; }
           .hw-footer-bottom { flex-direction: column !important; align-items: center !important; text-align: center !important; gap: 4px !important; }
           .hw-badge { font-size: 9px !important; padding: 4px 10px !important; }
+        }
+        @media (max-width: 640px) and (max-height: 720px) {
+          .hw-hero-subtitle { display: none !important; }
+          .hw-hero-badge { margin-bottom: 8px !important; }
+          .hw-hero-links { display: none !important; }
         }
       `}</style>
 
@@ -145,7 +139,7 @@ export default function HomeClient() {
 
           <div style={{ maxWidth: 580, margin: "0 auto", position: "relative", textAlign: "center" }}>
             {/* Badge */}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(56,211,153,0.08)", border: "1px solid rgba(56,211,153,0.24)", marginBottom: 24, ...fade(heroVisible, 0) }}>
+            <div className="hw-hero-badge" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(56,211,153,0.08)", border: "1px solid rgba(56,211,153,0.24)", marginBottom: 24, ...fade(heroVisible, 0) }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#38D399", animation: "pw-pulse-dot 1.5s ease-in-out infinite" }} />
               <span className="hw-badge" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#38D399" }}>
                 Daily Hidden Word is live
@@ -153,11 +147,11 @@ export default function HomeClient() {
             </div>
 
             {/* Title */}
-            <h1 style={{ fontSize: "clamp(36px,7vw,56px)", fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.04em", color: "#fff", margin: "0 0 8px", ...fade(heroVisible, 0.06) }}>
+            <h1 className="hw-hero-title" style={{ fontSize: "clamp(36px,7vw,56px)", fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.04em", color: "#fff", margin: "0 0 8px", ...fade(heroVisible, 0.06) }}>
               Daily <span className="pw-shimmer-text">Hidden Word</span>
             </h1>
-            <p style={{ fontSize: 15, color: "#9CA3AF", maxWidth: 440, margin: "0 auto 28px", lineHeight: 1.7, ...fade(heroVisible, 0.14) }}>
-              Six guesses. One word. Resets in <strong style={{ color: "#FDE74C", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" }}>{countdown}</strong>
+            <p className="hw-hero-subtitle" style={{ fontSize: 15, color: "#9CA3AF", maxWidth: 440, margin: "0 auto 28px", lineHeight: 1.7, ...fade(heroVisible, 0.14) }}>
+              Six guesses. One word.
             </p>
 
             {/* Puzzle card */}
@@ -177,7 +171,7 @@ export default function HomeClient() {
             </div>
 
             {/* Quick links below the card */}
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 28, ...fade(heroVisible, 0.34) }}>
+            <div className="hw-hero-links" style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 28, ...fade(heroVisible, 0.34) }}>
               <Link href="/puzzles" style={{ padding: "12px 22px", borderRadius: 10, fontWeight: 700, fontSize: 14, color: "#E5E7EB", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.12)", textDecoration: "none", transition: "border-color 0.2s, background 0.2s" }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.28)"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.12)"; }}
