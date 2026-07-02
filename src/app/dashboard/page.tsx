@@ -98,7 +98,7 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return;
-        const plays = (data.stats?.totalPlays ?? 0) + 517;
+        const plays = data.stats?.totalPlays ?? 0;
         setTeaser({
           caseNumber: data.caseNumber ?? data.scenario?.caseNumber ?? 0,
           classification: data.classification ?? data.scenario?.classification ?? 'CLASSIFIED',
@@ -215,7 +215,7 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
 
         {/* Stats + CTA */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 16, flexShrink: 0 }}>
-          {teaser && (
+          {teaser && teaser.totalPlays > 0 && (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
                 {teaser.totalPlays.toLocaleString()}

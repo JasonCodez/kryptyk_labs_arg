@@ -297,6 +297,58 @@ interface JigsawPuzzleProps {
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 const dist2 = (dx: number, dy: number) => Math.hypot(dx, dy);
 
+// ── Piece-placement particle burst ──────────────────────────────────────────
+interface BurstParticle {
+  x0: number; y0: number;
+  angle: number;
+  dist: number;
+  size: number;
+  t0: number;
+  dur: number;
+  kind: "star" | "spark";
+  color: string;
+  rot0: number;
+  rotSpeed: number;
+}
+
+const BURST_COLORS = ["#FFD700", "#FFE873", "#FFF6D8", "#FDBA2A"];
+
+function createBurstParticles(cx: number, cy: number, pieceSize: number): BurstParticle[] {
+  const count = 14;
+  const particles: BurstParticle[] = [];
+  const t0 = performance.now();
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+    const isStar = Math.random() < 0.6;
+    particles.push({
+      x0: cx, y0: cy,
+      angle,
+      dist: pieceSize * (0.55 + Math.random() * 0.55),
+      size: pieceSize * (isStar ? (0.09 + Math.random() * 0.07) : (0.045 + Math.random() * 0.035)),
+      t0,
+      dur: 480 + Math.random() * 260,
+      kind: isStar ? "star" : "spark",
+      color: BURST_COLORS[(Math.random() * BURST_COLORS.length) | 0],
+      rot0: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 6,
+    });
+  }
+  return particles;
+}
+
+function drawStar4(ctx: CanvasRenderingContext2D, cx: number, cy: number, rOuter: number, rotation: number) {
+  const rInner = rOuter * 0.38;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const angle = rotation + (Math.PI / 4) * i;
+    const r = i % 2 === 0 ? rOuter : rInner;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
 function formatElapsed(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
   const hrs = Math.floor(safe / 3600);
@@ -334,9 +386,12 @@ export default function JigsawPuzzleSVGWithTray({
   const shimmerInnerRef = useRef<HTMLDivElement>(null);
   const shimmerInnerBRef = useRef<HTMLDivElement>(null);
   const shimmerInnerCRef = useRef<HTMLDivElement>(null);
+  const energyWrapperRef = useRef<HTMLDivElement>(null);
   const energyRingRef   = useRef<HTMLDivElement>(null);
   const energyGlowRef   = useRef<HTMLDivElement>(null);
   const messageRef      = useRef<HTMLDivElement>(null);
+  const livingPhotoOuterRef = useRef<HTMLDivElement>(null);
+  const livingPhotoImgRef   = useRef<HTMLImageElement>(null);
 
   // Image
   const imgRef           = useRef<HTMLImageElement | null>(null);
@@ -417,6 +472,7 @@ export default function JigsawPuzzleSVGWithTray({
   // ── Per-piece animation state ────────────────────────────────────────────
   const snapPopRef    = useRef<Map<string, { t0: number; dur: number }>>(new Map());
   const snapGlowRef   = useRef<Map<string, { t0: number; dur: number }>>(new Map());
+  const burstParticlesRef = useRef<BurstParticle[]>([]);
   // Per-piece solve pop: each piece gets a random delay + random peak scale
   const solveScaleRef = useRef<Map<string, { t0: number; dur: number; peak: number }>>(new Map());
   const lastFrameRef  = useRef(0);
@@ -918,6 +974,7 @@ export default function JigsawPuzzleSVGWithTray({
       // Keep render loop alive while snap/glow/solve-scale animations are running
       lastFrameRef.current = now;
       if (snapPopRef.current.size > 0 || snapGlowRef.current.size > 0) dirtyRef.current = true;
+      if (burstParticlesRef.current.length > 0) dirtyRef.current = true;
       if (solveScaleRef.current.size > 0) {
         let anyActive = false;
         for (const [id, anim] of solveScaleRef.current) {
@@ -1078,6 +1135,39 @@ export default function JigsawPuzzleSVGWithTray({
         }
 
         ctx.restore();
+      }
+
+      // Piece-placement particle burst — drawn on top of all pieces, still in stage space
+      if (burstParticlesRef.current.length > 0) {
+        const kept: BurstParticle[] = [];
+        for (const particle of burstParticlesRef.current) {
+          const t = (now - particle.t0) / particle.dur;
+          if (t >= 1) continue;
+          kept.push(particle);
+
+          const ease = 1 - Math.pow(1 - t, 2);
+          const px = particle.x0 + Math.cos(particle.angle) * particle.dist * ease;
+          const py = particle.y0 + Math.sin(particle.angle) * particle.dist * ease;
+          const alpha = 1 - t * t;
+          const size = particle.size * (1 - t * 0.35);
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = particle.color;
+          ctx.shadowColor = particle.color;
+          ctx.shadowBlur = 6 / s;
+
+          if (particle.kind === "star") {
+            drawStar4(ctx, px, py, size, particle.rot0 + particle.rotSpeed * t);
+            ctx.fill();
+          } else {
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+        burstParticlesRef.current = kept;
       }
 
       ctx.restore(); // undo scale
@@ -1387,11 +1477,22 @@ export default function JigsawPuzzleSVGWithTray({
     next = s2.pieces;
     if (s2.snapped) lastSnapDelta = { dx: s2.dx, dy: s2.dy };
 
-    // Snap-to-board → pop + gold glow (single piece only — not a multi-piece group)
+    // Snap-to-board → pop + gold glow + particle burst (single piece only — not a multi-piece group)
     if ((s1.snapped || s2.snapped) && starts.size === 1) {
       const pieceId = [...starts.keys()][0];
       snapPopRef.current.set(pieceId, { t0: performance.now(), dur: 380 });
       snapGlowRef.current.set(pieceId, { t0: performance.now(), dur: 700 });
+
+      const reduced = typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!reduced) {
+        const placedPiece = next.find(p => p.id === pieceId);
+        if (placedPiece) {
+          const cx = placedPiece.pos.x + pwRef.current / 2;
+          const cy = placedPiece.pos.y + phRef.current / 2;
+          burstParticlesRef.current.push(...createBurstParticles(cx, cy, Math.min(pwRef.current, phRef.current)));
+        }
+      }
     }
 
     if (lastSnapDelta && dist2(lastSnapDelta.dx, lastSnapDelta.dy) > 0.1) {
@@ -1437,6 +1538,24 @@ export default function JigsawPuzzleSVGWithTray({
         const label = "flare";
         tl.addLabel(label);
 
+        // Positions `el` to exactly cover the board's current on-screen rect, accounting for
+        // user zoom + pan (viewOffXRef/viewOffYRef) — not just the base fit-to-container scale.
+        // Skipping zoom/pan here is what caused the shimmer/reveal to drift off the board edges.
+        const positionBoardOverlay = (el: HTMLElement) => {
+          const canvas = canvasRef.current;
+          if (!canvas || !el.parentElement) return;
+          const canvasRect = canvas.getBoundingClientRect();
+          const parentRect = el.parentElement.getBoundingClientRect();
+          const cssScale = scaleRef.current * userZoomRef.current;
+          const boardCssX = (boardOffXRef.current - viewOffXRef.current) * cssScale;
+          const boardCssY = (boardOffYRef.current - viewOffYRef.current) * cssScale;
+          el.style.inset  = '';
+          el.style.left   = `${canvasRect.left - parentRect.left + boardCssX}px`;
+          el.style.top    = `${canvasRect.top  - parentRect.top  + boardCssY}px`;
+          el.style.width  = `${boardWidth  * cssScale}px`;
+          el.style.height = `${boardHeight * cssScale}px`;
+        };
+
         const canvas = canvasRef.current;
         if (canvas && !reduced) {
           tl.to(canvas, { boxShadow: "0 0 46px 14px rgba(255,215,0,0.75)", duration: 0.18, ease: "power3.out" }, label);
@@ -1448,7 +1567,8 @@ export default function JigsawPuzzleSVGWithTray({
             { x: 1.2, y: -0.8, duration: 0.06, yoyo: true, repeat: 4, ease: "power2.inOut", clearProps: "x,y" },
             label);
         }
-        if (!reduced && energyRingRef.current && energyGlowRef.current) {
+        if (!reduced && energyRingRef.current && energyGlowRef.current && energyWrapperRef.current) {
+          positionBoardOverlay(energyWrapperRef.current);
           tl.set([energyRingRef.current, energyGlowRef.current], { autoAlpha: 0, scale: 0.25, transformOrigin: "50% 50%" }, label);
           tl.to([energyRingRef.current, energyGlowRef.current], { autoAlpha: 1, duration: 0.05 }, label);
           tl.to(energyGlowRef.current, { scale: 1.6, autoAlpha: 0, duration: 0.55, ease: "power3.out" }, `${label}+=0.03`);
@@ -1456,17 +1576,7 @@ export default function JigsawPuzzleSVGWithTray({
         }
         if (shimmerOuterRef.current && shimmerInnerRef.current) {
           // Constrain shimmer sweep to the board area only
-          if (canvasRef.current && shimmerOuterRef.current.parentElement) {
-            const canvasRect = canvasRef.current.getBoundingClientRect();
-            const parentRect = shimmerOuterRef.current.parentElement.getBoundingClientRect();
-            const sc = scaleRef.current;
-            const el = shimmerOuterRef.current;
-            el.style.inset  = '';
-            el.style.left   = `${canvasRect.left - parentRect.left + boardOffXRef.current * sc}px`;
-            el.style.top    = `${canvasRect.top  - parentRect.top  + boardOffYRef.current * sc}px`;
-            el.style.width  = `${boardWidth * sc}px`;
-            el.style.height = `${boardHeight * sc}px`;
-          }
+          positionBoardOverlay(shimmerOuterRef.current);
           tl.set(shimmerOuterRef.current, { autoAlpha: 1 }, label);
           tl.set([shimmerInnerRef.current, shimmerInnerBRef.current, shimmerInnerCRef.current].filter(Boolean) as gsap.TweenTarget,
             { xPercent: -250, autoAlpha: 0 }, label);
@@ -1480,12 +1590,33 @@ export default function JigsawPuzzleSVGWithTray({
         tl.play();
         await new Promise<void>(res => tl.eventCallback("onComplete", res));
 
+        // Kick off scoring in the background — don't make the player wait on it
+        // before the living-photo reveal plays.
         let pts: number | void | undefined;
-        if (onComplete) {
-          try { const r = onComplete(elapsed); pts = r instanceof Promise ? await r : r; } catch { /* noop */ }
+        const scored = (async () => {
+          if (onComplete) {
+            try { const r = onComplete(elapsed); pts = r instanceof Promise ? await r : r; } catch { /* noop */ }
+          }
+        })();
+
+        // ── Living photo reveal — slow Ken Burns zoom/pan on the completed image ──
+        if (!reduced && livingPhotoOuterRef.current && livingPhotoImgRef.current) {
+          const outer = livingPhotoOuterRef.current;
+          positionBoardOverlay(outer);
+          const img = livingPhotoImgRef.current;
+          const panX = (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 2);
+          const panY = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 1.5);
+          gsap.set(img, { scale: 1.0, xPercent: 0, yPercent: 0, transformOrigin: "50% 50%" });
+          const kbTl = gsap.timeline();
+          kbTl.to(outer, { autoAlpha: 1, duration: 0.35, ease: "power1.out" }, 0);
+          kbTl.to(img, { scale: 1.14, xPercent: panX, yPercent: panY, duration: 3.8, ease: "sine.inOut" }, 0);
+          kbTl.to(outer, { autoAlpha: 0, duration: 0.5, ease: "power1.in" }, "-=0.4");
+          await new Promise<void>(res => kbTl.eventCallback("onComplete", res));
+        } else {
+          await new Promise(r => setTimeout(r, 1000));
         }
 
-        await new Promise(r => setTimeout(r, 1000));
+        await scored;
 
         if (!suppressInternalCongrats) {
           setShowCongrats(true);
@@ -1644,8 +1775,9 @@ export default function JigsawPuzzleSVGWithTray({
                         transform: "skewX(-22deg)", opacity: 0, willChange: "transform,opacity" }} />
         </div>
 
-        {/* Energy ring */}
-        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 1001, overflow: "visible" }}>
+        {/* Energy ring — positioned to the board rect at animation time (see positionBoardOverlay) */}
+        <div ref={energyWrapperRef}
+             style={{ position: "absolute", pointerEvents: "none", zIndex: 1001, overflow: "visible" }}>
           <div ref={energyGlowRef}
                style={{ position: "absolute", left: "50%", top: "50%", width: "115%", height: "115%",
                         transform: "translate(-50%,-50%)", borderRadius: 9999, opacity: 0,
@@ -1657,6 +1789,16 @@ export default function JigsawPuzzleSVGWithTray({
                         border: "2px solid rgba(255,215,0,0.80)",
                         boxShadow: "0 0 22px 6px rgba(255,215,0,0.22)", opacity: 0,
                         willChange: "transform,opacity" }} />
+        </div>
+
+        {/* Living photo reveal — Ken Burns zoom/pan on the completed image */}
+        <div ref={livingPhotoOuterRef}
+             style={{ position: "absolute", pointerEvents: "none", opacity: 0, zIndex: 1002, overflow: "hidden" }}>
+          {effectiveUrl && (
+            <img ref={livingPhotoImgRef} src={effectiveUrl} alt=""
+                 style={{ position: "absolute", inset: 0, width: "100%", height: "100%",
+                          objectFit: "cover", transformOrigin: "50% 50%", willChange: "transform" }} />
+          )}
         </div>
 
         {/* Congrats message */}

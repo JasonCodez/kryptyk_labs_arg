@@ -1334,10 +1334,10 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   }
 
   const renderJigsawFields = () => {
-    const extFrac       = Number(puzzleData.pieceExtFrac       ?? 0.270);
-    const rFrac         = Number(puzzleData.pieceRFrac         ?? 0.118);
-    const nHalfFrac     = Number(puzzleData.pieceNHalfFrac     ?? 0.100);
-    const shoulderStart = Number(puzzleData.pieceShoulderStart ?? 0.150);
+    const extFrac       = Number(puzzleData.pieceExtFrac       ?? 0.280);
+    const rFrac         = Number(puzzleData.pieceRFrac         ?? 0.140);
+    const nHalfFrac     = Number(puzzleData.pieceNHalfFrac     ?? 0.095);
+    const shoulderStart = Number(puzzleData.pieceShoulderStart ?? 0.050);
     const svgPath = buildJigsawSVGPath(extFrac, rFrac, nHalfFrac, shoulderStart);
 
     return (
@@ -1442,10 +1442,10 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
             <button
               type="button"
               onClick={() => {
-                onDataChange('pieceExtFrac', 0.270);
-                onDataChange('pieceRFrac', 0.118);
-                onDataChange('pieceNHalfFrac', 0.100);
-                onDataChange('pieceShoulderStart', 0.150);
+                onDataChange('pieceExtFrac', 0.280);
+                onDataChange('pieceRFrac', 0.140);
+                onDataChange('pieceNHalfFrac', 0.095);
+                onDataChange('pieceShoulderStart', 0.050);
               }}
               className="text-xs px-3 py-1.5 rounded bg-slate-600 hover:bg-slate-500 text-gray-300"
             >

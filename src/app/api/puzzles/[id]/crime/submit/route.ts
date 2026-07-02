@@ -46,7 +46,7 @@ export async function POST(
 
     const puzzle = await prisma.puzzle.findUnique({
       where: { id: puzzleId },
-      select: { id: true, puzzleType: true, data: true, xpReward: true },
+      select: { id: true, puzzleType: true, data: true, xpReward: true, solutions: { select: { points: true }, take: 1 } },
     });
     if (!puzzle) {
       return NextResponse.json({ error: 'Puzzle not found' }, { status: 404 });
@@ -74,6 +74,10 @@ export async function POST(
     const result = validateAccusation(caseData, { suspectId, mechanism, evidenceIds });
 
     if (result.correct) {
+      // Points come from the puzzle's configured solution (set via admin "Points Reward"),
+      // matching how every other puzzle type sources its award amount.
+      const awardPoints = puzzle.solutions?.[0]?.points ?? 100;
+
       // ── Mark the puzzle solved ───────────────────────────────────────────
       await prisma.$transaction(async (tx) => {
         // Record the correct submission
@@ -96,7 +100,7 @@ export async function POST(
             solvedAt: new Date(),
             attempts: 1,
             successfulAttempts: 1,
-            pointsEarned: 100,
+            pointsEarned: awardPoints,
             completionPercentage: 100,
           },
           update: {
@@ -104,7 +108,7 @@ export async function POST(
             solvedAt: new Date(),
             successfulAttempts: { increment: 1 },
             attempts: { increment: 1 },
-            pointsEarned: 100,
+            pointsEarned: awardPoints,
             completionPercentage: 100,
           },
         });
@@ -113,7 +117,7 @@ export async function POST(
         const xp = typeof puzzle.xpReward === 'number' ? puzzle.xpReward : 100;
         await tx.user.update({
           where: { id: user.id },
-          data: { xp: { increment: xp }, totalPoints: { increment: 100 } },
+          data: { xp: { increment: xp }, totalPoints: { increment: awardPoints } },
         });
       });
 

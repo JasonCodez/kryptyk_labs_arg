@@ -328,6 +328,39 @@ export async function PUT(
       }
     }
 
+    // These types are solved via bespoke UI (not a single text answer) but still complete
+    // through the generic attempt_success -> awardSolveRewards() path, which reads points
+    // from a placeholder solution row. Keep that row's points in sync on every edit —
+    // previously only 'vault' did this, so editing points on these types silently no-opped.
+    const syncPlaceholderSolution = async (answer: string) => {
+      const sol = await tx.puzzleSolution.findFirst({ where: { puzzleId } });
+      if (sol) {
+        await tx.puzzleSolution.update({
+          where: { id: sol.id },
+          data: { answer, points: pointsReward || 100 },
+        });
+      } else {
+        await tx.puzzleSolution.create({
+          data: {
+            puzzleId,
+            answer,
+            isCorrect: true,
+            points: pointsReward || 100,
+            ignoreCase: true,
+            ignoreWhitespace: false,
+          },
+        });
+      }
+    };
+    if (puzzleType === 'jigsaw') await syncPlaceholderSolution('__JIGSAW__');
+    if (puzzleType === 'crime_rpg') await syncPlaceholderSolution('__CRIME_RPG__');
+    if (puzzleType === 'code_master') await syncPlaceholderSolution('__CODE_MASTER__');
+    if (puzzleType === 'escape_room') await syncPlaceholderSolution('__ESCAPE_ROOM__');
+    if (puzzleType === 'sudoku') await syncPlaceholderSolution('__SUDOKU__');
+    if (puzzleType === 'detective_case') await syncPlaceholderSolution('__DETECTIVE_CASE__');
+    if (puzzleType === 'jim_wyze_case') await syncPlaceholderSolution('__JIM_WYZE_CASE__');
+    if (puzzleType === 'crack_safe') await syncPlaceholderSolution('__CRACK_SAFE__');
+
     // 4. Update sudoku record if applicable
     if (puzzleType === "sudoku" && sudokuGrid && sudokuSolution) {
       await tx.sudokuPuzzle.upsert({

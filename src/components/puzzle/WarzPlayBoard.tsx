@@ -9,6 +9,7 @@ import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 import { motion, AnimatePresence } from "framer-motion";
+import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
 
 interface WarzPuzzle {
   id: string;
@@ -50,6 +51,7 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
   const [showFailedModal, setShowFailedModal] = useState(false);
   const [failCountdown, setFailCountdown] = useState(5);
+  const jigsawBoardDims = useJigsawBoardDims(puzzle.puzzleType === 'jigsaw' ? puzzle.jigsaw?.imageUrl : null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -250,11 +252,14 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
 
       case "jigsaw": {
         if (!puzzle.jigsaw?.imageUrl) return <p className="text-white">Jigsaw image missing.</p>;
+        if (!jigsawBoardDims) return <p className="text-white">Loading puzzle image…</p>;
         return (
           <JigsawPuzzle
             imageUrl={puzzle.jigsaw.imageUrl}
             rows={puzzle.jigsaw.gridRows}
             cols={puzzle.jigsaw.gridCols}
+            boardWidth={jigsawBoardDims.w}
+            boardHeight={jigsawBoardDims.h}
             neighborSnapTolerance={puzzle.jigsaw.snapTolerance}
             puzzleId={puzzle.id}
             suppressInternalCongrats

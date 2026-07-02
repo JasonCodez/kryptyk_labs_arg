@@ -479,6 +479,54 @@ export async function POST(request: NextRequest) {
       };
     }
 
+    // Jigsaw puzzles are solved by assembling pieces, not a text answer — still create a
+    // placeholder solution row so awardSolveRewards() has somewhere to read `points` from.
+    if (puzzleType === 'jigsaw') {
+      createData.solutions = {
+        create: [
+          {
+            answer: '__JIGSAW__',
+            isCorrect: true,
+            points: pointsReward || 100,
+            ignoreCase: true,
+            ignoreWhitespace: false,
+          },
+        ],
+      };
+    }
+
+    // These types are solved via bespoke UI (not a single text answer) but still complete
+    // through the generic attempt_success -> awardSolveRewards() path, which reads points
+    // from this placeholder solution row.
+    if (puzzleType === 'crime_rpg') {
+      createData.solutions = {
+        create: [
+          { answer: '__CRIME_RPG__', isCorrect: true, points: pointsReward || 100, ignoreCase: true, ignoreWhitespace: false },
+        ],
+      };
+    }
+    if (puzzleType === 'code_master') {
+      createData.solutions = {
+        create: [
+          { answer: '__CODE_MASTER__', isCorrect: true, points: pointsReward || 100, ignoreCase: true, ignoreWhitespace: false },
+        ],
+      };
+    }
+    if (puzzleType === 'escape_room') {
+      createData.solutions = {
+        create: [
+          { answer: '__ESCAPE_ROOM__', isCorrect: true, points: pointsReward || 100, ignoreCase: true, ignoreWhitespace: false },
+        ],
+      };
+    }
+    if (puzzleType === 'sudoku') {
+      createData.solutions = {
+        create: [
+          { answer: '__SUDOKU__', isCorrect: true, points: pointsReward || 100, ignoreCase: true, ignoreWhitespace: false },
+        ],
+      };
+    }
+
     const puzzle = await prisma.puzzle.create({
       data: createData,
       include: {

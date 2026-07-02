@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
 import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
 import JimWyzePuzzle from "@/components/puzzle/JimWyzePuzzle";
 import DetectiveCasePuzzle from "@/components/puzzle/DetectiveCasePuzzle";
@@ -77,6 +78,10 @@ export function PuzzleTypeRenderer({
   onJigsawComplete,
   onJigsawShowRatingModal,
 }: PuzzleTypeRendererProps) {
+  // Detect the jigsaw image's natural aspect ratio so the play board matches it —
+  // otherwise the fixed 640x480 default stretches/squishes non-4:3 images.
+  const jigsawBoardDims = useJigsawBoardDims(puzzle.puzzleType === 'jigsaw' ? jigsawPlayable?.imageUrl : null);
+
   if (puzzle.puzzleType === 'jigsaw') {
     return (
       <div className="mb-8">
@@ -108,6 +113,8 @@ export function PuzzleTypeRenderer({
           <div className="p-4 rounded-lg border" style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.4)", color: "#fca5a5" }}>
             This jigsaw puzzle is missing its image. Upload an image in the admin puzzle creator.
           </div>
+        ) : !jigsawBoardDims ? (
+          <div className="p-8 text-center text-gray-400">Loading puzzle image…</div>
         ) : (
           <div
             className="rounded-none overflow-hidden border border-gray-700"
@@ -118,6 +125,8 @@ export function PuzzleTypeRenderer({
               imageUrl={jigsawPlayable.imageUrl}
               rows={jigsawPlayable.data.gridRows}
               cols={jigsawPlayable.data.gridCols}
+              boardWidth={jigsawBoardDims.w}
+              boardHeight={jigsawBoardDims.h}
               pieceExtFrac={typeof (jigsawPlayable.data as any).pieceExtFrac === 'number' ? (jigsawPlayable.data as any).pieceExtFrac : undefined}
               pieceRFrac={typeof (jigsawPlayable.data as any).pieceRFrac === 'number' ? (jigsawPlayable.data as any).pieceRFrac : undefined}
               pieceNHalfFrac={typeof (jigsawPlayable.data as any).pieceNHalfFrac === 'number' ? (jigsawPlayable.data as any).pieceNHalfFrac : undefined}

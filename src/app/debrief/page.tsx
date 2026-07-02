@@ -282,19 +282,12 @@ function WitnessComparisonModal({
 
   const { score } = submitResult;
 
-  // Blend real results with a realistic seed so the comparison always looks
-  // populated, even on day 1. Seed distribution skews toward 3-4 (realistic).
-  const FAKE_BASE_DIST = [12, 28, 89, 184, 143, 61]; // indices 0-5
-  const FAKE_BASE_TOTAL = FAKE_BASE_DIST.reduce((a, b) => a + b, 0); // 517
-  const blendedDist = (submitResult.scoreDist ?? [0, 0, 0, 0, 0, 0]).map((v, i) => v + FAKE_BASE_DIST[i]);
-  const blendedTotal = submitResult.totalPlays + FAKE_BASE_TOTAL;
-  // Recalculate percentile against blended pool
-  const beatCount = blendedDist.slice(0, score).reduce((s, c) => s + c, 0);
-  const percentile = blendedTotal > 1
-    ? Math.round((beatCount / (blendedTotal - 1)) * 100)
+  const scoreDist = submitResult.scoreDist ?? [0, 0, 0, 0, 0, 0];
+  const totalPlays = submitResult.totalPlays;
+  const beatCount = scoreDist.slice(0, score).reduce((s, c) => s + c, 0);
+  const percentile = totalPlays > 1
+    ? Math.round((beatCount / (totalPlays - 1)) * 100)
     : 100;
-  const totalPlays = blendedTotal;
-  const scoreDist = blendedDist;
 
   const scoreColor = score >= 4 ? SUCCESS : score >= 2 ? GOLD : DANGER;
   const scoreEmoji = score === 5 ? "🏆" : score >= 4 ? "🔥" : score >= 3 ? "👁️" : score >= 1 ? "📋" : "❌";
@@ -1128,9 +1121,9 @@ export default function WitnessPage() {
                     ))}
                   </div>
 
-                  {stats && (
+                  {stats && stats.totalPlays > 0 && (
                     <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: `${MUTED}70`, marginTop: 20, letterSpacing: "0.04em" }}>
-                      {(stats.totalPlays + 517).toLocaleString()} investigators cleared
+                      {stats.totalPlays.toLocaleString()} investigators cleared
                     </p>
                   )}
                 </div>
@@ -1513,13 +1506,11 @@ export default function WitnessPage() {
           {stage === "witness-results" && submitResult && scenario && (
             <div style={fadeStyle}>
               {(() => {
-                const FAKE_BASE_DIST = [12, 28, 89, 184, 143, 61];
                 const scoreDist = submitResult.scoreDist ?? [0, 0, 0, 0, 0, 0];
-                const blendedDist = scoreDist.map((v, i) => v + FAKE_BASE_DIST[i]);
-                const blendedTotal = submitResult.totalPlays + 517;
-                const beatCount = blendedDist.slice(0, submitResult.score).reduce((s, c) => s + c, 0);
-                const blendedPercentile = blendedTotal > 1 ? Math.round((beatCount / (blendedTotal - 1)) * 100) : 100;
-                const st = encodeURIComponent(`🔍 The Debrief — PuzzleWarz\n\nI recalled ${submitResult.score}/5 details.\nI beat ${blendedPercentile}% of all investigators.\n\nhttps://puzzlewarz.com/witness`);
+                const totalPlays = submitResult.totalPlays;
+                const beatCount = scoreDist.slice(0, submitResult.score).reduce((s, c) => s + c, 0);
+                const percentile = totalPlays > 1 ? Math.round((beatCount / (totalPlays - 1)) * 100) : 100;
+                const st = encodeURIComponent(`🔍 The Debrief — PuzzleWarz\n\nI recalled ${submitResult.score}/5 details.\nI beat ${percentile}% of all investigators.\n\nhttps://puzzlewarz.com/witness`);
                 const su = encodeURIComponent("https://puzzlewarz.com/witness");
                 return (
                   <>
@@ -1540,7 +1531,7 @@ export default function WitnessPage() {
                   {scoreLabel(submitResult.score)}
                 </p>
                 <p style={{ color: MUTED, fontSize: 13 }}>
-                  {percentileLabel(blendedPercentile, submitResult.score)}
+                  {percentileLabel(percentile, submitResult.score)}
                 </p>
               </div>
 
@@ -1631,12 +1622,12 @@ export default function WitnessPage() {
               {/* Score distribution */}
               <div style={{ ...cardStyle, marginBottom: 28 }}>
                 <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 16 }}>
-                  Score distribution — {blendedTotal.toLocaleString()} players
+                  Score distribution — {totalPlays.toLocaleString()} players
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {[5, 4, 3, 2, 1, 0].map((s) => {
-                    const count = blendedDist[s] || 0;
-                    const pct = Math.round((count / blendedTotal) * 100);
+                    const count = scoreDist[s] || 0;
+                    const pct = Math.round((count / totalPlays) * 100);
                     return (
                       <div key={s} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ width: 14, fontSize: 12, color: s === submitResult.score ? GOLD : MUTED, fontWeight: s === submitResult.score ? 700 : 400 }}>
