@@ -41,7 +41,7 @@ export interface PuzzleSkinTokens {
 }
 
 const DEFAULT: PuzzleSkinTokens = {
-  boardBg: "rgba(15,18,25,0.97)",
+  boardBg: "rgba(15,18,25,0.55)",
   boardBorder: "rgba(56,145,166,0.3)",
   boardShadow: "none",
   boardRadius: "1rem",
@@ -63,12 +63,12 @@ const DEFAULT: PuzzleSkinTokens = {
 
 // ── RETRO: 80s/90s arcade neon ──────────────────────────────────────────────
 const RETRO: PuzzleSkinTokens = {
-  boardBg: "#0a0020",
+  boardBg: "rgba(10,0,32,0.5)",
   boardBorder: "#B43CFF",
   boardShadow: "0 0 0 3px #B43CFF, 0 0 30px rgba(180,60,255,0.55), 0 0 70px rgba(180,60,255,0.18), inset 0 0 20px rgba(180,60,255,0.05)",
   boardRadius: "0",
   backdropScrim: "linear-gradient(180deg, rgba(8,0,24,0.24), rgba(8,0,24,0.28))",
-  tileBg: "#120030",
+  tileBg: "rgba(18,0,48,0.4)",
   tileBorder: "#B43CFF",
   tileText: "#00FF88",
   tileFontFamily: "'Courier New', monospace",
@@ -85,7 +85,7 @@ const RETRO: PuzzleSkinTokens = {
 
 // ── MINIMAL: Polished obsidian ─────────────────────────────────────────────
 const MINIMAL: PuzzleSkinTokens = {
-  boardBg: "#080808",
+  boardBg: "rgba(8,8,8,0.55)",
   boardBorder: "rgba(255,255,255,0.1)",
   boardShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 24px rgba(0,0,0,0.6)",
   boardRadius: "0.5rem",
@@ -107,12 +107,12 @@ const MINIMAL: PuzzleSkinTokens = {
 
 // ── NEON: Electric cyberpunk ───────────────────────────────────────────────
 const NEON: PuzzleSkinTokens = {
-  boardBg: "#070d1d",
+  boardBg: "rgba(7,13,29,0.5)",
   boardBorder: "rgba(79,229,255,0.62)",
   boardShadow: "0 0 0 1px rgba(79,229,255,0.55), 0 14px 45px rgba(0,8,28,0.72), 0 0 28px rgba(79,229,255,0.24), inset 0 0 24px rgba(217,77,255,0.11)",
   boardRadius: "0.875rem",
   backdropScrim: "linear-gradient(180deg, rgba(3,8,22,0.22), rgba(3,8,22,0.3))",
-  tileBg: "rgba(9,22,40,0.78)",
+  tileBg: "rgba(9,22,40,0.45)",
   tileBorder: "rgba(79,229,255,0.42)",
   tileText: "#e7fbff",
   tileFontFamily: "'Rajdhani', 'Segoe UI', 'Trebuchet MS', sans-serif",
@@ -129,7 +129,7 @@ const NEON: PuzzleSkinTokens = {
 
 // ── LAVA: Volcanic molten rock ─────────────────────────────────────────────
 const LAVA: PuzzleSkinTokens = {
-  boardBg: "#060100",
+  boardBg: "rgba(6,1,0,0.45)",
   boardBorder: "#FF5500",
   boardShadow: "0 0 0 2px #FF5500, 0 0 25px rgba(255,85,0,0.5), 0 0 65px rgba(255,40,0,0.18), inset 0 0 30px rgba(255,20,0,0.07)",
   boardRadius: "0.375rem",
@@ -151,7 +151,7 @@ const LAVA: PuzzleSkinTokens = {
 
 // ── GALAXY: Deep space nebula ──────────────────────────────────────────────
 const GALAXY: PuzzleSkinTokens = {
-  boardBg: "#04001a",
+  boardBg: "rgba(4,0,26,0.45)",
   boardBorder: "#8B5CF6",
   boardShadow: "0 0 0 2px #8B5CF6, 0 0 25px rgba(139,92,246,0.55), 0 0 65px rgba(200,0,255,0.18), inset 0 0 25px rgba(139,92,246,0.06)",
   boardRadius: "1rem",
@@ -173,7 +173,7 @@ const GALAXY: PuzzleSkinTokens = {
 
 // ── CHRISTMAS (legacy: ICE): Crystal frost + winter ambiance ──────────────
 const CHRISTMAS: PuzzleSkinTokens = {
-  boardBg: "#000d1f",
+  boardBg: "rgba(0,13,31,0.45)",
   boardBorder: "#67E8F9",
   boardShadow: "0 0 0 2px #67E8F9, 0 0 22px rgba(103,232,249,0.45), 0 0 55px rgba(103,232,249,0.12), inset 0 0 22px rgba(103,232,249,0.05)",
   boardRadius: "1.25rem",
