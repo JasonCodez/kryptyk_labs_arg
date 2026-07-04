@@ -72,7 +72,7 @@ export default function DailySudokuPage() {
             <p className="text-xs mt-3" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
           </div>
         ) : (
-          <div className="w-full max-w-xl">
+          <div className="w-full max-w-3xl">
             {nextReward && (
               <p className="text-xs text-center mb-3" style={{ color: "#DDDBF1" }}>
                 Day {nextReward.streakDay} reward: +{nextReward.points} pts · +{nextReward.xp} xp

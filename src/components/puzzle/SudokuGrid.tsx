@@ -268,7 +268,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
         }}
       />
 
-    <div className="flex flex-col gap-4 items-center justify-center py-6 px-2" style={{ position: "relative", zIndex: 1 }}>
+    <div className="flex flex-col gap-4 items-center justify-center py-10 px-4 sm:py-14 sm:px-10" style={{ position: "relative", zIndex: 1 }}>
       {/* Title */}
       <h2
         className="text-2xl sm:text-3xl font-black tracking-[0.2em] mb-1 text-center"
