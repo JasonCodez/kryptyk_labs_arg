@@ -1186,7 +1186,7 @@ export default function AdminPuzzlesPage() {
                         placeholder="e.g. 42"
                         className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Leave blank to publish this as a normal catalog puzzle. Set a day number to make this the daily {formData.puzzleType.replace('_', ' ')} puzzle for that day — mark it inactive below so it doesn&apos;t also show up in the regular puzzle browser.</p>
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to publish this as a normal catalog puzzle. Set a day number to make this the daily {formData.puzzleType.replace('_', ' ')} puzzle for that day — it&apos;ll automatically be hidden from the regular puzzle browser.</p>
                     </div>
                   )}
 
