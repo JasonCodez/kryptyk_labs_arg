@@ -43,6 +43,7 @@ export async function GET(_req: NextRequest) {
         createdAt: true,
         category: { select: { name: true } },
         escapeRoom: { select: { roomTitle: true } },
+        dailySlots: { select: { dayNumber: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -751,6 +752,7 @@ export async function POST(request: NextRequest) {
           update: { puzzleId: puzzle.id },
         });
         await prisma.puzzle.update({ where: { id: puzzle.id }, data: { isActive: false } });
+        puzzle.isActive = false;
       }
     }
 

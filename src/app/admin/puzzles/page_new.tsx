@@ -9,6 +9,7 @@ import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 import SudokuGenerator from "@/components/puzzle/SudokuGenerator";
 import { createDefaultGridlockFileData, getGridlockFileData } from "@/lib/gridlockFile";
 import { validateCrosswordPuzzleData } from "@/lib/crosswordCore";
+import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 interface HintEntry {
@@ -86,6 +87,7 @@ interface PuzzleListItem {
   createdAt: string;
   category: { name: string } | null;
   escapeRoom?: { roomTitle: string } | null;
+  dailySlots?: { dayNumber: number }[];
 }
 
 export default function AdminPuzzlesPage() {
@@ -1177,16 +1179,19 @@ export default function AdminPuzzlesPage() {
                   {/* Daily rotation slot: sudoku/crossword/word_search/jigsaw only */}
                   {['sudoku', 'crossword', 'word_search', 'jigsaw'].includes(formData.puzzleType) && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-2">📅 Assign as Daily #N (optional)</label>
+                      <label className="block text-sm font-semibold text-gray-300 mb-2">
+                        📅 Assign as Daily #N (optional)
+                        <span className="ml-2 font-normal text-amber-300">— today is day #{getTodayDayNumber()}</span>
+                      </label>
                       <input
                         type="number"
                         min={1}
                         value={formData.dailySlotDayNumber}
                         onChange={e => setFormData(prev => ({ ...prev, dailySlotDayNumber: e.target.value }))}
-                        placeholder="e.g. 42"
+                        placeholder={`e.g. ${getTodayDayNumber()} for today`}
                         className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Leave blank to publish this as a normal catalog puzzle. Set a day number to make this the daily {formData.puzzleType.replace('_', ' ')} puzzle for that day — it&apos;ll automatically be hidden from the regular puzzle browser.</p>
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to publish this as a normal catalog puzzle. Set a day number to make this the daily {formData.puzzleType.replace('_', ' ')} puzzle for that day — it&apos;ll automatically be hidden from the regular puzzle browser. Check the puzzle list below for the 📅 Daily badge to confirm it saved.</p>
                     </div>
                   )}
 
@@ -1779,6 +1784,11 @@ export default function AdminPuzzlesPage() {
                               <span className={`px-2 py-0.5 rounded text-xs font-semibold ${p.isActive ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-400'}`}>
                                 {p.isActive ? 'Active' : 'Inactive'}
                               </span>
+                              {Array.isArray(p.dailySlots) && p.dailySlots.length > 0 && (
+                                <span className="ml-1 px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-300">
+                                  📅 Daily #{p.dailySlots.map(s => s.dayNumber).join(', #')}
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
                               {deleteConfirmId === p.id ? (
