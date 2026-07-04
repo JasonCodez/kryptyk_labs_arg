@@ -235,6 +235,12 @@ export default function WordCrackPuzzle({
   const [gameStatus, setGameStatus] = useState<WordScryGameStatus>(initialGameStatus);
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous re-entrancy guard for submitGuess. `submitting` (React state) isn't updated
+  // synchronously, so if the physical-keyboard Enter listener and the on-screen Enter button
+  // both fire for the same keypress (e.g. the on-screen button has focus and the user also
+  // presses a physical Enter key — common on iPads with keyboard cases), both can slip past
+  // a state-only check before React flushes, submitting the same guess twice.
+  const submittingRef = useRef(false);
   const [shakingRow, setShakingRow] = useState(false);
   const [revealingRow, setRevealingRow] = useState<number | null>(null);
   const [revealDone, setRevealDone] = useState<number[]>(() => initialGuesses.map((_, i) => i));
@@ -400,7 +406,7 @@ export default function WordCrackPuzzle({
 
   // â”€â”€ Submit guess â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const submitGuess = useCallback(async () => {
-    if (!isPlaying || submitting) return;
+    if (!isPlaying || submitting || submittingRef.current) return;
     const word = currentInput.toUpperCase().trim();
 
     if (word.length !== wordLength) {
@@ -411,6 +417,7 @@ export default function WordCrackPuzzle({
       return;
     }
 
+    submittingRef.current = true;
     setError("");
     setSubmitting(true);
 
@@ -424,7 +431,7 @@ export default function WordCrackPuzzle({
           setError(data.error);
           setShakingRow(true);
           triggerHaptic([12, 30, 12]);
-          setTimeout(() => { setShakingRow(false); setError(""); }, 700);
+          setTimeout(() => { setShakingRow(false); setError(""); setCurrentInput(""); }, 700);
           setSubmitting(false);
           return;
         }
@@ -447,7 +454,7 @@ export default function WordCrackPuzzle({
           setError(data.error ?? "Something went wrong");
           setShakingRow(true);
           triggerHaptic([12, 30, 12]);
-          setTimeout(() => { setShakingRow(false); setError(""); }, 700);
+          setTimeout(() => { setShakingRow(false); setError(""); setCurrentInput(""); }, 700);
           setSubmitting(false);
           return;
         }
@@ -515,6 +522,7 @@ export default function WordCrackPuzzle({
       setError("Network error — please try again");
       triggerHaptic(20);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }, [

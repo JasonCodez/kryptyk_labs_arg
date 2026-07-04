@@ -285,7 +285,7 @@ export default function HomepageWordScryCard() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                <Link href="/daily" className="hw-btn-primary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#020202', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em', background: 'linear-gradient(135deg, #38D399 0%, #FDE74C 100%)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s' }}>
+                <Link href="/daily/word" className="hw-btn-primary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#020202', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em', background: 'linear-gradient(135deg, #38D399 0%, #FDE74C 100%)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s' }}>
                   Open Full Daily Page →
                 </Link>
                 {!isAuthenticated && (

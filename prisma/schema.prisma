@@ -104,6 +104,7 @@ model User {
   // Point Store — inventory
   inventory              UserInventory[]
   dailyWordRecords       DailyWordRecord[]
+  dailyPuzzleRecords     DailyPuzzleRecord[]
 
   // Stripe
   stripeCustomerId       String?
@@ -304,6 +305,7 @@ model Puzzle {
   userProgress             UserPuzzleProgress[]
   warzChallenges           PuzzleWarzChallenge[]  @relation("WarzChallenges")
   gridlockSolves           GridlockSolve[]
+  dailySlots               DailyPuzzleSlot[]
 
   @@index([categoryId])
   @@index([order])
@@ -1153,6 +1155,40 @@ model GuestDailyWordSolve {
   @@index([anonId])
   @@index([userId])
   @@map("guest_daily_word_solves")
+}
+
+// Generic daily-completion + streak record for the 4 non-word daily puzzle types
+// (sudoku, crossword, word_search, jigsaw). The word puzzle intentionally keeps its
+// own DailyWordRecord/GuestDailyWordSolve models above — see plan notes for why.
+model DailyPuzzleRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  puzzleType String   // "sudoku" | "crossword" | "word_search" | "jigsaw"
+  dayNumber  Int
+  won        Boolean  @default(true)
+  skipped    Boolean  @default(false)
+  shieldUsed Boolean  @default(false)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, puzzleType, dayNumber])
+  @@index([userId, puzzleType])
+  @@map("daily_puzzle_records")
+}
+
+// Satellite table: which real Puzzle row is "the daily X for day N".
+model DailyPuzzleSlot {
+  id         String   @id @default(cuid())
+  puzzleType String
+  dayNumber  Int
+  puzzleId   String
+  createdAt  DateTime @default(now())
+  puzzle     Puzzle   @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+
+  @@unique([puzzleType, dayNumber])
+  @@index([puzzleId])
+  @@map("daily_puzzle_slots")
 }
 
 model Activity {

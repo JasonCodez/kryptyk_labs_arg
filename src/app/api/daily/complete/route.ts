@@ -4,25 +4,7 @@ import { requireAuthenticatedUser } from "@/lib/requireAuthenticatedUser";
 import { validateSameOrigin } from "@/lib/requestSecurity";
 import { calcLevel } from "@/lib/levels";
 import { awardSeasonXp } from "@/lib/seasonXp";
-
-// Day 1 = 2026-03-31 (must match daily/word/route.ts)
-const START_DATE = Date.UTC(2026, 2, 31);
-
-function getTodayDayNumber(): number {
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.floor((todayUtc - START_DATE) / 86_400_000) + 1;
-}
-
-/** Streak-based rewards: day 1 = 50pts/25xp, +25 each day, max 7 then reset */
-function streakReward(streakDay: number) {
-  const day = Math.max(1, Math.min(streakDay, 7));
-  return {
-    points: 50 + (day - 1) * 25,   // 50, 75, 100, 125, 150, 175, 200
-    xp:     25 + (day - 1) * 25,   // 25, 50, 75, 100, 125, 150, 175
-    streakDay: day,
-  };
-}
+import { computeStreak, getTodayDayNumber, streakReward } from "@/lib/dailyPuzzle";
 
 /**
  * POST /api/daily/complete
@@ -115,16 +97,7 @@ export async function POST(request: NextRequest) {
         where: { userId: currentUser.id },
         orderBy: { dayNumber: "desc" },
       });
-      let streak = 0;
-      let prevDay = dayNumber;
-      for (const rec of records) {
-        if (rec.dayNumber === prevDay) {
-          streak++;
-          prevDay--;
-        } else if (rec.dayNumber < prevDay) {
-          break;
-        }
-      }
+      const streak = computeStreak(records.map((r) => r.dayNumber), dayNumber, true);
 
       // Streak wraps after 7 — use ((streak-1) % 7) + 1 so day 8 = day 1
       const streakDay = ((streak - 1) % 7) + 1;
@@ -286,39 +259,7 @@ export async function GET(request: NextRequest) {
       orderBy: { dayNumber: "desc" },
     });
 
-    let streak = 0;
-    let expected = dayNumber;
-    for (const rec of records) {
-      if (rec.dayNumber === expected || rec.dayNumber === expected - 1) {
-        // Allow today's puzzle not yet done
-        if (rec.dayNumber === expected - 1 && streak === 0 && !todayRecord) {
-          // yesterday was the last one — streak still alive until end of today
-        }
-        if (rec.dayNumber === expected || (rec.dayNumber === expected - 1 && streak > 0)) {
-          streak++;
-          expected = rec.dayNumber - 1;
-        } else if (rec.dayNumber === expected - 1 && streak === 0) {
-          streak = 1;
-          expected = rec.dayNumber - 1;
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    // Simpler streak calculation
-    streak = 0;
-    let prevDay = todayRecord ? dayNumber : dayNumber - 1;
-    for (const rec of records) {
-      if (rec.dayNumber === prevDay) {
-        streak++;
-        prevDay--;
-      } else if (rec.dayNumber < prevDay) {
-        break;
-      }
-    }
+    const streak = computeStreak(records.map((r) => r.dayNumber), dayNumber, !!todayRecord);
 
     const user = await prisma.user.findUnique({
       where: { id: currentUser.id },

@@ -4,14 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { validateSameOrigin } from "@/lib/requestSecurity";
 import type { DailyWordScryComparisonStats } from "@/lib/dailyWordScryShare";
-
-const START_DATE = Date.UTC(2026, 2, 31);
-
-function getTodayDayNumber(): number {
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.floor((todayUtc - START_DATE) / 86_400_000) + 1;
-}
+import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 
 type DailySolverRecord = {
   key: string;

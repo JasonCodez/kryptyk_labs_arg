@@ -83,11 +83,12 @@ export async function POST(
 
     const { id: puzzleId } = await context.params;
     const body = await request.json();
-    const { word, cells, allFoundWords, warzMode } = body as {
+    const { word, cells, allFoundWords, warzMode, dailyMode } = body as {
       word: string;
       cells: { row: number; col: number }[];
       allFoundWords: string[];
       warzMode?: boolean;
+      dailyMode?: boolean;
     };
 
     if (!word || typeof word !== "string") {
@@ -137,8 +138,11 @@ export async function POST(
     let foundCount = clientFoundSet.size;
     let allFound = foundCount >= placeableWords.length;
 
-    // Persist progress
-    if (!warzMode) try {
+    // Persist progress. Skipped for warzMode (short synchronous head-to-head round) and
+    // dailyMode (the daily-rotation flow owns its own completion/reward bookkeeping via
+    // DailyPuzzleRecord, awarded once by /api/daily/word_search/complete) — for both,
+    // allFound/foundCount fall back to the client-reported tally above.
+    if (!warzMode && !dailyMode) try {
       const now = new Date();
 
       let progress = await prisma.userPuzzleProgress.findUnique({

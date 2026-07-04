@@ -48,6 +48,7 @@ export async function GET(
       jigsaw: true,
       sudoku: true,
       schedule: true,
+      dailySlots: { select: { dayNumber: true } },
     },
   });
 
@@ -88,6 +89,7 @@ export async function PUT(
     isWarzExclusive,
     gridlockReleaseAt,
     debriefReleaseAt,
+    dailySlotDayNumber,
   } = body;
 
   // Normalise snake_case category values coming from the admin dropdown to display names
@@ -447,6 +449,26 @@ export async function PUT(
       create: { puzzleId, releaseAt, schedulingType: 'scheduled' },
       update: { releaseAt },
     });
+  }
+
+  // Assign/clear this puzzle's daily rotation slot (sudoku/crossword/word_search/jigsaw only).
+  // Assigning a slot also flips isActive:false so the puzzle disappears from the normal
+  // catalog browser (GET /api/puzzles filters isActive:true) while remaining directly
+  // fetchable by ID for the daily-play routes — there's no separate admin toggle for this
+  // today, so we drive it automatically rather than requiring a manual step.
+  const DAILY_SLOT_TYPES = ["sudoku", "crossword", "word_search", "jigsaw"];
+  if (DAILY_SLOT_TYPES.includes(puzzleType)) {
+    const dayNum = toPositiveInt(dailySlotDayNumber);
+    if (dayNum) {
+      await prisma.dailyPuzzleSlot.upsert({
+        where: { puzzleType_dayNumber: { puzzleType, dayNumber: dayNum } },
+        create: { puzzleType, dayNumber: dayNum, puzzleId },
+        update: { puzzleId },
+      });
+      await prisma.puzzle.update({ where: { id: puzzleId }, data: { isActive: false } });
+    } else {
+      await prisma.dailyPuzzleSlot.deleteMany({ where: { puzzleId, puzzleType } });
+    }
   }
 
   const updated = await prisma.puzzle.findUnique({

@@ -152,8 +152,23 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
         }
       }
 
-      // wait for pop animation to finish
-      await sleep(520);
+      // The staggered cell-pop wave covers all 81 cells (30ms apart, ~0.45s pop each), so the
+      // last cell doesn't finish popping until ~2.9s in. Give it room to fully play out — and a
+      // beat of hold after — instead of handing off to the page-level modal partway through.
+      await sleep(1400);
+
+      if (!reducedMotion) {
+        try {
+          // @ts-ignore - canvas-confetti has no type declarations in this project
+          const confetti = (await import('canvas-confetti')).default;
+          confetti({ particleCount: 90, spread: 100, origin: { y: 0.5 }, angle: 60 });
+          confetti({ particleCount: 90, spread: 100, origin: { y: 0.5 }, angle: 120 });
+        } catch (e) {
+          // ignore if not available
+        }
+      }
+
+      await sleep(1500);
       setAnimating('idle');
 
       // call validated success handler (page will award points / open modal)

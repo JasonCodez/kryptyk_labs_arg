@@ -17,6 +17,10 @@ interface Props {
   onSolved?: () => void;
   alreadySolved?: boolean;
   warzMode?: boolean;
+  /** Daily-puzzle context: suppresses the route's normal point/XP award (the daily
+   * completion flow awards its own streak-based reward instead) without disabling
+   * autosave/hydrate the way warzMode does. */
+  dailyMode?: boolean;
   hintTokens?: number;
   onHintUsed?: () => Promise<boolean>;
 }
@@ -107,6 +111,7 @@ export default function WordSearchPuzzle({
   onSolved,
   alreadySolved,
   warzMode,
+  dailyMode,
   hintTokens = 0,
   onHintUsed,
 }: Props) {
@@ -388,6 +393,7 @@ export default function WordSearchPuzzle({
           cells: cells.map((c) => ({ row: c.row, col: c.col })),
           allFoundWords: newFoundWords,
           ...(warzMode && { warzMode: true }),
+          ...(dailyMode && { dailyMode: true }),
         }),
       });
       const data = await resp.json();

@@ -2,28 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { enforceRateLimit, getClientAddress, validateSameOrigin } from '@/lib/requestSecurity';
-
-const START_DATE = Date.UTC(2026, 2, 31);
+import { computeStreak, getTodayDayNumber, streakReward } from '@/lib/dailyPuzzle';
 
 const GuestCompleteSchema = z.object({
   anonId: z.string().min(8).max(128),
   guesses: z.number().int().min(1).max(6),
 });
-
-function getTodayDayNumber(): number {
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.floor((todayUtc - START_DATE) / 86_400_000) + 1;
-}
-
-function streakReward(streakDay: number) {
-  const day = Math.max(1, Math.min(streakDay, 7));
-  return {
-    points: 50 + (day - 1) * 25,
-    xp: 25 + (day - 1) * 25,
-    streakDay: day,
-  };
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -96,17 +80,7 @@ export async function POST(request: NextRequest) {
       orderBy: { dayNumber: 'desc' },
     });
 
-    let streakCount = 1;
-    let expectedDay = dayNumber - 1;
-    for (const solve of priorSolves) {
-      if (solve.dayNumber === expectedDay) {
-        streakCount += 1;
-        expectedDay -= 1;
-      } else if (solve.dayNumber < expectedDay) {
-        break;
-      }
-    }
-
+    const streakCount = computeStreak(priorSolves.map((s) => s.dayNumber), dayNumber, true);
     const reward = streakReward(((streakCount - 1) % 7) + 1);
 
     await prisma.guestDailyWordSolve.create({

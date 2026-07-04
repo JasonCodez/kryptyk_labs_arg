@@ -33,6 +33,7 @@ interface PuzzleFormData {
   isWarzExclusive: boolean;
   gridlockReleaseAt: string; // ISO date string YYYY-MM-DD, gridlock_file only
   debriefReleaseAt: string; // ISO date string, debrief only
+  dailySlotDayNumber: string; // daily-rotation day number, sudoku/crossword/word_search/jigsaw only
 }
 
 interface PuzzlePart {
@@ -134,6 +135,7 @@ export default function AdminPuzzlesPage() {
     isWarzExclusive: false,
     gridlockReleaseAt: "",
     debriefReleaseAt: "",
+    dailySlotDayNumber: "",
   });
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
@@ -241,6 +243,9 @@ export default function AdminPuzzlesPage() {
               return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
             })()
           : "",
+        dailySlotDayNumber: Array.isArray((p as any).dailySlots) && (p as any).dailySlots[0]
+          ? String((p as any).dailySlots[0].dayNumber)
+          : "",
       };
 
       // Merge jigsaw config into puzzleData
@@ -302,6 +307,7 @@ export default function AdminPuzzlesPage() {
       isWarzExclusive: false,
       gridlockReleaseAt: "",
       debriefReleaseAt: "",
+      dailySlotDayNumber: "",
     });
     setJigsawImageUrl("");
     setJigsawImagePreview("");
@@ -738,6 +744,9 @@ export default function AdminPuzzlesPage() {
           submitBody.debriefReleaseAt = new Date(formData.debriefReleaseAt).toISOString();
         }
       }
+      if (['sudoku', 'crossword', 'word_search', 'jigsaw'].includes(formData.puzzleType)) {
+        submitBody.dailySlotDayNumber = formData.dailySlotDayNumber || null;
+      }
       if (formData.puzzleType === 'parasite_code') {
         delete submitBody.correctAnswer;
       }
@@ -1031,6 +1040,7 @@ export default function AdminPuzzlesPage() {
           isWarzExclusive: false,
           gridlockReleaseAt: "",
           debriefReleaseAt: "",
+          dailySlotDayNumber: "",
         });
         setMediaFiles([]);
         setJigsawImagePreview("");
@@ -1161,6 +1171,22 @@ export default function AdminPuzzlesPage() {
                         className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
                       />
                       <p className="text-xs text-gray-500 mt-1">Leave blank to publish this as a normal catalog puzzle. Add a time in <strong className="text-gray-400">your local timezone</strong> only when this file should drive the daily Gridlock slot.</p>
+                    </div>
+                  )}
+
+                  {/* Daily rotation slot: sudoku/crossword/word_search/jigsaw only */}
+                  {['sudoku', 'crossword', 'word_search', 'jigsaw'].includes(formData.puzzleType) && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-300 mb-2">📅 Assign as Daily #N (optional)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={formData.dailySlotDayNumber}
+                        onChange={e => setFormData(prev => ({ ...prev, dailySlotDayNumber: e.target.value }))}
+                        placeholder="e.g. 42"
+                        className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to publish this as a normal catalog puzzle. Set a day number to make this the daily {formData.puzzleType.replace('_', ' ')} puzzle for that day — mark it inactive below so it doesn&apos;t also show up in the regular puzzle browser.</p>
                     </div>
                   )}
 

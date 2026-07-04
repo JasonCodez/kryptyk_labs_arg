@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-
-// Day 1 = 2026-03-31 (launch day)
-const START_DATE = Date.UTC(2026, 2, 31); // month is 0-indexed
+import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 
 const WORDS = [
   // Days 1–13 fixed (already played)
@@ -59,8 +57,7 @@ const WORDS = [
 
 export async function GET() {
   const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const dayNumber = Math.floor((todayUtc - START_DATE) / 86_400_000) + 1;
+  const dayNumber = getTodayDayNumber();
   const word = WORDS[((dayNumber - 1) % WORDS.length + WORDS.length) % WORDS.length];
   const date = now.toISOString().slice(0, 10);
 

@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
       isActive,
       gridlockReleaseAt,
       debriefReleaseAt,
+      dailySlotDayNumber,
     } = body;
 
     // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and WordScry
@@ -735,6 +736,22 @@ export async function POST(request: NextRequest) {
         create: { puzzleId: puzzle.id, releaseAt, schedulingType: 'scheduled' },
         update: { releaseAt },
       });
+    }
+
+    // Assign this puzzle to a daily rotation slot (sudoku/crossword/word_search/jigsaw only).
+    // Also flips isActive:false so it doesn't show up in the normal catalog browser — see
+    // the matching comment in api/admin/puzzles/[id]/route.ts for why this is automatic.
+    const DAILY_SLOT_TYPES = ["sudoku", "crossword", "word_search", "jigsaw"];
+    if (DAILY_SLOT_TYPES.includes(puzzle.puzzleType) && dailySlotDayNumber) {
+      const dayNum = Number(dailySlotDayNumber);
+      if (Number.isFinite(dayNum) && dayNum > 0) {
+        await prisma.dailyPuzzleSlot.upsert({
+          where: { puzzleType_dayNumber: { puzzleType: puzzle.puzzleType, dayNumber: Math.floor(dayNum) } },
+          create: { puzzleType: puzzle.puzzleType, dayNumber: Math.floor(dayNum), puzzleId: puzzle.id },
+          update: { puzzleId: puzzle.id },
+        });
+        await prisma.puzzle.update({ where: { id: puzzle.id }, data: { isActive: false } });
+      }
     }
 
     // Send puzzle release notification if active
