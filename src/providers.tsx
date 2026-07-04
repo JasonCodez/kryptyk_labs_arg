@@ -5,10 +5,12 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import AchievementNotification from "@/components/AchievementNotification";
+import SlotMachineModal from "@/components/puzzle/SlotMachineModal";
 import { rarityColors } from "@/lib/rarity";
 import { useSession } from "next-auth/react";
 import { useAchievementModalStore } from "@/lib/achievement-modal-store";
 import { useModalQueueStore } from "@/lib/modal-queue-store";
+import { useSlotModalStore } from "@/lib/slot-modal-store";
 import TeamLobbyInviteModalProvider from "@/components/teams/TeamLobbyInviteModalProvider";
 
 const Navbar = dynamic(() => import("@/components/Navbar"), { ssr: false });
@@ -170,6 +172,58 @@ function GlobalAchievementModal() {
   );
 }
 
+/**
+ * Universal trigger for the level-up slot machine. Level can advance from many server
+ * paths (daily puzzles, word search, signup XP, etc.) that never call the puzzle-page's
+ * local claim logic, so this polls opportunistically from anywhere in the app instead
+ * of relying on a single page to notice a level-up — the same problem/solution shape as
+ * GlobalAchievementModal above.
+ */
+function GlobalSlotMachineModal() {
+  const { data: session } = useSession();
+  const pendingSpins = useSlotModalStore((s) => s.pendingSpins);
+  const setPendingSpins = useSlotModalStore((s) => s.setPendingSpins);
+  const clearPendingSpins = useSlotModalStore((s) => s.clearPendingSpins);
+  const openModals = useModalQueueStore((s) => s.openModals);
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+
+    let mounted = true;
+    const checkForSpins = async () => {
+      // Don't clobber a batch already queued/showing with a redundant fetch result.
+      if (useSlotModalStore.getState().pendingSpins) return;
+      try {
+        const response = await fetch("/api/user/claim-level-reward", { method: "POST" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (mounted && Array.isArray(data.spins) && data.spins.length > 0) {
+          setPendingSpins(data.spins);
+        }
+      } catch {
+        // ignore — next poll tries again
+      }
+    };
+
+    checkForSpins();
+    const interval = setInterval(checkForSpins, 30000);
+    window.addEventListener("puzzlewarz:puzzle-solved", checkForSpins);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      window.removeEventListener("puzzlewarz:puzzle-solved", checkForSpins);
+    };
+  }, [session?.user?.email, setPendingSpins]);
+
+  // Wait for any OTHER modal (e.g. the puzzle-solve level-up counter) to close first, so
+  // the spin reveal doesn't collide with it — same registry PuzzleXpModal uses. Exclude
+  // our own registration (SlotMachineModal registers itself once mounted) or this would
+  // immediately hide itself the render after it appears.
+  const blockedByOtherModal = Array.from(openModals).some((id) => id !== "slot-machine-modal");
+  if (!pendingSpins || blockedByOtherModal) return null;
+  return <SlotMachineModal spins={pendingSpins} onDismiss={clearPendingSpins} />;
+}
+
 function AuthenticatedEffects() {
   const { data: session, status } = useSession();
   const isAuthenticated = status === 'authenticated' && !!session?.user;
@@ -258,6 +312,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {pathname !== '/coming-soon' && !isStandalone && <Navbar />}
       <AppBottomNav />
       <GlobalAchievementModal />
+      <GlobalSlotMachineModal />
       <AuthenticatedEffects />
       {!isStandalone && <IOSInstallBanner />}
       {children}

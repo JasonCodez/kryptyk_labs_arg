@@ -15,7 +15,7 @@ const NOTIFICATION_EMAILS_ENABLED = false;
 
 interface CreateNotificationOptions {
   userId: string;
-  type: "puzzle_released" | "achievement_unlocked" | "team_update" | "leaderboard_change" | "system";
+  type: "puzzle_released" | "achievement_unlocked" | "team_update" | "leaderboard_change" | "slot_win" | "system";
   title: string;
   message: string;
   icon?: string;

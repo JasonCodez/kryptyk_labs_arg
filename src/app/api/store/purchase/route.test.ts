@@ -259,4 +259,35 @@ describe("POST /api/store/purchase", () => {
     expect(wallet.totalPoints).toBe(450);
     expect(wallet.purchasedPoints).toBe(270);
   });
+
+  test("rejects a direct purchase of an isExclusive item (season-pass / slot-machine grant-only cosmetics)", async () => {
+    mockedRequireAuthenticatedUser.mockResolvedValueOnce({
+      id: "user-1",
+      name: "Player",
+      email: "player@example.com",
+    });
+
+    mockedPrisma.storeItem.findUnique.mockResolvedValueOnce({
+      id: "item-jackpot",
+      key: "frame_jackpot_platinum",
+      name: "Jackpot Platinum Frame",
+      isActive: true,
+      isExclusive: true,
+      isConsumable: false,
+      price: 0,
+    });
+
+    const request = new NextRequest("http://localhost/api/store/purchase", {
+      method: "POST",
+      body: JSON.stringify({ itemKey: "frame_jackpot_platinum" }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Item not found or unavailable");
+    expect(mockedPrisma.user.findUnique).not.toHaveBeenCalled();
+    expect(mockedPrisma.userInventory.upsert).not.toHaveBeenCalled();
+  });
 });

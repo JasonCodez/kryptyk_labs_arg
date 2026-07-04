@@ -29,6 +29,8 @@ model User {
   level                  Int                        @default(1)
   xpTitle                String                     @default("Newcomer")
   levelRewardClaimed     Int                        @default(0)
+  slotPityCounter        Int                        @default(0)
+  slotSpins              SlotSpinRecord[]
   totalPoints            Int                        @default(0)
   purchasedPoints        Int                        @default(0)
   accounts               Account[]
@@ -1189,6 +1191,25 @@ model DailyPuzzleSlot {
   @@unique([puzzleType, dayNumber])
   @@index([puzzleId])
   @@map("daily_puzzle_slots")
+}
+
+// One record per level-up spin (see src/lib/slotMachine/). First general reward-history
+// table in this schema — intentionally scoped to slot spins only, not a generic ledger.
+model SlotSpinRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  level         Int
+  tier          String   // "common" | "uncommon" | "rare" | "epic" | "legendary"
+  prizeType     String   // "points" | "hint_tokens" | "skip_tokens" | "cosmetic"
+  prizeKey      String?  // StoreItem.key, when prizeType = "cosmetic"
+  prizeAmount   Int?
+  pityTriggered Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("slot_spin_records")
 }
 
 model Activity {

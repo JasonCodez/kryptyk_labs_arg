@@ -48,7 +48,6 @@ interface XpModalData {
   newTitle: string;
   oldProgress: number;
   newProgress: number;
-  levelReward?: { points?: number; hintTokens?: number; skipTokens?: number; label: string } | null;
 }
 
 interface Puzzle {
@@ -861,19 +860,6 @@ export default function PuzzleDetailPage() {
     const before = calcLevel(userTotalXp);
     const after = calcLevel(userTotalXp + xp);
 
-    let levelReward: { points?: number; hintTokens?: number; skipTokens?: number; label: string } | null = null;
-    if (after.level > before.level) {
-      try {
-        const res = await fetch("/api/user/claim-level-reward", { method: "POST" });
-        if (res.ok) {
-          const data = await res.json();
-          levelReward = data.reward ?? null;
-        }
-      } catch {
-        // non-critical — modal still shows without reward info
-      }
-    }
-
     setXpModalData({
       xpGained: xp,
       oldLevel: before.level,
@@ -881,7 +867,6 @@ export default function PuzzleDetailPage() {
       newTitle: after.title,
       oldProgress: before.progress,
       newProgress: after.progress,
-      levelReward,
     });
     setShowXpModal(true);
     // Notify the Navbar (and any other listener) that XP has changed
@@ -1592,7 +1577,6 @@ export default function PuzzleDetailPage() {
                 newTitle={xpModalData.newTitle}
                 oldProgress={xpModalData.oldProgress}
                 newProgress={xpModalData.newProgress}
-                levelReward={xpModalData.levelReward}
                 completionAnimation={activeCompletionAnimation}
                 onDismiss={() => {
                   setShowXpModal(false);

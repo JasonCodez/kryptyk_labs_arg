@@ -22,7 +22,9 @@ export async function POST(request: NextRequest) {
     if (!itemKey) return NextResponse.json({ error: "itemKey required" }, { status: 400 });
 
     const item = await prisma.storeItem.findUnique({ where: { key: itemKey } });
-    if (!item || !item.isActive) {
+    // isExclusive items (season-pass rewards, slot-machine prizes) are grant-only —
+    // they must never be purchasable directly, even by POSTing a known key.
+    if (!item || !item.isActive || item.isExclusive) {
       return NextResponse.json({ error: "Item not found or unavailable" }, { status: 404 });
     }
 
