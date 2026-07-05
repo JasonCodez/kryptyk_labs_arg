@@ -481,10 +481,10 @@ const STORE_ITEMS = [
   { key: "anim_lightning", name: "Lightning Strike", description: "An electric lightning bolt crackles across your screen on puzzle completion.", category: "cosmetic", subcategory: "anim", price: 400, isConsumable: false, iconEmoji: "⚡", metadata: { value: "lightning" } },
   { key: "anim_fireworks", name: "Fireworks Show", description: "A full fireworks display launches when you crack a puzzle.", category: "cosmetic", subcategory: "anim", price: 600, isConsumable: false, iconEmoji: "🎆", metadata: { value: "fireworks" } },
   // ── Season 1 — Ignition exclusives (hidden from store, granted via season pass) ──
-  { key: "frame_ignition_bronze", name: "Ignition Bronze Frame", description: "Season 1 exclusive. A molten bronze avatar frame earned on the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🟫", metadata: { value: "ignition_bronze", season: 1 } },
-  { key: "frame_ignition_silver", name: "Ignition Silver Frame", description: "Season 1 exclusive. A shimmering silver avatar frame earned on the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "⬜", metadata: { value: "ignition_silver", season: 1 } },
-  { key: "frame_ignition_gold", name: "Ignition Gold Frame", description: "Season 1 exclusive. A blazing gold avatar frame earned on the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🟡", metadata: { value: "ignition_gold", season: 1 } },
-  { key: "frame_ignition_legendary", name: "Ignition Legendary Frame", description: "Season 1 exclusive. The rarest frame — forged in flame for those who conquered the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🔶", metadata: { value: "ignition_legendary", season: 1 } },
+  { key: "frame_ignition_bronze", name: "Ignition Common Avatar Frame", description: "Season 1 exclusive. The first avatar frame earned on the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🟫", metadata: { value: "ignition_bronze", season: 1 } },
+  { key: "frame_ignition_silver", name: "Ignition Rare Avatar Frame", description: "Season 1 exclusive. A shimmering avatar frame earned deeper into the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "⬜", metadata: { value: "ignition_silver", season: 1 } },
+  { key: "frame_ignition_gold", name: "Ignition Epic Avatar Frame", description: "Season 1 exclusive. A blazing avatar frame for dedicated Ignition Pass climbers.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🟡", metadata: { value: "ignition_gold", season: 1 } },
+  { key: "frame_ignition_legendary", name: "Ignition Legendary Avatar Frame", description: "Season 1 exclusive. The rarest avatar frame — forged in flame for those who conquered the Ignition Pass.", category: "cosmetic", subcategory: "frame", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🔶", metadata: { value: "ignition_legendary", season: 1 } },
   { key: "theme_ignition_ember", name: "Ember Theme", description: "Season 1 exclusive. A smouldering ember profile theme — deep charcoal with glowing orange accents.", category: "cosmetic", subcategory: "theme", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🔥", metadata: { value: "ignition_ember", primaryColor: "#f97316", accentColor: "#dc2626", season: 1 } },
   { key: "theme_ignition_inferno", name: "Inferno Theme", description: "Season 1 exclusive. The ultimate Ignition theme — volcanic black with molten lava veins.", category: "cosmetic", subcategory: "theme", price: 0, isConsumable: false, isExclusive: true, iconEmoji: "🌋", metadata: { value: "ignition_inferno", primaryColor: "#ef4444", accentColor: "#fbbf24", season: 1 } },
   // ── Slot machine — level-up spin exclusives (hidden from store, granted via a spin only) ──
@@ -509,11 +509,37 @@ async function seedStoreItems() {
   console.log(`✅ Store items: ${created} created, ${skipped} already existed.`);
 }
 
+// Refreshes display copy (name/description only — never key/metadata/price/isExclusive)
+// on StoreItem rows that may already exist in a database seeded before a rename.
+// seedStoreItems() only creates missing rows, so renames need this separate,
+// unconditional, idempotent backfill to reach databases seeded before the rename.
+const STORE_ITEM_COPY_BACKFILL: { key: string; name: string; description: string }[] = [
+  { key: "frame_ignition_bronze", name: "Ignition Common Avatar Frame", description: "Season 1 exclusive. The first avatar frame earned on the Ignition Pass." },
+  { key: "frame_ignition_silver", name: "Ignition Rare Avatar Frame", description: "Season 1 exclusive. A shimmering avatar frame earned deeper into the Ignition Pass." },
+  { key: "frame_ignition_gold", name: "Ignition Epic Avatar Frame", description: "Season 1 exclusive. A blazing avatar frame for dedicated Ignition Pass climbers." },
+  { key: "frame_ignition_legendary", name: "Ignition Legendary Avatar Frame", description: "Season 1 exclusive. The rarest avatar frame — forged in flame for those who conquered the Ignition Pass." },
+];
+
+async function backfillStoreItemCopy() {
+  console.log("🌱 Backfilling renamed store item copy...");
+  let updated = 0;
+  for (const { key, name, description } of STORE_ITEM_COPY_BACKFILL) {
+    const existing = await prisma.storeItem.findUnique({ where: { key } });
+    if (!existing) continue;
+    if (existing.name === name && existing.description === description) continue;
+    await prisma.storeItem.update({ where: { key }, data: { name, description } });
+    updated++;
+    console.log(`  ✓ ${key} → ${name}`);
+  }
+  console.log(`✅ Store item copy: ${updated} row(s) updated.`);
+}
+
 // Run seeding in a single flow so we only disconnect once
 async function main() {
   try {
     await seedAchievements();
     await seedStoreItems();
+    await backfillStoreItemCopy();
     await seedSeason1();
     console.log('🎉 All seeds completed successfully.');
   } catch (e) {

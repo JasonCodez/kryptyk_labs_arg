@@ -1,3 +1,5 @@
+import type { Rarity } from "@/lib/rarity";
+
 export interface ThemeConfig {
   pageBg: string;
   headerGradient: string;
@@ -171,16 +173,19 @@ export const THEME_CONFIGS: Record<string, ThemeConfig> = {
   },
 };
 
-export const FRAME_CONFIGS: Record<string, { ring: string; glow: string; colorA?: string; colorB?: string }> = {
+export const FRAME_CONFIGS: Record<string, { ring: string; glow: string; colorA?: string; colorB?: string; rarity?: Rarity }> = {
   none:  { ring: '', glow: '' },
   gold:  { ring: 'linear-gradient(135deg, #FDE74C, #FFB86B, #FDE74C)', glow: '0 0 20px rgba(253,231,76,0.7), 0 0 40px rgba(253,231,76,0.3)', colorA: '#FDE74C', colorB: '#FFB86B' },
   neon:  { ring: 'linear-gradient(135deg, #00FFFF, #CC00FF, #00FFFF)',  glow: '0 0 20px rgba(0,255,255,0.7), 0 0 40px rgba(204,0,255,0.4)', colorA: '#00FFFF', colorB: '#CC00FF' },
   flame: { ring: 'linear-gradient(135deg, #FF4500, #FDE74C, #FF4500)',  glow: '0 0 20px rgba(255,69,0,0.8), 0 0 40px rgba(253,231,76,0.4)', colorA: '#FF4500', colorB: '#FDE74C' },
-  // ── Season 1: Ignition exclusive frames ──
-  ignition_bronze:    { ring: 'linear-gradient(135deg, #CD7F32, #E8A862, #CD7F32)', glow: '0 0 18px rgba(205,127,50,0.7), 0 0 36px rgba(205,127,50,0.3)', colorA: '#CD7F32', colorB: '#E8A862' },
-  ignition_silver:    { ring: 'linear-gradient(135deg, #C0C0C0, #E8E8E8, #C0C0C0)', glow: '0 0 18px rgba(192,192,192,0.7), 0 0 36px rgba(192,192,192,0.3)', colorA: '#C0C0C0', colorB: '#E8E8E8' },
-  ignition_gold:      { ring: 'linear-gradient(135deg, #FFD700, #FFA500, #FFD700)', glow: '0 0 22px rgba(255,215,0,0.8), 0 0 44px rgba(255,165,0,0.4)', colorA: '#FFD700', colorB: '#FFA500' },
-  ignition_legendary: { ring: 'linear-gradient(135deg, #FF3232, #FFAA00, #FF3232)', glow: '0 0 25px rgba(255,50,50,0.9), 0 0 50px rgba(255,170,0,0.5)', colorA: '#FF3232', colorB: '#FFAA00' },
+  // ── Season 1: Ignition exclusive frames — rarity drives the AvatarFrame effect tier ──
+  ignition_bronze:    { ring: 'linear-gradient(135deg, #CD7F32, #E8A862, #CD7F32)', glow: '0 0 18px rgba(205,127,50,0.7), 0 0 36px rgba(205,127,50,0.3)', colorA: '#CD7F32', colorB: '#E8A862', rarity: 'common' },
+  ignition_silver:    { ring: 'linear-gradient(135deg, #C0C0C0, #E8E8E8, #C0C0C0)', glow: '0 0 18px rgba(192,192,192,0.7), 0 0 36px rgba(192,192,192,0.3)', colorA: '#C0C0C0', colorB: '#E8E8E8', rarity: 'rare' },
+  ignition_gold:      { ring: 'linear-gradient(135deg, #FFD700, #FFA500, #FFD700)', glow: '0 0 22px rgba(255,215,0,0.8), 0 0 44px rgba(255,165,0,0.4)', colorA: '#FFD700', colorB: '#FFA500', rarity: 'epic' },
+  ignition_legendary: { ring: 'linear-gradient(135deg, #FF3232, #FFAA00, #FF3232)', glow: '0 0 25px rgba(255,50,50,0.9), 0 0 50px rgba(255,170,0,0.5)', colorA: '#FF3232', colorB: '#FFAA00', rarity: 'legendary' },
+  // ── Slot machine exclusive frames ──
+  jackpot_platinum: { ring: 'linear-gradient(135deg, #E5E4E2, #FFD700, #E5E4E2)', glow: '0 0 22px rgba(229,228,226,0.8), 0 0 44px rgba(255,215,0,0.35)', colorA: '#E5E4E2', colorB: '#FFD700', rarity: 'epic' },
+  jackpot_diamond:  { ring: 'linear-gradient(135deg, #B9F2FF, #7DF9FF, #B9F2FF)', glow: '0 0 25px rgba(185,242,255,0.9), 0 0 55px rgba(125,249,255,0.4)', colorA: '#B9F2FF', colorB: '#7DF9FF', rarity: 'legendary' },
 };
 
 /** Resolve theme key — handles both "gold" and "theme_gold" stored formats */

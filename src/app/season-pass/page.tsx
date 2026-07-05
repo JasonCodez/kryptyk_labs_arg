@@ -64,10 +64,10 @@ const REWARD_LABELS: Record<string, string> = {
 };
 
 const COSMETIC_NAMES: Record<string, string> = {
-  frame_ignition_bronze: "Bronze Frame",
-  frame_ignition_silver: "Silver Frame",
-  frame_ignition_gold: "Gold Frame",
-  frame_ignition_legendary: "Legendary Frame",
+  frame_ignition_bronze: "Ignition Common Avatar Frame",
+  frame_ignition_silver: "Ignition Rare Avatar Frame",
+  frame_ignition_gold: "Ignition Epic Avatar Frame",
+  frame_ignition_legendary: "Ignition Legendary Avatar Frame",
   theme_ignition_ember: "Ember Theme",
   theme_ignition_inferno: "Inferno Theme",
 };

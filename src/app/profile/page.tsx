@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Rarity, rarityColors } from '@/lib/rarity';
 import { THEME_CONFIGS, FRAME_CONFIGS, type ThemeConfig } from '@/lib/profileThemes';
-import AvatarFrame from '@/components/AvatarFrame';
+import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
 interface UserProfile {
@@ -391,7 +391,7 @@ export default function ProfilePage() {
             {/* Avatar with frame */}
             <div className="relative shrink-0">
               {frame.colorA ? (
-                <AvatarFrame frame={frame as { colorA: string; colorB: string; glow: string }} size={80} pageBg={t.pageBg}>
+                <AvatarFrame frame={frame as FrameConfig} size={80} pageBg={t.pageBg}>
                   {profile?.image
                     ? <img src={profile.image} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
                     : <div className="w-full h-full flex items-center justify-center text-3xl" style={{ background: t.primaryMuted }}>👤</div>}
@@ -459,7 +459,7 @@ export default function ProfilePage() {
             <div className="flex flex-col items-center space-y-4">
               {/* Current Avatar with active frame */}
               {frame.colorA ? (
-                <AvatarFrame frame={frame as { colorA: string; colorB: string; glow: string }} size={96} pageBg={t.pageBg}>
+                <AvatarFrame frame={frame as FrameConfig} size={96} pageBg={t.pageBg}>
                   {profile?.image
                     ? <img src={profile.image} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
                     : <div className="w-full h-full flex items-center justify-center text-4xl" style={{ background: t.primaryMuted }}>👤</div>}

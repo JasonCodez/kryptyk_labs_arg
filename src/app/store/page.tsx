@@ -362,13 +362,16 @@ function FramePreviewContent({ frameKey }: { frameKey: string }) {
         .store-frame-animated {
           border-radius: 9999px;
           padding: 5px;
+          /* Last stop matches the first so 360deg loops back into 0deg smoothly
+             instead of hard-cutting once per rotation. */
           background: conic-gradient(
             var(--sf-color-a) 0deg,
             var(--sf-color-b) 85deg,
             rgba(255,255,255,0.85) 150deg,
             var(--sf-color-b) 215deg,
             var(--sf-color-a) 300deg,
-            var(--sf-color-b) 360deg
+            var(--sf-color-b) 340deg,
+            var(--sf-color-a) 360deg
           );
           animation: store-frame-spin 3s linear infinite;
         }

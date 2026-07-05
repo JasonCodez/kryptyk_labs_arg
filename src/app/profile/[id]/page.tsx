@@ -8,7 +8,7 @@ import Link from "next/link";
 import ConfirmModal from '@/components/ConfirmModal';
 import { Rarity, rarityColors } from '@/lib/rarity';
 import { THEME_CONFIGS, FRAME_CONFIGS, getThemeConfig, getTopBarGradient } from '@/lib/profileThemes';
-import AvatarFrame from '@/components/AvatarFrame';
+import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import { normalizeUserImageUrl } from '@/lib/userImage';
 import {
   UserPlus,
@@ -378,7 +378,7 @@ export default function PublicProfilePage() {
     if (frame.colorA) {
       return (
         <AvatarFrame
-          frame={frame as { colorA: string; colorB: string; glow: string }}
+          frame={frame as FrameConfig}
           size={sizePx}
           pageBg={t.pageBg}
         >
