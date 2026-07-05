@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   buildFrequencyCanonicalConfig,
   canonicalizeFrequencyAnswer,
+  isWithinFrequencyWordLimit,
+  MAX_FREQUENCY_ANSWER_WORDS,
   MAX_FREQUENCY_ANSWERS,
 } from "@/lib/frequency";
 
@@ -159,9 +161,14 @@ export default function FrequencyGame({
   };
 
   const filledAnswers = inputs.filter((a) => a.trim().length > 0);
+  const tooLongAnswer = filledAnswers.find((a) => !isWithinFrequencyWordLimit(a));
 
   const handleSubmit = useCallback(async () => {
     if (submitting || !question || filledAnswers.length === 0) return;
+    if (tooLongAnswer) {
+      setError(`Answers can be at most ${MAX_FREQUENCY_ANSWER_WORDS} words: "${tooLongAnswer}"`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -193,7 +200,7 @@ export default function FrequencyGame({
     } finally {
       setSubmitting(false);
     }
-  }, [submitting, question, filledAnswers, sessionId]);
+  }, [submitting, question, filledAnswers, tooLongAnswer, sessionId]);
 
   // Compute max count for bar scaling
   const maxCount = results ? Math.max(...results.answers.map((a) => a.count), 1) : 1;
@@ -527,27 +534,30 @@ export default function FrequencyGame({
 
       {/* Answer inputs */}
       <div className="flex flex-col gap-2">
-        {inputs.map((val, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <span className="w-6 text-center text-sm font-bold shrink-0" style={{ color: "#64748b" }}>{i + 1}</span>
-            <input
-              ref={(el) => { inputRefs.current[i] = el; }}
-              type="text"
-              value={val}
-              placeholder={i === 0 ? "Your best answer…" : "Another answer…"}
-              maxLength={60}
-              className="flex-1 rounded-xl px-4 py-3 text-sm font-medium text-white outline-none transition-all"
-              style={{
-                background: activeIndex === i ? "rgba(56,145,166,0.15)" : "rgba(255,255,255,0.06)",
-                border: `1px solid ${activeIndex === i ? TEAL : "rgba(255,255,255,0.1)"}`,
-              }}
-              onFocus={() => setActiveIndex(i)}
-              onChange={(e) => handleInputChange(i, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(i, e)}
-              autoComplete="off"
-            />
-          </div>
-        ))}
+        {inputs.map((val, i) => {
+          const isTooLong = !isWithinFrequencyWordLimit(val);
+          return (
+            <div key={i} className="flex items-center gap-3">
+              <span className="w-6 text-center text-sm font-bold shrink-0" style={{ color: "#64748b" }}>{i + 1}</span>
+              <input
+                ref={(el) => { inputRefs.current[i] = el; }}
+                type="text"
+                value={val}
+                placeholder={i === 0 ? "Your best answer…" : "Another answer…"}
+                maxLength={60}
+                className="flex-1 rounded-xl px-4 py-3 text-sm font-medium text-white outline-none transition-all"
+                style={{
+                  background: isTooLong ? "rgba(239,68,68,0.08)" : activeIndex === i ? "rgba(56,145,166,0.15)" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${isTooLong ? "#ef4444" : activeIndex === i ? TEAL : "rgba(255,255,255,0.1)"}`,
+                }}
+                onFocus={() => setActiveIndex(i)}
+                onChange={(e) => handleInputChange(i, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(i, e)}
+                autoComplete="off"
+              />
+            </div>
+          );
+        })}
       </div>
 
       {error && (
@@ -557,7 +567,7 @@ export default function FrequencyGame({
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={submitting || filledAnswers.length === 0}
+        disabled={submitting || filledAnswers.length === 0 || !!tooLongAnswer}
         className="w-full py-3 rounded-xl font-bold text-white text-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-40 disabled:scale-100"
         style={{ background: TEAL }}
       >
@@ -566,6 +576,9 @@ export default function FrequencyGame({
 
       <p className="text-xs text-center" style={{ color: "#475569" }}>
         Results revealed daily · Free to play
+      </p>
+      <p className="text-xs text-center" style={{ color: "#475569" }}>
+        Answers are limited to {MAX_FREQUENCY_ANSWER_WORDS} words — short & simple matches the crowd best
       </p>
     </div>
   );

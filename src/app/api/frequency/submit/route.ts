@@ -7,6 +7,8 @@ import { randomUUID } from "crypto";
 import {
   buildFrequencyCanonicalConfig,
   calculateFrequencyScore,
+  isWithinFrequencyWordLimit,
+  MAX_FREQUENCY_ANSWER_WORDS,
   MAX_FREQUENCY_ANSWERS,
 } from "@/lib/frequency";
 import { rebuildFrequencyAnswerGroups } from "@/lib/frequency-service";
@@ -35,6 +37,14 @@ export async function POST(request: Request) {
 
   if (rawAnswers.length === 0) {
     return NextResponse.json({ error: "No valid answers" }, { status: 400 });
+  }
+
+  const tooLong = rawAnswers.find((a) => !isWithinFrequencyWordLimit(a));
+  if (tooLong) {
+    return NextResponse.json(
+      { error: `Answers can be at most ${MAX_FREQUENCY_ANSWER_WORDS} words: "${tooLong}"` },
+      { status: 400 }
+    );
   }
 
   const question = await prisma.frequencyQuestion.findUnique({

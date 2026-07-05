@@ -1,4 +1,13 @@
 export const MAX_FREQUENCY_ANSWERS = 3;
+export const MAX_FREQUENCY_ANSWER_WORDS = 2;
+
+export function countAnswerWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+export function isWithinFrequencyWordLimit(text: string): boolean {
+  return countAnswerWords(text) <= MAX_FREQUENCY_ANSWER_WORDS;
+}
 
 export interface FrequencyCanonicalGroup {
   canonical: string;
