@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import { findWordInGrid, normalizeWordList } from "@/lib/wordSearchCore";
+import WordDefinitionModal, { type WordDefinitionData } from "@/components/puzzle/WordDefinitionModal";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -168,6 +169,38 @@ export default function WordSearchPuzzle({
   const foundWordsRef = useRef<string[]>(foundWords);
   const skin = usePuzzleSkin();
   const [showHelp, setShowHelp] = useState(false);
+  const [definitionModal, setDefinitionModal] = useState<{
+    word: string;
+    colorIdx: number;
+    status: "loading" | "found" | "not-found";
+    data?: WordDefinitionData;
+  } | null>(null);
+
+  async function revealDefinition(word: string, colorIdx: number) {
+    setDefinitionModal({ word, colorIdx, status: "loading" });
+    try {
+      const res = await fetch(`/api/dictionary/define?word=${encodeURIComponent(word)}`);
+      const json = await res.json();
+      setDefinitionModal(
+        json.found
+          ? {
+              word,
+              colorIdx,
+              status: "found",
+              data: {
+                phonetic: json.phonetic,
+                audioUrl: json.audioUrl,
+                partOfSpeech: json.partOfSpeech,
+                definition: json.definition,
+                example: json.example,
+              },
+            }
+          : { word, colorIdx, status: "not-found" }
+      );
+    } catch {
+      setDefinitionModal({ word, colorIdx, status: "not-found" });
+    }
+  }
 
   const showRestoredProgressBanner = () => {
     if (restoreNoticeTimeoutRef.current !== null) {
@@ -311,6 +344,7 @@ export default function WordSearchPuzzle({
     setFlashWord(word);
     setTimeout(() => setFlashWord(null), 1200);
     setWsHintCount((c) => c + 1);
+    revealDefinition(word, words.indexOf(word) % WORD_COLORS.length);
   };
 
   // ── Drag handlers ───────────────────────────────────────────────────────────
@@ -406,6 +440,7 @@ export default function WordSearchPuzzle({
         triggerHaptic([12, 30, 12]);
         setFlashWord(matched);
         setTimeout(() => setFlashWord(null), 1200);
+        revealDefinition(matched, words.indexOf(matched) % WORD_COLORS.length);
         if (data.allFound) {
           setGameStatus("won");
           triggerHaptic([20, 40, 20]);
@@ -530,6 +565,15 @@ export default function WordSearchPuzzle({
   return (
     <>
       {showHelp && <HowToPlayModal onClose={() => setShowHelp(false)} />}
+      {definitionModal && (
+        <WordDefinitionModal
+          word={definitionModal.word}
+          color={WORD_COLORS[definitionModal.colorIdx]}
+          status={definitionModal.status}
+          data={definitionModal.data}
+          onDismiss={() => setDefinitionModal(null)}
+        />
+      )}
       <div
         data-skin={skin._key ?? "default"}
         style={{
