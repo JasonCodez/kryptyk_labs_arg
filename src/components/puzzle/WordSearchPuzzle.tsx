@@ -77,7 +77,7 @@ function snapDirection(dr: number, dc: number): { dr: number; dc: number } | nul
   }
 }
 
-function HowToPlayModal({ onClose }: { onClose: () => void }) {
+function HowToPlayModal({ onClose, onShowIntro }: { onClose: () => void; onShowIntro: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4"
@@ -98,8 +98,84 @@ function HowToPlayModal({ onClose }: { onClose: () => void }) {
           <p><strong className="text-white">Finding a word:</strong> When you correctly select a word, it lights up in colour and is crossed off the list. Find all words to solve the puzzle.</p>
           <p><strong className="text-white">Hints:</strong> Use a hint token to automatically reveal a random unfound word. Hint tokens can be purchased from the Store.</p>
         </div>
-        <div className="mt-5 text-right">
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <button
+            onClick={() => { onClose(); onShowIntro(); }}
+            className="text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+            style={{ color: "#9BD1D6" }}
+          >
+            🗝️ Why Word Trove?
+          </button>
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: "#FDE74C", color: "#000" }}>Got it</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WordTroveIntroModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-w-lg w-full rounded-2xl p-6 shadow-2xl"
+        style={{ background: "linear-gradient(160deg, rgba(15,15,26,0.98) 0%, rgba(4,4,8,0.98) 100%)", border: "1px solid rgba(129,140,248,0.35)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-3">
+          <h2
+            className="text-xl font-black tracking-tight"
+            style={{
+              backgroundImage: "linear-gradient(135deg, #818cf8, #c084fc, #f472b6)",
+              backgroundClip: "text",
+              WebkitBackgroundClip: "text",
+              color: "transparent",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            🗝️ More Than a Word Search
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-4 shrink-0">✕</button>
+        </div>
+
+        <div className="space-y-3 text-sm text-gray-300 leading-relaxed">
+          <p>
+            Word Trove plays like a normal word search, but finding a word is just the start —
+            every one you find pops up its real definition, so each puzzle doubles as a
+            chance to pick up new vocabulary.
+          </p>
+          <p>
+            You&apos;ll run into a mix of words. Some will be everyday and familiar — others
+            might be new to you. That&apos;s intentional: the less common words are where the
+            actual learning happens, not a sign the puzzle is too hard.
+          </p>
+        </div>
+
+        <div className="mt-4 space-y-2 rounded-xl p-3.5" style={{ background: "rgba(129,140,248,0.08)", border: "1px solid rgba(129,140,248,0.2)" }}>
+          <div className="flex items-start gap-2.5 text-xs text-gray-300">
+            <span className="text-base leading-none">🔍</span>
+            <span>Find a word by dragging across the grid, same as always.</span>
+          </div>
+          <div className="flex items-start gap-2.5 text-xs text-gray-300">
+            <span className="text-base leading-none">📖</span>
+            <span>A popup reveals its definition, part of speech, and how to say it.</span>
+          </div>
+          <div className="flex items-start gap-2.5 text-xs text-gray-300">
+            <span className="text-base leading-none">🧠</span>
+            <span>Words with thin definitions link out to Merriam-Webster for the full picture.</span>
+          </div>
+        </div>
+
+        <div className="mt-5 text-right">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm font-bold"
+            style={{ background: "linear-gradient(135deg, #818cf8, #c084fc)", color: "#0f0f1a" }}
+          >
+            Let&apos;s play →
+          </button>
         </div>
       </div>
     </div>
@@ -169,6 +245,7 @@ export default function WordSearchPuzzle({
   const foundWordsRef = useRef<string[]>(foundWords);
   const skin = usePuzzleSkin();
   const [showHelp, setShowHelp] = useState(false);
+  const [showIntro, setShowIntro] = useState(false);
   const [definitionModal, setDefinitionModal] = useState<{
     word: string;
     colorIdx: number;
@@ -227,6 +304,24 @@ export default function WordSearchPuzzle({
   useEffect(() => {
     foundWordsRef.current = foundWords;
   }, [foundWords]);
+
+  // First-time intro explaining Word Trove's "find a word, learn its definition" angle —
+  // shown once per browser, not on every puzzle, and skipped entirely for a puzzle the
+  // player has already solved (nothing left to "start" at that point).
+  useEffect(() => {
+    if (alreadySolved) return;
+    if (typeof window === "undefined") return;
+    try {
+      if (!localStorage.getItem("wordTroveIntroSeen")) setShowIntro(true);
+    } catch {}
+  }, [alreadySolved]);
+
+  const dismissIntro = () => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem("wordTroveIntroSeen", "1");
+    } catch {}
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -364,9 +459,13 @@ export default function WordSearchPuzzle({
     const rawDr = row - dragStart.row;
     const rawDc = col - dragStart.col;
     const lockThresholdReached = Math.max(Math.abs(rawDr), Math.abs(rawDc)) >= 2;
-    if (!directionLockRef.current && lockThresholdReached) {
-      directionLockRef.current = snapDirection(rawDr, rawDc);
-    }
+    // Re-derive the snapped direction from the full start→current vector on every move,
+    // rather than freezing whatever direction the drag first crossed the threshold at.
+    // A one-time freeze meant an early wobble (meaning to go straight but drifting a cell)
+    // would permanently lock the wrong diagonal for the rest of the gesture — this way the
+    // player can correct course mid-drag, and since the vector is cumulative (not frame-to-
+    // frame), it naturally stabilizes as the drag gets longer instead of jittering.
+    directionLockRef.current = lockThresholdReached ? snapDirection(rawDr, rawDc) : null;
 
     const dir = directionLockRef.current;
     if (!dir) {
@@ -564,7 +663,8 @@ export default function WordSearchPuzzle({
 
   return (
     <>
-      {showHelp && <HowToPlayModal onClose={() => setShowHelp(false)} />}
+      {showIntro && <WordTroveIntroModal onClose={dismissIntro} />}
+      {showHelp && <HowToPlayModal onClose={() => setShowHelp(false)} onShowIntro={() => setShowIntro(true)} />}
       {definitionModal && (
         <WordDefinitionModal
           word={definitionModal.word}
