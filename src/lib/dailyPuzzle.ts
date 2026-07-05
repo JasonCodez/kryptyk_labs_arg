@@ -10,6 +10,10 @@ export function getTodayDayNumber(): number {
   return getDayNumberForDate(new Date());
 }
 
+export function getDateForDayNumber(dayNumber: number): Date {
+  return new Date(DAILY_EPOCH_UTC + (dayNumber - 1) * 86_400_000);
+}
+
 /**
  * Counts the consecutive-day streak ending at (or the day before) today.
  * `pastDayNumbers` may be any set of a user's daily-record day numbers — including or

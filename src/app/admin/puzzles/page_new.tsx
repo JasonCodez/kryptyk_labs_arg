@@ -1094,7 +1094,16 @@ export default function AdminPuzzlesPage() {
     <div style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }} className="min-h-screen">
       <div className="pt-24">
         <div className="max-w-6xl mx-auto px-4">
-          <h1 className="text-4xl font-bold text-white mb-2">🧩 Universal Puzzle Maker</h1>
+          <div className="flex justify-between items-start mb-2">
+            <h1 className="text-4xl font-bold text-white">🧩 Universal Puzzle Maker</h1>
+            <Link
+              href="/admin/daily-scheduler"
+              className="px-4 py-2 rounded text-white text-sm transition hover:opacity-90 whitespace-nowrap"
+              style={{ backgroundColor: '#3891A6' }}
+            >
+              📅 Weekly Daily Scheduler
+            </Link>
+          </div>
           <p className="text-[#9BD1D6] mb-8">Create any type of puzzle with advanced tools and testing capabilities</p>
 
           <div className="grid md:grid-cols-3 gap-8 mb-12">
@@ -1176,8 +1185,8 @@ export default function AdminPuzzlesPage() {
                     </div>
                   )}
 
-                  {/* Daily rotation slot: sudoku/crossword/word_search/jigsaw only */}
-                  {['sudoku', 'crossword', 'word_search', 'jigsaw'].includes(formData.puzzleType) && (
+                  {/* Daily rotation slot: word_crack/sudoku/crossword/word_search/jigsaw only */}
+                  {['word_crack', 'sudoku', 'crossword', 'word_search', 'jigsaw'].includes(formData.puzzleType) && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         📅 Assign as Daily #N (optional)

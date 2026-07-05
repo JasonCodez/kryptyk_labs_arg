@@ -456,7 +456,7 @@ export async function PUT(
   // catalog browser (GET /api/puzzles filters isActive:true) while remaining directly
   // fetchable by ID for the daily-play routes — there's no separate admin toggle for this
   // today, so we drive it automatically rather than requiring a manual step.
-  const DAILY_SLOT_TYPES = ["sudoku", "crossword", "word_search", "jigsaw"];
+  const DAILY_SLOT_TYPES = ["word_crack", "sudoku", "crossword", "word_search", "jigsaw"];
   if (DAILY_SLOT_TYPES.includes(puzzleType)) {
     const dayNum = toPositiveInt(dailySlotDayNumber);
     if (dayNum) {

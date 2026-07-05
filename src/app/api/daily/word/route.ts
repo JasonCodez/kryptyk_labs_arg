@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
 import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 
 const WORDS = [
@@ -58,8 +59,20 @@ const WORDS = [
 export async function GET() {
   const now = new Date();
   const dayNumber = getTodayDayNumber();
-  const word = WORDS[((dayNumber - 1) % WORDS.length + WORDS.length) % WORDS.length];
   const date = now.toISOString().slice(0, 10);
+
+  // An admin can assign a specific word_crack puzzle to today via the daily scheduler —
+  // that takes precedence over the fixed word list below, which remains the fallback for
+  // every day nobody has explicitly scheduled.
+  const slot = await prisma.dailyPuzzleSlot.findUnique({
+    where: { puzzleType_dayNumber: { puzzleType: "word_crack", dayNumber } },
+    select: { puzzle: { select: { data: true } } },
+  });
+  const assignedWord = slot?.puzzle?.data && typeof slot.puzzle.data === "object"
+    ? String((slot.puzzle.data as { word?: string }).word ?? "").toUpperCase().trim()
+    : "";
+
+  const word = assignedWord || WORDS[((dayNumber - 1) % WORDS.length + WORDS.length) % WORDS.length];
 
   return NextResponse.json(
     { word, number: dayNumber, date },

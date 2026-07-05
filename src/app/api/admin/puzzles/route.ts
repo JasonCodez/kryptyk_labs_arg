@@ -742,7 +742,7 @@ export async function POST(request: NextRequest) {
     // Assign this puzzle to a daily rotation slot (sudoku/crossword/word_search/jigsaw only).
     // Also flips isActive:false so it doesn't show up in the normal catalog browser — see
     // the matching comment in api/admin/puzzles/[id]/route.ts for why this is automatic.
-    const DAILY_SLOT_TYPES = ["sudoku", "crossword", "word_search", "jigsaw"];
+    const DAILY_SLOT_TYPES = ["word_crack", "sudoku", "crossword", "word_search", "jigsaw"];
     if (DAILY_SLOT_TYPES.includes(puzzle.puzzleType) && dailySlotDayNumber) {
       const dayNum = Number(dailySlotDayNumber);
       if (Number.isFinite(dayNum) && dayNum > 0) {
