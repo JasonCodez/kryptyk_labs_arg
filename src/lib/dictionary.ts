@@ -1,7 +1,7 @@
 import fs from "fs";
+import path from "path";
 import crypto from "crypto";
 import wordListPath from "word-list";
-import { getWordsList } from "most-common-words-by-language";
 import { bannedWords } from "@/lib/display-name-validator";
 
 let wordSet: Set<string> | null = null;
@@ -22,16 +22,26 @@ export function isValidDictionaryWord(word: string): boolean {
 
 const banned = new Set(bannedWords.map((w) => w.toUpperCase()));
 
-// The 10,000 most common English words (Google's Trillion Word Corpus, via
-// most-common-words-by-language) — excluded from word search generation so the puzzle
-// actually teaches new vocabulary instead of surfacing words everyone already knows
-// (e.g. "acid"). Only covers base/lemma forms, so a lightweight suffix strip catches most
-// common inflections too (e.g. "brags" -> "brag") without pulling in a full stemmer.
+// The 10,000 most common English words (Google's Trillion Word Corpus) — excluded from
+// word search generation so the puzzle actually teaches new vocabulary instead of
+// surfacing words everyone already knows (e.g. "acid"). Only covers base/lemma forms, so
+// a lightweight suffix strip catches most common inflections too (e.g. "brags" -> "brag")
+// without pulling in a full stemmer.
+//
+// Vendored as a plain committed file rather than read from the most-common-words-by-language
+// package: that package resolves its word-list files via readdirSync(`${__dirname}/resources`)
+// at runtime, which breaks once Next.js's webpack bundling relocates the compiled module into
+// a vendor chunk — __dirname then points at .next/.../vendor-chunks, where the sibling
+// resources/ directory doesn't exist (confirmed via a real ENOENT in the dev server). Reading
+// a single file via a path resolved from process.cwd() (same pattern as uploadStorage.ts)
+// isn't subject to that relocation problem.
 let commonWordSet: Set<string> | null = null;
 
 function loadCommonWordSet(): Set<string> {
   if (!commonWordSet) {
-    commonWordSet = new Set((getWordsList("english", 10000) as string[]).map((w) => w.toUpperCase()));
+    const filePath = path.join(process.cwd(), "src", "lib", "data", "common-words-en.txt");
+    const raw = fs.readFileSync(filePath, "utf8");
+    commonWordSet = new Set(raw.split("\n").map((w) => w.trim().toUpperCase()).filter(Boolean));
   }
   return commonWordSet;
 }
