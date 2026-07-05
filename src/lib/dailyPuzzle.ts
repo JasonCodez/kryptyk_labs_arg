@@ -1,5 +1,5 @@
-// Day 1 = 2026-03-31 UTC — shared epoch for all daily puzzle types.
-export const DAILY_EPOCH_UTC = Date.UTC(2026, 2, 31);
+// Day 1 = 2026-07-04 UTC — shared epoch for all daily puzzle types.
+export const DAILY_EPOCH_UTC = Date.UTC(2026, 6, 4);
 
 export function getDayNumberForDate(date: Date): number {
   const dateUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
