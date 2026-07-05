@@ -20,6 +20,10 @@ export interface WordDefinitionModalProps {
   onDismiss: () => void;
 }
 
+function merriamWebsterUrl(word: string): string {
+  return `https://www.merriam-webster.com/dictionary/${encodeURIComponent(word.toLowerCase())}`;
+}
+
 function SkeletonLine({ width }: { width: string }) {
   return (
     <div
@@ -174,9 +178,20 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
             )}
 
             {status === "not-found" && (
-              <motion.p variants={item} className="text-sm leading-relaxed mt-3" style={{ color: "#9CA3AF" }}>
-                📖 No dictionary entry for this one — but great find all the same!
-              </motion.p>
+              <motion.div variants={item} className="mt-3">
+                <p className="text-sm leading-relaxed" style={{ color: "#9CA3AF" }}>
+                  📖 No quick definition for this one — but great find all the same!
+                </p>
+                <a
+                  href={merriamWebsterUrl(word)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-3 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                  style={{ color: color.text }}
+                >
+                  Check Merriam-Webster ↗
+                </a>
+              </motion.div>
             )}
 
             {status === "found" && data && (
@@ -224,6 +239,17 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
                     </p>
                   </motion.div>
                 )}
+
+                <motion.a
+                  variants={item}
+                  href={merriamWebsterUrl(word)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-4 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                  style={{ color: color.text }}
+                >
+                  Full definition on Merriam-Webster ↗
+                </motion.a>
               </>
             )}
 
