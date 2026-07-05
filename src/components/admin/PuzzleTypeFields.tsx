@@ -1105,6 +1105,9 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   const [debriefJsonError, setDebriefJsonError] = useState<string>('');
   const [templateId, setTemplateId] = useState<string>('');
   const [templateConfirm, setTemplateConfirm] = useState(false);
+  const [wsGenerateCount, setWsGenerateCount] = useState(8);
+  const [wsGenerating, setWsGenerating] = useState(false);
+  const [wsGenerateError, setWsGenerateError] = useState('');
 
   useEffect(() => {
     if (puzzleType !== 'detective_case') return;
@@ -3159,6 +3162,27 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
       onDataChange('gridSize', gridSize);
     }
 
+    async function generateRealWords() {
+      setWsGenerating(true);
+      setWsGenerateError('');
+      try {
+        const res = await fetch(`/api/admin/word-search/generate-words?gridSize=${gridSize}&count=${wsGenerateCount}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to generate words');
+        }
+        const { words } = await res.json();
+        onDataChange('wordsRaw', (words as string[]).join('\n'));
+        onDataChange('grid', []);
+        onDataChange('unplacedWords', []);
+        onDataChange('generationStats', null);
+      } catch (err) {
+        setWsGenerateError(err instanceof Error ? err.message : 'Failed to generate words');
+      } finally {
+        setWsGenerating(false);
+      }
+    }
+
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -3198,6 +3222,31 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
             </button>
           </div>
         </div>
+
+        <div className="flex items-end gap-3">
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-1">Word Count</label>
+            <input
+              type="number"
+              min={2}
+              max={20}
+              value={wsGenerateCount}
+              onChange={(e) => setWsGenerateCount(Math.max(2, Math.min(20, Number(e.target.value) || 2)))}
+              className="w-24 px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={generateRealWords}
+            disabled={wsGenerating}
+            className="px-4 py-2 rounded-lg font-bold text-white transition-all disabled:opacity-40"
+            style={{ background: 'rgba(129,140,248,0.3)', border: '1px solid rgba(129,140,248,0.5)' }}
+          >
+            {wsGenerating ? 'Generating…' : '🎲 Generate Real Words'}
+          </button>
+          <p className="text-xs text-gray-500 mb-2">Picks real dictionary words no longer than the grid ({gridSize} letters).</p>
+        </div>
+        {wsGenerateError && <p className="text-xs text-red-400">{wsGenerateError}</p>}
 
         <div>
           <label className="block text-sm font-semibold text-gray-300 mb-1">
