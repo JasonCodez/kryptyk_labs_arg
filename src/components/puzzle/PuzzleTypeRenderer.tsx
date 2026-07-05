@@ -98,13 +98,7 @@ export function PuzzleTypeRenderer({
                 onClick={() => jigsawControls?.sendLooseToTray?.()}
                 className="w-full sm:w-auto px-3 py-2 rounded bg-yellow-400 text-black border border-yellow-500 hover:opacity-90"
               >
-                Send loose to tray
-              </button>
-              <button
-                onClick={() => jigsawControls?.reset?.()}
-                className="w-full sm:w-auto px-3 py-2 rounded bg-red-600 text-white border border-red-700 hover:opacity-90"
-              >
-                Reset
+                Scatter loose pieces
               </button>
             </div>
           </div>
