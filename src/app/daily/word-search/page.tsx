@@ -38,7 +38,7 @@ export default function DailyWordSearchPage() {
       <main className="pt-24 pb-16 flex flex-col items-center px-3">
         <div className="w-full max-w-3xl mt-6 mb-4 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3891A6" }}>Daily Word Search</p>
+            <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3891A6" }}>Daily Word Trove</p>
             <span className="text-white text-2xl font-black tracking-[0.18em]">#{dayNumber || "---"}</span>
           </div>
           {streak > 0 && <StreakTimer streak={streak} solvedToday={isDone} size="sm" />}
@@ -46,7 +46,7 @@ export default function DailyWordSearchPage() {
 
         {!isAuthenticated ? (
           <div className="mt-16 text-center">
-            <p className="text-white font-bold mb-3">Sign in to play the daily word search</p>
+            <p className="text-white font-bold mb-3">Sign in to play the daily Word Trove</p>
             <Link href="/auth/signin" className="px-5 py-2 rounded-lg text-sm font-bold inline-block" style={{ background: "#FDE74C", color: "#020202" }}>
               Sign in
             </Link>
@@ -57,7 +57,7 @@ export default function DailyWordSearchPage() {
             <span className="text-sm">Loading today&apos;s puzzle…</span>
           </div>
         ) : !available || !content?.puzzleId ? (
-          <p className="mt-16 text-sm" style={{ color: "#AB9F9D" }}>Today&apos;s word search isn&apos;t ready yet — check back soon.</p>
+          <p className="mt-16 text-sm" style={{ color: "#AB9F9D" }}>Today&apos;s Word Trove isn&apos;t ready yet — check back soon.</p>
         ) : isDone ? (
           <div className="w-full max-w-sm mt-10 p-6 rounded-xl text-center" style={{ border: "1px solid rgba(56,211,153,0.18)", background: "rgba(56,211,153,0.04)" }}>
             <div className="text-4xl mb-2">✓</div>

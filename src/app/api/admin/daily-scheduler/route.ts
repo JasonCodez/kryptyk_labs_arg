@@ -10,7 +10,7 @@ const TYPE_LABELS: Record<DailySlotType, string> = {
   word_crack: "Hidden Word 🟩",
   sudoku: "Sudoku",
   crossword: "Crossword ✏️",
-  word_search: "Word Search 🔍",
+  word_search: "Word Trove 🔍",
   jigsaw: "Jigsaw Puzzle",
 };
 

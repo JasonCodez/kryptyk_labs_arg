@@ -539,7 +539,7 @@ function SkinPreviewContent({ skinKey }: { skinKey: string }) {
               filter: "drop-shadow(0 0 12px rgba(253,231,76,0.4))",
             }}
           >
-            WORD SEARCH
+            WORD TROVE
           </h3>
 
           <p

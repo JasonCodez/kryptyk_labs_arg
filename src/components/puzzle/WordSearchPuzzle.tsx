@@ -89,7 +89,7 @@ function HowToPlayModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-4">
-          <h2 className="text-lg font-extrabold" style={{ color: "#FDE74C" }}>How to Play — Word Search</h2>
+          <h2 className="text-lg font-extrabold" style={{ color: "#FDE74C" }}>How to Play — Word Trove</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-4">✕</button>
         </div>
         <div className="space-y-3 text-sm text-gray-300">
@@ -618,7 +618,7 @@ export default function WordSearchPuzzle({
               filter: "drop-shadow(0 0 12px rgba(129,140,248,0.4))",
             }}
           >
-            WORD SEARCH
+            WORD TROVE
           </h2>
           <p className="text-xs font-medium" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>
             {foundWords.length} / {words.length} words found

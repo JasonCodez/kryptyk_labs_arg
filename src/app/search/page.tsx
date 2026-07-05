@@ -15,7 +15,7 @@ const PUZZLE_TYPES: { value: string; label: string }[] = [
   { value: "code_master", label: "Code" },
   { value: "word_crack", label: "Hidden Word" },
   { value: "crack_safe", label: "Safe Crack" },
-  { value: "word_search", label: "Word Search" },
+  { value: "word_search", label: "Word Trove" },
   { value: "anagram_blitz", label: "Anagram" },
   { value: "blackout", label: "Declassify" },
   { value: "arg", label: "ARG" },

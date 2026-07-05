@@ -201,7 +201,7 @@ export default function HomeClient() {
                   icon: "🧩",
                   title: "Full Catalog",
                   tagColor: "#9BD6E4",
-                  body: "Crosswords, word searches, jigsaws, anagrams, detective cases, and more.",
+                  body: "Crosswords, Word Troves, jigsaws, anagrams, detective cases, and more.",
                   href: "/puzzles",
                   cta: "Open Catalog",
                 },

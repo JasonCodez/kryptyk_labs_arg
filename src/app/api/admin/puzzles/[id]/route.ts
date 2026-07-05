@@ -95,7 +95,7 @@ export async function PUT(
   // Normalise snake_case category values coming from the admin dropdown to display names
   const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
     word_crack:     'Hidden Word',
-    word_search:    'Word Search',
+    word_search:    'Word Trove',
     anagram_blitz:  'Anagram Blitz',
     crack_safe:     'Crack Safe',
     detective_case: 'Detective Case',
@@ -151,7 +151,7 @@ export async function PUT(
     const ws = validateWordSearchPuzzleData(puzzleData);
     if (!ws.valid || !ws.normalized) {
       return NextResponse.json(
-        { error: ws.error ?? 'Word Search puzzleData is invalid.' },
+        { error: ws.error ?? 'Word Trove puzzleData is invalid.' },
         { status: 400 }
       );
     }

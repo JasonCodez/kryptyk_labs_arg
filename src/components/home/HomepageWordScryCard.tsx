@@ -278,7 +278,7 @@ export default function HomepageWordScryCard() {
                 </p>
                 <p style={{ color: '#E5E7EB', fontSize: 14, lineHeight: 1.7, margin: 0 }}>
                   {gameStatus === 'playing'
-                    ? 'Solve here first, then jump into Gridlock files, crosswords, word searches, and the rest of your longer session stack.'
+                    ? 'Solve here first, then jump into Gridlock files, crosswords, Word Troves, and the rest of your longer session stack.'
                     : gameStatus === 'won'
                       ? 'Word locked in. Keep the session moving with the full daily page or drop straight into the wider puzzle library.'
                       : 'No more guesses left here. The full daily page is ready if you want the dedicated daily view.'}

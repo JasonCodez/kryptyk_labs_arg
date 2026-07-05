@@ -24,7 +24,7 @@ const CARDS: { key: keyof DailySummary; slug: string; title: string; emoji: stri
   { key: "word", slug: "word", title: "Hidden Word", emoji: "🔤", signInRequired: false },
   { key: "sudoku", slug: "sudoku", title: "Sudoku", emoji: "🔢", signInRequired: true },
   { key: "crossword", slug: "crossword", title: "Crossword", emoji: "📰", signInRequired: true },
-  { key: "word_search", slug: "word-search", title: "Word Search", emoji: "🔍", signInRequired: true },
+  { key: "word_search", slug: "word-search", title: "Word Trove", emoji: "🔍", signInRequired: true },
   { key: "jigsaw", slug: "jigsaw", title: "Jigsaw", emoji: "🧩", signInRequired: true },
 ];
 

@@ -8,7 +8,7 @@ export const PUZZLE_TYPE_LABELS: Record<string, string> = {
   math:            "Math",
   jigsaw:          "Jigsaw",
   sudoku:          "Sudoku",
-  word_search:     "Word Search",
+  word_search:     "Word Trove",
   word_crack:      "Hidden Word",
   anagram_blitz:   "Anagram Blitz",
   crack_safe:      "Crack the Safe",

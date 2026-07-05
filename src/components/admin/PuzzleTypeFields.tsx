@@ -3129,7 +3129,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     );
   };
 
-  // ── Word Search ───────────────────────────────────────────────────────────
+  // ── Word Trove (word search) ─────────────────────────────────────────────
 
   const renderWordSearchFields = () => {
     const gridSize = Number(puzzleData.gridSize ?? 12);

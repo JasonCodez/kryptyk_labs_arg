@@ -66,7 +66,7 @@ const PUZZLE_TYPES = [
   { value: 'debrief', label: 'The Debrief 📋' },
   { value: 'crack_safe', label: 'Crack the Safe 🔐' },
   { value: 'word_crack', label: 'Hidden Word 🟩' },
-  { value: 'word_search', label: 'Word Search 🔍' },
+  { value: 'word_search', label: 'Word Trove 🔍' },
   { value: 'crossword', label: 'Crossword ✏️' },
   { value: 'anagram_blitz', label: 'Anagram Blitz 🔀' },
   { value: 'blackout', label: 'Blackout ⬛' },
@@ -1509,7 +1509,7 @@ export default function AdminPuzzlesPage() {
                             <option value="puzzle">Puzzle</option>
                             <option value="challenge">Challenge</option>
                             <option value="word_crack">Hidden Word</option>
-                            <option value="word_search">Word Search</option>
+                            <option value="word_search">Word Trove</option>
                             <option value="anagram_blitz">Anagram Blitz</option>
                             <option value="cipher_clash">Cipher Clash</option>
                             <option value="blackout">Blackout</option>
@@ -1535,7 +1535,7 @@ export default function AdminPuzzlesPage() {
                             <option value="puzzle">Puzzle</option>
                             <option value="challenge">Challenge</option>
                             <option value="word_crack">Hidden Word</option>
-                            <option value="word_search">Word Search</option>
+                            <option value="word_search">Word Trove</option>
                             <option value="anagram_blitz">Anagram Blitz</option>
                             <option value="cipher_clash">Cipher Clash</option>
                             <option value="blackout">Blackout</option>

@@ -589,18 +589,18 @@ export function validateWordSearchPuzzleData(data: unknown): {
   normalized?: { grid: string[][]; words: string[] };
 } {
   if (!data || typeof data !== "object") {
-    return { valid: false, error: "Word Search puzzleData is missing." };
+    return { valid: false, error: "Word Trove puzzleData is missing." };
   }
 
   const payload = data as Record<string, unknown>;
   const grid = normalizeWordSearchGrid(payload.grid);
   if (!isSquareLetterGrid(grid)) {
-    return { valid: false, error: "Word Search requires a square letter grid (A-Z only)." };
+    return { valid: false, error: "Word Trove requires a square letter grid (A-Z only)." };
   }
 
   const words = normalizeWordList(payload.words);
   if (words.length < 2) {
-    return { valid: false, error: "Word Search requires at least 2 unique words." };
+    return { valid: false, error: "Word Trove requires at least 2 unique words." };
   }
 
   const gridSize = grid.length;
