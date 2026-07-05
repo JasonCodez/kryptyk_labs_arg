@@ -313,6 +313,12 @@ interface BurstParticle {
 
 const BURST_COLORS = ["#FFD700", "#FFE873", "#FFF6D8", "#FDBA2A"];
 
+// ── Sound effects ────────────────────────────────────────────────────────────
+const PIECE_CONNECT_SFX_URL = "/audio/snap_sound_jigsaw.mp3";
+const PIECE_CONNECT_SFX_VOLUME = 0.35;
+const PUZZLE_COMPLETE_SFX_URL = "/audio/jigsaw_puzzle_complete.mp3";
+const PUZZLE_COMPLETE_SFX_VOLUME = 0.5;
+
 function createBurstParticles(cx: number, cy: number, pieceSize: number): BurstParticle[] {
   const count = 14;
   const particles: BurstParticle[] = [];
@@ -399,6 +405,36 @@ export default function JigsawPuzzleSVGWithTray({
   const [effectiveUrl, setEffectiveUrl] = useState<string>(imageUrl ?? "");
   const [proxyTried, setProxyTried]   = useState(false);
   const [reloadKey, setReloadKey]     = useState(0);
+
+  const isJigsawSfxEnabled = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+      const userPrefsRaw = window.localStorage.getItem("userPreferences");
+      if (userPrefsRaw) {
+        const prefs = JSON.parse(userPrefsRaw) as { reduceAnimations?: boolean };
+        if (prefs?.reduceAnimations) return false;
+      }
+      if (window.localStorage.getItem("jigsawSoundEffectsEnabled") === "false") return false;
+    } catch {
+      // Fall through to enabled.
+    }
+    return true;
+  }, []);
+
+  const playJigsawSfx = useCallback((url: string, volume: number) => {
+    if (!isJigsawSfxEnabled()) return;
+    try {
+      const clip = new Audio(url);
+      clip.preload = "auto";
+      clip.volume = volume;
+      void clip.play().catch(() => {
+        // Ignore playback failures (autoplay policy, missing file, etc).
+      });
+    } catch {
+      // Ignore playback failures.
+    }
+  }, [isJigsawSfxEnabled]);
 
   // Logical dimensions of board (never changes after init)
   const pw = boardWidth / cols;
@@ -952,7 +988,7 @@ export default function JigsawPuzzleSVGWithTray({
     tick();
     const intervalId = window.setInterval(tick, 1000);
     return () => window.clearInterval(intervalId);
-  }, [isSolved, rows, cols, imageUrl, puzzleId]);
+  }, [isSolved, rows, cols, imageUrl, puzzleId, playJigsawSfx]);
 
   // ── rAF render loop ──────────────────────────────────────────────────────
 
@@ -1477,6 +1513,10 @@ export default function JigsawPuzzleSVGWithTray({
     next = s2.pieces;
     if (s2.snapped) lastSnapDelta = { dx: s2.dx, dy: s2.dy };
 
+    if (s1.snapped || s2.snapped) {
+      playJigsawSfx(PIECE_CONNECT_SFX_URL, PIECE_CONNECT_SFX_VOLUME);
+    }
+
     // Snap-to-board → pop + gold glow + particle burst (single piece only — not a multi-piece group)
     if ((s1.snapped || s2.snapped) && starts.size === 1) {
       const pieceId = [...starts.keys()][0];
@@ -1504,7 +1544,7 @@ export default function JigsawPuzzleSVGWithTray({
     }
 
     setPieces(next);
-  }, [boardSnapTolerance, neighborSnapTolerance, snapMergeNeighbours, setPieces]);
+  }, [boardSnapTolerance, neighborSnapTolerance, snapMergeNeighbours, setPieces, playJigsawSfx]);
 
   const onPointerLeave = useCallback(() => {
     dirtyRef.current = true;
@@ -1515,6 +1555,7 @@ export default function JigsawPuzzleSVGWithTray({
   useEffect(() => {
     if (!isSolved || completedRef.current) return;
     completedRef.current = true;
+    playJigsawSfx(PUZZLE_COMPLETE_SFX_URL, PUZZLE_COMPLETE_SFX_VOLUME);
     // Smooth piece scale-up on solve
     // Scatter each piece with a random delay (0–600 ms) and random peak scale (4–12%)
     const now = performance.now();
