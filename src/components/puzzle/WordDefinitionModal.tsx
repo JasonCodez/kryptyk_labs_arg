@@ -31,22 +31,29 @@ function SkeletonLine({ width }: { width: string }) {
 
 // Spells the found word out as grid-style letter tiles — the same visual language as the
 // puzzle board itself — instead of plain text, so the modal reads as a direct continuation
-// of the find rather than a generic dialog bolted on top of it.
+// of the find rather than a generic dialog bolted on top of it. Tile size scales down for
+// longer words (same idea as the puzzle grid's own responsive cell sizing) so words fit on
+// one line instead of wrapping down to a single orphaned letter.
 function LetterTiles({ word, color }: { word: string; color: { bg: string; border: string; text: string } }) {
   const letters = word.toUpperCase().split("");
+  const n = letters.length;
+  const size = n <= 6 ? 2.15 : n <= 9 ? 1.8 : n <= 12 ? 1.5 : 1.25;
+  const fontSize = n <= 6 ? 1.05 : n <= 9 ? 0.9 : n <= 12 ? 0.78 : 0.66;
+  const gap = n <= 9 ? 0.375 : 0.25;
+
   return (
-    <div className="flex items-center justify-center gap-1.5 flex-wrap px-2">
+    <div className="flex items-center justify-center flex-wrap px-2" style={{ gap: `${gap}rem` }}>
       {letters.map((ch, i) => (
         <motion.span
           key={i}
           initial={{ opacity: 0, y: -14, scale: 0.6, rotate: -6 }}
           animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
           transition={{ delay: 0.12 + i * 0.045, type: "spring", stiffness: 380, damping: 16 }}
-          className="flex items-center justify-center font-black rounded-lg"
+          className="flex items-center justify-center font-black rounded-lg shrink-0"
           style={{
-            width: "2.15rem",
-            height: "2.15rem",
-            fontSize: "1.05rem",
+            width: `${size}rem`,
+            height: `${size}rem`,
+            fontSize: `${fontSize}rem`,
             background: color.bg,
             border: `2px solid ${color.border}`,
             color: color.text,
