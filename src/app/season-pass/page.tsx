@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import CosmeticPreviewModal from "@/components/CosmeticPreviewModal";
 import { FEATURE_SEASONS_ENABLED } from "@/lib/featureFlags";
 
 interface SeasonTier {
@@ -70,6 +71,17 @@ const COSMETIC_NAMES: Record<string, string> = {
   frame_ignition_legendary: "Ignition Legendary Avatar Frame",
   theme_ignition_ember: "Ember Theme",
   theme_ignition_inferno: "Inferno Theme",
+};
+
+// Matches each cosmetic reward key to the subcategory/value CosmeticPreviewModal expects
+// (mirrors the StoreItem.metadata.value seeded for these keys in prisma/seed.ts).
+const COSMETIC_PREVIEW_META: Record<string, { subcategory: string; value: string; iconEmoji: string }> = {
+  frame_ignition_bronze: { subcategory: "frame", value: "ignition_bronze", iconEmoji: "🟫" },
+  frame_ignition_silver: { subcategory: "frame", value: "ignition_silver", iconEmoji: "⬜" },
+  frame_ignition_gold: { subcategory: "frame", value: "ignition_gold", iconEmoji: "🟡" },
+  frame_ignition_legendary: { subcategory: "frame", value: "ignition_legendary", iconEmoji: "🔶" },
+  theme_ignition_ember: { subcategory: "theme", value: "ignition_ember", iconEmoji: "🔥" },
+  theme_ignition_inferno: { subcategory: "theme", value: "ignition_inferno", iconEmoji: "🌋" },
 };
 
 function formatTimeLeft(endDate: string): string {
@@ -164,6 +176,7 @@ function CompactRewardCard({
   track,
   onClaim,
   claiming,
+  onPreview,
 }: {
   type: string | null;
   rewardKey: string | null;
@@ -174,11 +187,13 @@ function CompactRewardCard({
   track: "free" | "premium";
   onClaim: (e: React.MouseEvent) => void;
   claiming: boolean;
+  onPreview: (rewardKey: string) => void;
 }) {
   const icon = type ? REWARD_ICONS[type] || "🎁" : null;
   const label = type ? REWARD_LABELS[type] || type : null;
   const displayName = (rewardKey && COSMETIC_NAMES[rewardKey]) || label || "";
   const isPrem = track === "premium";
+  const isPreviewable = type === "cosmetic" && !!rewardKey && !!COSMETIC_PREVIEW_META[rewardKey];
 
   if (!type) {
     return (
@@ -263,6 +278,18 @@ function CompactRewardCard({
         <div className="absolute top-1.5 right-1.5 text-[11px] leading-none opacity-60">
           {locked ? "✨" : "🔒"}
         </div>
+      )}
+
+      {/* Preview button (top-left) — lets players see the cosmetic before earning it */}
+      {isPreviewable && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onPreview(rewardKey as string); }}
+          title="Preview"
+          className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] leading-none transition-transform hover:scale-110 active:scale-95"
+          style={{ background: "rgba(255,255,255,0.1)", color: "#e2e8f0" }}
+        >
+          👁
+        </button>
       )}
 
       {/* Icon with radial glow spot + float on claimable */}
@@ -358,6 +385,7 @@ function TierRow({
   isPremium,
   claiming,
   onClaim,
+  onPreview,
 }: {
   tier: SeasonTier;
   index: number;
@@ -374,6 +402,7 @@ function TierRow({
   isPremium: boolean;
   claiming: string | null;
   onClaim: (tierNumber: number, track: "free" | "premium", e: React.MouseEvent) => void;
+  onPreview: (rewardKey: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
@@ -437,6 +466,7 @@ function TierRow({
             track="free"
             onClaim={(e) => onClaim(tier.tierNumber, "free", e)}
             claiming={claiming === `free-${tier.tierNumber}`}
+            onPreview={onPreview}
           />
         </motion.div>
 
@@ -593,6 +623,7 @@ function TierRow({
             track="premium"
             onClaim={(e) => onClaim(tier.tierNumber, "premium", e)}
             claiming={claiming === `premium-${tier.tierNumber}`}
+            onPreview={onPreview}
           />
         </motion.div>
       </div>
@@ -931,6 +962,7 @@ export default function SeasonPassPage() {
   const [error, setError] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<ClaimCelebration | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
 
   // Redirect if feature is disabled — must come after all hook declarations
@@ -1110,6 +1142,17 @@ export default function SeasonPassPage() {
       {/* Claim celebration overlay */}
       {celebration && (
         <ClaimBurst celebration={celebration} onDone={() => setCelebration(null)} />
+      )}
+
+      {/* Cosmetic reward preview modal */}
+      {previewKey && COSMETIC_PREVIEW_META[previewKey] && (
+        <CosmeticPreviewModal
+          subcategory={COSMETIC_PREVIEW_META[previewKey].subcategory}
+          value={COSMETIC_PREVIEW_META[previewKey].value}
+          displayName={COSMETIC_NAMES[previewKey] ?? previewKey}
+          iconEmoji={COSMETIC_PREVIEW_META[previewKey].iconEmoji}
+          onClose={() => setPreviewKey(null)}
+        />
       )}
 
       {/* Unclaimed rewards alert banner */}
@@ -1365,6 +1408,7 @@ export default function SeasonPassPage() {
                 isPremium={isPremium}
                 claiming={claiming}
                 onClaim={handleClaim}
+                onPreview={setPreviewKey}
               />
             );
           })}
