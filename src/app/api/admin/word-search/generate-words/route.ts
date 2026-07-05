@@ -9,6 +9,9 @@ const MAX_ROUNDS = 3;
 const CANDIDATE_MULTIPLIER = 4;
 const MAX_CANDIDATES_PER_ROUND = 20;
 const LOOKUP_CONCURRENCY = 3;
+// Hard time budget so a slow/degraded upstream dictionary API can't run this past a
+// platform request timeout — we return whatever was found so far instead of hanging.
+const TIME_BUDGET_MS = 15_000;
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -35,37 +38,43 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
  * word sources in sync.
  */
 export async function GET(req: NextRequest) {
-  const admin = await requireAdminUser();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    const admin = await requireAdminUser();
+    if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const gridSize = Number(req.nextUrl.searchParams.get("gridSize"));
-  const count = Number(req.nextUrl.searchParams.get("count"));
+    const gridSize = Number(req.nextUrl.searchParams.get("gridSize"));
+    const count = Number(req.nextUrl.searchParams.get("count"));
 
-  if (!Number.isInteger(gridSize) || gridSize < MIN_WORD_LENGTH) {
-    return NextResponse.json({ error: "Invalid gridSize" }, { status: 400 });
+    if (!Number.isInteger(gridSize) || gridSize < MIN_WORD_LENGTH) {
+      return NextResponse.json({ error: "Invalid gridSize" }, { status: 400 });
+    }
+    if (!Number.isInteger(count) || count < 1 || count > 20) {
+      return NextResponse.json({ error: "Invalid count" }, { status: 400 });
+    }
+
+    const found: string[] = [];
+    const tried = new Set<string>();
+    const deadline = Date.now() + TIME_BUDGET_MS;
+
+    for (let round = 0; round < MAX_ROUNDS && found.length < count && Date.now() < deadline; round++) {
+      const needed = count - found.length;
+      const candidates = pickRandomDictionaryWords(
+        MIN_WORD_LENGTH,
+        gridSize,
+        Math.min(needed * CANDIDATE_MULTIPLIER, MAX_CANDIDATES_PER_ROUND)
+      ).filter((w) => !tried.has(w));
+      if (candidates.length === 0) break;
+      candidates.forEach((w) => tried.add(w));
+
+      const definitions = await mapWithConcurrency(candidates, LOOKUP_CONCURRENCY, lookupDefinition);
+      definitions.forEach((def, i) => {
+        if (def && found.length < count) found.push(candidates[i]);
+      });
+    }
+
+    return NextResponse.json({ words: found });
+  } catch (err) {
+    console.error("[GENERATE WORDS]", err);
+    return NextResponse.json({ error: "Failed to generate words — please try again" }, { status: 500 });
   }
-  if (!Number.isInteger(count) || count < 1 || count > 20) {
-    return NextResponse.json({ error: "Invalid count" }, { status: 400 });
-  }
-
-  const found: string[] = [];
-  const tried = new Set<string>();
-
-  for (let round = 0; round < MAX_ROUNDS && found.length < count; round++) {
-    const needed = count - found.length;
-    const candidates = pickRandomDictionaryWords(
-      MIN_WORD_LENGTH,
-      gridSize,
-      Math.min(needed * CANDIDATE_MULTIPLIER, MAX_CANDIDATES_PER_ROUND)
-    ).filter((w) => !tried.has(w));
-    if (candidates.length === 0) break;
-    candidates.forEach((w) => tried.add(w));
-
-    const definitions = await mapWithConcurrency(candidates, LOOKUP_CONCURRENCY, lookupDefinition);
-    definitions.forEach((def, i) => {
-      if (def && found.length < count) found.push(candidates[i]);
-    });
-  }
-
-  return NextResponse.json({ words: found });
 }
