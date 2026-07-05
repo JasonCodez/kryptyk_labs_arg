@@ -65,13 +65,20 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true },
+      select: { id: true, forumRulesAcceptedAt: true },
     });
 
     if (!user) {
       return NextResponse.json(
         { error: "User not found" },
         { status: 404 }
+      );
+    }
+
+    if (!user.forumRulesAcceptedAt) {
+      return NextResponse.json(
+        { error: "You must accept the forum rules before posting.", code: "FORUM_RULES_NOT_ACCEPTED" },
+        { status: 403 }
       );
     }
 

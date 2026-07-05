@@ -5,10 +5,13 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import ForumRulesModal from "@/components/ForumRulesModal";
+import { useForumRulesGate } from "@/hooks/useForumRulesGate";
 
 export default function CreateForumPostPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const rulesGate = useForumRulesGate();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [puzzleId, setPuzzleId] = useState<string>("");
@@ -55,6 +58,9 @@ export default function CreateForumPostPage() {
         throw new Error("Content is required");
       }
 
+      const rulesAccepted = await rulesGate.ensureAccepted();
+      if (!rulesAccepted) return;
+
       const response = await fetch("/api/forum/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,6 +91,12 @@ export default function CreateForumPostPage() {
   return (
     <>
       <Navbar />
+      <ForumRulesModal
+        open={rulesGate.modalOpen}
+        accepting={rulesGate.accepting}
+        onAccept={rulesGate.handleAccept}
+        onClose={rulesGate.handleClose}
+      />
       <div style={{ backgroundColor: '#010101', minHeight: '100vh', paddingTop: 80 }}>
         <div style={{ maxWidth: 760, margin: '0 auto', padding: '48px 20px 80px' }}>
 

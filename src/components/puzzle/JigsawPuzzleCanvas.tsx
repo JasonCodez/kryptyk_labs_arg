@@ -11,7 +11,7 @@
  *  - Hit-testing via ctx.isPointInPath on the Path2D cache
  *  - Smooth drag via pointer-events directly on the canvas element
  *  - Spring snap animation in rAF loop — no GSAP needed for physics
- *  - Completion: GSAP shimmer + energy-ring DOM overlays (same as before)
+ *  - Completion: GSAP energy-ring DOM overlay
  *  - localStorage save/resume preserved exactly
  *  - Same external props API — all call-sites unchanged
  */
@@ -319,6 +319,15 @@ const PIECE_CONNECT_SFX_VOLUME = 0.35;
 const PUZZLE_COMPLETE_SFX_URL = "/audio/jigsaw_puzzle_complete.mp3";
 const PUZZLE_COMPLETE_SFX_VOLUME = 0.5;
 
+// ── Completion frame ─────────────────────────────────────────────────────────
+// Decorative frame image shown around the completed puzzle. It's a PNG with a real
+// transparent "hole" where the photo shows through, but the hole isn't flush with the
+// image's own edges (there's a thin transparent margin outside the border too) — these
+// fractions are the hole's actual boundary, measured directly from the asset's alpha
+// channel. If the frame image is ever swapped, re-measure and update these.
+const FRAME_IMG_URL = "/images/jigsaw_frame.png";
+const FRAME_HOLE = { left: 0.08984, right: 0.91094, top: 0.08958, bottom: 0.90625 };
+
 /**
  * Plays a short sound effect via the Web Audio API instead of HTMLAudioElement. An
  * <audio>/`new Audio()` element streams and buffers progressively — even with
@@ -459,10 +468,6 @@ export default function JigsawPuzzleSVGWithTray({
   // ── Refs ──────────────────────────────────────────────────────────────────
   const canvasRef       = useRef<HTMLCanvasElement>(null);
   const wrapperRef      = useRef<HTMLDivElement>(null);
-  const shimmerOuterRef = useRef<HTMLDivElement>(null);
-  const shimmerInnerRef = useRef<HTMLDivElement>(null);
-  const shimmerInnerBRef = useRef<HTMLDivElement>(null);
-  const shimmerInnerCRef = useRef<HTMLDivElement>(null);
   const energyWrapperRef = useRef<HTMLDivElement>(null);
   const energyRingRef   = useRef<HTMLDivElement>(null);
   const energyGlowRef   = useRef<HTMLDivElement>(null);
@@ -472,6 +477,7 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Image
   const imgRef           = useRef<HTMLImageElement | null>(null);
+  const frameImgRef      = useRef<HTMLImageElement | null>(null);
   const [imageOk, setImageOk] = useState<boolean | null>(null);
   const [effectiveUrl, setEffectiveUrl] = useState<string>(imageUrl ?? "");
   const [proxyTried, setProxyTried]   = useState(false);
@@ -568,7 +574,11 @@ export default function JigsawPuzzleSVGWithTray({
        anchorOff: { x: 0, y: 0 }, starts: new Map(), dx: 0, dy: 0 });
 
   // Snap spring  
-  type SnapAnim = { pieceIds: Set<string>; dx: number; dy: number; t0: number; dur: number };
+  // Per-piece offsets rather than one shared delta — a drag can trigger both a board-snap
+  // (the dragged piece/group) AND a neighbour merge (a separate, stationary group yanked
+  // into alignment with it) in the same pointerUp, and each moves by its own distinct amount.
+  type SnapOffset = { dx0: number; dy0: number; dx: number; dy: number };
+  type SnapAnim = { offsets: Map<string, SnapOffset>; t0: number; dur: number };
   const snapRef = useRef<SnapAnim | null>(null);
 
   // ── Per-piece animation state ────────────────────────────────────────────
@@ -585,6 +595,12 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Completion
   const completedRef  = useRef(false);
+  // When the decorative frame should start fading in — set once the living-photo reveal
+  // (which fully covers the board while it plays) begins dissolving away, not the instant
+  // the puzzle is solved, since the frame would otherwise finish fading in while still
+  // hidden underneath that overlay and the fade would never actually be seen.
+  const frameFadeStartRef = useRef<number | null>(null);
+  const FRAME_FADE_DUR = 3200;
   const [showCongrats, setShowCongrats]     = useState(false);
   const [awardedPoints, setAwardedPoints]   = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -811,6 +827,7 @@ export default function JigsawPuzzleSVGWithTray({
     setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000)));
 
     completedRef.current = false;
+    frameFadeStartRef.current = null;
     piecesRef.current = finalPieces;
     setPiecesState(finalPieces);
     dirtyRef.current = true;
@@ -864,6 +881,20 @@ export default function JigsawPuzzleSVGWithTray({
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveUrl, reloadKey, proxyTried]);
+
+  // Decorative completion-frame image — static asset, loaded once regardless of which
+  // puzzle image is in play.
+  useEffect(() => {
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      frameImgRef.current = img;
+      dirtyRef.current = true;
+    };
+    img.src = FRAME_IMG_URL;
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Responsive canvas resize ─────────────────────────────────────────────
 
@@ -1068,9 +1099,22 @@ export default function JigsawPuzzleSVGWithTray({
       const snap = snapRef.current;
       if (snap) {
         const t = Math.min(1, (now - snap.t0) / snap.dur);
-        const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
-        snap.dx = snap.dx * (1 - ease);
-        snap.dy = snap.dy * (1 - ease);
+        // Ease-out-cubic front-loads ~90%+ of the motion into the first half of the
+        // duration — for a small correction distance that reads as "already snapped" long
+        // before the timer finishes, no matter how large dur is. Ease-in-out paces the
+        // motion evenly across the whole duration instead, so a longer dur actually reads
+        // as a slower glide throughout, not just a longer imperceptible tail.
+        const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        // Recompute from the fixed starting offset (dx0/dy0) every frame — mutating dx/dy
+        // in place by repeatedly multiplying it by (1-ease) compounds the decay across every
+        // rendered frame (~60/sec), collapsing the offset to near-zero within a few frames
+        // regardless of `dur`. That's why neither the duration bump nor the easing-curve
+        // change actually changed the perceived snap speed: this bug made the glide finish
+        // almost instantly every time, no matter what those values were set to.
+        for (const off of snap.offsets.values()) {
+          off.dx = off.dx0 * (1 - ease);
+          off.dy = off.dy0 * (1 - ease);
+        }
         if (t >= 1) snapRef.current = null;
         dirtyRef.current = true;
       }
@@ -1166,8 +1210,9 @@ export default function JigsawPuzzleSVGWithTray({
         // p.pos is in stage space (includes boardOff); Path2D starts at (0,0) in piece-local space
         let px = p.pos.x, py = p.pos.y;
         if (dragging) { px += drag.dx; py += drag.dy; }
-        if (snapRef.current && snapRef.current.pieceIds.has(p.id)) {
-          px += snapRef.current.dx; py += snapRef.current.dy;
+        const snapOff = snapRef.current?.offsets.get(p.id);
+        if (snapOff) {
+          px += snapOff.dx; py += snapOff.dy;
         }
 
         if (px + _pw < viewL || px > viewR || py + _ph < viewT || py > viewB) continue;
@@ -1251,24 +1296,32 @@ export default function JigsawPuzzleSVGWithTray({
         // trick: stroke the same path twice, offset a hair in complementary directions —
         // clipping cuts off everything except the sliver just inside each edge, so it reads
         // as a raised, chiselled border around the actual curved shape without needing
-        // per-edge normal math for the tabs.
+        // per-edge normal math for the tabs. The "raised object on a table" look makes sense
+        // for a loose piece, but at full strength on already-connected pieces it read as a
+        // grid of bright white seams, so it's turned way down once a piece is placed.
+        const isPlaced = p.snapped || solved;
         const bevelPx = 1.1 / s;
         ctx.translate(bevelPx, bevelPx);
-        ctx.strokeStyle = "rgba(255,255,255,0.5)";
-        ctx.lineWidth = 1.8 / s;
+        ctx.strokeStyle = isPlaced ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.5)";
+        ctx.lineWidth = isPlaced ? 1.2 / s : 1.8 / s;
         ctx.stroke(path);
         ctx.translate(-bevelPx * 2, -bevelPx * 2);
         ctx.strokeStyle = "rgba(0,0,0,0.32)";
-        ctx.lineWidth = 2.2 / s;
+        ctx.lineWidth = isPlaced ? 1.4 / s : 2.2 / s;
         ctx.stroke(path);
         ctx.restore();
 
-        // Outline
+        // Outline. Snapped/solved pieces use a dark seam (reads as a recessed groove between
+        // connected pieces, like a real jigsaw) rather than a light one — a bright outline on
+        // an already-placed piece read as a stray highlight rather than a seam. 0.55 turned
+        // out too strong across every tab/blank curve on a full board — competed with the
+        // photo instead of reading as a subtle seam — so this is dialed back, plus a hair
+        // thinner specifically for snapped pieces.
         ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-        ctx.strokeStyle = (p.snapped || solved)
-          ? "rgba(255,255,255,0.14)"
+        ctx.strokeStyle = isPlaced
+          ? "rgba(0,0,0,0.1)"
           : dragging ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.30)";
-        ctx.lineWidth = dragging ? 1.6 / s : 1 / s;
+        ctx.lineWidth = dragging ? 1.6 / s : isPlaced ? 0.85 / s : 1 / s;
         ctx.stroke(path);
 
         // Snap glow — gold outline eases in and out on board placement
@@ -1290,6 +1343,41 @@ export default function JigsawPuzzleSVGWithTray({
         }
 
         ctx.restore();
+      }
+
+      // Decorative frame around the completed image — drawn on top of every piece once
+      // solved, turning the finished board into a "framed picture" rather than just
+      // stopping at plain assembled tiles. Uses an actual designed frame asset (a hand-tried
+      // canvas-drawn gradient version didn't read as a real bevel), stretched so its
+      // transparent "hole" (see FRAME_HOLE) lines up exactly with the board rect — whatever
+      // border/padding the source image has around that hole just extends outward from
+      // there, so it works regardless of the board's own aspect ratio.
+      // Fades in — see frameFadeStartRef — timed to when the living-photo reveal overlay
+      // (which fully covers the board while playing) itself dissolves away.
+      if (solved && frameFadeStartRef.current !== null && frameImgRef.current) {
+        const fadeT = Math.min(1, (now - frameFadeStartRef.current) / FRAME_FADE_DUR);
+        // Ease-out-quad front-loads most of the fade into the first half of FRAME_FADE_DUR,
+        // same problem diagnosed for the snap glide — the frame looked "already faded in"
+        // well before the timer finished. Ease-in-out-quad paces it evenly across the whole
+        // duration so a longer FRAME_FADE_DUR actually reads as slower throughout.
+        const frameAlpha = fadeT < 0.5 ? 2 * fadeT * fadeT : 1 - Math.pow(-2 * fadeT + 2, 2) / 2;
+        if (frameAlpha > 0) {
+          const frameImg = frameImgRef.current;
+          const holeW = FRAME_HOLE.right - FRAME_HOLE.left;
+          const holeH = FRAME_HOLE.bottom - FRAME_HOLE.top;
+          const scaleX = boardWidth / (frameImg.naturalWidth * holeW);
+          const scaleY = boardHeight / (frameImg.naturalHeight * holeH);
+          const drawW = frameImg.naturalWidth * scaleX;
+          const drawH = frameImg.naturalHeight * scaleY;
+          const drawX = _bOffX - FRAME_HOLE.left * frameImg.naturalWidth * scaleX;
+          const drawY = _bOffY - FRAME_HOLE.top * frameImg.naturalHeight * scaleY;
+
+          ctx.save();
+          ctx.globalAlpha = frameAlpha;
+          ctx.drawImage(frameImg, drawX, drawY, drawW, drawH);
+          ctx.restore();
+        }
+        if (fadeT < 1) dirtyRef.current = true;
       }
 
       // Piece-placement particle burst — drawn on top of all pieces, still in stage space
@@ -1353,8 +1441,9 @@ export default function JigsawPuzzleSVGWithTray({
       const path = pathCacheRef.current.get(p.id);
       if (!path) continue;
       let px = p.pos.x, py = p.pos.y;
-      if (snapRef.current && snapRef.current.pieceIds.has(p.id)) {
-        px += snapRef.current.dx; py += snapRef.current.dy;
+      const snapOff = snapRef.current?.offsets.get(p.id);
+      if (snapOff) {
+        px += snapOff.dx; py += snapOff.dy;
       }
       // lx/ly are in stage logical space; piece path is in piece-local space (0,0 at piece origin)
       if (ctx.isPointInPath(path, lx - px, ly - py)) return p;
@@ -1619,6 +1708,11 @@ export default function JigsawPuzzleSVGWithTray({
       return sp ? { ...p, pos: { x: sp.x + dx, y: sp.y + dy }, z: maxZ + 1 } : p;
     });
 
+    // Snapshot positions right after the drop, before any board-snap or neighbour-merge
+    // correction runs — diffed against the final positions below so every piece that gets
+    // nudged (not just the dragged group) can glide instead of jumping instantly.
+    const preSnapPositions = new Map(next.map(p => [p.id, { x: p.pos.x, y: p.pos.y }]));
+
     // When this drag would resolve the very last unsolved piece/group, there's no ambiguity
     // left about where it belongs — so it's safe to be much more forgiving about snap
     // distance for it specifically. (Occasional reports of "the last piece just won't
@@ -1632,15 +1726,12 @@ export default function JigsawPuzzleSVGWithTray({
       : boardSnapTolerance / scaleRef.current;
     const adjNeighbor = neighborSnapTolerance / scaleRef.current;
 
-    let lastSnapDelta: { dx: number; dy: number } | null = null;
     const s1 = snapToBoardIfClose(next, groupId, adjBoard);
     next = s1.pieces;
-    if (s1.snapped) lastSnapDelta = { dx: s1.dx, dy: s1.dy };
     next = snapMergeNeighbours(next, groupId, adjNeighbor);
 
     const s2 = snapToBoardIfClose(next, groupId, adjBoard);
     next = s2.pieces;
-    if (s2.snapped) lastSnapDelta = { dx: s2.dx, dy: s2.dy };
 
     if (s1.snapped || s2.snapped) {
       playPieceConnectSfx();
@@ -1664,11 +1755,26 @@ export default function JigsawPuzzleSVGWithTray({
       }
     }
 
-    if (lastSnapDelta && dist2(lastSnapDelta.dx, lastSnapDelta.dy) > 0.1) {
+    // Build the glide from whatever actually moved during resolution above — this covers
+    // both the dragged group snapping onto the board (s1/s2) AND any stationary neighbour
+    // group that snapMergeNeighbours pulled into alignment, which previously jumped
+    // instantly with no animation at all since only the board-snap delta was tracked.
+    const offsets = new Map<string, SnapOffset>();
+    for (const p of next) {
+      const before = preSnapPositions.get(p.id);
+      if (!before) continue;
+      const ddx = before.x - p.pos.x;
+      const ddy = before.y - p.pos.y;
+      if (dist2(ddx, ddy) > 0.1) {
+        offsets.set(p.id, { dx0: ddx, dy0: ddy, dx: ddx, dy: ddy });
+      }
+    }
+    if (offsets.size > 0) {
       snapRef.current = {
-        pieceIds: new Set(starts.keys()),
-        dx: -lastSnapDelta.dx, dy: -lastSnapDelta.dy,
-        t0: performance.now(), dur: 200,
+        offsets,
+        // The piece(s) gliding from wherever they were dropped/merged-from into their exact
+        // correct spot — needs enough time to read as felt motion rather than a jump.
+        t0: performance.now(), dur: 500,
       };
     }
 
@@ -1710,7 +1816,7 @@ export default function JigsawPuzzleSVGWithTray({
 
         // Positions `el` to exactly cover the board's current on-screen rect, accounting for
         // user zoom + pan (viewOffXRef/viewOffYRef) — not just the base fit-to-container scale.
-        // Skipping zoom/pan here is what caused the shimmer/reveal to drift off the board edges.
+        // Skipping zoom/pan here is what caused the reveal to drift off the board edges.
         const positionBoardOverlay = (el: HTMLElement) => {
           const canvas = canvasRef.current;
           if (!canvas || !el.parentElement) return;
@@ -1744,19 +1850,6 @@ export default function JigsawPuzzleSVGWithTray({
           tl.to(energyGlowRef.current, { scale: 1.6, autoAlpha: 0, duration: 0.55, ease: "power3.out" }, `${label}+=0.03`);
           tl.to(energyRingRef.current, { scale: 2.0, autoAlpha: 0, duration: 0.62, ease: "power3.out" }, `${label}+=0.02`);
         }
-        if (shimmerOuterRef.current && shimmerInnerRef.current) {
-          // Constrain shimmer sweep to the board area only
-          positionBoardOverlay(shimmerOuterRef.current);
-          tl.set(shimmerOuterRef.current, { autoAlpha: 1 }, label);
-          tl.set([shimmerInnerRef.current, shimmerInnerBRef.current, shimmerInnerCRef.current].filter(Boolean) as gsap.TweenTarget,
-            { xPercent: -250, autoAlpha: 0 }, label);
-          tl.fromTo(shimmerInnerRef.current, { xPercent: -220, autoAlpha: 0 }, { xPercent: 220, autoAlpha: 1, duration: 0.70, ease: "power3.inOut" }, `${label}+=0.06`);
-          if (shimmerInnerBRef.current)
-            tl.fromTo(shimmerInnerBRef.current, { xPercent: -240, autoAlpha: 0 }, { xPercent: 240, autoAlpha: 0.85, duration: 0.92, ease: "power2.inOut" }, `${label}+=0.12`);
-          if (shimmerInnerCRef.current)
-            tl.fromTo(shimmerInnerCRef.current, { xPercent: -260, autoAlpha: 0 }, { xPercent: 260, autoAlpha: 0.95, duration: 0.55, ease: "power4.inOut" }, `${label}+=0.20`);
-          tl.to(shimmerOuterRef.current, { autoAlpha: 0, duration: 0.22 }, ">-0.06");
-        }
         tl.play();
         await new Promise<void>(res => tl.eventCallback("onComplete", res));
 
@@ -1780,9 +1873,17 @@ export default function JigsawPuzzleSVGWithTray({
           const kbTl = gsap.timeline();
           kbTl.to(outer, { autoAlpha: 1, duration: 0.35, ease: "power1.out" }, 0);
           kbTl.to(img, { scale: 1.14, xPercent: panX, yPercent: panY, duration: 3.8, ease: "sine.inOut" }, 0);
+          // Start the frame's (slow) fade-in right at the top of the reveal instead of
+          // waiting until the overlay starts dissolving — it's hidden underneath the
+          // still-opaque overlay either way, so starting early just means a slower fade has
+          // enough time to finish before the overlay clears, instead of still visibly
+          // fading once the photo is already dissolving away.
+          kbTl.call(() => { frameFadeStartRef.current = performance.now(); dirtyRef.current = true; }, undefined, 0);
           kbTl.to(outer, { autoAlpha: 0, duration: 0.5, ease: "power1.in" }, "-=0.4");
           await new Promise<void>(res => kbTl.eventCallback("onComplete", res));
         } else {
+          frameFadeStartRef.current = performance.now();
+          dirtyRef.current = true;
           await new Promise(r => setTimeout(r, 1000));
         }
 
@@ -1919,6 +2020,7 @@ export default function JigsawPuzzleSVGWithTray({
         clearJigsawProgress(storageKeyRef.current);
         const fresh = buildInitial(edgesMapRef.current);
         completedRef.current = false;
+    frameFadeStartRef.current = null;
         startTimeRef.current = Date.now();
         savedElapsedRef.current = 0;
         setElapsedSeconds(0);
@@ -1981,23 +2083,6 @@ export default function JigsawPuzzleSVGWithTray({
           onPointerCancel={onPointerUp}
           onPointerLeave={onPointerLeave}
         />
-
-        {/* Shimmer overlay */}
-        <div ref={shimmerOuterRef}
-             style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0, zIndex: 999, overflow: "hidden" }}>
-          <div ref={shimmerInnerRef}
-               style={{ position: "absolute", left: 0, top: 0, width: "60%", height: "100%",
-                        background: "linear-gradient(90deg,rgba(255,215,0,0) 0%,rgba(255,215,0,0.92) 52%,rgba(255,215,0,0) 100%)",
-                        transform: "skewX(-20deg)", willChange: "transform,opacity" }} />
-          <div ref={shimmerInnerBRef}
-               style={{ position: "absolute", left: 0, top: 0, width: "85%", height: "100%",
-                        background: "linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,215,0,0.36) 35%,rgba(255,215,0,0.22) 52%,rgba(255,215,0,0.28) 68%,rgba(255,255,255,0) 100%)",
-                        transform: "skewX(-18deg)", opacity: 0, willChange: "transform,opacity" }} />
-          <div ref={shimmerInnerCRef}
-               style={{ position: "absolute", left: 0, top: 0, width: "40%", height: "100%",
-                        background: "linear-gradient(90deg,rgba(255,215,0,0) 0%,rgba(255,215,0,0.85) 48%,rgba(255,215,0,0) 100%)",
-                        transform: "skewX(-22deg)", opacity: 0, willChange: "transform,opacity" }} />
-        </div>
 
         {/* Energy ring — positioned to the board rect at animation time (see positionBoardOverlay) */}
         <div ref={energyWrapperRef}
