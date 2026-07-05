@@ -319,6 +319,77 @@ const PIECE_CONNECT_SFX_VOLUME = 0.35;
 const PUZZLE_COMPLETE_SFX_URL = "/audio/jigsaw_puzzle_complete.mp3";
 const PUZZLE_COMPLETE_SFX_VOLUME = 0.5;
 
+/**
+ * Plays a short sound effect via the Web Audio API instead of HTMLAudioElement. An
+ * <audio>/`new Audio()` element streams and buffers progressively — even with
+ * preload="auto" and a small round-robin pool (tried first, still cut off), playback can
+ * start before the browser finishes buffering, so the tail (or start) stalls. This decodes
+ * the entire file into an in-memory AudioBuffer once, up front; every play() call after
+ * that starts a fresh AudioBufferSourceNode against the already-fully-decoded buffer, so
+ * there is no streaming/buffering path left to race — and overlapping plays (rapid
+ * consecutive snaps) are natively independent, no pooling needed.
+ */
+function useSfxBuffer(url: string, volume: number, enabled: () => boolean) {
+  const ctxRef = useRef<AudioContext | null>(null);
+  const bufferRef = useRef<AudioBuffer | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const AudioCtxCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtxCtor) return;
+    const ctx = new AudioCtxCtor();
+    ctxRef.current = ctx;
+    let cancelled = false;
+
+    fetch(url)
+      .then((res) => res.arrayBuffer())
+      .then((data) => ctx.decodeAudioData(data))
+      .then((buf) => { if (!cancelled) bufferRef.current = buf; })
+      .catch(() => {
+        // Ignore load/decode failures — playback just becomes a no-op.
+      });
+
+    return () => {
+      cancelled = true;
+      bufferRef.current = null;
+      ctxRef.current = null;
+      void ctx.close().catch(() => {});
+    };
+  }, [url]);
+
+  return useCallback(() => {
+    if (!enabled()) return;
+    const ctx = ctxRef.current;
+    const buffer = bufferRef.current;
+    if (!ctx || !buffer) return;
+
+    const playNow = () => {
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const gain = ctx.createGain();
+        gain.gain.value = volume;
+        source.connect(gain);
+        gain.connect(ctx.destination);
+        source.start(0);
+      } catch {
+        // Ignore playback failures.
+      }
+    };
+
+    // Browsers auto-suspend an idle AudioContext (autoplay policy on first use, and again
+    // after a few seconds of silence) — resume() is async, so starting playback before it
+    // resolves schedules the clip while the context is still silently spinning back up,
+    // eating the beginning of the sound. Waiting for resume() to actually finish before
+    // scheduling anything is what fixes the "only hear the tail" symptom.
+    if (ctx.state === "suspended") {
+      void ctx.resume().then(playNow).catch(() => {});
+    } else {
+      playNow();
+    }
+  }, [enabled, volume]);
+}
+
 function createBurstParticles(cx: number, cy: number, pieceSize: number): BurstParticle[] {
   const count = 14;
   const particles: BurstParticle[] = [];
@@ -422,19 +493,8 @@ export default function JigsawPuzzleSVGWithTray({
     return true;
   }, []);
 
-  const playJigsawSfx = useCallback((url: string, volume: number) => {
-    if (!isJigsawSfxEnabled()) return;
-    try {
-      const clip = new Audio(url);
-      clip.preload = "auto";
-      clip.volume = volume;
-      void clip.play().catch(() => {
-        // Ignore playback failures (autoplay policy, missing file, etc).
-      });
-    } catch {
-      // Ignore playback failures.
-    }
-  }, [isJigsawSfxEnabled]);
+  const playPieceConnectSfx = useSfxBuffer(PIECE_CONNECT_SFX_URL, PIECE_CONNECT_SFX_VOLUME, isJigsawSfxEnabled);
+  const playPuzzleCompleteSfx = useSfxBuffer(PUZZLE_COMPLETE_SFX_URL, PUZZLE_COMPLETE_SFX_VOLUME, isJigsawSfxEnabled);
 
   // Logical dimensions of board (never changes after init)
   const pw = boardWidth / cols;
@@ -462,6 +522,12 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Path2D cache keyed by piece id (rebuilt whenever rows/cols/opts change)
   const pathCacheRef = useRef<Map<string, Path2D>>(new Map());
+
+  // Render-order cache — avoids re-sorting every piece on every single animation frame.
+  // The sort order (z-index, dragged group on top) only actually changes when the pieces
+  // array itself is replaced (a commit) or the active drag group changes, not on every
+  // frame of a continuous drag, so re-deriving it 60×/sec was pure waste on large puzzles.
+  const sortedCacheRef = useRef<{ pieces: Piece[]; ag: string | null; sorted: Piece[] } | null>(null);
 
   // Path opts (memoised from props)
   const pathOpts = useMemo<PathOpts>(() => ({
@@ -817,21 +883,23 @@ export default function JigsawPuzzleSVGWithTray({
         mobileViewportBaseRef.current = null;
         const fsW = viewportW;
         const fsH = viewportH;
-        if (isMobile) {
-          // Mobile fullscreen: fill the screen; board centred with ~12% margin per side
-          s         = Math.min(fsW * 0.88 / boardWidth, fsH * 0.88 / boardHeight);
-          physW     = fsW;
-          physH     = fsH;
-          newStageW = fsW / s;
-          newStageH = fsH / s;
-        } else {
-          // Desktop fullscreen: fixed STAGE_SCALE
-          s         = Math.min(fsW / (boardWidth * STAGE_SCALE), fsH / (boardHeight * STAGE_SCALE));
-          physW     = Math.round(boardWidth  * STAGE_SCALE * s);
-          physH     = Math.round(boardHeight * STAGE_SCALE * s);
-          newStageW = boardWidth  * STAGE_SCALE;
-          newStageH = boardHeight * STAGE_SCALE;
-        }
+        // Fullscreen (mobile and desktop alike): stage fills the actual screen viewport rather
+        // than a fixed multiple of the board's own aspect ratio. A fixed-multiple stage gets
+        // letterboxed whenever the board's aspect ratio doesn't match the screen's (nearly
+        // always), leaving dead space at the edges pieces could never reach — filling the real
+        // viewport gives pieces the full screen to scatter across, board centred within it.
+        //
+        // The board-fill margin differs by device: mobile keeps the board large (88% of the
+        // constraining dimension) since screen space is already scarce there. Desktop uses a
+        // much smaller margin — filling 88% of a desktop screen leaves almost no slack in
+        // whichever dimension the board's aspect ratio doesn't match, so scattered pieces had
+        // nowhere to go but a thin band matching the board's own extent, and overlapped there.
+        const fillMargin = isMobile ? 0.88 : 0.55;
+        s         = Math.min(fsW * fillMargin / boardWidth, fsH * fillMargin / boardHeight);
+        physW     = fsW;
+        physH     = fsH;
+        newStageW = fsW / s;
+        newStageH = fsH / s;
       } else if (isMobile) {
         // Mobile non-fullscreen: canvas fills available width × a large portion of screen height.
         // Stage adapts to those exact CSS dimensions so pieces scatter over the full visible area.
@@ -988,7 +1056,7 @@ export default function JigsawPuzzleSVGWithTray({
     tick();
     const intervalId = window.setInterval(tick, 1000);
     return () => window.clearInterval(intervalId);
-  }, [isSolved, rows, cols, imageUrl, puzzleId, playJigsawSfx]);
+  }, [isSolved, rows, cols, imageUrl, puzzleId, playPuzzleCompleteSfx]);
 
   // ── rAF render loop ──────────────────────────────────────────────────────
 
@@ -1061,14 +1129,34 @@ export default function JigsawPuzzleSVGWithTray({
         ctx.strokeRect(_bOffX, _bOffY, boardWidth, boardHeight);
       }
 
-      // Sort: z-order, dragging group on top
+      // Sort: z-order, dragging group on top. Cached — the relative order only changes when
+      // the pieces array is replaced or the active drag group changes, not every frame.
       const drag = dragRef.current;
       const ag   = drag.active ? drag.groupId : null;
-      const sorted = [...piecesRef.current].sort((a, b) => {
-        const da = ag && a.groupId === ag ? 1 : 0;
-        const db = ag && b.groupId === ag ? 1 : 0;
-        return (da - db) || (a.z - b.z);
-      });
+      const sortCache = sortedCacheRef.current;
+      let sorted: Piece[];
+      if (sortCache && sortCache.pieces === piecesRef.current && sortCache.ag === ag) {
+        sorted = sortCache.sorted;
+      } else {
+        sorted = [...piecesRef.current].sort((a, b) => {
+          const da = ag && a.groupId === ag ? 1 : 0;
+          const db = ag && b.groupId === ag ? 1 : 0;
+          return (da - db) || (a.z - b.z);
+        });
+        sortedCacheRef.current = { pieces: piecesRef.current, ag, sorted };
+      }
+
+      // Visible-viewport bounds (stage-logical space, with a small margin) — pieces fully
+      // outside this rect are skipped entirely rather than paying for shadow/clip/bevel/etc.
+      // Large scattered puzzles can have most of the board off-screen at any given pan/zoom,
+      // so this matters a lot more as piece count grows.
+      const viewW = W / s;
+      const viewH = H / s;
+      const cullPad = Math.max(_pw, _ph) * 0.3;
+      const viewL = viewOffXRef.current - cullPad;
+      const viewT = viewOffYRef.current - cullPad;
+      const viewR = viewOffXRef.current + viewW + cullPad;
+      const viewB = viewOffYRef.current + viewH + cullPad;
 
       for (const p of sorted) {
         const path = pathCacheRef.current.get(p.id);
@@ -1081,6 +1169,8 @@ export default function JigsawPuzzleSVGWithTray({
         if (snapRef.current && snapRef.current.pieceIds.has(p.id)) {
           px += snapRef.current.dx; py += snapRef.current.dy;
         }
+
+        if (px + _pw < viewL || px > viewR || py + _ph < viewT || py > viewB) continue;
 
         ctx.save();
         ctx.translate(px, py);
@@ -1112,12 +1202,24 @@ export default function JigsawPuzzleSVGWithTray({
           }
         }
 
-        // Drop shadow — snapped pieces get a grounded weight shadow
-        if (p.snapped) {
-          ctx.shadowColor = "rgba(0,0,0,0.38)";
-          ctx.shadowBlur  = 7 / s;
+        // Drop shadow. shadowBlur is one of the most expensive Canvas2D operations, and the
+        // whole canvas redraws every frame regardless of which piece is actually moving — so
+        // blurring dozens of static pieces every frame (as an earlier version of this did)
+        // tanked drag performance. Only the actively-dragged piece (just one at a time) gets
+        // a real blurred shadow; every other piece gets a cheap hard-edged shadow instead —
+        // a plain solid offset fill, no blur math at all — which still reads as "lifted off
+        // the table" at this scale for a fraction of the cost.
+        if (dragging) {
+          ctx.shadowColor = "rgba(0,0,0,0.45)";
+          ctx.shadowBlur  = 16 / s;
           ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 4 / s;
+          ctx.shadowOffsetY = 9 / s;
+        } else {
+          ctx.save();
+          ctx.translate(0, (p.snapped ? 4 : 3) / s);
+          ctx.fillStyle = p.snapped ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.24)";
+          ctx.fill(path);
+          ctx.restore();
         }
 
         // Clip + image
@@ -1142,6 +1244,23 @@ export default function JigsawPuzzleSVGWithTray({
         hl.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = hl;
         ctx.fill(path); // same: fill(path) covers tabs
+
+        // Inner bevel — a light rim along the top-left-facing edge and a dark rim along the
+        // bottom-right-facing edge, both within the same clip already active above (reusing
+        // it instead of a second ctx.clip() call, which isn't free either). Cheap emboss
+        // trick: stroke the same path twice, offset a hair in complementary directions —
+        // clipping cuts off everything except the sliver just inside each edge, so it reads
+        // as a raised, chiselled border around the actual curved shape without needing
+        // per-edge normal math for the tabs.
+        const bevelPx = 1.1 / s;
+        ctx.translate(bevelPx, bevelPx);
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.lineWidth = 1.8 / s;
+        ctx.stroke(path);
+        ctx.translate(-bevelPx * 2, -bevelPx * 2);
+        ctx.strokeStyle = "rgba(0,0,0,0.32)";
+        ctx.lineWidth = 2.2 / s;
+        ctx.stroke(path);
         ctx.restore();
 
         // Outline
@@ -1514,7 +1633,7 @@ export default function JigsawPuzzleSVGWithTray({
     if (s2.snapped) lastSnapDelta = { dx: s2.dx, dy: s2.dy };
 
     if (s1.snapped || s2.snapped) {
-      playJigsawSfx(PIECE_CONNECT_SFX_URL, PIECE_CONNECT_SFX_VOLUME);
+      playPieceConnectSfx();
     }
 
     // Snap-to-board → pop + gold glow + particle burst (single piece only — not a multi-piece group)
@@ -1544,7 +1663,7 @@ export default function JigsawPuzzleSVGWithTray({
     }
 
     setPieces(next);
-  }, [boardSnapTolerance, neighborSnapTolerance, snapMergeNeighbours, setPieces, playJigsawSfx]);
+  }, [boardSnapTolerance, neighborSnapTolerance, snapMergeNeighbours, setPieces, playPieceConnectSfx]);
 
   const onPointerLeave = useCallback(() => {
     dirtyRef.current = true;
@@ -1555,7 +1674,7 @@ export default function JigsawPuzzleSVGWithTray({
   useEffect(() => {
     if (!isSolved || completedRef.current) return;
     completedRef.current = true;
-    playJigsawSfx(PUZZLE_COMPLETE_SFX_URL, PUZZLE_COMPLETE_SFX_VOLUME);
+    playPuzzleCompleteSfx();
     // Smooth piece scale-up on solve
     // Scatter each piece with a random delay (0–600 ms) and random peak scale (4–12%)
     const now = performance.now();
@@ -1701,27 +1820,57 @@ export default function JigsawPuzzleSVGWithTray({
     setPieces(prev => {
       const logW = stageDimsRef.current.w;
       const logH = stageDimsRef.current.h;
+      const _pw = pwRef.current, _ph = phRef.current;
+      // Buffer between scattered groups (and between a group and the board) — sized off
+      // piece dimensions rather than a flat pixel value so it scales with grid density.
+      // Bigger than a plain "don't touch" gap because tabs/blanks bulge out past a piece's
+      // nominal pw×ph box (~20% per side), so a tight bounding-box gap still looked like
+      // visual overlap once you counted the protruding tabs.
+      const buffer = Math.max(_pw, _ph) * 0.5;
+      type Rect = { x0: number; y0: number; x1: number; y1: number };
+      const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+
+      const _bOffX = boardOffXRef.current, _bOffY = boardOffYRef.current;
+      const placedRects: Rect[] = [
+        { x0: _bOffX - buffer, y0: _bOffY - buffer, x1: _bOffX + boardWidth + buffer, y1: _bOffY + boardHeight + buffer },
+      ];
+
       const gids = [...new Set(prev.map(p => p.groupId))];
       let next = [...prev.map(p => ({ ...p }))];
-      for (const gid of gids) {
-        const group = next.filter(p => p.groupId === gid);
-        if (group.some(p => p.snapped)) continue;
-        const tgt = {
-          x: clamp(Math.random() * (logW - pwRef.current * 2) + pwRef.current, 0, logW - pwRef.current),
-          y: clamp(Math.random() * (logH - phRef.current * 2) + phRef.current, 0, logH - phRef.current),
-        };
-        // Avoid placing on top of board
-        const _bOffX = boardOffXRef.current, _bOffY = boardOffYRef.current;
-        const onBoard = (x: number, y: number) =>
-          x + pwRef.current > _bOffX && x < _bOffX + boardWidth &&
-          y + phRef.current > _bOffY && y < _bOffY + boardHeight;
+
+      // Place bigger merged clusters first — packs more reliably than random order, since
+      // large groups have fewer valid spots left the longer you wait to place them.
+      const groupsBySize = gids
+        .map(gid => ({ gid, group: next.filter(p => p.groupId === gid) }))
+        .filter(({ group }) => !group.some(p => p.snapped))
+        .sort((a, b) => b.group.length - a.group.length);
+
+      for (const { gid, group } of groupsBySize) {
         const minX = Math.min(...group.map(p => p.pos.x));
         const minY = Math.min(...group.map(p => p.pos.y));
-        const shifted = { x: tgt.x - minX, y: tgt.y - minY };
-        // Only move if destination avoids the board; otherwise keep current pos
-        if (!onBoard(minX + shifted.x, minY + shifted.y)) {
-          next = next.map(p => p.groupId !== gid ? p : { ...p, pos: { x: p.pos.x + shifted.x, y: p.pos.y + shifted.y } });
+        const maxX = Math.max(...group.map(p => p.pos.x + _pw));
+        const maxY = Math.max(...group.map(p => p.pos.y + _ph));
+        const gw = maxX - minX, gh = maxY - minY;
+        const rangeX = Math.max(0, logW - gw);
+        const rangeY = Math.max(0, logH - gh);
+
+        let chosen: { x: number; y: number } | null = null;
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const x = clamp(Math.random() * rangeX, 0, rangeX);
+          const y = clamp(Math.random() * rangeY, 0, rangeY);
+          const candidate: Rect = { x0: x - buffer, y0: y - buffer, x1: x + gw + buffer, y1: y + gh + buffer };
+          if (!placedRects.some(r => overlaps(candidate, r))) {
+            chosen = { x, y };
+            placedRects.push({ x0: x, y0: y, x1: x + gw, y1: y + gh });
+            break;
+          }
         }
+        // No free spot found within the attempt budget (stage too crowded) — leave this
+        // group where it was rather than force an overlap.
+        if (!chosen) continue;
+
+        const shifted = { x: chosen.x - minX, y: chosen.y - minY };
+        next = next.map(p => p.groupId !== gid ? p : { ...p, pos: { x: p.pos.x + shifted.x, y: p.pos.y + shifted.y } });
       }
       return next;
     });
@@ -1984,14 +2133,26 @@ export default function JigsawPuzzleSVGWithTray({
           </div>
         )}
 
-        {/* Fullscreen exit */}
+        {/* Fullscreen-only controls — the page's own toolbar (Fullscreen / Scatter loose
+            pieces) lives outside this component and is unreachable once fullscreen portals
+            everything into document.body, so scatter needs its own entry point here too. */}
         {isFullscreen && (
-          <button type="button" onClick={() => setIsFullscreen(false)}
-                  style={{ position: "absolute", right: 12, top: 12, zIndex: 13000, padding: "6px 8px",
-                           borderRadius: 8, background: "rgba(0,0,0,0.5)", color: "white",
-                           border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
-            Exit Fullscreen
-          </button>
+          <div style={{ position: "absolute", right: 12, top: 12, zIndex: 13000,
+                        display: "flex", gap: 8 }}>
+            {!isSolved && (
+              <button type="button" onClick={sendLooseToTray}
+                      style={{ padding: "6px 10px", borderRadius: 8, background: "#facc15",
+                               color: "#000", border: "1px solid #eab308",
+                               cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                Scatter loose pieces
+              </button>
+            )}
+            <button type="button" onClick={() => setIsFullscreen(false)}
+                    style={{ padding: "6px 8px", borderRadius: 8, background: "rgba(0,0,0,0.5)",
+                             color: "white", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+              Exit Fullscreen
+            </button>
+          </div>
         )}
 
         {/* Stats */}
