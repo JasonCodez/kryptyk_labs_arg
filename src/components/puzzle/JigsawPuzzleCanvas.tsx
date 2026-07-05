@@ -1619,7 +1619,17 @@ export default function JigsawPuzzleSVGWithTray({
       return sp ? { ...p, pos: { x: sp.x + dx, y: sp.y + dy }, z: maxZ + 1 } : p;
     });
 
-    const adjBoard    = boardSnapTolerance / scaleRef.current;
+    // When this drag would resolve the very last unsolved piece/group, there's no ambiguity
+    // left about where it belongs — so it's safe to be much more forgiving about snap
+    // distance for it specifically. (Occasional reports of "the last piece just won't
+    // snap, had to refresh" are most consistent with a transient mobile viewport/scale
+    // hiccup throwing off the normal tolerance — being generous here for the one case
+    // where correctness can never be in question sidesteps that regardless of cause.)
+    const totalUnsolved = next.filter(p => !p.snapped).length;
+    const isFinalPiece = totalUnsolved === starts.size;
+    const adjBoard    = isFinalPiece
+      ? Math.max(pwRef.current, phRef.current) * 1.5
+      : boardSnapTolerance / scaleRef.current;
     const adjNeighbor = neighborSnapTolerance / scaleRef.current;
 
     let lastSnapDelta: { dx: number; dy: number } | null = null;
@@ -1826,13 +1836,18 @@ export default function JigsawPuzzleSVGWithTray({
       // Bigger than a plain "don't touch" gap because tabs/blanks bulge out past a piece's
       // nominal pw×ph box (~20% per side), so a tight bounding-box gap still looked like
       // visual overlap once you counted the protruding tabs.
-      const buffer = Math.max(_pw, _ph) * 0.5;
+      const fullBuffer = Math.max(_pw, _ph) * 0.5;
       type Rect = { x0: number; y0: number; x1: number; y1: number };
-      const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+      const overlapArea = (a: Rect, b: Rect) => {
+        const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+        const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+        return w > 0 && h > 0 ? w * h : 0;
+      };
+      const overlaps = (a: Rect, b: Rect) => overlapArea(a, b) > 0;
 
       const _bOffX = boardOffXRef.current, _bOffY = boardOffYRef.current;
       const placedRects: Rect[] = [
-        { x0: _bOffX - buffer, y0: _bOffY - buffer, x1: _bOffX + boardWidth + buffer, y1: _bOffY + boardHeight + buffer },
+        { x0: _bOffX - fullBuffer, y0: _bOffY - fullBuffer, x1: _bOffX + boardWidth + fullBuffer, y1: _bOffY + boardHeight + fullBuffer },
       ];
 
       const gids = [...new Set(prev.map(p => p.groupId))];
@@ -1854,21 +1869,40 @@ export default function JigsawPuzzleSVGWithTray({
         const rangeX = Math.max(0, logW - gw);
         const rangeY = Math.max(0, logH - gh);
 
-        let chosen: { x: number; y: number } | null = null;
-        for (let attempt = 0; attempt < 40; attempt++) {
-          const x = clamp(Math.random() * rangeX, 0, rangeX);
-          const y = clamp(Math.random() * rangeY, 0, rangeY);
-          const candidate: Rect = { x0: x - buffer, y0: y - buffer, x1: x + gw + buffer, y1: y + gh + buffer };
-          if (!placedRects.some(r => overlaps(candidate, r))) {
-            chosen = { x, y };
-            placedRects.push({ x0: x, y0: y, x1: x + gw, y1: y + gh });
-            break;
+        const tryFind = (buf: number, attempts: number): { x: number; y: number } | null => {
+          for (let i = 0; i < attempts; i++) {
+            const x = clamp(Math.random() * rangeX, 0, rangeX);
+            const y = clamp(Math.random() * rangeY, 0, rangeY);
+            const candidate: Rect = { x0: x - buf, y0: y - buf, x1: x + gw + buf, y1: y + gh + buf };
+            if (!placedRects.some(r => overlaps(candidate, r))) return { x, y };
           }
-        }
-        // No free spot found within the attempt budget (stage too crowded) — leave this
-        // group where it was rather than force an overlap.
-        if (!chosen) continue;
+          return null;
+        };
 
+        // Progressively relax the required clearance if the stage is too cramped to fit
+        // everything with a full gap (small mobile screens especially, where the board
+        // itself already fills most of the stage). Every group must end up somewhere —
+        // silently leaving a piece unmoved is exactly what read as "the button did
+        // nothing" for some/all pieces on mobile.
+        let chosen = tryFind(fullBuffer, 40) ?? tryFind(fullBuffer * 0.4, 40) ?? tryFind(0, 40);
+
+        if (!chosen) {
+          // Still nothing fully clear of everything else — take the least-overlapping of a
+          // batch of random candidates rather than leaving the piece in place.
+          let best: { x: number; y: number } | null = null;
+          let bestOverlap = Infinity;
+          for (let i = 0; i < 25; i++) {
+            const x = clamp(Math.random() * rangeX, 0, rangeX);
+            const y = clamp(Math.random() * rangeY, 0, rangeY);
+            const candidate: Rect = { x0: x, y0: y, x1: x + gw, y1: y + gh };
+            const total = placedRects.reduce((sum, r) => sum + overlapArea(candidate, r), 0);
+            if (total < bestOverlap) { bestOverlap = total; best = { x, y }; }
+            if (total === 0) break;
+          }
+          chosen = best ?? { x: 0, y: 0 };
+        }
+
+        placedRects.push({ x0: chosen.x, y0: chosen.y, x1: chosen.x + gw, y1: chosen.y + gh });
         const shifted = { x: chosen.x - minX, y: chosen.y - minY };
         next = next.map(p => p.groupId !== gid ? p : { ...p, pos: { x: p.pos.x + shifted.x, y: p.pos.y + shifted.y } });
       }
