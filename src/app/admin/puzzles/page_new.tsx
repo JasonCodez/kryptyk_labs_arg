@@ -103,6 +103,7 @@ export default function AdminPuzzlesPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [togglingActiveId, setTogglingActiveId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -201,6 +202,29 @@ export default function AdminPuzzlesPage() {
       setDeleteError("Network error — could not delete puzzle");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleToggleActive = async (puzzle: PuzzleListItem) => {
+    setTogglingActiveId(puzzle.id);
+    setDeleteError(null);
+    const nextActive = !puzzle.isActive;
+    try {
+      const res = await fetch(`/api/admin/puzzles/${puzzle.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextActive }),
+      });
+      if (res.ok) {
+        setAllPuzzles((prev) => prev.map((p) => (p.id === puzzle.id ? { ...p, isActive: nextActive } : p)));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setDeleteError(data.error || "Failed to update puzzle status");
+      }
+    } catch (e) {
+      setDeleteError("Network error — could not update puzzle status");
+    } finally {
+      setTogglingActiveId(null);
     }
   };
 
@@ -1799,9 +1823,19 @@ export default function AdminPuzzlesPage() {
                             </td>
                             <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{new Date(p.createdAt).toLocaleDateString()}</td>
                             <td className="px-4 py-3">
-                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${p.isActive ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-400'}`}>
-                                {p.isActive ? 'Active' : 'Inactive'}
-                              </span>
+                              <button
+                                type="button"
+                                disabled={togglingActiveId === p.id}
+                                onClick={() => handleToggleActive(p)}
+                                title={p.isActive ? 'Click to deactivate' : 'Click to activate'}
+                                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-wait ${
+                                  p.isActive
+                                    ? 'bg-green-500/20 text-green-300 hover:bg-green-500/30'
+                                    : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                                }`}
+                              >
+                                {togglingActiveId === p.id ? '…' : p.isActive ? 'Active' : 'Inactive'}
+                              </button>
                               {Array.isArray(p.dailySlots) && p.dailySlots.length > 0 && (
                                 <span className="ml-1 px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-300">
                                   📅 Daily #{p.dailySlots.map(s => s.dayNumber).join(', #')}

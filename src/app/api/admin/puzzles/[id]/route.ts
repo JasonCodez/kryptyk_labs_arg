@@ -56,6 +56,34 @@ export async function GET(
   return NextResponse.json(puzzle);
 }
 
+// Lightweight toggle for just the isActive flag — the full PUT below requires reconstructing
+// the entire type-specific puzzle payload (sudoku grids, gridlock data, etc.), which is
+// overkill for flipping a single boolean from the Manage Puzzles table.
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { id: puzzleId } = await params;
+  const body = await req.json().catch(() => ({}));
+  if (typeof body.isActive !== "boolean") {
+    return NextResponse.json({ error: "isActive must be a boolean" }, { status: 400 });
+  }
+
+  const existing = await prisma.puzzle.findUnique({ where: { id: puzzleId }, select: { id: true } });
+  if (!existing) return NextResponse.json({ error: "Puzzle not found" }, { status: 404 });
+
+  const updated = await prisma.puzzle.update({
+    where: { id: puzzleId },
+    data: { isActive: body.isActive },
+    select: { id: true, isActive: true },
+  });
+
+  return NextResponse.json({ success: true, ...updated });
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
