@@ -47,6 +47,15 @@ type Direction = "across" | "down";
 const WORD_SOLVED_ANIMATION_MS = 1400;
 const WORD_SOLVED_STAGGER_MS = 55;
 const LETTER_DRAW_ANIMATION_MS = 520;
+// Extra breathing room after the last word's own solve animation before the
+// whole-board celebration kicks in, so the two never visually collide.
+const COMPLETION_LEAD_BUFFER_MS = 260;
+// How long the whole-board pulse plays (visible on the grid itself) before the
+// "Crossword Complete" card overlay fades in on top of it.
+const BOARD_CELEBRATION_BASE_MS = 1800;
+// Per-diagonal-step delay so the pulse reads as a wave sweeping across the
+// grid from the top-left corner rather than every cell flashing in unison.
+const BOARD_WAVE_STAGGER_MS = 10;
 const PUZZLE_COMPLETE_ANIMATION_MS = 2600;
 const GRID_BORDER_PX = 2;
 const GRID_PADDING_PX = 2;
@@ -644,6 +653,7 @@ export default function CrosswordPuzzle({
   const [latestSolvedClue, setLatestSolvedClue] = useState<ActiveClue | null>(null);
   const [letterDrawTokens, setLetterDrawTokens] = useState<Record<string, LetterDrawToken>>({});
   const [completionAnimating, setCompletionAnimating] = useState(false);
+  const [boardCelebrating, setBoardCelebrating] = useState(false);
   const [showRestoreNotice, setShowRestoreNotice] = useState(() =>
     !alreadySolved && Boolean(localProgressRef.current)
   );
@@ -658,9 +668,16 @@ export default function CrosswordPuzzle({
   const solvedAnimationTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const letterDrawTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const boardCelebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoreNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set the instant ANY path (live completion or hydrate discovering a
+  // pre-existing solve) determines the puzzle is done, so the two can't race
+  // and double-fire onSolved. Separate from animationStartedRef below, which
+  // only guards startCompletionAnimation's own re-entrancy.
   const completionNotifiedRef = useRef(false);
+  const animationStartedRef = useRef(false);
   const lettersRef = useRef<string[][]>(letters);
   const revealedRef = useRef<Set<string>>(revealed);
   const activeClueRef = useRef<ActiveClue | null>(activeClue);
@@ -892,6 +909,8 @@ export default function CrosswordPuzzle({
       solvedAnimationTimersRef.current.forEach((timer) => clearTimeout(timer));
       letterDrawTimersRef.current.forEach((timer) => clearTimeout(timer));
       if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+      if (preCompletionTimerRef.current) clearTimeout(preCompletionTimerRef.current);
+      if (boardCelebrationTimerRef.current) clearTimeout(boardCelebrationTimerRef.current);
       if (restoreNoticeTimerRef.current) clearTimeout(restoreNoticeTimerRef.current);
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       if (pencilAudioContextRef.current) {
@@ -1013,7 +1032,11 @@ export default function CrosswordPuzzle({
           showRestoredProgressBanner();
         }
 
-        if (payload.allSolved === true) {
+        // Guarded by completionNotifiedRef so that if the player already
+        // finished the puzzle live (in this same session) while this hydrate
+        // request was still in flight, we don't steal the completion and skip
+        // straight past the board celebration / completion card animation.
+        if (payload.allSolved === true && !completionNotifiedRef.current) {
           completionNotifiedRef.current = true;
           setGameStatus("won");
           if (serverElapsedMs > 0) {
@@ -1075,21 +1098,34 @@ export default function CrosswordPuzzle({
   }, [data]);
 
   const startCompletionAnimation = useCallback(() => {
-    if (completionNotifiedRef.current) return;
+    if (animationStartedRef.current) return;
+    animationStartedRef.current = true;
 
     const finalElapsedMs = Math.max(0, Math.round(getElapsedSnapshotMs()));
     completionNotifiedRef.current = true;
     timerAnchorRef.current = null;
     setElapsedMs(finalElapsedMs);
     setGameStatus("won");
-    setCompletionAnimating(true);
+    // Phase 1: let the whole board celebrate (visible, nothing covers it) before
+    // the "Crossword Complete" card appears — see checkWord's allSolved branch
+    // for the delay that lets the last word's own solve animation finish first.
+    setBoardCelebrating(true);
 
-    if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
-    completionTimerRef.current = setTimeout(() => {
-      setCompletionAnimating(false);
-      onSolved?.(Math.round(finalElapsedMs / 1000));
-    }, PUZZLE_COMPLETE_ANIMATION_MS);
-  }, [getElapsedSnapshotMs, onSolved]);
+    const waveTailMs = Math.max(0, (rows - 1) + (cols - 1)) * BOARD_WAVE_STAGGER_MS;
+    if (boardCelebrationTimerRef.current) clearTimeout(boardCelebrationTimerRef.current);
+    boardCelebrationTimerRef.current = setTimeout(() => {
+      // Phase 2: now bring in the full-screen completion card.
+      setBoardCelebrating(false);
+      setCompletionAnimating(true);
+
+      if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = setTimeout(() => {
+        setCompletionAnimating(false);
+        // Phase 3: hand off to the caller (XP/rating modals, etc.).
+        onSolved?.(Math.round(finalElapsedMs / 1000));
+      }, PUZZLE_COMPLETE_ANIMATION_MS);
+    }, BOARD_CELEBRATION_BASE_MS + waveTailMs);
+  }, [getElapsedSnapshotMs, onSolved, rows, cols]);
 
   const triggerLetterDrawAnimation = useCallback((row: number, col: number) => {
     if (typeof window === "undefined") return;
@@ -1168,8 +1204,21 @@ export default function CrosswordPuzzle({
               playSuccessAnswerSfx();
             }
             setError("");
-            if (json.allSolved) {
-              startCompletionAnimation();
+            if (json.allSolved && !completionNotifiedRef.current) {
+              // Claim completion immediately so a slow, still-in-flight hydrate
+              // fetch from page load can't race in and short-circuit past the
+              // animation once it resolves (see hydrateProgress's allSolved
+              // check above) -- the actual animation is still deferred below.
+              completionNotifiedRef.current = true;
+              // Wait for this last word's own solve animation to finish playing
+              // before the board-wide celebration (and later, the completion
+              // card) takes over — otherwise it gets cut off/covered instantly.
+              const staggerTailMs = Math.max(0, answer.length - 1) * WORD_SOLVED_STAGGER_MS;
+              const leadDelayMs = WORD_SOLVED_ANIMATION_MS + staggerTailMs + COMPLETION_LEAD_BUFFER_MS;
+              if (preCompletionTimerRef.current) clearTimeout(preCompletionTimerRef.current);
+              preCompletionTimerRef.current = setTimeout(() => {
+                startCompletionAnimation();
+              }, leadDelayMs);
             }
           }
         } catch {
@@ -1546,10 +1595,33 @@ export default function CrosswordPuzzle({
   const useHintToken = useCallback(async () => {
     if (!cursorCell || !activeClue || hintTokens < 1 || hintLoading) return;
     if (!data) return;
-    const { row, col } = cursorCell;
-    const key = `${row},${col}`;
-    if (revealed.has(key)) return;
 
+    // If the cursor is sitting on a cell that's already been revealed (the
+    // common case right after using a hint, since the cursor doesn't move),
+    // retarget to the next not-yet-revealed cell in the same word instead of
+    // silently doing nothing. If the whole word is already revealed, tell the
+    // user why instead of leaving the button looking broken.
+    let target = cursorCell;
+    if (revealed.has(`${target.row},${target.col}`)) {
+      const startClue = activeClue.direction === "across"
+        ? data.clues.across.find((c) => c.number === activeClue.number)
+        : data.clues.down.find((c) => c.number === activeClue.number);
+      const nextCell = startClue
+        ? getWordCells(initialGrid, startClue.row, startClue.col, activeClue.direction)
+            .find((cell) => !revealed.has(`${cell.row},${cell.col}`))
+        : undefined;
+
+      if (!nextCell) {
+        setError("Every letter in this word is already revealed — select a different word to use a hint.");
+        return;
+      }
+      target = nextCell;
+    }
+
+    const { row, col } = target;
+    const key = `${row},${col}`;
+
+    setError("");
     setHintLoading(true);
     try {
       const ok = onHintUsed ? await onHintUsed() : true;
@@ -1569,13 +1641,16 @@ export default function CrosswordPuzzle({
           return next;
         });
         setRevealed((prev) => new Set(prev).add(key));
+        setCursorCell(target);
+      } else {
+        setError(json.error || "Couldn't reveal that letter. Please try again.");
       }
     } catch {
-      // ignore
+      setError("Couldn't reveal that letter — check your connection and try again.");
     } finally {
       setHintLoading(false);
     }
-  }, [cursorCell, activeClue, hintTokens, hintLoading, revealed, onHintUsed, puzzleId, data]);
+  }, [cursorCell, activeClue, hintTokens, hintLoading, revealed, onHintUsed, puzzleId, data, initialGrid]);
 
   // ── Clue list click ────────────────────────────────────────────────────────
   const handleClueClick = useCallback(
@@ -1894,6 +1969,7 @@ export default function CrosswordPuzzle({
 
         .crossword-cell-finish {
           animation: crossword-cell-finish 900ms ease-in-out 2;
+          animation-delay: var(--cw-board-wave-delay, 0ms);
         }
 
         .crossword-clue-success {
@@ -2157,7 +2233,7 @@ export default function CrosswordPuzzle({
                       : undefined;
                     const cellClasses = [
                       status.isJustSolved ? "crossword-cell-success" : "",
-                      completionAnimating && !cell.isBlack ? "crossword-cell-finish" : "",
+                      boardCelebrating && !cell.isBlack ? "crossword-cell-finish" : "",
                     ].filter(Boolean).join(" ");
 
                     return (
@@ -2170,6 +2246,9 @@ export default function CrosswordPuzzle({
                           ...cellStyle(r, c, status, palette),
                           ...(status.isJustSolved
                             ? ({ ["--cw-cell-delay" as any]: `${solvedDelayMs}ms` } as React.CSSProperties)
+                            : {}),
+                          ...(boardCelebrating
+                            ? ({ ["--cw-board-wave-delay" as any]: `${(r + c) * BOARD_WAVE_STAGGER_MS}ms` } as React.CSSProperties)
                             : {}),
                           borderRadius: "3px",
                           display: "flex",

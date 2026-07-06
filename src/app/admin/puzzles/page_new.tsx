@@ -1543,6 +1543,7 @@ export default function AdminPuzzlesPage() {
                             <option value="challenge">Challenge</option>
                             <option value="word_crack">Hidden Word</option>
                             <option value="word_search">Word Trove</option>
+                            <option value="crossword">Crossword</option>
                             <option value="anagram_blitz">Anagram Blitz</option>
                             <option value="cipher_clash">Cipher Clash</option>
                             <option value="blackout">Blackout</option>
@@ -1569,6 +1570,7 @@ export default function AdminPuzzlesPage() {
                             <option value="challenge">Challenge</option>
                             <option value="word_crack">Hidden Word</option>
                             <option value="word_search">Word Trove</option>
+                            <option value="crossword">Crossword</option>
                             <option value="anagram_blitz">Anagram Blitz</option>
                             <option value="cipher_clash">Cipher Clash</option>
                             <option value="blackout">Blackout</option>

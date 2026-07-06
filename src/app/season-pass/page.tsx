@@ -481,11 +481,14 @@ function TierRow({
             const isFirst = index === 0;
             return (
               <>
-                {/* Top connector — skip for very first row */}
+                {/* Top connector — skip for very first row. Square corners (no
+                    border-radius) so it butts seamlessly against the previous
+                    row's bottom connector instead of leaving a rounded-corner
+                    pinch/gap right at the row boundary. */}
                 {!isFirst && (
                   <div
                     className="absolute left-1/2 top-0 pointer-events-none overflow-hidden"
-                    style={{ width: 4, marginLeft: -2, height: nodeCenterY, background: unlocked ? gold : dim, zIndex: 0, borderRadius: 2 }}
+                    style={{ width: 4, marginLeft: -2, height: nodeCenterY, background: unlocked ? gold : dim, zIndex: 0 }}
                   >
                     {unlocked && <div className="absolute inset-0 animate-track-bead" />}
                   </div>
@@ -494,7 +497,7 @@ function TierRow({
                 {!isLast && (
                   <div
                     className="absolute left-1/2 pointer-events-none overflow-hidden"
-                    style={{ width: 4, marginLeft: -2, top: nodeCenterY, bottom: 0, background: unlocked ? gold : dim, zIndex: 0, borderRadius: 2 }}
+                    style={{ width: 4, marginLeft: -2, top: nodeCenterY, bottom: 0, background: unlocked ? gold : dim, zIndex: 0 }}
                   >
                     {unlocked && <div className="absolute inset-0 animate-track-bead" />}
                   </div>
@@ -587,19 +590,16 @@ function TierRow({
                   : "none",
               }}
             >
-              {isMilestone && unlocked ? "💎" : tier.tierNumber}
+              {isMilestone && unlocked ? "💎" : unlocked ? "✓" : tier.tierNumber}
             </div>
           </motion.div>
 
-          {/* XP label — shows remaining XP for the next tier, threshold for future tiers */}
-          <span className={`relative z-10 text-[8px] mt-0.5 font-medium tabular-nums ${
-            unlocked ? "text-white/40" : isNext ? "text-yellow-400/80" : "text-white/25"
-          }`}>
-            {isNext
-              ? `+${(tier.xpRequired - xp).toLocaleString()} xp`
-              : tier.xpRequired >= 1000
-              ? `${(tier.xpRequired / 1000).toFixed(1)}k`
-              : tier.xpRequired}
+          {/* XP label — only the "next tier" node shows remaining XP; the
+              threshold shown on already-unlocked or future-locked nodes isn't
+              actionable info, so it's omitted (the span is kept, empty, to
+              preserve consistent node spacing down the track). */}
+          <span className="relative z-10 text-[8px] mt-0.5 font-medium tabular-nums text-yellow-400/80">
+            {isNext ? `+${(tier.xpRequired - xp).toLocaleString()} xp` : " "}
           </span>
 
           {/* Connector spacer — grows to match card column height */}

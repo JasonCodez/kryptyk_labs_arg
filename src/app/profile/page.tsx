@@ -9,10 +9,13 @@ import { THEME_CONFIGS, FRAME_CONFIGS, type ThemeConfig } from '@/lib/profileThe
 import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
+const MAX_BIO_LENGTH = 280;
+
 interface UserProfile {
   name: string | null;
   email: string | null;
   image: string | null;
+  bio: string | null;
   role: string;
   createdAt: string;
   totalPuzzlesSolved: number;
@@ -30,6 +33,10 @@ interface UserProfile {
   activeNameColor: string;
   activeTitle: string;
   isFounder: boolean;
+  social: {
+    followers: number;
+    following: number;
+  };
 }
 
 // ─── Cosmetics Drawer ─────────────────────────────────────────────────────────
@@ -154,7 +161,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', bio: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -231,7 +238,7 @@ export default function ProfilePage() {
         return;
       }
       setProfile(data);
-      setFormData({ name: data.name || '', email: data.email || '' });
+      setFormData({ name: data.name || '', email: data.email || '', bio: data.bio || '' });
     } catch (error) {
       console.error('Profile fetch error:', (error as Error)?.message ?? String(error));
       setError('Failed to load profile');
@@ -505,74 +512,122 @@ export default function ProfilePage() {
           </div>
 
           {/* Profile Card */}
-          <div className="md:col-span-2 md:row-span-2 border rounded-xl p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
-            <div className="flex items-start justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white">Account Information</h2>
-              <button
-                onClick={() => setEditing(!editing)}
-                className="px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
-                style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
-              >
-                {editing ? 'Cancel' : 'Edit'}
-              </button>
-            </div>
-
-            {editing ? (
-              <form onSubmit={handleUpdate} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border text-white"
-                    style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
-                    placeholder="Your name"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    disabled
-                    className="w-full px-4 py-2 rounded-lg border text-white opacity-50 cursor-not-allowed"
-                    style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
-                  />
-                  <p className="text-xs mt-1" style={{ color: t.subtleText }}>Email cannot be changed</p>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full px-4 py-3 rounded-lg font-semibold transition hover:opacity-90"
-                  style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
-                >
-                  Save Changes
-                </button>
-              </form>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Name</p>
-                  <p className="text-lg font-semibold text-white">{profile?.name || 'Not set'}</p>
-                </div>
-                <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
-                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Email</p>
-                  <p className="text-lg font-semibold text-white">{profile?.email}</p>
-                </div>
-                <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
-                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Role</p>
-                  <span className="inline-block px-3 py-1 rounded text-sm font-semibold" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primaryBorder}` }}>
-                    {profile?.role === 'admin' ? '🛡️ Administrator' : '🎮 Player'}
-                  </span>
+          <div className="md:col-span-2 md:row-span-2 flex flex-col gap-6">
+            {/* Social Stats */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border rounded-xl p-4" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm mb-1" style={{ color: t.subtleText }}>Followers</p>
+                    <p className="text-2xl font-bold text-white">{profile?.social?.followers ?? 0}</p>
+                  </div>
+                  <span className="text-3xl">❤️</span>
                 </div>
               </div>
-            )}
+              <div className="border rounded-xl p-4" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm mb-1" style={{ color: t.subtleText }}>Following</p>
+                    <p className="text-2xl font-bold text-white">{profile?.social?.following ?? 0}</p>
+                  </div>
+                  <span className="text-3xl">👥</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 border rounded-xl p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+              <div className="flex items-start justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">Account Information</h2>
+                <button
+                  onClick={() => setEditing(!editing)}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
+                  style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
+                >
+                  {editing ? 'Cancel' : 'Edit'}
+                </button>
+              </div>
+
+              {editing ? (
+                <form onSubmit={handleUpdate} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-4 py-2 rounded-lg border text-white"
+                      style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
+                      placeholder="Your name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      disabled
+                      className="w-full px-4 py-2 rounded-lg border text-white opacity-50 cursor-not-allowed"
+                      style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
+                    />
+                    <p className="text-xs mt-1" style={{ color: t.subtleText }}>Email cannot be changed</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
+                      About Me <span className="font-normal" style={{ color: t.subtleText }}>(optional)</span>
+                    </label>
+                    <textarea
+                      value={formData.bio}
+                      onChange={(e) => setFormData({ ...formData, bio: e.target.value.slice(0, MAX_BIO_LENGTH) })}
+                      rows={4}
+                      className="w-full px-4 py-2 rounded-lg border text-white resize-y"
+                      style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
+                      placeholder="Tell other players a little about yourself..."
+                      maxLength={MAX_BIO_LENGTH}
+                    />
+                    <p className="text-xs mt-1 text-right" style={{ color: t.subtleText }}>{formData.bio.length}/{MAX_BIO_LENGTH}</p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full px-4 py-3 rounded-lg font-semibold transition hover:opacity-90"
+                    style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
+                  >
+                    Save Changes
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Name</p>
+                    <p className="text-lg font-semibold text-white">{profile?.name || 'Not set'}</p>
+                  </div>
+                  <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
+                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Email</p>
+                    <p className="text-lg font-semibold text-white">{profile?.email}</p>
+                  </div>
+                  <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
+                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Role</p>
+                    <span className="inline-block px-3 py-1 rounded text-sm font-semibold" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primaryBorder}` }}>
+                      {profile?.role === 'admin' ? '🛡️ Administrator' : '🎮 Player'}
+                    </span>
+                  </div>
+                  <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
+                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>About Me</p>
+                    {profile?.bio ? (
+                      <p className="text-white whitespace-pre-wrap break-words">{profile.bio}</p>
+                    ) : (
+                      <p className="text-sm italic" style={{ color: t.subtleText }}>No bio yet — click Edit to add one.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Stats Card */}

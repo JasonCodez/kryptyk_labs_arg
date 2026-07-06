@@ -27,6 +27,7 @@ interface UserProfile {
   id: string;
   name: string;
   image: string | null;
+  bio: string | null;
   createdAt: string;
   xp: number;
   level: number;
@@ -425,6 +426,9 @@ export default function PublicProfilePage() {
                 </span>
               </div>
               <p className="text-sm mt-1" style={{ color: t.subtleText }}>Member since {new Date(profile.createdAt).toLocaleDateString('en-GB', { year: 'numeric', month: 'long' })}</p>
+              {profile.bio && (
+                <p className="text-sm mt-3 whitespace-pre-wrap break-words max-w-2xl" style={{ color: t.accentText }}>{profile.bio}</p>
+              )}
             </div>
           </div>
         </div>

@@ -19,6 +19,8 @@ model User {
   // Track whether the user has already changed their display name once
   nameChanged            Boolean                    @default(false)
   image                  String?
+  // Optional freeform "About Me" text shown on the user's profile.
+  bio                    String?
   password               String?
   createdAt              DateTime                   @default(now())
   updatedAt              DateTime                   @updatedAt

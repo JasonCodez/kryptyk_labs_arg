@@ -14,6 +14,7 @@ type DatamuseWord = {
   word?: unknown;
   defs?: unknown;
   score?: unknown;
+  tags?: unknown;
 };
 
 type WikipediaPage = {
@@ -40,11 +41,73 @@ const RANDOM_ANSWER_POOL = [
   "PRAIRIE", "PUZZLE", "QUARTZ", "RABBIT", "RAINBOW", "RIVER", "ROCKET", "SAILOR", "SCARF", "SHADOW",
   "SHELL", "SILVER", "SKETCH", "SPARK", "SPIDER", "SPONGE", "SPRING", "SQUARE", "STATUE", "STREAM",
   "SUNSET", "TEMPLE", "THREAD", "THUNDER", "TICKET", "TOWER", "TUNNEL", "UMBRELLA", "VALLEY", "VELVET",
-  "VIOLET", "VOYAGE", "WALNUT", "WINDOW", "WINTER", "WIZARD", "YELLOW", "ZIPPER", "BREEZE", "BUTTON",
+  "VIOLET", "VOYAGE", "WALNUT", "WINDOW", "WINTER", "WIZARD", "YELLOW", "ZIPPER", "BREEZE", "COBWEB",
   "CANYON", "CHEESE", "CHERRY", "CLOVER", "COBALT", "COOKIE", "CRAYON", "DOLPHIN", "EMBER", "FALCON",
   "FLUTE", "GARLIC", "GUITAR", "HORIZON", "IGLOO", "KAYAK", "LEMON", "LOBSTER", "MELON", "NICKEL",
   "OYSTER", "PEPPER", "PILLOW", "PIRATE", "ROBOT", "SADDLE", "SAPPHIRE", "SCOOTER", "TEAPOT", "TURTLE",
   "VIOLIN", "WAGON", "WHALE", "YOGURT", "ZEBRA",
+  // Expanded pool (added to reduce repeat clues across regenerated "Random"-topic crosswords).
+  "AIRPORT", "ALMOND", "ALPHABET", "AMBER", "ANTLER", "APRON", "AQUARIUM", "ARBOR", "ARCADE", "ARENA",
+  "ARMOR", "ASTEROID", "ATTIC", "AUTUMN", "BADGE", "BALLOON", "BAMBOO", "BANDANA", "BANJO", "BARGE",
+  "BASIL", "BASKET", "BATTERY", "BEAKER", "BEAVER", "BELLOWS", "BENCH", "BERRY", "BINDER", "BIRCH",
+  "BISCUIT", "BLANKET", "BLIZZARD", "BLOSSOM", "BOBCAT", "BONFIRE", "BOOKCASE", "BOOMERANG", "BOULDER", "BOUQUET",
+  "BRACELET", "BRAID", "BRASS", "BRICK", "BROOCH", "BROOK", "BROOM", "BUCKET", "BUCKLE", "BUFFALO",
+  "BUGGY", "BULLET", "BUNGALOW", "BURROW", "CABBAGE", "CACTUS", "CAMPFIRE", "CANAL", "CANOE", "CANOPY",
+  "CANTEEN", "CAPSULE", "CARAMEL", "CARIBOU", "CARNIVAL", "CARROT", "CASCADE", "CASSETTE", "CATALOG", "CATERPILLAR",
+  "CAULDRON", "CAVERN", "CEDAR", "CELLAR", "CHALK", "CHAMBER", "CHANDELIER", "CHAPEL", "CHARCOAL", "CHARIOT",
+  "CHASM", "CHATEAU", "CHECKERS", "CHIMNEY", "CHIPMUNK", "CHISEL", "CHOWDER", "CIDER", "CINEMA", "CINNAMON",
+  "CITADEL", "CLAMP", "CLASP", "CLIFF", "CLINIC", "CLOAK", "CLOSET", "COACH", "COCONUT", "COLONY",
+  "COLUMN", "COMET", "CONDOR", "CONFETTI", "CONTINENT", "COOLER", "CORAL", "CORRIDOR", "COTTAGE", "COUGAR",
+  "COURTYARD", "COWBOY", "CRADLE", "CRATER", "CRATE", "CREEK", "CRESCENT", "CREVICE", "CRICKET", "CROWN",
+  "CRUTCH", "CRYSTAL", "CUCUMBER", "CUPBOARD", "CURTAIN", "CUSHION", "CYCLONE", "CYLINDER", "CYPRESS", "DAFFODIL",
+  "DAGGER", "DAIRY", "DANDELION", "DEPOT", "DERRICK", "DIALECT", "DIARY", "DINGHY", "DINOSAUR", "DITCH",
+  "DOMINO", "DONKEY", "DOORKNOB", "DOORWAY", "DOWNPOUR", "DRIFTWOOD", "DRUMSTICK", "DUCKLING", "DUGOUT", "DUNGEON",
+  "EAGLE", "EARRING", "EASEL", "EBONY", "ECLIPSE", "EMERALD", "EMPIRE", "ENVELOPE", "EQUATOR", "ESTUARY",
+  "FABRIC", "FACTORY", "FAUCET", "FENCE", "FERRY", "FESTIVAL", "FIDDLE", "FIREFLY", "FIREPLACE", "FJORD",
+  "FLAGPOLE", "FLANNEL", "FLASK", "FLEECE", "FLIPPER", "FLOOD", "FOGHORN", "FOLDER", "FOUNTAIN", "FOYER",
+  "FRESCO", "FRIDGE", "FRONTIER", "FUNNEL", "FURNACE", "GALAXY", "GALLERY", "GALLEY", "GARLAND", "GAZEBO",
+  "GAZELLE", "GEYSER", "GIRAFFE", "GLADE", "GLOBE", "GOBLET", "GONDOLA", "GOPHER", "GORGE", "GRANITE",
+  "GRAVEL", "GREENHOUSE", "GRIDDLE", "GRIZZLY", "GROTTO", "HABITAT", "HALIBUT", "HALLWAY", "HAMSTER", "HARNESS",
+  "HARPOON", "HATCHET", "HAYSTACK", "HEDGEHOG", "HEMLOCK", "HERMIT", "HICKORY", "HIGHWAY", "HILLSIDE", "HOLSTER",
+  "HOMESTEAD", "HONEYCOMB", "HORNET", "HOSTEL", "HOURGLASS", "HURRICANE", "HUSKY", "HYACINTH", "HYDRANT", "ICEBERG",
+  "ICICLE", "IMPALA", "INCENSE", "INKWELL", "INSECT", "IVORY", "JACKAL", "JASMINE", "JAVELIN", "JETTY",
+  "JOCKEY", "JOURNEY", "JUKEBOX", "JUNIPER", "KANGAROO", "KELP", "KENNEL", "KESTREL", "KIMONO", "KIOSK",
+  "KITTEN", "KNAPSACK", "KNIGHT", "KNOLL", "LABYRINTH", "LACQUER", "LAGOON", "LANDMARK", "LARK", "LATTICE",
+  "LAUNDRY", "LAVENDER", "LEATHER", "LEDGE", "LEOPARD", "LETTUCE", "LICHEN", "LIGHTHOUSE", "LILAC", "LIMESTONE",
+  "LINEN", "LOBBY", "LOCOMOTIVE", "LOFT", "LOTUS", "LOUNGE", "LUMBER", "LYNX", "MAGPIE", "MAHOGANY",
+  "MALLET", "MAMMOTH", "MANGO", "MANOR", "MANTLE", "MAPLE", "MARIGOLD", "MARSH", "MASCOT", "MATTRESS",
+  "MELODY", "MERMAID", "METEOR", "MIDNIGHT", "MILLSTONE", "MINARET", "MINNOW", "MISTLETOE", "MITTEN", "MOCCASIN",
+  "MONASTERY", "MONOCLE", "MONSOON", "MOSAIC", "MOSQUITO", "MOTORBIKE", "MUFFIN", "MURAL", "MUSTANG", "NARWHAL",
+  "NECTAR", "NIGHTFALL", "NIMBUS", "NOMAD", "NOODLE", "NUTSHELL", "OASIS", "OATMEAL", "OBELISK", "OCELOT",
+  "OCTOPUS", "ODYSSEY", "OMELET", "ONYX", "OPAL", "OPOSSUM", "ORACLE", "ORCHID", "ORIGAMI", "OSPREY",
+  "OSTRICH", "OTTER", "OUTPOST", "OVERCOAT", "PADDOCK", "PAGODA", "PAJAMAS", "PANCAKE", "PANDA", "PANTHER",
+  "PAPAYA", "PARACHUTE", "PARADE", "PARAKEET", "PARASOL", "PARCHMENT", "PARKA", "PARROT", "PARSNIP", "PASTURE",
+  "PATCHWORK", "PATIO", "PEACOCK", "PEBBLE", "PELICAN", "PENDANT", "PENGUIN", "PENINSULA", "PENNANT", "PERFUME",
+  "PERISCOPE", "PHANTOM", "PHEASANT", "PICKAXE", "PICNIC", "PIGEON", "PILGRIM", "PINECONE", "PIPELINE", "PISTON",
+  "PLATEAU", "PLAYGROUND", "PLUMAGE", "PODIUM", "PONCHO", "POPPY", "PORCUPINE", "PORTHOLE", "POTTERY", "PRAWN",
+  "PRETZEL", "PRISM", "PROPELLER", "PUDDLE", "PUFFIN", "PULLEY", "PUMPKIN", "PYRAMID", "QUAIL", "QUARRY",
+  "QUICKSAND", "QUILL", "QUILT", "QUIVER", "RACCOON", "RADIATOR", "RADISH", "RAFTER", "RAINCOAT", "RAMPART",
+  "RANCH", "RASPBERRY", "RATTLE", "RAVINE", "REEF", "REINDEER", "RELIC", "RESERVOIR", "RHUBARB", "RIBBON",
+  "RIDGE", "ROBIN", "ROOSTER", "ROUTER", "ROWBOAT", "RUBBLE", "RUCKSACK", "RUNWAY", "SABLE", "SAFARI",
+  "SALAMANDER", "SALOON", "SANCTUARY", "SANDBAR", "SANDCASTLE", "SAPLING", "SASH", "SATCHEL", "SAUCER", "SAUSAGE",
+  "SAVANNA", "SAWDUST", "SCABBARD", "SCAFFOLD", "SCARECROW", "SCONCE", "SCORPION", "SCRAPBOOK", "SCROLL", "SCULPTURE",
+  "SEAHORSE", "SEASHELL", "SEAWEED", "SEEDLING", "SENTRY", "SEQUOIA", "SERPENT", "SHACK", "SHAMROCK", "SHEARS",
+  "SHEPHERD", "SHINGLE", "SHIPWRECK", "SHOWER", "SHRINE", "SHRUB", "SHUTTER", "SICKLE", "SIDECAR", "SIESTA",
+  "SIGNAL", "SILO", "SINKHOLE", "SIREN", "SKELETON", "SKILLET", "SKYLIGHT", "SKYSCRAPER", "SLEDGE", "SLEIGH",
+  "SLOTH", "SMOKESTACK", "SNAIL", "SNORKEL", "SNOWFLAKE", "SNOWMAN", "SNOWPLOW", "SOMBRERO", "SOUVENIR", "SPARROW",
+  "SPATULA", "SPEAKER", "SPECTACLE", "SPHINX", "SPINDLE", "SPIRAL", "SPOOL", "SPORE", "SPRINKLER", "SPROUT",
+  "SPRUCE", "SQUIRREL", "STABLE", "STADIUM", "STAGECOACH", "STARFISH", "STATION", "STEEPLE", "STENCIL", "STIRRUP",
+  "STOCKING", "STORAGE", "STORK", "STOVE", "STRAINER", "STUMP", "SUBWAY", "SUITCASE", "SULTAN", "SUNDIAL",
+  "SUNFLOWER", "SURFBOARD", "SWAMP", "SWALLOW", "SWAN", "SYCAMORE", "SYRUP", "TABLECLOTH", "TACKLE", "TADPOLE",
+  "TAILOR", "TALON", "TAMBOURINE", "TANGERINE", "TAPESTRY", "TARMAC", "TASSEL", "TATTOO", "TAVERN", "TELESCOPE",
+  "TEMPEST", "TENDRIL", "TERRACE", "THATCH", "THISTLE", "THORN", "THRESHOLD", "THRONE", "THRUSH", "TIGER",
+  "TIMBER", "TINDER", "TOADSTOOL", "TOBOGGAN", "TOFFEE", "TOOLBOX", "TOPAZ", "TORNADO", "TORTOISE", "TOTEM",
+  "TOUCAN", "TRACTOR", "TRAMPOLINE", "TREASURE", "TRELLIS", "TRIBUTE", "TRINKET", "TRIPOD", "TROLLEY", "TROPHY",
+  "TROUGH", "TRUFFLE", "TRUMPET", "TUMBLEWEED", "TUNDRA", "TURBINE", "TURNIP", "TURQUOISE", "TUSK", "TUXEDO",
+  "TWEEZERS", "TWILIGHT", "TYPEWRITER", "UKULELE", "UNICORN", "URCHIN", "VENDOR", "VERANDA", "VESSEL", "VILLAGE",
+  "VINEYARD", "VIPER", "VOLCANO", "VULTURE", "WAFFLE", "WALLET", "WALRUS", "WARDROBE", "WAREHOUSE", "WASP",
+  "WATERFALL", "WATERMELON", "WEASEL", "WHISKER", "WHISTLE", "WICKER", "WIGWAM", "WILDFIRE", "WILLOW", "WINDMILL",
+  "WOLVERINE", "WOODCHUCK", "WOODPECKER", "WORKBENCH", "WORKSHOP", "WREATH", "YACHT", "YARDSTICK", "ZEPPELIN", "ZINNIA",
 ];
 
 const STOP_WORDS = new Set([
@@ -458,7 +521,24 @@ async function fetchDatamuseEntries(topic: string, count: number): Promise<Topic
   return Array.from(entries.values());
 }
 
-async function fetchRandomEntries(count: number): Promise<TopicEntry[]> {
+// "Random" mode picks a few of these broad, concrete themes each request and
+// runs them through the same Datamuse/Wikipedia topic pipeline as a named
+// topic. This gives far more variety than a fixed word list without drifting
+// into the abstract/function-word junk that sorting the raw dictionary by
+// text-corpus frequency produces (e.g. "also", "about", "process", "period").
+const RANDOM_MODE_SEED_TOPICS = [
+  "animals", "birds", "ocean life", "insects", "plants and flowers", "trees",
+  "fruits and vegetables", "weather", "space and astronomy", "geography and landforms",
+  "musical instruments", "tools", "vehicles and transportation", "clothing and accessories",
+  "kitchen and cooking", "furniture", "sports and games", "school supplies",
+  "buildings and architecture", "gemstones and minerals", "farm life", "camping and outdoors",
+  "toys", "household objects", "holidays and celebrations",
+];
+const RANDOM_MODE_TOPICS_PER_REQUEST = 3;
+
+// Fallback used only if the live Datamuse/Wikipedia sources are unavailable
+// (network hiccup, rate limit, etc.) so "Random" mode still works offline.
+async function fetchRandomEntriesFromStaticPool(count: number): Promise<TopicEntry[]> {
   const entries = new Map<string, TopicEntry>();
   const candidates = shuffle(unique(RANDOM_ANSWER_POOL))
     .map(normalizeAnswer)
@@ -473,10 +553,35 @@ async function fetchRandomEntries(count: number): Promise<TopicEntry[]> {
 
   for (const entry of lookedUpEntries) {
     if (entry) addEntry(entries, entry);
-    if (entries.size >= count) break;
   }
 
   return Array.from(entries.values());
+}
+
+async function fetchRandomEntries(count: number): Promise<TopicEntry[]> {
+  const seedTopics = shuffle([...RANDOM_MODE_SEED_TOPICS]).slice(0, RANDOM_MODE_TOPICS_PER_REQUEST);
+
+  const groups = await Promise.all(
+    seedTopics.flatMap((seedTopic) => [
+      fetchDatamuseEntries(seedTopic, count),
+      fetchWikipediaEntries(seedTopic, count),
+    ])
+  );
+
+  const combined = new Map<string, TopicEntry>();
+  for (const group of groups) {
+    for (const entry of group) {
+      if (!combined.has(entry.answer)) combined.set(entry.answer, entry);
+    }
+  }
+
+  if (combined.size >= Math.min(20, count)) {
+    return Array.from(combined.values());
+  }
+
+  // Live sources came back thin (offline/rate-limited) -- fall back to the
+  // small curated pool rather than failing to generate at all.
+  return fetchRandomEntriesFromStaticPool(count);
 }
 
 async function fetchWikipediaEntries(topic: string, count: number): Promise<TopicEntry[]> {
@@ -543,7 +648,12 @@ async function fetchWikipediaEntries(topic: string, count: number): Promise<Topi
   return Array.from(entries.values());
 }
 
-function mergeAndRankEntries(topic: string, count: number, groups: TopicEntry[][]): TopicEntry[] {
+function mergeAndRankEntries(
+  topic: string,
+  count: number,
+  groups: TopicEntry[][],
+  usedAnswers: ReadonlySet<string> = new Set()
+): TopicEntry[] {
   const topicAnswer = normalizeAnswer(topic);
   const unique = new Map<string, TopicEntry & { rank: number }>();
 
@@ -556,7 +666,12 @@ function mergeAndRankEntries(topic: string, count: number, groups: TopicEntry[][
       const sourceBonus = entry.source === "Datamuse" ? 8 : 4;
       const topicBonus = entry.answer === topicAnswer ? 12 : 0;
       const lengthBonus = entry.answer.length <= 6 ? 5 : entry.answer.length <= 9 ? 2 : 0;
-      const rank = sourceBonus + topicBonus + lengthBonus - index * 0.04 - groupIndex * 0.5;
+      // Strongly deprioritize answers already used in an existing crossword so
+      // repeat generations surface fresh words first -- but don't exclude them
+      // outright, so a narrow topic can still fall back to a repeat rather than
+      // failing to generate at all.
+      const usedPenalty = usedAnswers.has(entry.answer) ? -1000 : 0;
+      const rank = sourceBonus + topicBonus + lengthBonus + usedPenalty - index * 0.04 - groupIndex * 0.5;
 
       const existing = unique.get(entry.answer);
       if (!existing || rank > existing.rank) {
@@ -569,6 +684,24 @@ function mergeAndRankEntries(topic: string, count: number, groups: TopicEntry[][
     .sort((a, b) => b.rank - a.rank)
     .slice(0, count)
     .map(({ answer, text, source }) => ({ answer, text, source }));
+}
+
+async function getUsedCrosswordAnswers(): Promise<Set<string>> {
+  const puzzles = await prisma.puzzle.findMany({
+    where: { puzzleType: "crossword" },
+    select: { data: true },
+  });
+
+  const used = new Set<string>();
+  for (const puzzle of puzzles) {
+    const data = puzzle.data as { clues?: { across?: { answer?: unknown }[]; down?: { answer?: unknown }[] } } | null;
+    if (!data?.clues) continue;
+    for (const clue of [...(data.clues.across ?? []), ...(data.clues.down ?? [])]) {
+      const answer = normalizeAnswer(clue.answer);
+      if (answer) used.add(answer);
+    }
+  }
+  return used;
 }
 
 export async function POST(request: NextRequest) {
@@ -596,12 +729,13 @@ export async function POST(request: NextRequest) {
     }
 
     const randomMode = isRandomTopic(topic);
+    const usedAnswers = await getUsedCrosswordAnswers();
     const entries = randomMode
-      ? shuffle(await fetchRandomEntries(count)).slice(0, count)
+      ? mergeAndRankEntries("", count, [shuffle(await fetchRandomEntries(count))], usedAnswers)
       : mergeAndRankEntries(topic, count, await Promise.all([
           fetchDatamuseEntries(topic, count),
           fetchWikipediaEntries(topic, count),
-        ]));
+        ]), usedAnswers);
 
     if (entries.length < 4) {
       return NextResponse.json(
