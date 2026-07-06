@@ -556,7 +556,7 @@ export default function TeamDetailPage() {
                       />
                       <div className="relative flex items-center justify-between p-3 rounded-lg">
                         <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-lg w-7 text-center flex-shrink-0">{medals[i] ?? `${i + 1}.`}</span>
+                          <span className="text-lg w-7 h-7 flex items-center justify-center leading-none flex-shrink-0">{medals[i] ?? `${i + 1}.`}</span>
                           {c.image ? (
                             <img src={c.image} alt="" className="w-8 h-8 rounded-full object-cover object-center flex-shrink-0" />
                           ) : (

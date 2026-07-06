@@ -48,9 +48,11 @@ export default function DailySchedulerPage() {
   const [startDay, setStartDay] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [resetConfirming, setResetConfirming] = useState(false);
 
   const fetchWeek = useCallback(async (day?: number) => {
     setLoading(true);
+    setResetConfirming(false);
     try {
       const url = day ? `/api/admin/daily-scheduler?startDay=${day}` : '/api/admin/daily-scheduler';
       const res = await fetch(url);
@@ -112,6 +114,22 @@ export default function DailySchedulerPage() {
     }
     return false;
   }, [data, grid]);
+
+  // Clears every cell in the on-screen grid to "— Unassigned —" so the admin can build a
+  // fresh 7-day schedule from a blank slate. This only changes local state — nothing is
+  // actually removed for players until "Save Week" is clicked, same as any other edit here.
+  const handleResetWeek = () => {
+    if (!data) return;
+    const cleared: Record<string, string | null> = {};
+    for (const type of data.types) {
+      for (const d of data.days) {
+        cleared[`${type.puzzleType}:${d.dayNumber}`] = null;
+      }
+    }
+    setGrid(cleared);
+    setResetConfirming(false);
+    setMessage({ type: 'success', text: 'Week cleared — assign new puzzles below, then Save Week to apply.' });
+  };
 
   const handleSave = async () => {
     if (!data) return;
@@ -268,7 +286,37 @@ export default function DailySchedulerPage() {
               >
                 {saving ? 'Saving…' : 'Save Week'}
               </button>
-              {dirty && !saving && (
+
+              {resetConfirming ? (
+                <span className="inline-flex items-center gap-2 text-sm">
+                  <span className="text-red-300">Clear all 7 days? This won&apos;t save until you click Save Week.</span>
+                  <button
+                    type="button"
+                    onClick={handleResetWeek}
+                    className="px-3 py-1.5 rounded text-xs bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Yes, clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResetConfirming(false)}
+                    className="px-3 py-1.5 rounded text-xs bg-slate-600 hover:bg-slate-500 text-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setResetConfirming(true)}
+                  className="px-4 py-3 rounded-lg font-semibold text-red-300 border border-red-500/40 hover:bg-red-500/10 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Reset Week
+                </button>
+              )}
+
+              {dirty && !saving && !resetConfirming && (
                 <span className="text-xs text-amber-300">You have unsaved changes</span>
               )}
             </div>
