@@ -169,7 +169,8 @@ export default function ProfilePage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [unlockedBadges, setUnlockedBadges] = useState<Array<{ id: string; title: string; icon: string; rarity: Rarity; unlockedAt?: string }>>([]);
+  const [unlockedBadges, setUnlockedBadges] = useState<Array<{ id: string; title: string; icon: string; rarity: Rarity; unlockedAt?: string; description: string; category?: string }>>([]);
+  const [selectedBadge, setSelectedBadge] = useState<{ id: string; title: string; icon: string; rarity: Rarity; unlockedAt?: string; description: string; category?: string } | null>(null);
   const [badgesLoading, setBadgesLoading] = useState(true);
   const [showMyPuzzles, setShowMyPuzzles] = useState(false);
   const [myPuzzles, setMyPuzzles] = useState<Array<any>>([]);
@@ -204,6 +205,8 @@ export default function ProfilePage() {
               icon: a.icon,
               rarity: a.rarity as Rarity,
               unlockedAt: a.unlockedAt,
+              description: a.description ?? a.requirement ?? "",
+              category: a.category,
             }));
             setUnlockedBadges(unlocked);
           }
@@ -751,11 +754,17 @@ export default function ProfilePage() {
                 {unlockedBadges.map((b) => {
                   const color = rarityColors[b.rarity] || rarityColors.common;
                   return (
-                    <div key={b.id} className="flex flex-col items-center p-3 rounded-xl border" style={{ backgroundColor: color.bg, borderColor: t.primary }}>
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setSelectedBadge(b)}
+                      className="flex flex-col items-center p-3 rounded-xl border text-center cursor-pointer transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg"
+                      style={{ backgroundColor: color.bg, borderColor: t.primary }}
+                    >
                       <div className="text-3xl mb-2">{b.icon}</div>
                       <div className="text-sm font-semibold text-center" style={{ color: color.text }}>{b.title}</div>
                       {b.unlockedAt && <div className="text-xs mt-1" style={{ color: t.subtleText }}>{new Date(b.unlockedAt).toLocaleDateString()}</div>}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -949,6 +958,42 @@ export default function ProfilePage() {
           onFollowChange={fetchProfile}
         />
       )}
+
+      {selectedBadge && (() => {
+        const color = rarityColors[selectedBadge.rarity] || rarityColors.common;
+        return (
+          <div className="fixed inset-0 z-[70]">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedBadge(null)} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div
+                className="relative w-full max-w-sm rounded-xl border shadow-xl p-6 text-center"
+                style={{ backgroundColor: "rgba(2,2,2,0.97)", borderColor: t.primary }}
+              >
+                <button
+                  onClick={() => setSelectedBadge(null)}
+                  className="absolute top-3 right-4 text-white/50 hover:text-white text-xl leading-none transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+                <div className="text-5xl mb-3">{selectedBadge.icon}</div>
+                <h2 className="text-lg font-bold mb-1" style={{ color: color.text }}>{selectedBadge.title}</h2>
+                <span
+                  className="inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide mb-4"
+                  style={{ backgroundColor: color.bg, color: color.text, border: `1px solid ${color.border}` }}
+                >
+                  {selectedBadge.rarity}
+                </span>
+                <p className="text-sm mb-3" style={{ color: t.subtleText }}>{selectedBadge.description}</p>
+                {selectedBadge.unlockedAt && (
+                  <p className="text-xs" style={{ color: t.subtleText }}>
+                    Unlocked {new Date(selectedBadge.unlockedAt).toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </main>
   );
 }

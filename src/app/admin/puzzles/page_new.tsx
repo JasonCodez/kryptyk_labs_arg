@@ -1135,6 +1135,13 @@ export default function AdminPuzzlesPage() {
               >
                 👥 Manage Teams
               </Link>
+              <Link
+                href="/admin/reports"
+                className="px-4 py-2 rounded text-white text-sm transition hover:opacity-90 whitespace-nowrap"
+                style={{ backgroundColor: '#3891A6' }}
+              >
+                🚩 Abuse Reports
+              </Link>
             </div>
           </div>
           <p className="text-[#9BD1D6] mb-8">Create any type of puzzle with advanced tools and testing capabilities</p>

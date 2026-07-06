@@ -77,7 +77,7 @@ export default function AdminReportsPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#020202" }}>
       <Navbar />
-      <main className="max-w-5xl mx-auto px-4 py-10">
+      <main className="max-w-5xl mx-auto px-4 pt-24 pb-10">
         <div className="flex items-center gap-3 mb-8">
           <Flag className="w-6 h-6 text-amber-400" />
           <h1 className="text-2xl font-extrabold text-white">Abuse Reports</h1>
