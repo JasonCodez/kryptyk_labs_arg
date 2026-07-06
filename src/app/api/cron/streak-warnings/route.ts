@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendEmail, generateStreakExpiryEmail } from "@/lib/mail";
-
-// Must stay in sync with src/app/api/daily/complete/route.ts
-const START_DATE = Date.UTC(2026, 2, 31);
-
-function getTodayDayNumber(): number {
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.floor((todayUtc - START_DATE) / 86_400_000) + 1;
-}
+import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 
 /**
  * GET /api/cron/streak-warnings

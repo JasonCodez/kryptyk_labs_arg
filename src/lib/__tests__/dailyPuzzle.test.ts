@@ -52,11 +52,11 @@ describe("streakReward", () => {
 });
 
 describe("getDayNumberForDate", () => {
-  test("launch day (2026-03-31) is day 1", () => {
-    expect(getDayNumberForDate(new Date(Date.UTC(2026, 2, 31)))).toBe(1);
+  test("launch day (2026-07-04) is day 1", () => {
+    expect(getDayNumberForDate(new Date(Date.UTC(2026, 6, 4)))).toBe(1);
   });
 
   test("day after launch is day 2", () => {
-    expect(getDayNumberForDate(new Date(Date.UTC(2026, 3, 1)))).toBe(2);
+    expect(getDayNumberForDate(new Date(Date.UTC(2026, 6, 5)))).toBe(2);
   });
 });
