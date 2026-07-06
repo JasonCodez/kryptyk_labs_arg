@@ -1096,13 +1096,22 @@ export default function AdminPuzzlesPage() {
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex justify-between items-start mb-2">
             <h1 className="text-4xl font-bold text-white">🧩 Universal Puzzle Maker</h1>
-            <Link
-              href="/admin/daily-scheduler"
-              className="px-4 py-2 rounded text-white text-sm transition hover:opacity-90 whitespace-nowrap"
-              style={{ backgroundColor: '#3891A6' }}
-            >
-              📅 Weekly Daily Scheduler
-            </Link>
+            <div className="flex gap-2">
+              <Link
+                href="/admin/daily-scheduler"
+                className="px-4 py-2 rounded text-white text-sm transition hover:opacity-90 whitespace-nowrap"
+                style={{ backgroundColor: '#3891A6' }}
+              >
+                📅 Weekly Daily Scheduler
+              </Link>
+              <Link
+                href="/admin/teams"
+                className="px-4 py-2 rounded text-white text-sm transition hover:opacity-90 whitespace-nowrap"
+                style={{ backgroundColor: '#3891A6' }}
+              >
+                👥 Manage Teams
+              </Link>
+            </div>
           </div>
           <p className="text-[#9BD1D6] mb-8">Create any type of puzzle with advanced tools and testing capabilities</p>
 
