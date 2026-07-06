@@ -465,7 +465,7 @@ function WarzLobbyInner() {
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-5xl font-black mb-3"
+          className="text-3xl min-[450px]:text-5xl font-black mb-3 whitespace-nowrap"
           style={{ color: "#FDE74C", textShadow: "0 0 40px rgba(253,231,76,0.35)" }}
         >
           ⚔️ Puzzle Warz

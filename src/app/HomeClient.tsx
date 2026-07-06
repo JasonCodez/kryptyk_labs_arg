@@ -190,12 +190,12 @@ export default function HomeClient() {
             <div className="hw-features-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
               {[
                 {
-                  icon: "🔐",
-                  title: "Gridlock Files",
+                  icon: "🗓️",
+                  title: "More Daily Puzzles",
                   tagColor: "#FDE74C",
-                  body: "Standalone Gridlock puzzles in the library. Browse and replay anytime.",
-                  href: "/puzzles",
-                  cta: "Browse Library",
+                  body: "Sudoku, Crossword, Word Trove, and Jigsaw — a fresh set every day.",
+                  href: "/daily",
+                  cta: "View Daily Puzzles",
                 },
                 {
                   icon: "🧩",

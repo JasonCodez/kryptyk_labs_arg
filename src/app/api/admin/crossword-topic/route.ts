@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { shortenClueText } from "@/lib/crosswordClueText";
 
 type TopicEntry = {
   answer: string;
@@ -282,7 +283,8 @@ const makeDefinitionClue = (answer: string, definition: string, sourceAnswer = a
   const cleaned = sentenceCase(clueDefinition).replace(/\s*:+\s*$/, "");
   if (cleaned.length >= 12) {
     const redacted = redactAnswer(cleaned, answer, source ? [source] : []);
-    const clue = redacted.endsWith(".") ? redacted : `${redacted}.`;
+    const shortened = shortenClueText(redacted);
+    const clue = shortened.endsWith(".") ? shortened : `${shortened}.`;
     return isSpecificClue(clue) ? clue : null;
   }
   return null;
@@ -306,7 +308,8 @@ const makeWikipediaClue = (answer: string, pageTitle: string, extract: string): 
 
   if (sentence) {
     const redacted = redactAnswer(sentenceCase(sentence), answer);
-    const clue = redacted.endsWith(".") ? redacted : `${redacted}.`;
+    const shortened = shortenClueText(redacted);
+    const clue = shortened.endsWith(".") ? shortened : `${shortened}.`;
     return isSpecificClue(clue) ? clue : null;
   }
 
