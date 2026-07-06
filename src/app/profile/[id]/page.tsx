@@ -10,6 +10,7 @@ import { Rarity, rarityColors } from '@/lib/rarity';
 import { THEME_CONFIGS, FRAME_CONFIGS, getThemeConfig, getTopBarGradient } from '@/lib/profileThemes';
 import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import { normalizeUserImageUrl } from '@/lib/userImage';
+import FollowListModal from '@/components/FollowListModal';
 import {
   UserPlus,
   UserMinus,
@@ -101,6 +102,7 @@ export default function PublicProfilePage() {
   const [myPuzzles, setMyPuzzles] = useState<Array<any>>([]);
   const [myPuzzlesLoading, setMyPuzzlesLoading] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [followModal, setFollowModal] = useState<"followers" | "following" | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -554,7 +556,14 @@ export default function PublicProfilePage() {
 
         {/* Social Stats */}
         <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="border rounded-lg p-4" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+          <button
+            type="button"
+            onClick={() => setFollowModal("followers")}
+            className="border rounded-lg p-4 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
+            style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.primary; e.currentTarget.style.background = t.primaryMuted; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.cardBorder; e.currentTarget.style.background = t.cardBg; }}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p style={{ color: t.subtleText }} className="text-sm mb-1">Followers</p>
@@ -562,8 +571,15 @@ export default function PublicProfilePage() {
               </div>
               <Heart className="w-8 h-8" style={{ color: '#EF4444' }} />
             </div>
-          </div>
-          <div className="border rounded-lg p-4" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFollowModal("following")}
+            className="border rounded-lg p-4 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
+            style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.primary; e.currentTarget.style.background = t.primaryMuted; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.cardBorder; e.currentTarget.style.background = t.cardBg; }}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p style={{ color: t.subtleText }} className="text-sm mb-1">Following</p>
@@ -571,7 +587,7 @@ export default function PublicProfilePage() {
               </div>
               <Users className="w-8 h-8" style={{ color: t.primary }} />
             </div>
-          </div>
+          </button>
         </div>
 
         {/* My Puzzles Archive (own profile only) */}
@@ -875,6 +891,16 @@ export default function PublicProfilePage() {
         }}
         onCancel={() => setShowNameChangeConfirm(false)}
       />
+
+      {followModal && (
+        <FollowListModal
+          userId={profile.id}
+          type={followModal}
+          theme={t}
+          onClose={() => setFollowModal(null)}
+          onFollowChange={fetchProfile}
+        />
+      )}
     </main>
     </PuzzleSkinContext.Provider>
   );

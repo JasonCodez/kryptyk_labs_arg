@@ -8,10 +8,12 @@ import { Rarity, rarityColors } from '@/lib/rarity';
 import { THEME_CONFIGS, FRAME_CONFIGS, type ThemeConfig } from '@/lib/profileThemes';
 import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import FollowListModal from '@/components/FollowListModal';
 
 const MAX_BIO_LENGTH = 280;
 
 interface UserProfile {
+  id: string;
   name: string | null;
   email: string | null;
   image: string | null;
@@ -172,6 +174,7 @@ export default function ProfilePage() {
   const [showMyPuzzles, setShowMyPuzzles] = useState(false);
   const [myPuzzles, setMyPuzzles] = useState<Array<any>>([]);
   const [myPuzzlesLoading, setMyPuzzlesLoading] = useState(false);
+  const [followModal, setFollowModal] = useState<"followers" | "following" | null>(null);
 
   const [showCosmeticsDrawer, setShowCosmeticsDrawer] = useState(false);
   const [drawerItems, setDrawerItems] = useState<DrawerItem[]>([]);
@@ -515,7 +518,14 @@ export default function ProfilePage() {
           <div className="md:col-span-2 md:row-span-2 flex flex-col gap-6">
             {/* Social Stats */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="border rounded-xl p-4" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+              <button
+                type="button"
+                onClick={() => setFollowModal("followers")}
+                className="border rounded-xl p-4 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.primary; e.currentTarget.style.background = t.primaryMuted; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.cardBorder; e.currentTarget.style.background = t.cardBg; }}
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm mb-1" style={{ color: t.subtleText }}>Followers</p>
@@ -523,8 +533,15 @@ export default function ProfilePage() {
                   </div>
                   <span className="text-3xl">❤️</span>
                 </div>
-              </div>
-              <div className="border rounded-xl p-4" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFollowModal("following")}
+                className="border rounded-xl p-4 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.primary; e.currentTarget.style.background = t.primaryMuted; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.cardBorder; e.currentTarget.style.background = t.cardBg; }}
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm mb-1" style={{ color: t.subtleText }}>Following</p>
@@ -532,7 +549,7 @@ export default function ProfilePage() {
                   </div>
                   <span className="text-3xl">👥</span>
                 </div>
-              </div>
+              </button>
             </div>
 
             <div className="flex-1 border rounded-xl p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
@@ -921,6 +938,16 @@ export default function ProfilePage() {
             </div>
           </div>
         </>
+      )}
+
+      {followModal && profile && (
+        <FollowListModal
+          userId={profile.id}
+          type={followModal}
+          theme={t}
+          onClose={() => setFollowModal(null)}
+          onFollowChange={fetchProfile}
+        />
       )}
     </main>
   );
