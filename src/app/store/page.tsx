@@ -127,9 +127,11 @@ function AnimatedBalance({ value }: { value: number }) {
 }
 
 function getRarity(price: number): { label: string; color: string; glow: string } | null {
-  if (price >= 700) return { label: "Legendary", color: "#FDE74C", glow: "rgba(253,231,76,0.3)" };
-  if (price >= 500) return { label: "Epic",       color: "#c084fc", glow: "rgba(192,132,252,0.25)" };
-  if (price >= 350) return { label: "Rare",       color: "#38bdf8", glow: "rgba(56,189,248,0.2)" };
+  // Thresholds scale with the 5x store price increase -- keep these in sync
+  // with that multiplier so the rarity mix doesn't drift again next time.
+  if (price >= 3500) return { label: "Legendary", color: "#FDE74C", glow: "rgba(253,231,76,0.3)" };
+  if (price >= 2500) return { label: "Epic",       color: "#c084fc", glow: "rgba(192,132,252,0.25)" };
+  if (price >= 1750) return { label: "Rare",       color: "#38bdf8", glow: "rgba(56,189,248,0.2)" };
   return null;
 }
 
