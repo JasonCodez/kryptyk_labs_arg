@@ -1296,19 +1296,24 @@ export default function JigsawPuzzleSVGWithTray({
         // trick: stroke the same path twice, offset a hair in complementary directions —
         // clipping cuts off everything except the sliver just inside each edge, so it reads
         // as a raised, chiselled border around the actual curved shape without needing
-        // per-edge normal math for the tabs. The "raised object on a table" look makes sense
-        // for a loose piece, but at full strength on already-connected pieces it read as a
-        // grid of bright white seams, so it's turned way down once a piece is placed.
+        // per-edge normal math for the tabs. This "raised object on a table" look only makes
+        // sense for a loose piece — on an already-connected piece it reads as a seam that
+        // never fully sat down (most visible against smooth/low-detail image regions, like
+        // a blurred background, where nothing else competes with it), so it's skipped
+        // entirely once placed rather than just dialed down; the flat outline below is what
+        // a connected seam should look like.
         const isPlaced = p.snapped || solved;
-        const bevelPx = 1.1 / s;
-        ctx.translate(bevelPx, bevelPx);
-        ctx.strokeStyle = isPlaced ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.5)";
-        ctx.lineWidth = isPlaced ? 1.2 / s : 1.8 / s;
-        ctx.stroke(path);
-        ctx.translate(-bevelPx * 2, -bevelPx * 2);
-        ctx.strokeStyle = "rgba(0,0,0,0.32)";
-        ctx.lineWidth = isPlaced ? 1.4 / s : 2.2 / s;
-        ctx.stroke(path);
+        if (!isPlaced) {
+          const bevelPx = 1.1 / s;
+          ctx.translate(bevelPx, bevelPx);
+          ctx.strokeStyle = "rgba(255,255,255,0.5)";
+          ctx.lineWidth = 1.8 / s;
+          ctx.stroke(path);
+          ctx.translate(-bevelPx * 2, -bevelPx * 2);
+          ctx.strokeStyle = "rgba(0,0,0,0.32)";
+          ctx.lineWidth = 2.2 / s;
+          ctx.stroke(path);
+        }
         ctx.restore();
 
         // Outline. Snapped/solved pieces use a dark seam (reads as a recessed groove between
