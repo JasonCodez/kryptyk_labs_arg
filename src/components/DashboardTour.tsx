@@ -26,7 +26,6 @@ export default function DashboardTour({ onComplete }: DashboardTourProps) {
             title: "Welcome to PuzzleWarz 🧩",
             description:
               "Let's take a quick tour of everything on the platform. Tap <strong>Next</strong> to move forward, <strong>Back</strong> to revisit, or <strong>✕</strong> to exit any time.",
-            side: "over" as any,
             align: "center",
           },
         },
@@ -66,7 +65,7 @@ export default function DashboardTour({ onComplete }: DashboardTourProps) {
           popover: {
             title: "Solve Puzzles 🧩",
             description:
-              "Hundreds of challenges: logic, cryptic, word games, code, ARG, and more. Every puzzle awards <strong>points and XP</strong> on completion — speed doesn't affect your reward.",
+              "Hundreds of challenges: logic, cryptic, word games, code, and more. Every puzzle awards <strong>points and XP</strong> on completion — speed doesn't affect your reward.",
             side: isMobile ? "bottom" : "top",
             align: "start",
           },
@@ -150,8 +149,8 @@ export default function DashboardTour({ onComplete }: DashboardTourProps) {
                   title: "Season Pass 🏅",
                   description:
                     "A seasonal reward track driven by your XP. Free tier included; premium is $4.99/season. Unlock cosmetics and bonuses as you level up. <strong>Claim rewards before the season ends</strong> — unclaimed items expire.",
-                  side: "bottom" as any,
-                  align: "center" as any,
+                  side: "bottom" as const,
+                  align: "center" as const,
                 },
               },
             ]
@@ -162,8 +161,7 @@ export default function DashboardTour({ onComplete }: DashboardTourProps) {
             title: "You're Ready! 🎉",
             description:
               "Start by solving a few puzzles to earn your first points, then hit the Daily Challenge to build your streak. Need a refresher? The <strong>Tutorial</strong> page in the menu covers everything in detail. Good luck!",
-            side: "over" as any,
-            align: "center",
+            align: "center" as const,
           },
         },
       ];

@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import WelcomeModal from '@/components/WelcomeModal';
@@ -19,7 +19,7 @@ interface UserStats {
 function useCountUp(target: number, duration = 1600, trigger = false) {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (!trigger || target === 0) { setCount(target); return; }
+    if (!trigger || target === 0) return;
     let start: number | null = null;
     const step = (ts: number) => {
       if (!start) start = ts;
@@ -30,7 +30,7 @@ function useCountUp(target: number, duration = 1600, trigger = false) {
     };
     requestAnimationFrame(step);
   }, [target, duration, trigger]);
-  return count;
+  return (!trigger || target === 0) ? target : count;
 }
 
 /* ── stat card ────────────────────────────────────────────── */
@@ -334,15 +334,6 @@ export default function Dashboard() {
     }
   }, [status, router]);
 
-  useEffect(() => {
-    if (session?.user?.email) {
-      Promise.all([fetchUserStats(), fetchAdminStatus(), fetchReferral()]).finally(() => {
-        setLoading(false);
-        setTimeout(() => setMounted(true), 60);
-      });
-    }
-  }, [session?.user?.email]);
-
   const fetchUserStats = async () => {
     try {
       const response = await fetch('/api/user/stats');
@@ -373,6 +364,17 @@ export default function Dashboard() {
       if (res.ok) setReferral(await res.json());
     } catch { /* non-fatal */ }
   };
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      // Fetch-on-mount: each helper sets its own piece of state once its request resolves.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      Promise.all([fetchUserStats(), fetchAdminStatus(), fetchReferral()]).finally(() => {
+        setLoading(false);
+        setTimeout(() => setMounted(true), 60);
+      });
+    }
+  }, [session?.user?.email]);
 
   /* ── Loading skeleton ─────────────────────────────────── */
   if (status === 'loading' || loading) {
@@ -575,70 +577,6 @@ export default function Dashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
               {coreCards.map((c, i) => (
                 <ActionCard key={i} {...c} delay={0.12 + i * 0.07} visible={mounted} tourId={c.tourId} />
-              ))}
-            </div>
-          </div>
-
-          {/* ── Coming Soon ────────────────────────────────── */}
-          <div style={{
-            opacity: mounted ? 1 : 0,
-            transform: mounted ? 'translateY(0)' : 'translateY(18px)',
-            transition: 'opacity 0.6s ease 0.7s, transform 0.6s ease 0.7s',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <p style={{
-                fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase',
-                color: '#7C3AED', margin: 0,
-              }}>
-                Coming Soon
-              </p>
-              <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(124,58,237,0.35), transparent)' }} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
-              {[
-                { icon: '🚪', title: 'Escape Rooms',     desc: 'Multi-stage collaborative rooms with inventory, clues, and timed challenges.',     color: '#7C3AED' },
-                { icon: '🕵️', title: 'Detective Cases',  desc: 'Noir-style investigations with a one-strike lockout. Make your accusation count.',  color: '#EF4444' },
-                { icon: '🌐', title: 'ARG Puzzles',      desc: 'Alternate Reality Games — ciphers, steganography, and multi-step trails.',           color: '#3891A6' },
-              ].map((cs, i) => (
-                <div
-                  key={cs.title}
-                  style={{
-                    position: 'relative',
-                    backgroundColor: `${cs.color}0C`,
-                    border: `1px solid ${cs.color}35`,
-                    borderRadius: 16,
-                    padding: '24px',
-                    opacity: mounted ? 0.85 : 0,
-                    transform: mounted ? 'translateY(0)' : 'translateY(28px)',
-                    transition: `opacity 0.6s ease ${0.75 + i * 0.08}s, transform 0.5s ease ${0.75 + i * 0.08}s`,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {/* Badge */}
-                  <span style={{
-                    position: 'absolute', top: 14, right: 14,
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                    fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase',
-                    padding: '3px 10px', borderRadius: 999,
-                    color: cs.color, backgroundColor: `${cs.color}14`, border: `1px solid ${cs.color}30`,
-                  }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: cs.color, boxShadow: `0 0 6px ${cs.color}`, animation: 'db-pulse 2s ease-in-out infinite' }} />
-                    Soon
-                  </span>
-
-                  <div style={{
-                    width: 48, height: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 22, marginBottom: 16,
-                    backgroundColor: `${cs.color}14`, border: `1px solid ${cs.color}28`,
-                  }}>
-                    {cs.icon}
-                  </div>
-                  <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{cs.title}</h3>
-                  <p style={{ color: '#6B7280', fontSize: 13, lineHeight: 1.5 }}>{cs.desc}</p>
-                  <div style={{ marginTop: 16, fontSize: 12, fontWeight: 600, color: cs.color, display: 'flex', alignItems: 'center', gap: 4, opacity: 0.6 }}>
-                    Launching soon <span>⏳</span>
-                  </div>
-                </div>
               ))}
             </div>
           </div>

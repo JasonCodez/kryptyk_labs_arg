@@ -18,15 +18,8 @@ const PUZZLE_TYPES: { value: string; label: string }[] = [
   { value: "word_search", label: "Word Trove" },
   { value: "anagram_blitz", label: "Anagram" },
   { value: "blackout", label: "Declassify" },
-  { value: "arg", label: "ARG" },
-  { value: "detective_case", label: "Detective" },
-  { value: "crime_rpg", label: "Crime Case" },
-  { value: "parasite_code", label: "Parasite Code" },
   { value: "sudoku", label: "Sudoku" },
   { value: "jigsaw", label: "Jigsaw" },
-  { value: "escape_room", label: "Escape Room" },
-  { value: "jim_wyze_case", label: "Jim Wyze Case" },
-  { value: "gridlock_file", label: "Gridlock File" },
 ];
 
 const DIFFICULTIES = ["", "EASY", "MEDIUM", "HARD", "EXPERT"];

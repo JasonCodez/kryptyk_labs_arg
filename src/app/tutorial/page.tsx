@@ -368,32 +368,23 @@ const SECTIONS: TutorialSection[] = [
     cta: { label: "Browse the Store", href: "/store" },
   },
   {
-    id: "escape-rooms",
-    icon: "🚪",
+    id: "debrief",
+    icon: "🔍",
     accent: "#7C3AED",
-    title: "Escape Rooms & Special Content",
-    eyebrow: "Premium Experiences",
+    title: "The Debrief",
+    eyebrow: "Special Content",
     intro:
-      "Beyond standard puzzles, PuzzleWarz offers immersive multi-stage experiences that push your problem-solving skills to the limit. These are designed for players who want deeper, narrative-driven challenges.",
+      "Beyond standard puzzles, PuzzleWarz offers immersive experiences that push your problem-solving skills to the limit.",
     details: [
-      {
-        heading: "Escape Rooms",
-        body: "Multi-room escape experiences where each stage unlocks the next. You'll gather clues, manage an inventory, and solve interconnected puzzles to 'escape'. These can be tackled solo or with your team.",
-      },
       {
         heading: "The Debrief",
         body: "The Debrief presents detective-style case files. You're given an incident report to read, then asked timed questions about what you observed. It tests reading comprehension, attention to detail, and deductive reasoning.",
       },
-      {
-        heading: "ARG Mysteries",
-        body: "Alternate Reality Game (ARG) puzzles weave together ciphers, steganography, hidden clues, and multi-step trails. These are some of the most challenging content on the platform and often require creative, outside-the-box thinking.",
-      },
     ],
     tips: [
-      "Escape rooms are best tackled with a team — use your team lobby to coordinate.",
-      "ARG puzzles may require research outside the platform. Keep a notepad handy.",
+      "Read the report carefully the first time — you won't be able to re-read it once questions start.",
     ],
-    cta: { label: "Explore Escape Rooms", href: "/escape-rooms" },
+    cta: { label: "Read The Debrief", href: "/debrief" },
   },
   {
     id: "community",
@@ -435,8 +426,11 @@ function useReadSections() {
   const [read, setRead] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    // Reads browser-only storage after mount so server and first client render match;
+    // deliberately synchronous — there's no external subscription to hook into.
     try {
       const stored = localStorage.getItem("pw_tutorial_read");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (stored) setRead(new Set(JSON.parse(stored)));
     } catch {}
   }, []);
@@ -704,7 +698,7 @@ function SidebarNav({
       >
         Chapters
       </p>
-      {sections.map((s, i) => {
+      {sections.map((s) => {
         const isActive = activeId === s.id;
         const isRead = readSet.has(s.id);
         return (
@@ -737,7 +731,6 @@ function SidebarNav({
 export default function TutorialPage() {
   const { read, markRead } = useReadSections();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const progress = Math.round((read.size / SECTIONS.length) * 100);
 

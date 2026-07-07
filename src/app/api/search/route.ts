@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { HIDDEN_PUZZLE_TYPES } from "@/lib/featureFlags";
 
 // GET /api/search?q=<query>&type=<puzzleType>&difficulty=<difficulty>&limit=<n>&skip=<n>
 export async function GET(request: NextRequest) {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {
       isActive: true,
       isWarzExclusive: false,
+      puzzleType: { notIn: [...HIDDEN_PUZZLE_TYPES] },
       AND: [
         {
           OR: [

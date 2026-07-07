@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import prisma from "@/lib/prisma";
+import { HIDDEN_PUZZLE_TYPES } from "@/lib/featureFlags";
 
 export const revalidate = 3600; // regenerate sitemap at most once per hour
 
@@ -14,7 +15,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/puzzles`, lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: `${BASE}/daily`, lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: `${BASE}/leaderboards`, lastModified: now, changeFrequency: "hourly", priority: 0.8 },
-    { url: `${BASE}/escape-rooms`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${BASE}/forum`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
     { url: `${BASE}/learn`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${BASE}/categories`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
@@ -23,12 +23,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // ── Dynamic routes ────────────────────────────────────────────────────────
   let puzzleRoutes: MetadataRoute.Sitemap = [];
-  let escapeRoomRoutes: MetadataRoute.Sitemap = [];
   let forumRoutes: MetadataRoute.Sitemap = [];
 
   try {
     const puzzles = await prisma.puzzle.findMany({
-      where: { isActive: true },
+      where: { isActive: true, puzzleType: { notIn: [...HIDDEN_PUZZLE_TYPES] } },
       select: { id: true, updatedAt: true },
       orderBy: { updatedAt: "desc" },
     });
@@ -40,21 +39,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }));
   } catch {
     // DB unavailable at build time — skip dynamic puzzle routes
-  }
-
-  try {
-    const rooms = await prisma.escapeRoomPuzzle.findMany({
-      select: { id: true, updatedAt: true },
-      orderBy: { updatedAt: "desc" },
-    });
-    escapeRoomRoutes = rooms.map((r) => ({
-      url: `${BASE}/escape-rooms/${r.id}`,
-      lastModified: r.updatedAt,
-      changeFrequency: "weekly" as const,
-      priority: 0.6,
-    }));
-  } catch {
-    // DB unavailable at build time — skip dynamic escape room routes
   }
 
   try {
@@ -73,5 +57,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // DB unavailable at build time — skip dynamic forum routes
   }
 
-  return [...staticRoutes, ...puzzleRoutes, ...escapeRoomRoutes, ...forumRoutes];
+  return [...staticRoutes, ...puzzleRoutes, ...forumRoutes];
 }

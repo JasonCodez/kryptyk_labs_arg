@@ -10,7 +10,7 @@ const CATEGORIES = [
     items: [
       {
         q: "What is PuzzleWarz?",
-        a: "PuzzleWarz is a competitive online puzzle platform where you can solve ARG-style challenges, logic puzzles, escape rooms, and more — solo or with a team. Climb global leaderboards, earn achievements, and unlock cosmetics as you progress.",
+        a: "PuzzleWarz is a competitive online puzzle platform where you can solve logic puzzles, ciphers, and more — solo or with a team. Climb global leaderboards, earn achievements, and unlock cosmetics as you progress.",
       },
       {
         q: "Is PuzzleWarz free to play?",
@@ -31,7 +31,7 @@ const CATEGORIES = [
     items: [
       {
         q: "What types of puzzles are available?",
-        a: "PuzzleWarz features a wide range of puzzle types including logic grids, cryptic ciphers, sudoku, ARG-style mystery puzzles, escape room chains, and daily challenge puzzles that reset every 24 hours.",
+        a: "PuzzleWarz features a wide range of puzzle types including logic grids, cryptic ciphers, sudoku, and daily challenge puzzles that reset every 24 hours.",
       },
       {
         q: "How is scoring calculated?",
@@ -40,10 +40,6 @@ const CATEGORIES = [
       {
         q: "What are daily puzzles?",
         a: "Each day a fresh puzzle is published at midnight UTC. Completing it awards a Daily Streak bonus that compounds the longer your unbroken streak runs. Missing a day resets your streak to zero.",
-      },
-      {
-        q: "What are escape room chains?",
-        a: "Escape room chains are multi-stage puzzle sequences where each solved stage unlocks the next. They must be completed in order and are designed to feel like a real escape room experience.",
       },
       {
         q: "Can I hint a puzzle if I'm stuck?",
@@ -178,9 +174,9 @@ export default function FAQPage() {
             <p className="text-xs tracking-widest uppercase mb-3" style={{ color: "#3891A6" }}>Support</p>
             <h1 className="text-4xl font-black mb-4" style={{ color: "#fff" }}>Frequently Asked Questions</h1>
             <p className="text-sm leading-relaxed" style={{ color: "#888" }}>
-              Can't find what you're looking for? Email us at{" "}
+              Can&apos;t find what you&apos;re looking for? Email us at{" "}
               <span style={{ color: "#3891A6" }}>support@puzzlewarz.com</span>{" "}
-              and we'll get back to you.
+              and we&apos;ll get back to you.
             </p>
           </div>
 

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { sanitizePublicPuzzleData } from "@/lib/publicPuzzleData";
+import { isHiddenPuzzleType } from "@/lib/featureFlags";
 
 export async function GET(
   _request: NextRequest,
@@ -84,6 +87,24 @@ export async function GET(
         { error: "Puzzle not found" },
         { status: 404 }
       );
+    }
+
+    if (isHiddenPuzzleType(puzzle.puzzleType)) {
+      const session = await getServerSession(authOptions);
+      let isAdmin = false;
+      if (session?.user?.email) {
+        const requester = await prisma.user.findUnique({
+          where: { email: session.user.email },
+          select: { role: true },
+        });
+        isAdmin = requester?.role === "admin";
+      }
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: "Puzzle not found" },
+          { status: 404 }
+        );
+      }
     }
 
     // Some Prisma client generations may not include newly added fields

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
 
 /* ── Fireworks canvas ───────────────────────────────────────────────── */
@@ -123,7 +122,7 @@ function WelcomeFireworks() {
 
 /* ── Feature highlight item ─────────────────────────────────────────── */
 const FEATURES = [
-  { icon: "🧩", title: "Hundreds of Puzzles", desc: "Logic, cryptic, escape rooms, ARG mysteries — fresh challenges every day." },
+  { icon: "🧩", title: "Hundreds of Puzzles", desc: "Logic, cryptic, word games, and code — fresh challenges every day." },
   { icon: "⚔️", title: "Warz Mode",           desc: "Challenge rivals head-to-head. Wager your points and see who cracks it first." },
   { icon: "👥", title: "Team Up",             desc: "Create or join a team, tackle co-op puzzles, and climb the team leaderboard." },
   { icon: "🏆", title: "Earn & Rise",         desc: "Collect XP, unlock season rewards, and climb the global rankings." },
@@ -261,7 +260,7 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
               >
-                You've joined a community of puzzle solvers competing, collaborating, and climbing the ranks. Here's what's waiting for you.
+                You&apos;ve joined a community of puzzle solvers competing, collaborating, and climbing the ranks. Here&apos;s what&apos;s waiting for you.
               </motion.p>
 
               {/* Feature grid */}

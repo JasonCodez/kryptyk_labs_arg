@@ -43,15 +43,6 @@ const STEPS = [
     body: "Every puzzle type has its own leaderboard and rewards. Mix and match to maximise your point haul.",
     visual: "puzzles",
   },
-  {
-    id: "escape",
-    accent: "#7C3AED",
-    icon: "🚪",
-    eyebrow: "Coming Soon",
-    title: "Something Big\nis Coming.",
-    body: "Multi-room escape rooms with hidden clues, team codes, and real mysteries. You're already early.",
-    visual: "escape",
-  },
 ];
 
 /* ── Inline visuals ─────────────────────────────────────────────────── */
@@ -133,35 +124,6 @@ function PuzzlesVisual() {
   );
 }
 
-function EscapeVisual() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginBottom: 20 }}>
-      <div
-        style={{
-          width: 64, height: 64, borderRadius: 16,
-          background: "linear-gradient(135deg, rgba(124,58,237,0.25), rgba(124,58,237,0.08))",
-          border: "1.5px solid rgba(124,58,237,0.5)",
-          boxShadow: "0 0 32px rgba(124,58,237,0.35)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 32,
-        }}
-      >
-        🔐
-      </div>
-      <span
-        style={{
-          fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
-          padding: "3px 10px", borderRadius: 999,
-          background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.3)",
-          color: "#a78bfa",
-        }}
-      >
-        Early Access
-      </span>
-    </div>
-  );
-}
-
 /* ── Slide variants ─────────────────────────────────────────────────── */
 const variants = {
   enter: (dir: number) => ({ x: dir > 0 ? 260 : -260, opacity: 0 }),
@@ -203,7 +165,6 @@ export default function OnboardingModal({ onComplete }: OnboardingModalProps) {
     if (current.visual === "streak")      return <StreakVisual />;
     if (current.visual === "leaderboard") return <LeaderboardVisual />;
     if (current.visual === "puzzles")     return <PuzzlesVisual />;
-    if (current.visual === "escape")      return <EscapeVisual />;
     return null;
   }
 
