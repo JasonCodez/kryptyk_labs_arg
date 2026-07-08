@@ -99,7 +99,7 @@ function ctaButton(href: string, label: string, bgColor = "#3891A6"): string {
   </table>`;
 }
 
-/** Info box with coloured left-border accent */
+/** Info box with colored left-border accent */
 function infoBox(borderColor: string, inner: string): string {
   return `
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:16px 0;">

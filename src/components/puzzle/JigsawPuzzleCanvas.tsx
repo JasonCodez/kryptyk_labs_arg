@@ -147,7 +147,7 @@ function edgeProfile(L: number, dir: number, opts: PathOpts, sizeRef: number): E
   const tabH  = sign * ext;
 
   const r     = L * (opts.rFrac         ?? 0.118);
-  const kCYm  = Math.max(ext - r, r * 0.05); // keep centre above baseline
+  const kCYm  = Math.max(ext - r, r * 0.05); // keep center above baseline
   const kCY   = sign * kCYm;
 
   const kL    = L * 0.5 - r;
@@ -575,7 +575,7 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Snap spring  
   // Per-piece offsets rather than one shared delta — a drag can trigger both a board-snap
-  // (the dragged piece/group) AND a neighbour merge (a separate, stationary group yanked
+  // (the dragged piece/group) AND a neighbor merge (a separate, stationary group yanked
   // into alignment with it) in the same pointerUp, and each moves by its own distinct amount.
   type SnapOffset = { dx0: number; dy0: number; dx: number; dy: number };
   type SnapAnim = { offsets: Map<string, SnapOffset>; t0: number; dur: number };
@@ -702,7 +702,7 @@ export default function JigsawPuzzleSVGWithTray({
     return { pieces: result, snapped: true, dx, dy };
   }
 
-  // Merge neighbours that are close enough
+  // Merge neighbors that are close enough
   const snapMergeNeighbours = useCallback((arr: Piece[], gid: string, tol: number): Piece[] => {
     let next = arr; let changed = true;
     while (changed) {
@@ -796,7 +796,7 @@ export default function JigsawPuzzleSVGWithTray({
     return list;
   }, [rows, cols, boardWidth, boardHeight, pickSpawn]);
 
-  // ── Initialise / re-initialise ───────────────────────────────────────────
+  // ── Initialize / re-initialize ───────────────────────────────────────────
 
   const edgesMapRef = useRef<Map<string, EdgeMap>>(new Map());
 
@@ -836,7 +836,7 @@ export default function JigsawPuzzleSVGWithTray({
 
   // ── Rebuild path cache when shape opts change (slider adjustments) ───────
   useEffect(() => {
-    if (!edgesMapRef.current.size) return; // not yet initialised
+    if (!edgesMapRef.current.size) return; // not yet initialized
     rebuildCache(edgesMapRef.current);
     dirtyRef.current = true;
   }, [rebuildCache]); // rebuildCache ref changes whenever pathOpts changes
@@ -918,7 +918,7 @@ export default function JigsawPuzzleSVGWithTray({
         // than a fixed multiple of the board's own aspect ratio. A fixed-multiple stage gets
         // letterboxed whenever the board's aspect ratio doesn't match the screen's (nearly
         // always), leaving dead space at the edges pieces could never reach — filling the real
-        // viewport gives pieces the full screen to scatter across, board centred within it.
+        // viewport gives pieces the full screen to scatter across, board centered within it.
         //
         // The board-fill margin differs by device: mobile keeps the board large (88% of the
         // constraining dimension) since screen space is already scarce there. Desktop uses a
@@ -1020,8 +1020,8 @@ export default function JigsawPuzzleSVGWithTray({
         canvas.height       = rh * dpr;
         canvas.style.width  = `${rw}px`;
         canvas.style.height = `${rh}px`;
-        // Re-centre viewport: when stage fits inside the canvas (e.g. after fullscreen exit or
-        // zoom-out), viewOff should be negative so the stage is centred rather than top-left.
+        // Re-center viewport: when stage fits inside the canvas (e.g. after fullscreen exit or
+        // zoom-out), viewOff should be negative so the stage is centered rather than top-left.
         const totalS  = s * userZoomRef.current;
         const viewW2  = rw / totalS;
         const viewH2  = rh / totalS;
@@ -1295,7 +1295,7 @@ export default function JigsawPuzzleSVGWithTray({
         // it instead of a second ctx.clip() call, which isn't free either). Cheap emboss
         // trick: stroke the same path twice, offset a hair in complementary directions —
         // clipping cuts off everything except the sliver just inside each edge, so it reads
-        // as a raised, chiselled border around the actual curved shape without needing
+        // as a raised, chiseled border around the actual curved shape without needing
         // per-edge normal math for the tabs. This "raised object on a table" look only makes
         // sense for a loose piece — on an already-connected piece it reads as a seam that
         // never fully sat down (most visible against smooth/low-detail image regions, like
@@ -1485,7 +1485,7 @@ export default function JigsawPuzzleSVGWithTray({
     const s        = scaleRef.current;
     const oldZoom  = userZoomRef.current;
     const newZoom  = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
-    // Keep canvas centre fixed in stage coords
+    // Keep canvas center fixed in stage coords
     const midStageX = centerX / (s * oldZoom) + viewOffXRef.current;
     const midStageY = centerY / (s * oldZoom) + viewOffYRef.current;
     userZoomRef.current  = newZoom;
@@ -1713,7 +1713,7 @@ export default function JigsawPuzzleSVGWithTray({
       return sp ? { ...p, pos: { x: sp.x + dx, y: sp.y + dy }, z: maxZ + 1 } : p;
     });
 
-    // Snapshot positions right after the drop, before any board-snap or neighbour-merge
+    // Snapshot positions right after the drop, before any board-snap or neighbor-merge
     // correction runs — diffed against the final positions below so every piece that gets
     // nudged (not just the dragged group) can glide instead of jumping instantly.
     const preSnapPositions = new Map(next.map(p => [p.id, { x: p.pos.x, y: p.pos.y }]));
@@ -1761,7 +1761,7 @@ export default function JigsawPuzzleSVGWithTray({
     }
 
     // Build the glide from whatever actually moved during resolution above — this covers
-    // both the dragged group snapping onto the board (s1/s2) AND any stationary neighbour
+    // both the dragged group snapping onto the board (s1/s2) AND any stationary neighbor
     // group that snapMergeNeighbours pulled into alignment, which previously jumped
     // instantly with no animation at all since only the board-snap delta was tracked.
     const offsets = new Map<string, SnapOffset>();

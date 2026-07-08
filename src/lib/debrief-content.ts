@@ -23,7 +23,7 @@ export const DEBRIEF_SCENARIOS: DebriefScenario[] = [
     dateTime: "March 14, 2026 — 23:42",
     report: `Subject: Marcus Holt, 38, male.
 
-Holt arrived at the Ashwood Hotel at approximately 21:15 using a key card registered under the name "Elena Voss." He was observed by the night concierge carrying a brown leather briefcase and a grey umbrella. He proceeded directly to the elevator and ascended to the seventh floor.
+Holt arrived at the Ashwood Hotel at approximately 21:15 using a key card registered under the name "Elena Voss." He was observed by the night concierge carrying a brown leather briefcase and a gray umbrella. He proceeded directly to the elevator and ascended to the seventh floor.
 
 At 23:30, hotel security received a noise complaint from room 714. Upon arriving within four minutes, officers found the room vacant. The window was unlatched. The leather briefcase remained on the bed — empty. A single playing card, the eight of clubs, had been left face-up on the pillow.
 

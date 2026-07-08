@@ -48,7 +48,7 @@ interface SubmitResult {
   locked?: boolean;
 }
 
-// ── Opcode colour map ─────────────────────────────────────────────────────────
+// ── Opcode color map ─────────────────────────────────────────────────────────
 const OPCODE_COLORS: Record<string, string> = {
   SET:  '#7DF9AA',  // mint
   ADD:  '#A8DAFF',  // sky blue
@@ -69,7 +69,7 @@ const FEEDBACK_TEXT: Record<QuarantineFeedback, string> = {
   'exact':         '✓ Quarantine confirmed. All malicious segments isolated.',
   'over-flagged':  '⚠ False positives detected. Clean lines included in quarantine.',
   'under-flagged': '⚠ Incomplete isolation. Additional parasite segments remain active.',
-  'off':           '✗ Quarantine rejected. Wrong lines flagged — re-analyse.',
+  'off':           '✗ Quarantine rejected. Wrong lines flagged — re-analyze.',
 };
 const FEEDBACK_COLOR: Record<QuarantineFeedback, string> = {
   'exact':         '#7DF9AA',
@@ -428,7 +428,7 @@ function BriefingScreen({
         <div className="text-xs font-mono text-yellow-400/70 tracking-widest uppercase mb-1">ANALYST BRIEFING</div>
         <ul className="space-y-1 list-disc list-inside">
           <li>Read through the program listing using the <span className="font-mono text-yellow-300">OPCODE GUIDE</span> if needed</li>
-          <li>Run the <span className="font-mono text-yellow-300">TEST INPUTS</span> to observe program behaviour</li>
+          <li>Run the <span className="font-mono text-yellow-300">TEST INPUTS</span> to observe program behavior</li>
           <li>Click lines you believe are malicious to <span className="font-mono text-yellow-300">quarantine</span> them</li>
           <li>Submit when you have isolated every parasite segment</li>
           <li>You are scored on attempts — fewer is better</li>

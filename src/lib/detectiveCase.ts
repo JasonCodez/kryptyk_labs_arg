@@ -17,7 +17,7 @@ export type DetectiveCasePrologue = {
   text: string;
   /** Detective character name shown on the prologue screen, e.g. "Det. Ray Voss" */
   narratorName?: string;
-  /** Voice style for future TTS / flavour, e.g. "gravel", "weary", "sharp" */
+  /** Voice style for future TTS / flavor, e.g. "gravel", "weary", "sharp" */
   narratorVoice?: string;
   /** Background image URL (/uploads/… or CDN). Shown dimmed behind the text. */
   backgroundImage?: string;

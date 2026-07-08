@@ -25,7 +25,7 @@ export interface PuzzleSkinTokens {
   tileBorder: string;
   tileText: string;
   tileFontFamily: string;
-  // Accent colours (correct, wrong, active)
+  // Accent colors (correct, wrong, active)
   accentCorrect: string;
   accentWrong: string;
   accentActive: string;

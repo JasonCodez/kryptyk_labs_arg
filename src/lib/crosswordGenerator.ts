@@ -59,7 +59,7 @@ const COMMON_FILLER_BANK: readonly { answer: string; text: string }[] = [
   { answer: 'FUR', text: 'Soft animal coat.' },
   { answer: 'GAP', text: 'Opening or space between things.' },
   { answer: 'GEM', text: 'Precious stone.' },
-  { answer: 'GIN', text: 'Distilled spirit flavoured with juniper.' },
+  { answer: 'GIN', text: 'Distilled spirit flavored with juniper.' },
   { answer: 'GOD', text: 'Supreme divine being.' },
   { answer: 'GUM', text: 'Sticky substance; chewing gum.' },
   { answer: 'GUN', text: 'Firearm.' },
@@ -402,8 +402,8 @@ const COMMON_FILLER_BANK: readonly { answer: string; text: string }[] = [
   { answer: 'MAIL', text: 'Postal letters and packages.' },
   { answer: 'MAIN', text: 'Most important; chief.' },
   { answer: 'MAKE', text: 'Create or produce.' },
-  { answer: 'MALE', text: 'Of the sex that fertilises eggs.' },
-  { answer: 'MALL', text: 'Large shopping centre.' },
+  { answer: 'MALE', text: 'Of the sex that fertilizes eggs.' },
+  { answer: 'MALL', text: 'Large shopping center.' },
   { answer: 'MALT', text: 'Germinated grain used in brewing.' },
   { answer: 'MASK', text: 'Face covering.' },
   { answer: 'MAST', text: 'Tall vertical pole on a ship.' },
@@ -456,7 +456,7 @@ const COMMON_FILLER_BANK: readonly { answer: string; text: string }[] = [
   { answer: 'PILE', text: 'Stack; a heap.' },
   { answer: 'PINE', text: 'Evergreen conifer tree.' },
   { answer: 'PINK', text: 'Light red color.' },
-  { answer: 'PLAN', text: 'Organised scheme; a diagram.' },
+  { answer: 'PLAN', text: 'Organized scheme; a diagram.' },
   { answer: 'PLOD', text: 'Walk heavily and slowly.' },
   { answer: 'PLOT', text: 'Plan secretly; story outline.' },
   { answer: 'PLUM', text: 'Purple-red stone fruit.' },
@@ -564,7 +564,7 @@ const COMMON_FILLER_BANK: readonly { answer: string; text: string }[] = [
   { answer: 'TONE', text: 'Quality of sound; a shade of color.' },
   { answer: 'TORN', text: 'Ripped; past participle of "tear".' },
   { answer: 'TOSS', text: 'Throw lightly.' },
-  { answer: 'TOUR', text: 'Travelling visit.' },
+  { answer: 'TOUR', text: 'Traveling visit.' },
   { answer: 'TOWN', text: 'Small urban settlement.' },
   { answer: 'TRAP', text: 'Device for catching animals.' },
   { answer: 'TRAY', text: 'Flat container for carrying items.' },
@@ -1996,7 +1996,7 @@ const fillLayoutWithEntries = (
   }
 
   // letterGrid[r][c] = letter at that cell, or null if unknown.
-  // Initialised from the layout (only black squares are known initially).
+  // Initialized from the layout (only black squares are known initially).
   const letterGrid: (string | null)[][] = Array.from({ length: rows }, () =>
     Array.from({ length: cols }, () => null)
   );

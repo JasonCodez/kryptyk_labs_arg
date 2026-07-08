@@ -9,7 +9,7 @@ type GuessResult = {
   bulls: number;
   cows: number;
   correct: boolean;
-  hints?: string[]; // per-position: "green" | "yellow" | "grey"
+  hints?: string[]; // per-position: "green" | "yellow" | "gray"
 };
 
 interface SafeData {
@@ -978,7 +978,7 @@ export default function CrackTheSafePuzzle({ puzzleId, safeData, onSolved, alrea
                 {/* Guess digits with per-position color feedback */}
                 <div className="flex gap-1">
                   {r.guess.split("").map((d, di) => {
-                    const hint = r.hints?.[di] ?? "grey";
+                    const hint = r.hints?.[di] ?? "gray";
                     const bg = hint === "green" ? "rgba(56,211,153,0.25)" : hint === "yellow" ? "rgba(253,231,76,0.2)" : "#1A1A1A";
                     const border = hint === "green" ? "2px solid #38D399" : hint === "yellow" ? "2px solid #FDE74C" : "1px solid #2A2A2A";
                     const color = hint === "green" ? "#38D399" : hint === "yellow" ? "#FDE74C" : "#EEE";

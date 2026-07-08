@@ -21,7 +21,7 @@ export default function DashboardTour({ onComplete }: DashboardTourProps) {
       // All possible steps — some are conditionally included based on viewport
       const allSteps: DriveStep[] = [
         {
-          // Intro — no element, centred overlay
+          // Intro — no element, centered overlay
           popover: {
             title: "Welcome to PuzzleWarz 🧩",
             description:
@@ -135,7 +135,7 @@ export default function DashboardTour({ onComplete }: DashboardTourProps) {
           popover: {
             title: "Your Profile 👤",
             description:
-              "Your public page: stats, Warz record, achievements, and cosmetics. Customise your avatar, title, and flair here.",
+              "Your public page: stats, Warz record, achievements, and cosmetics. Customize your avatar, title, and flair here.",
             side: isMobile ? "bottom" : "top",
             align: "start",
           },

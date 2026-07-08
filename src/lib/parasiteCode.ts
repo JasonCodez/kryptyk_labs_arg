@@ -27,7 +27,7 @@ export const OPCODE_DESCRIPTIONS: Record<Opcode, string> = {
   MUL:  'Multiply two values into a register',
   CMP:  'Compare two values; result stored in FLAG',
   IF:   'Conditional branch: skip next line if condition is false',
-  GOTO: 'Unconditional jump to a labelled line',
+  GOTO: 'Unconditional jump to a labeled line',
   CALL: 'Call a named subroutine',
   RET:  'Return to the call site',
   LOAD: 'Load a value from the test input map',

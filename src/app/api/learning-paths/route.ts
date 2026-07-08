@@ -37,7 +37,7 @@ const TRACK_DESCRIPTION: Record<string, string> = {
   "HTML Basics":      "Learn the building blocks of every web page.",
   "HTML Structure":   "Master semantic elements and document structure.",
   "HTML Forms":       "Build forms that capture and validate user input.",
-  "CSS Fundamentals": "Style your pages with colour, typography, and spacing.",
+  "CSS Fundamentals": "Style your pages with color, typography, and spacing.",
   "CSS Layout":       "Control layout with Flexbox and Grid.",
   "CSS Animations":   "Bring pages to life with transitions and keyframes.",
   "JS Fundamentals":  "Variables, functions, arrays, and logic.",

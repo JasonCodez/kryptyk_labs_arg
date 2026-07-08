@@ -154,7 +154,7 @@ Day 1, Lesson 1. You've got it. 💪`,
       track: 'HTML Basics',
       trackOrder: 2,
       concepts: ['HTML', 'semantic elements', 'nav', 'accessibility', 'SEO'],
-      scenario: 'The site navigation is wrapped in a generic <div> — but HTML has a dedicated element for navigation. Screen readers can\'t recognise the nav landmark and keep users in the dark. Your mission: replace the <div class="nav"> with the correct semantic element.',
+      scenario: 'The site navigation is wrapped in a generic <div> — but HTML has a dedicated element for navigation. Screen readers can\'t recognize the nav landmark and keep users in the dark. Your mission: replace the <div class="nav"> with the correct semantic element.',
       theory: `── Quick recap: what is HTML doing? ─────────────────────────
 HTML describes the STRUCTURE and MEANING of content. Not the look (that is CSS) — the meaning.
 
@@ -390,7 +390,7 @@ That mindset — building for everyone by default — is what defines great deve
       concepts: ['CSS', 'flexbox', 'display', 'layout', 'block vs flex'],
       scenario: 'The nav bar links should sit side by side in a row — but they\'re all stacking vertically. The developer left display set to the wrong value. One word is all that stands between a broken stack and a proper nav bar. Find it.',
       theory: `── What is CSS? ─────────────────────────────────────────────
-If HTML is the skeleton of a webpage, CSS (Cascading Style Sheets) is everything you see — colours, fonts, spacing, and most importantly, LAYOUT.
+If HTML is the skeleton of a webpage, CSS (Cascading Style Sheets) is everything you see — colors, fonts, spacing, and most importantly, LAYOUT.
 
 CSS works through RULES. Each rule has three parts:
 
@@ -445,9 +445,9 @@ automatically become "flex items" and line up side by side.
   flex-direction: row          — left to right (this is the DEFAULT)
   flex-direction: column       — top to bottom
   gap: 16px                    — space between each child element
-  align-items: center          — vertically centres all children
+  align-items: center          — vertically centers all children
   align-items: flex-start      — aligns children to the top
-  justify-content: center      — horizontally centres all children
+  justify-content: center      — horizontally centers all children
   justify-content: space-between — pushes children to opposite ends
   justify-content: flex-end    — pushes children to the right
 
@@ -510,19 +510,19 @@ nav a {
       },
     },
   },
-  // ── CSS 2: Centre a Button ────────────────────────────────────────────────
+  // ── CSS 2: Center a Button ────────────────────────────────────────────────
   {
     id: 'css-center',
-    name: 'Centre a Button',
+    name: 'Center a Button',
     track: 'CSS Layout',
     trackIcon: '🎨',
-    description: 'Horizontally centre a button using display: block and margin: 0 auto.',
+    description: 'Horizontally center a button using display: block and margin: 0 auto.',
     data: {
       language: 'css',
       track: 'CSS Layout',
       trackOrder: 1,
       concepts: ['CSS', 'box model', 'margin auto', 'centering', 'display block'],
-      scenario: 'The hero section\'s call-to-action button is stuck to the left edge of its container. It needs to be perfectly centred. The designer is watching. Two CSS declarations are all you need.',
+      scenario: 'The hero section\'s call-to-action button is stuck to the left edge of its container. It needs to be perfectly centered. The designer is watching. Two CSS declarations are all you need.',
       theory: `── The CSS Box Model ─────────────────────────────────────────
 Before you can understand centering, you need to understand how CSS treats every element.
 
@@ -553,12 +553,12 @@ A <button> element is display: inline by default.
 Inline elements:
   • Only take up as much width as their content
   • Ignore top/bottom margin
-  • Cannot be centred with margin: auto
+  • Cannot be centered with margin: auto
 
-To centre using margin: auto, you must first make the element display: block.
+To center using margin: auto, you must first make the element display: block.
 A block element:
   • Takes up the full width of its container (unless you constrain it)
-  • Honours all margins, including auto margins
+  • Honors all margins, including auto margins
 
 ── How margin: auto works ───────────────────────────────────
 When you set margin: 0 auto on a block element, here is what happens:
@@ -574,7 +574,7 @@ after this element, and assign it all to this margin side."
 When BOTH left and right are auto, the browser splits the leftover space equally:
 left auto = [  ½ of remaining space  ]  [element]  [  ½ of remaining space  ] = right auto
 
-The element ends up perfectly centred. ✓
+The element ends up perfectly centered. ✓
 
 ── Step by step ─────────────────────────────────────────────
 .cta {
@@ -589,13 +589,13 @@ If the element is 100% wide (full width), there is nothing left to distribute.
 That is why width: fit-content or a fixed pixel width is required.
 
 ── Modern alternative ───────────────────────────────────────
-You can also centre by putting Flexbox on the PARENT container:
+You can also center by putting Flexbox on the PARENT container:
   .hero {
     display: flex;
     justify-content: center;
   }
 Both approaches are correct. margin: auto is classic; Flexbox is modern.`,
-      lessonSummary: `You added display: block and margin: 0 auto to centre the button. It is now perfectly positioned. 🎉
+      lessonSummary: `You added display: block and margin: 0 auto to center the button. It is now perfectly positioned. 🎉
 
 Let's cement exactly why this works:
 
@@ -606,14 +606,14 @@ Let's cement exactly why this works:
 2. margin: 0 auto
    "0" = no top or bottom margin
    "auto" on both left and right = browser divides remaining horizontal space equally
-   Equal space on both sides = centred
+   Equal space on both sides = centered
 
 This pattern applies to FAR more than just buttons. It is how every website with a content
-column centres its entire layout:
+column centers its entire layout:
 
   .page-wrapper {
     max-width: 1200px;
-    margin: 0 auto;      ← this centres the entire page content
+    margin: 0 auto;      ← this centers the entire page content
   }
 
 That is the exact CSS pattern used by virtually every website you have ever visited.
@@ -623,7 +623,7 @@ You now understand:
   ✓ The CSS box model (margin, border, padding, content)
   ✓ The difference between display: block and display: inline
   ✓ How margin: auto distributes space
-  ✓ How to centre any block element on the page
+  ✓ How to center any block element on the page
 
 These fundamentals sit underneath every CSS layout you will ever build. 💡`,
       brokenCode: `body {
@@ -649,7 +649,7 @@ These fundamentals sit underneath every CSS layout you will ever build. 💡`,
   font-size: 18px;
   font-weight: 600;
   cursor: pointer;
-  /* Add two properties here to centre this button */
+  /* Add two properties here to center this button */
 }`,
       validationMode: 'contains',
       validationRules: {
@@ -673,7 +673,7 @@ These fundamentals sit underneath every CSS layout you will ever build. 💡`,
       concepts: ['JavaScript', 'variables', 'let', 'const', 'TypeError', 'declarations'],
       scenario: 'The score counter looks perfect but throws an error the moment you click the button. The console says "Assignment to constant variable." You\'ve found your culprit — now hunt down the wrong declaration and fix it.',
       theory: `── What is JavaScript? ──────────────────────────────────────
-If HTML is the skeleton of a page and CSS is the visual style, JavaScript is the BEHAVIOUR.
+If HTML is the skeleton of a page and CSS is the visual style, JavaScript is the BEHAVIOR.
 
 JavaScript makes webpages interactive:
   Buttons that do things when clicked
@@ -684,7 +684,7 @@ JavaScript makes webpages interactive:
 ── What is a variable? ─────────────────────────────────────
 A VARIABLE is a named container for storing a value in memory.
 
-Think of it as a labelled box:
+Think of it as a labeled box:
   → You write a name on the box (the variable name)
   → You put something inside (the value)
   → Later, you can look inside and read the value
@@ -712,7 +712,7 @@ Modern JavaScript (ES2015, also called ES6) introduced two keywords:
     currentUser = 'alice@example.com';    ← works perfectly ✓
 
   var (the old keyword — avoid it)
-    Works similarly to let, but with confusing "hoisting" and scoping behaviours.
+    Works similarly to let, but with confusing "hoisting" and scoping behaviors.
     All modern JavaScript code uses const and let. Never use var in new code.
 
 ── The golden rule ──────────────────────────────────────────
@@ -806,7 +806,7 @@ btn.addEventListener('click', function () {
       concepts: ['JavaScript', 'DOM', 'events', 'addEventListener', 'debugging'],
       scenario: 'The click counter looks perfect — styled button, number display, clean code. But clicking the button does absolutely nothing. No error in the console, nothing. The bug is invisible unless you know where to look.',
       theory: `── What is JavaScript for? ──────────────────────────────────
-If HTML is the skeleton and CSS is the appearance, JavaScript is the BEHAVIOUR.
+If HTML is the skeleton and CSS is the appearance, JavaScript is the BEHAVIOR.
 
 JavaScript makes webpages interactive:
   Buttons that do things when you click them
@@ -857,7 +857,7 @@ Example:
     console.log('Button was clicked!');
   });
 
-── The most important event types to memorise ───────────────
+── The most important event types to memorize ───────────────
 These are all exact strings — every character matters:
 
   'click'       — mouse click or screen tap
@@ -1036,7 +1036,7 @@ What made this bug sneaky:
 
 This is a LOGIC BUG — valid JavaScript that does the wrong thing.
 
-The debugging skill you just practised:
+The debugging skill you just practiced:
   → Test your functions with inputs where you KNOW the expected output
   → If the output doesn't match, the bug is in your logic or maths
   → Work backwards: what operation would produce the WRONG number you're seeing?
@@ -1482,7 +1482,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
       <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-base font-semibold text-indigo-300">🚀 Starter Templates</span>
-          <span className="text-xs text-gray-400">— load a ready-made puzzle and customise it</span>
+          <span className="text-xs text-gray-400">— load a ready-made puzzle and customize it</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
           {CODE_MASTER_TEMPLATES.map((tpl) => (
@@ -1792,7 +1792,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     const existing = (puzzleData as any)?.crimeCase;
     const template = {
       caseTitle: 'The Cartographer\'s Last Map',
-      premise: 'A renowned cartographer is found dead in his locked study. Three colleagues had keys. The map he was working on — rumoured to expose a buried secret — is missing. You have 48 hours before the estate is sold and the evidence destroyed.',
+      premise: 'A renowned cartographer is found dead in his locked study. Three colleagues had keys. The map he was working on — rumored to expose a buried secret — is missing. You have 48 hours before the estate is sold and the evidence destroyed.',
       caseClockHours: 48,
       sceneImageUrl: '',
       evidence: [
@@ -1849,7 +1849,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
           label: 'Renata\'s Bag Contents',
           type: 'photo',
           summary: 'Inventory photo taken when suspect was detained.',
-          content: 'Items photographed:\n- Wallet\n- Car keys (rental, same model as tyre tracks outside)\n- Prescription bottle (label scratched off, pills match digoxin)\n- A torn corner of paper matching the grain of the Torn Letter\n- Map tube (empty)',
+          content: 'Items photographed:\n- Wallet\n- Car keys (rental, same model as tire tracks outside)\n- Prescription bottle (label scratched off, pills match digoxin)\n- A torn corner of paper matching the grain of the Torn Letter\n- Map tube (empty)',
           imageUrl: '',
           hiddenLayers: [
             {
@@ -3379,7 +3379,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
 
         {word && (
           <div className="p-3 rounded-lg text-xs text-center" style={{ background: 'rgba(83,141,78,0.1)', border: '1px solid rgba(83,141,78,0.3)', color: '#a7c4a4' }}>
-            Preview: {wordLength}-letter word · {maxGuesses} guesses · green / yellow / grey feedback per letter
+            Preview: {wordLength}-letter word · {maxGuesses} guesses · green / yellow / gray feedback per letter
           </div>
         )}
       </div>
@@ -3555,7 +3555,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
                       </select>
                     </div>
                     <div>
-                      <label className={labelCls}>Narrative / Flavour Text</label>
+                      <label className={labelCls}>Narrative / Flavor Text</label>
                       <input className={fieldCls} value={asString(stage.description, '')}
                         onChange={(e) => updateStage(idx, 'description', e.target.value)}
                         placeholder="The file was corrupted. Only fragments remain…" />

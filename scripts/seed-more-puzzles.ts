@@ -141,8 +141,8 @@ const WC_WORDS: WcWord[] = [
   { word: "RAZE",  hint: "To completely destroy a building to the ground" },
   // 5-letter (8) — medium, 100 pts / 60 xp
   { word: "BLAZE", hint: "A large fierce fire" },
-  { word: "SCOUT", hint: "To explore or reconnoitre an area ahead" },
-  { word: "QUIRK", hint: "A peculiar behavioural habit or characteristic" },
+  { word: "SCOUT", hint: "To explore or reconnoiter an area ahead" },
+  { word: "QUIRK", hint: "A peculiar behavioral habit or characteristic" },
   { word: "PLUME", hint: "A long cloud of smoke, or an ornamental feather" },
   { word: "VENOM", hint: "Poisonous liquid produced by snakes and spiders" },
   { word: "CRYPT", hint: "A stone chamber beneath a church" },
@@ -343,7 +343,7 @@ const BO_DOCS: BlackoutDoc[] = [
     answerMode: "free_text",
     successMessage: "Safe house log declassified.",
     redactions: [
-      rd("AMBER", "A yellow-orange gemstone or colour",  "anagram"),
+      rd("AMBER", "A yellow-orange gemstone or color",  "anagram"),
       rd("MILL",  "A building that grinds grain",        "reverse"),
     ],
   },
@@ -432,7 +432,7 @@ const BO_DOCS: BlackoutDoc[] = [
     successMessage: "Counter-intelligence summary cleared.",
     redactions: [
       rd("MOLE",     "An embedded double agent",             "caesar",  3),
-      rd("DIVISION", "A unit or section of an organisation", "numbers", 3),
+      rd("DIVISION", "A unit or section of an organization", "numbers", 3),
       rd("CIPHER",   "A coded communication system",         "atbash",  3),
       rd("RIVAL",    "A competing intelligence service",     "caesar",  3),
     ],
@@ -556,7 +556,7 @@ const BO_DOCS: BlackoutDoc[] = [
     difficulty: "hard", classification: "SECRET",
     documentTitle: "Top Secret Briefing: Asset PHOENIX",
     flavorText: "Exfiltration window briefing — immediate action required.",
-    rawDocument: "Asset [[PHOENIX]] acquired [[INTELLIGENCE]] on the [[WEAPONS]] programme. The [[EXFILTRATION]] window opens at [[MIDNIGHT]] on the [[FIFTEENTH]].",
+    rawDocument: "Asset [[PHOENIX]] acquired [[INTELLIGENCE]] on the [[WEAPONS]] program. The [[EXFILTRATION]] window opens at [[MIDNIGHT]] on the [[FIFTEENTH]].",
     answerMode: "free_text",
     successMessage: "PHOENIX briefing declassified.",
     redactions: [

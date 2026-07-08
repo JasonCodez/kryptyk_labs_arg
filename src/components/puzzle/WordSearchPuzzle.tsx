@@ -95,7 +95,7 @@ function HowToPlayModal({ onClose, onShowIntro }: { onClose: () => void; onShowI
         <div className="space-y-3 text-sm text-gray-300">
           <p>Find all the words listed to the side of the grid. Each word is hidden in the grid in a straight line.</p>
           <p><strong className="text-white">How to select:</strong> Click and drag across the letters to highlight a word. Works in any direction — horizontal, vertical, or diagonal, and both forwards and backwards.</p>
-          <p><strong className="text-white">Finding a word:</strong> When you correctly select a word, it lights up in colour and is crossed off the list. Find all words to solve the puzzle.</p>
+          <p><strong className="text-white">Finding a word:</strong> When you correctly select a word, it lights up in color and is crossed off the list. Find all words to solve the puzzle.</p>
           <p><strong className="text-white">Hints:</strong> Use a hint token to automatically reveal a random unfound word. Hint tokens can be purchased from the Store.</p>
         </div>
         <div className="mt-5 flex items-center justify-between gap-3">

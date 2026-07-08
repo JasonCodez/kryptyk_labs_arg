@@ -1204,7 +1204,7 @@ function CipherGuideModal({ font, onClose }: { font: string; onClose: () => void
               padding: "14px 20px",
               borderBottom: "1px solid #0e1e0e",
             }}>
-              {/* cipher name — keeps monospace + colour */}
+              {/* cipher name — keeps monospace + color */}
               <div style={{
                 fontSize: "12px",
                 fontWeight: "bold",

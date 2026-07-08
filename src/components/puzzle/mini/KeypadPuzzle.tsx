@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 export interface KeypadConfig {
   /** The correct PIN. Only digits, e.g. "4271". */
   correctCode: string;
-  /** Optional flavour hint shown above the keypad. */
+  /** Optional flavor hint shown above the keypad. */
   hint?: string;
   /** Optional image URL for an in-scene clue. */
   hintImageUrl?: string;

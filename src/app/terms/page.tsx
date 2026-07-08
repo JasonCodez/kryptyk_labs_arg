@@ -16,15 +16,15 @@ const SECTIONS = [
   },
   {
     title: "3. Account Registration",
-    body: `You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You agree to provide accurate, complete, and current information during registration. You must notify us immediately at support@puzzlewarz.com if you suspect any unauthorised access to your account. PuzzleWarz reserves the right to terminate accounts that contain false information or violate these Terms.`,
+    body: `You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. You agree to provide accurate, complete, and current information during registration. You must notify us immediately at support@puzzlewarz.com if you suspect any unauthorized access to your account. PuzzleWarz reserves the right to terminate accounts that contain false information or violate these Terms.`,
   },
   {
     title: "4. Acceptable Use",
-    body: `You agree not to:\n• Post or transmit content that is unlawful, harassing, defamatory, obscene, or otherwise objectionable.\n• Attempt to reverse-engineer, cheat, exploit, or manipulate any puzzle, scoring system, or leaderboard.\n• Use automated bots, scripts, or other tools to interact with the Service without express written permission.\n• Impersonate another user, moderator, or PuzzleWarz staff member.\n• Attempt to gain unauthorised access to any part of the Service or its underlying infrastructure.\n• Use the Service to distribute spam, malware, or unsolicited commercial communications.\n\nViolations may result in immediate account suspension or termination without notice.`,
+    body: `You agree not to:\n• Post or transmit content that is unlawful, harassing, defamatory, obscene, or otherwise objectionable.\n• Attempt to reverse-engineer, cheat, exploit, or manipulate any puzzle, scoring system, or leaderboard.\n• Use automated bots, scripts, or other tools to interact with the Service without express written permission.\n• Impersonate another user, moderator, or PuzzleWarz staff member.\n• Attempt to gain unauthorized access to any part of the Service or its underlying infrastructure.\n• Use the Service to distribute spam, malware, or unsolicited commercial communications.\n\nViolations may result in immediate account suspension or termination without notice.`,
   },
   {
     title: "5. User-Generated Content",
-    body: `When you create or submit puzzles, forum posts, comments, or other content ("User Content"), you retain ownership of that content. By submitting User Content, you grant PuzzleWarz a worldwide, non-exclusive, royalty-free licence to host, display, reproduce, and distribute that content solely for the purpose of operating and improving the Service.\n\nYou are solely responsible for the accuracy, legality, and appropriateness of your User Content. PuzzleWarz reserves the right to remove any User Content at its sole discretion.`,
+    body: `When you create or submit puzzles, forum posts, comments, or other content ("User Content"), you retain ownership of that content. By submitting User Content, you grant PuzzleWarz a worldwide, non-exclusive, royalty-free license to host, display, reproduce, and distribute that content solely for the purpose of operating and improving the Service.\n\nYou are solely responsible for the accuracy, legality, and appropriateness of your User Content. PuzzleWarz reserves the right to remove any User Content at its sole discretion.`,
   },
   {
     title: "6. Intellectual Property",

@@ -129,7 +129,7 @@ function TimerBar({ secondsLeft, total }: { secondsLeft: number; total: number }
         }}
       >
         <span style={{ fontSize: 11, fontWeight: 700, color: MUTED, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-          Memorise the report
+          Memorize the report
         </span>
         <span
           style={{
@@ -622,7 +622,7 @@ function DocumentFireCanvas({ active }: { active: boolean }) {
 
 function WitnessHowToPlayModal({ onClose }: { onClose: () => void }) {
   const steps = [
-    { icon: "📄", title: "Read the report", body: `You have ${READ_SECONDS} seconds to memorise a classified incident report. Read every detail carefully — it self-destructs once time is up.` },
+    { icon: "📄", title: "Read the report", body: `You have ${READ_SECONDS} seconds to memorize a classified incident report. Read every detail carefully — it self-destructs once time is up.` },
     { icon: "🧠", title: "Answer recall questions", body: `Five multiple-choice questions test your memory of the report. You have ${QUESTION_SECONDS} seconds per question and cannot go back — trust your instincts.` },
     { icon: "📊", title: "See how you compare", body: "Your recall score and accuracy rating are revealed at the end alongside your percentile ranking. The sharper your memory, the higher you place." },
   ];
@@ -1135,7 +1135,7 @@ export default function WitnessPage() {
                   textAlign: "center",
                 }}>
                   <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, fontWeight: 700, letterSpacing: "0.22em", color: "rgba(255,255,255,0.85)" }}>
-                    {scenario ? scenario.classification : "CLASSIFIED"} — AUTHORISED ACCESS ONLY
+                    {scenario ? scenario.classification : "CLASSIFIED"} — AUTHORIZED ACCESS ONLY
                   </span>
                 </div>
               </div>
@@ -1308,7 +1308,7 @@ export default function WitnessPage() {
                   textAlign: "center",
                 }}>
                   <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, fontWeight: 700, letterSpacing: "0.22em", color: "rgba(255,255,255,0.8)" }}>
-                    {scenario.classification} — AUTHORISED ACCESS ONLY
+                    {scenario.classification} — AUTHORIZED ACCESS ONLY
                   </span>
                 </div>
 

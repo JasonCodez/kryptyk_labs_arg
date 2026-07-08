@@ -44,7 +44,7 @@ const SECTIONS = [
   },
   {
     title: "10. Security",
-    body: `We use reasonable administrative, technical, and organisational safeguards designed to protect personal information. No method of transmission over the internet or electronic storage is completely secure, so we cannot guarantee absolute security.`,
+    body: `We use reasonable administrative, technical, and organizational safeguards designed to protect personal information. No method of transmission over the internet or electronic storage is completely secure, so we cannot guarantee absolute security.`,
   },
   {
     title: "11. International Transfers",

@@ -40,7 +40,7 @@ const STEPS = [
     icon: "🧩",
     eyebrow: "Puzzle Arsenal",
     title: "More Than\nJust Puzzles.",
-    body: "Every puzzle type has its own leaderboard and rewards. Mix and match to maximise your point haul.",
+    body: "Every puzzle type has its own leaderboard and rewards. Mix and match to maximize your point haul.",
     visual: "puzzles",
   },
 ];

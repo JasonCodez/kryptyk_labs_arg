@@ -58,7 +58,7 @@ const SECTIONS: TutorialSection[] = [
     details: [
       {
         heading: "Browsing & Filtering",
-        body: "The Puzzles page lets you browse the full catalogue. You can filter by category (Logic, Cryptic, Code, etc.), difficulty level (Easy, Medium, Hard, Expert), and status (unsolved, solved, in progress). Use the search bar to find puzzles by name or keyword.",
+        body: "The Puzzles page lets you browse the full catalog. You can filter by category (Logic, Cryptic, Code, etc.), difficulty level (Easy, Medium, Hard, Expert), and status (unsolved, solved, in progress). Use the search bar to find puzzles by name or keyword.",
       },
       {
         heading: "Difficulty Levels",
@@ -74,7 +74,7 @@ const SECTIONS: TutorialSection[] = [
       },
       {
         heading: "Puzzle-Specific Leaderboards",
-        body: "Many puzzles have a speed leaderboard that tracks how fast players solved them. Even though speed doesn't affect your point reward, topping a puzzle's speed board is a badge of honour.",
+        body: "Many puzzles have a speed leaderboard that tracks how fast players solved them. Even though speed doesn't affect your point reward, topping a puzzle's speed board is a badge of honor.",
       },
     ],
     tips: [
@@ -139,7 +139,7 @@ const SECTIONS: TutorialSection[] = [
     ],
     tips: [
       "Start with small wagers while you get the hang of competitive solving.",
-      "Specialise in a puzzle category and challenge opponents to that type for an edge.",
+      "Specialize in a puzzle category and challenge opponents to that type for an edge.",
     ],
     cta: { label: "Enter Warz Mode", href: "/warz" },
   },

@@ -185,11 +185,11 @@ export type CrimeCaseData = {
   /** Text/content shown to the player after fully solving (retention hook) */
   retentionUnlock?: string;
 
-  // ── Progression layer (all optional — falls back to legacy behaviour) ──
+  // ── Progression layer (all optional — falls back to legacy behavior) ──
 
   /**
    * Evidence IDs that are visible from the start (Phase 1).
-   * If omitted, ALL evidence is shown immediately (legacy behaviour).
+   * If omitted, ALL evidence is shown immediately (legacy behavior).
    */
   starterEvidenceIds?: string[];
 

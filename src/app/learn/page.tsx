@@ -28,7 +28,7 @@ type Track = {
   puzzles: TrackPuzzle[];
 };
 
-// ─── Colour helpers ───────────────────────────────────────────────────────────
+// ─── Color helpers ───────────────────────────────────────────────────────────
 const trackBg = (name: string): string => {
   const n = name.toLowerCase();
   if (n.includes("html"))             return "from-amber-950/60 to-slate-900/80 border-amber-800/40";

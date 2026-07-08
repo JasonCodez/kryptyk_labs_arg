@@ -296,7 +296,7 @@ interface EscapeRoomDesignerProps {
 }
 
 export default function EscapeRoomDesigner({ initialData, editId, onChange, singlePlayerOnly }: EscapeRoomDesignerProps) {
-  // Stable ref for onChange so it never destabilises effects or useCallback deps
+  // Stable ref for onChange so it never destabilizes effects or useCallback deps
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   // Gate: only apply initialData once per mount (prevents infinite loop when parent
@@ -1523,7 +1523,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
               <label className="block text-sm text-white mb-1">Closing Narrative <span className="text-gray-500 font-normal">(resolution, aftermath, reward text)</span></label>
               <textarea
                 rows={4}
-                placeholder="The vault swings open. The ancient artefact is yours…"
+                placeholder="The vault swings open. The ancient artifact is yours…"
                 value={outro.bodyText || ''}
                 onChange={e => setOutro(v => ({ ...v, bodyText: e.target.value || undefined }))}
                 className="border rounded px-2 py-1 w-full bg-slate-800 text-white text-sm resize-y"

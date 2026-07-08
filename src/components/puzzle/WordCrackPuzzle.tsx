@@ -66,7 +66,7 @@ const KEYBOARD_ROWS = [
   ["ENTER", "Z", "X", "C", "V", "B", "N", "M", "⌫"],
 ];
 
-// â”€â”€â”€ Colour palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Color palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // CORRECT = right letter, right spot  |  CLOSE = in word, wrong spot  |  COLD = not in word
 const COLORS = {
@@ -147,7 +147,7 @@ function InstructionsModal({ wordLength, maxGuesses, onClose }: { wordLength: nu
           </li>
         </ul>
 
-        {/* Colour examples */}
+        {/* Color examples */}
         <div className="space-y-3 mb-6">
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#9ca3af" }}>Tile intel codes:</p>
 
@@ -294,7 +294,7 @@ export default function WordCrackPuzzle({
     ? (isVerySmallMobile ? (wordLength >= 8 ? 6 : 8) : (wordLength >= 8 ? 8 : 10))
     : 20;
 
-  // skin-derived colour overrides
+  // skin-derived color overrides
   const tileColors = {
     ...COLORS,
     empty: { bg: "transparent", border: skin.tileBorder, glow: "none", text: skin.tileText },

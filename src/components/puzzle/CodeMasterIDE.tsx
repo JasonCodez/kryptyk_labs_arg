@@ -74,7 +74,7 @@ function formatRelativeTime(ms: number): string {
   return `${days} day${days !== 1 ? "s" : ""} ago`;
 }
 
-// ─── Concept tag colour mapping ────────────────────────────────────────────
+// ─── Concept tag color mapping ────────────────────────────────────────────
 const conceptColor = (tag: string): string => {
   const t = tag.toLowerCase();
   if (t.startsWith("html"))       return "bg-amber-900/60 text-amber-300 border-amber-700/50";
@@ -88,7 +88,7 @@ const conceptColor = (tag: string): string => {
   return "bg-slate-700/60 text-slate-300 border-slate-600/50";
 };
 
-// ─── Track badge colour mapping ─────────────────────────────────────────────
+// ─── Track badge color mapping ─────────────────────────────────────────────
 const trackColor = (track: string): string => {
   const t = track.toLowerCase();
   if (t.includes("html"))       return "bg-amber-900/40 text-amber-300 border-amber-700/40";

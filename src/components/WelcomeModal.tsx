@@ -184,7 +184,7 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
             }}
           />
 
-          {/* Scrollable inner — centres card vertically, adds breathing room top & bottom */}
+          {/* Scrollable inner — centers card vertically, adds breathing room top & bottom */}
           <div className="flex min-h-[100dvh] items-center justify-center px-4 py-8">
 
           {/* Card */}

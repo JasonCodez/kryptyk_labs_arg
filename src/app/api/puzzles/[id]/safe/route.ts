@@ -67,8 +67,8 @@ export async function POST(
     const guessArr = cleanGuess.split("");
     const usedCode: boolean[] = Array(code.length).fill(false);
     const usedGuess: boolean[] = Array(code.length).fill(false);
-    // per-position hint: "green" = correct digit + position, "yellow" = present but wrong position, "grey" = not in code
-    const hints: string[] = Array(code.length).fill("grey");
+    // per-position hint: "green" = correct digit + position, "yellow" = present but wrong position, "gray" = not in code
+    const hints: string[] = Array(code.length).fill("gray");
 
     let bulls = 0; // correct digit + correct position
     let cows = 0;  // correct digit + wrong position

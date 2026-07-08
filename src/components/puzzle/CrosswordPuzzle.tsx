@@ -1792,7 +1792,7 @@ export default function CrosswordPuzzle({
     };
   }
 
-  // ── Cell colour ────────────────────────────────────────────────────────────
+  // ── Cell color ────────────────────────────────────────────────────────────
   function cellStyle(
     row: number,
     col: number,
