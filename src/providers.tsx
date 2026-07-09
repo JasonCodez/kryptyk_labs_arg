@@ -17,6 +17,7 @@ const Navbar = dynamic(() => import("@/components/Navbar"), { ssr: false });
 const AppSplashScreen = dynamic(() => import("@/components/AppSplashScreen"), { ssr: false });
 const AppBottomNav = dynamic(() => import("@/components/AppBottomNav"), { ssr: false });
 const IOSInstallBanner = dynamic(() => import("@/components/IOSInstallBanner"), { ssr: false });
+const EarlyAccessBanner = dynamic(() => import("@/components/EarlyAccessBanner"), { ssr: false });
 
 let globalSocket: any = null;
 
@@ -315,6 +316,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <GlobalSlotMachineModal />
       <AuthenticatedEffects />
       {!isStandalone && <IOSInstallBanner />}
+      {!isStandalone && <EarlyAccessBanner />}
       {children}
     </SessionProvider>
   );

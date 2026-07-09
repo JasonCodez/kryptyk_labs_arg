@@ -141,8 +141,16 @@ export default function HomeClient() {
           </div>
 
           <div style={{ maxWidth: 580, margin: "0 auto", position: "relative", textAlign: "center" }}>
+            {/* Early access tag */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: "rgba(253,231,76,0.08)", border: "1px solid rgba(253,231,76,0.28)", marginBottom: 10, ...fade(heroVisible, 0) }}>
+              <span aria-hidden style={{ fontSize: 11 }}>🚀</span>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "#FDE74C" }}>
+                Early Access
+              </span>
+            </div>
+
             {/* Badge */}
-            <div className="hw-hero-badge" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(56,211,153,0.08)", border: "1px solid rgba(56,211,153,0.24)", marginBottom: 24, ...fade(heroVisible, 0) }}>
+            <div className="hw-hero-badge" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(56,211,153,0.08)", border: "1px solid rgba(56,211,153,0.24)", marginBottom: 24, ...fade(heroVisible, 0.04) }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#38D399", animation: "pw-pulse-dot 1.5s ease-in-out infinite" }} />
               <span className="hw-badge" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#38D399" }}>
                 Daily Hidden Word is live
