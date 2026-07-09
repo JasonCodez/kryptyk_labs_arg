@@ -247,7 +247,7 @@ export default function HomeClient() {
         <footer style={{ padding: "40px 20px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <div className="hw-footer-inner" style={{ maxWidth: 1100, margin: "0 auto", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 40, marginBottom: 28 }}>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <img src="/images/puzzle_warz_logo.png" alt="PuzzleWarz" style={{ height: 28, width: "auto" }} />
                 <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#38D399" }}>PuzzleWarz</span>
               </div>

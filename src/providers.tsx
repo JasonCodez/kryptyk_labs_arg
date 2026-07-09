@@ -309,7 +309,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <PwaRegistration />
       <AppSplashScreen />
-      {pathname !== '/coming-soon' && !isStandalone && <Navbar />}
+      {pathname !== '/coming-soon' && <Navbar isStandalone={isStandalone} />}
       <AppBottomNav />
       <GlobalAchievementModal />
       <GlobalSlotMachineModal />

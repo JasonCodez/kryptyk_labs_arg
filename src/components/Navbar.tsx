@@ -71,7 +71,21 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-export default function Navbar() {
+// In the installed app (standalone PWA), the top navbar is normally replaced entirely by
+// AppBottomNav's tab bar. But the bottom bar only covers 5 fixed destinations, so on these
+// pages — the individual puzzle-solving view, leaderboards, profile, and home — players had
+// no way to reach Store, Settings, Search, Sign out, etc. Show a compact hamburger trigger
+// (not the full bar) on just these pages so the rest of the app stays reachable.
+function isStandaloneHamburgerPage(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/puzzles/") ||
+    pathname.startsWith("/leaderboards") ||
+    pathname.startsWith("/profile")
+  );
+}
+
+export default function Navbar({ isStandalone = false }: { isStandalone?: boolean }) {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -135,8 +149,40 @@ export default function Navbar() {
 
   const avatarSrc = userInfo?.image || "/images/default-avatar.svg";
 
+  if (isStandalone && !isStandaloneHamburgerPage(pathname)) {
+    return null;
+  }
+
   return (
     <>
+    {isStandalone ? (
+      <button
+        aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+        onClick={() => setMobileOpen(!mobileOpen)}
+        className="flex flex-col justify-center items-center w-10 h-10"
+        style={{
+          position: "fixed",
+          top: "calc(env(safe-area-inset-top, 0px) + 12px)",
+          right: 12,
+          zIndex: 50,
+          borderRadius: 10,
+          backgroundColor: "rgba(6, 8, 14, 0.88)",
+          backdropFilter: "blur(16px) saturate(1.4)",
+          WebkitBackdropFilter: "blur(16px) saturate(1.4)",
+          border: "1px solid rgba(56, 145, 166, 0.25)",
+        }}
+      >
+        <span
+          className={`block h-0.5 w-5 rounded bg-white transition-all duration-300 ${mobileOpen ? 'rotate-45 translate-y-1.5' : ''}`}
+        ></span>
+        <span
+          className={`block h-0.5 w-5 rounded bg-white my-1 transition-all duration-300 ${mobileOpen ? 'opacity-0' : ''}`}
+        ></span>
+        <span
+          className={`block h-0.5 w-5 rounded bg-white transition-all duration-300 ${mobileOpen ? '-rotate-45 -translate-y-1.5' : ''}`}
+        ></span>
+      </button>
+    ) : (
     <nav
       id="global-nav"
       className={`fixed w-full top-0 z-50${mobileOpen ? ' nav-mobile-open' : ''}`}
@@ -418,10 +464,12 @@ export default function Navbar() {
         )}
       </div>
     </nav>
+    )}
 
-    {/* Mobile Menu Overlay */}
+    {/* Mobile Menu Overlay — z above AppBottomNav (z:200) so the drawer isn't obscured by the
+        bottom tab bar when opened from the standalone-mode hamburger trigger. */}
     <div
-      className={`fixed inset-0 z-40 transition-opacity duration-300 ${mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+      className={`fixed inset-0 z-[250] transition-opacity duration-300 ${mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
       style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
       onClick={() => setMobileOpen(false)}
       aria-hidden={!mobileOpen}
@@ -429,7 +477,7 @@ export default function Navbar() {
 
     {/* Mobile Menu Drawer */}
     <div
-      className={`fixed top-0 right-0 h-full w-full sm:w-80 max-w-full z-50 shadow-2xl transform transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      className={`fixed top-0 right-0 h-full w-full sm:w-80 max-w-full z-[260] shadow-2xl transform transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : 'translate-x-full'}`}
       style={{ backgroundColor: '#0a0e14', borderLeft: '1px solid rgba(56,145,166,0.15)', isolation: 'isolate' }}
       role="dialog"
       aria-modal="true"
