@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
 import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
 import JimWyzePuzzle from "@/components/puzzle/JimWyzePuzzle";
@@ -9,7 +10,7 @@ import CrimeCasePuzzle from "@/components/puzzle/CrimeCasePuzzle";
 import ParasiteCodePuzzle from "@/components/puzzle/ParasiteCodePuzzle";
 import GridlockFilePuzzle from "@/components/puzzle/GridlockFilePuzzle";
 import CrackTheSafePuzzle from "@/components/puzzle/CrackTheSafePuzzle";
-import WordCrackPuzzle from "@/components/puzzle/WordCrackPuzzle";
+import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle from "@/components/puzzle/WordSearchPuzzle";
 import CrosswordPuzzle from "@/components/puzzle/CrosswordPuzzle";
 import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
@@ -18,7 +19,19 @@ import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import VaultPuzzle from "@/components/puzzle/VaultPuzzle";
 import CipherClashPuzzle from "@/components/puzzle/CipherClashPuzzle";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
+import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
+
+// The admin puzzle creator persists a few extra tunable fields on jigsaw puzzles
+// (piece-cut shape knobs, an optional fun fact) that aren't part of the strict
+// JigsawPuzzleData type shared with other consumers of that interface.
+type JigsawExtraData = JigsawPuzzleType['data'] & {
+  pieceExtFrac?: number;
+  pieceRFrac?: number;
+  pieceNHalfFrac?: number;
+  pieceShoulderStart?: number;
+  funFact?: string;
+};
 
 type JigsawControlsApi = {
   reset: () => void;
@@ -56,6 +69,10 @@ interface PuzzleTypeRendererProps {
   onSolved: (elapsed?: number, xp?: number) => void;
   onJigsawComplete: (timeSpentSeconds?: number) => Promise<number>;
   onJigsawShowRatingModal: () => void;
+  // Skip-token button — normally rendered below the puzzle by PuzzleProgressSection, which gets
+  // hidden behind the fullscreen overlay. Passed through to PuzzleFullscreenFrame so it stays
+  // reachable while a puzzle is fullscreen.
+  skipControl?: ReactNode;
 }
 
 /**
@@ -77,12 +94,14 @@ export function PuzzleTypeRenderer({
   onSolved,
   onJigsawComplete,
   onJigsawShowRatingModal,
+  skipControl,
 }: PuzzleTypeRendererProps) {
   // Detect the jigsaw image's natural aspect ratio so the play board matches it —
   // otherwise the fixed 640x480 default stretches/squishes non-4:3 images.
   const jigsawBoardDims = useJigsawBoardDims(puzzle.puzzleType === 'jigsaw' ? jigsawPlayable?.imageUrl : null);
 
   if (puzzle.puzzleType === 'jigsaw') {
+    const jigsawExtra = jigsawPlayable?.data as JigsawExtraData | undefined;
     return (
       <div className="mb-8">
         {jigsawPlayable && (
@@ -98,7 +117,7 @@ export function PuzzleTypeRenderer({
                 onClick={() => jigsawControls?.sendLooseToTray?.()}
                 className="w-full sm:w-auto px-3 py-2 rounded bg-yellow-400 text-black border border-yellow-500 hover:opacity-90"
               >
-                Scatter loose pieces
+                Return Loose Pieces
               </button>
             </div>
           </div>
@@ -121,11 +140,11 @@ export function PuzzleTypeRenderer({
               cols={jigsawPlayable.data.gridCols}
               boardWidth={jigsawBoardDims.w}
               boardHeight={jigsawBoardDims.h}
-              pieceExtFrac={typeof (jigsawPlayable.data as any).pieceExtFrac === 'number' ? (jigsawPlayable.data as any).pieceExtFrac : undefined}
-              pieceRFrac={typeof (jigsawPlayable.data as any).pieceRFrac === 'number' ? (jigsawPlayable.data as any).pieceRFrac : undefined}
-              pieceNHalfFrac={typeof (jigsawPlayable.data as any).pieceNHalfFrac === 'number' ? (jigsawPlayable.data as any).pieceNHalfFrac : undefined}
-              pieceShoulderStart={typeof (jigsawPlayable.data as any).pieceShoulderStart === 'number' ? (jigsawPlayable.data as any).pieceShoulderStart : undefined}
-              funFact={typeof (jigsawPlayable.data as any).funFact === 'string' ? (jigsawPlayable.data as any).funFact : undefined}
+              pieceExtFrac={typeof jigsawExtra?.pieceExtFrac === 'number' ? jigsawExtra.pieceExtFrac : undefined}
+              pieceRFrac={typeof jigsawExtra?.pieceRFrac === 'number' ? jigsawExtra.pieceRFrac : undefined}
+              pieceNHalfFrac={typeof jigsawExtra?.pieceNHalfFrac === 'number' ? jigsawExtra.pieceNHalfFrac : undefined}
+              pieceShoulderStart={typeof jigsawExtra?.pieceShoulderStart === 'number' ? jigsawExtra.pieceShoulderStart : undefined}
+              funFact={typeof jigsawExtra?.funFact === 'string' ? jigsawExtra.funFact : undefined}
               onControlsReady={(api) => setJigsawControls(api)}
               suppressInternalCongrats={true}
               onComplete={onJigsawComplete}
@@ -140,31 +159,33 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'escape_room') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
-            ✓ You have already solved this puzzle! Visit the puzzles page to try another one.
-          </div>
-        )}
-        <div className="mb-4">
-          {!teamIdParam && !lobbyIdParam ? (
-            <div className="flex flex-col gap-3 p-4 rounded-lg border" style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.4)", color: "#fca5a5" }}>
-              <span>This escape room requires a team or lobby. Start it from the escape room lobby page.</span>
-              <Link
-                href={`/escape-rooms/${puzzleId}/lobby`}
-                className="inline-block px-4 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium w-fit"
-              >
-                Open Lobby
-              </Link>
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
+              ✓ You have already solved this puzzle! Visit the puzzles page to try another one.
             </div>
-          ) : (
-            <EscapeRoomPuzzle
-              puzzleId={puzzleId}
-              teamId={teamIdParam}
-              lobbyId={lobbyIdParam}
-              onComplete={() => onSolved()}
-            />
           )}
-        </div>
+          <div className="mb-4">
+            {!teamIdParam && !lobbyIdParam ? (
+              <div className="flex flex-col gap-3 p-4 rounded-lg border" style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.4)", color: "#fca5a5" }}>
+                <span>This escape room requires a team or lobby. Start it from the escape room lobby page.</span>
+                <Link
+                  href={`/escape-rooms/${puzzleId}/lobby`}
+                  className="inline-block px-4 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium w-fit"
+                >
+                  Open Lobby
+                </Link>
+              </div>
+            ) : (
+              <EscapeRoomPuzzle
+                puzzleId={puzzleId}
+                teamId={teamIdParam}
+                lobbyId={lobbyIdParam}
+                onComplete={() => onSolved()}
+              />
+            )}
+          </div>
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -172,15 +193,17 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'jim_wyze_case') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
-            ✓ You have already solved this Jim Wyze case! Visit the puzzles page to start the next file.
-          </div>
-        )}
-        <JimWyzePuzzle
-          puzzleId={puzzleId}
-          onComplete={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
+              ✓ You have already solved this Jim Wyze case! Visit the puzzles page to start the next file.
+            </div>
+          )}
+          <JimWyzePuzzle
+            puzzleId={puzzleId}
+            onComplete={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -188,12 +211,14 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'detective_case') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
-            ✓ You have already solved this case.
-          </div>
-        )}
-        <DetectiveCasePuzzle puzzleId={puzzleId} />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
+              ✓ You have already solved this case.
+            </div>
+          )}
+          <DetectiveCasePuzzle puzzleId={puzzleId} />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -201,10 +226,12 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'crime_rpg') {
     return (
       <div className="mb-8">
-        <CrimeCasePuzzle
-          puzzleId={puzzleId}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          <CrimeCasePuzzle
+            puzzleId={puzzleId}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -212,10 +239,12 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'parasite_code') {
     return (
       <div className="mb-8">
-        <ParasiteCodePuzzle
-          puzzleId={puzzleId}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          <ParasiteCodePuzzle
+            puzzleId={puzzleId}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -223,10 +252,12 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'gridlock_file') {
     return (
       <div className="mb-8">
-        <GridlockFilePuzzle
-          puzzleId={puzzleId}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          <GridlockFilePuzzle
+            puzzleId={puzzleId}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -234,19 +265,21 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'crack_safe') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            🔓 You have already cracked this safe!
-          </div>
-        )}
-        <CrackTheSafePuzzle
-          puzzleId={puzzleId}
-          safeData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          failedAttempts={progress?.failedAttempts ?? 0}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              🔓 You have already cracked this safe!
+            </div>
+          )}
+          <CrackTheSafePuzzle
+            puzzleId={puzzleId}
+            safeData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            failedAttempts={progress?.failedAttempts ?? 0}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -254,23 +287,25 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'word_crack') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            🟩 You already solved this one!
-          </div>
-        )}
-        <WordCrackPuzzle
-          puzzleId={puzzleId}
-          wordCrackData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          failedAttempts={progress?.failedAttempts ?? 0}
-          hintTokens={effectiveHintTokens}
-          xpReward={puzzle.xpReward ?? 50}
-          pointsReward={puzzle.solutions?.[0]?.points ?? 100}
-          onHintUsed={onHintUsed}
-          onSolved={(xpGained) => onSolved(undefined, xpGained)}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              🟩 You already solved this one!
+            </div>
+          )}
+          <HiddenWordPuzzle
+            puzzleId={puzzleId}
+            hiddenWordData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            failedAttempts={progress?.failedAttempts ?? 0}
+            hintTokens={effectiveHintTokens}
+            xpReward={puzzle.xpReward ?? 50}
+            pointsReward={puzzle.solutions?.[0]?.points ?? 100}
+            onHintUsed={onHintUsed}
+            onSolved={(xpGained) => onSolved(undefined, xpGained)}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -278,20 +313,22 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'crossword') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            🧩 You already solved this crossword!
-          </div>
-        )}
-        <CrosswordPuzzle
-          puzzleId={puzzleId}
-          crosswordData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          hintTokens={effectiveHintTokens}
-          onHintUsed={onHintUsed}
-          onSolved={(elapsedSeconds) => onSolved(elapsedSeconds)}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              🧩 You already solved this crossword!
+            </div>
+          )}
+          <CrosswordPuzzle
+            puzzleId={puzzleId}
+            crosswordData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            hintTokens={effectiveHintTokens}
+            onHintUsed={onHintUsed}
+            onSolved={(elapsedSeconds) => onSolved(elapsedSeconds)}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -299,20 +336,22 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'word_search') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            🔍 You already found all the words!
-          </div>
-        )}
-        <WordSearchPuzzle
-          puzzleId={puzzleId}
-          wordSearchData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          hintTokens={effectiveHintTokens}
-          onHintUsed={onHintUsed}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              🔍 You already found all the words!
+            </div>
+          )}
+          <WordSearchPuzzle
+            puzzleId={puzzleId}
+            wordSearchData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            hintTokens={effectiveHintTokens}
+            onHintUsed={onHintUsed}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -320,19 +359,21 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'anagram_blitz') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            🔀 You already unscrambled all the words!
-          </div>
-        )}
-        <AnagramBlitz
-          puzzleId={puzzleId}
-          anagramData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          onSolved={() => onSolved()}
-          onFailed={() => {}}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              🔀 You already unscrambled all the words!
+            </div>
+          )}
+          <AnagramBlitz
+            puzzleId={puzzleId}
+            anagramData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            onSolved={() => onSolved()}
+            onFailed={() => {}}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -340,18 +381,20 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'arg') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            🕵️ You already cracked this ARG!
-          </div>
-        )}
-        <ArgPuzzle
-          puzzleId={puzzleId}
-          argData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              🕵️ You already cracked this ARG!
+            </div>
+          )}
+          <ArgPuzzle
+            puzzleId={puzzleId}
+            argData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -378,12 +421,14 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'cipher_clash') {
     return (
       <div className="mb-8">
-        <CipherClashPuzzle
-          puzzleId={puzzleId}
-          cipherClashData={(puzzle.data ?? {}) as Record<string, unknown>}
-          alreadySolved={progress?.solved ?? false}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          <CipherClashPuzzle
+            puzzleId={puzzleId}
+            cipherClashData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }
@@ -391,19 +436,21 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'vault') {
     return (
       <div className="mb-8">
-        {progress?.solved && (
-          <div className="mb-6 p-4 rounded-lg border text-white"
-               style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-            You already opened this vault.
-          </div>
-        )}
-        <VaultPuzzle
-          puzzleId={puzzleId}
-          vaultData={puzzle.data ?? {}}
-          alreadySolved={progress?.solved ?? false}
-          failedAttempts={progress?.failedAttempts ?? 0}
-          onSolved={() => onSolved()}
-        />
+        <PuzzleFullscreenFrame extraControls={skipControl}>
+          {progress?.solved && (
+            <div className="mb-6 p-4 rounded-lg border text-white"
+                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
+              You already opened this vault.
+            </div>
+          )}
+          <VaultPuzzle
+            puzzleId={puzzleId}
+            vaultData={puzzle.data ?? {}}
+            alreadySolved={progress?.solved ?? false}
+            failedAttempts={progress?.failedAttempts ?? 0}
+            onSolved={() => onSolved()}
+          />
+        </PuzzleFullscreenFrame>
       </div>
     );
   }

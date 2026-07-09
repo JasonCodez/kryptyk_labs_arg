@@ -129,7 +129,7 @@ function generateSafeCode(digits: number): string {
   return Array.from({ length: digits }, () => Math.floor(Math.random() * 10)).join("");
 }
 
-// ─── WordScry (daily word puzzle) ─────────────────────────────────────────────
+// ─── Hidden Word (daily word puzzle) ─────────────────────────────────────────────
 
 const WORD_CRACK_WORDS = [
   { word: "CRANE", hint: "A tall lifting machine on a construction site" },
@@ -569,18 +569,18 @@ async function main() {
   }
   console.log(`  ✓ Crack the Safe done\n`);
 
-  // ── 3. WordScry (50) ───────────────────────────────────────────────────
-  console.log("🟩 Seeding WordScry (50)...");
+  // ── 3. Hidden Word (50) ───────────────────────────────────────────────────
+  console.log("🟩 Seeding Hidden Word (50)...");
   for (let i = 0; i < 50; i++) {
     const { word, hint } = WORD_CRACK_WORDS[i % WORD_CRACK_WORDS.length];
     const difficulty: Difficulty = word.length <= 4 ? "easy" : word.length === 5 ? "medium" : "hard";
-    const title = `WordScry #${i + 1}: ${word.length} Letters`;
+    const title = `Hidden Word #${i + 1}: ${word.length} Letters`;
     if (await titleExists(title)) { skipped++; continue; }
     await prisma.puzzle.create({
       data: {
         title,
         description: `Guess the ${word.length}-letter word. You have 6 attempts.`,
-        content: `WordScry: guess the hidden word. Hint: ${hint}`,
+        content: `Hidden Word: guess the hidden word. Hint: ${hint}`,
         categoryId: wordCat.id,
         difficulty,
         isActive: true,
@@ -594,7 +594,7 @@ async function main() {
     });
     total++;
   }
-  console.log(`  ✓ WordScry done\n`);
+  console.log(`  ✓ Hidden Word done\n`);
 
   // ── 4. Word Search (50) ────────────────────────────────────────────────
   console.log("🔍 Seeding Word Search (50)...");

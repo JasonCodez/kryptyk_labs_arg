@@ -4,7 +4,7 @@ import {
   validateCrosswordPuzzleData,
 } from "@/lib/crosswordCore";
 
-function sanitizeWordCrackData(rawData: Record<string, unknown>): Record<string, unknown> {
+function sanitizeHiddenWordData(rawData: Record<string, unknown>): Record<string, unknown> {
   const safeData = { ...rawData };
   const secretWord = String(safeData.word ?? "").trim();
   const inferredLength = secretWord.length || Number(safeData.wordLength ?? 5);
@@ -51,7 +51,7 @@ export function sanitizePublicPuzzleData(puzzleType: unknown, rawData: unknown):
   const data = { ...(rawData as Record<string, unknown>) };
 
   if (normalizedType === "word_crack") {
-    return sanitizeWordCrackData(data);
+    return sanitizeHiddenWordData(data);
   }
 
   if (normalizedType === "crossword") {

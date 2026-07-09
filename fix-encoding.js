@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = 'c:/puzzlewarz/src/components/puzzle/WordCrackPuzzle.tsx';
+const path = 'c:/puzzlewarz/src/components/puzzle/HiddenWordPuzzle.tsx';
 
 // Read as latin1 to get raw bytes as characters
 let c = fs.readFileSync(path, 'latin1');

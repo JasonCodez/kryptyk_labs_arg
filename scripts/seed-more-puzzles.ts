@@ -128,7 +128,7 @@ const WS_XP:     Record<Difficulty, number>   = { easy: 30,  medium: 60,  hard: 
 const WS_GRID:   Record<Difficulty, number>   = { easy: 10,  medium: 12,  hard: 15  };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WORDSCRY DATA — 25 words of varying length
+// HIDDEN WORD DATA — 25 words of varying length
 // ═══════════════════════════════════════════════════════════════════════════════
 interface WcWord { word: string; hint: string; }
 
@@ -691,21 +691,21 @@ async function main() {
   }
   console.log(`  ✓ Word Search done (${WS_SETS.length} puzzles)\n`);
 
-  // ── WordScry (25) ───────────────────────────────────────────────────────────
-  console.log("🟩 Seeding WordScry (25)...");
+  // ── Hidden Word (25) ───────────────────────────────────────────────────────────
+  console.log("🟩 Seeding Hidden Word (25)...");
   for (let i = 0; i < WC_WORDS.length; i++) {
     const { word, hint } = WC_WORDS[i];
     const pts   = wcPoints(word.length);
     const xp    = wcXp(word.length);
     const diff  = wcDiff(word.length);
-    const title = `WordScry Plus #${i + 1}: ${word.length} Letters`;
+    const title = `Hidden Word Plus #${i + 1}: ${word.length} Letters`;
     if (await titleExists(title)) { skipped++; continue; }
 
     await prisma.puzzle.create({
       data: {
         title,
         description: `Guess the ${word.length}-letter word. You have 6 attempts.`,
-        content:     `WordScry: guess the hidden word. Hint: ${hint}`,
+        content:     `Hidden Word: guess the hidden word. Hint: ${hint}`,
         categoryId:  wordCat.id,
         difficulty:  diff,
         isActive:    true,
@@ -719,7 +719,7 @@ async function main() {
     });
     total++;
   }
-  console.log(`  ✓ WordScry done (${WC_WORDS.length} puzzles — 5× 4-letter, 8× 5-letter, 6× 6-letter, 4× 7-letter, 2× 8-letter)\n`);
+  console.log(`  ✓ Hidden Word done (${WC_WORDS.length} puzzles — 5× 4-letter, 8× 5-letter, 6× 6-letter, 4× 7-letter, 2× 8-letter)\n`);
 
   // ── Anagram Blitz (25) ──────────────────────────────────────────────────────
   console.log("🔀 Seeding Anagram Blitz (25)...");
@@ -781,7 +781,7 @@ async function main() {
   console.log(`✅ Seed complete — inserted ${total} puzzles, skipped ${skipped} (already existed).`);
   console.log("\nReward summary:");
   console.log("  Word Search:   easy 50pts/30xp → medium 100pts/60xp → hard 200pts/120xp");
-  console.log("  WordScry:      4L 50/30 → 5L 100/60 → 6L 150/90 → 7L 200/120 → 8L 275/165");
+  console.log("  Hidden Word:   4L 50/30 → 5L 100/60 → 6L 150/90 → 7L 200/120 → 8L 275/165");
   console.log("  Anagram Blitz: easy 50/30 → medium 120/72 → hard 200/120");
   console.log("  Blackout:      easy 75/45 → medium 150/90 → hard 300/180");
 }

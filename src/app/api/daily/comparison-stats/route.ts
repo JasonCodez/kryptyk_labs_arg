@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { validateSameOrigin } from "@/lib/requestSecurity";
-import type { DailyWordScryComparisonStats } from "@/lib/dailyWordScryShare";
+import type { DailyHiddenWordComparisonStats } from "@/lib/dailyHiddenWordShare";
 import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 
 type DailySolverRecord = {
@@ -23,7 +23,7 @@ function rankDailySolvers(left: DailySolverRecord, right: DailySolverRecord): nu
 function buildComparisonStats(
   solvers: DailySolverRecord[],
   currentSolverKey: string
-): DailyWordScryComparisonStats | null {
+): DailyHiddenWordComparisonStats | null {
   const ranked = [...solvers].sort(rankDailySolvers);
   const currentIndex = ranked.findIndex((solver) => solver.key === currentSolverKey);
   if (currentIndex === -1) return null;

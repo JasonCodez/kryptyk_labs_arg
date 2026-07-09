@@ -5,9 +5,9 @@ import { validateSameOrigin } from "@/lib/requestSecurity";
 import { calcLevel } from "@/lib/levels";
 import { awardSeasonXp } from "@/lib/seasonXp";
 import { getXpMultiplier } from "@/lib/getXpMultiplier";
-import { isSolvedWordScryResult, scoreWordScryGuess } from "@/lib/wordScry";
+import { isSolvedHiddenWordResult, scoreHiddenWordGuess } from "@/lib/hiddenWord";
 import { isValidDictionaryWord } from "@/lib/dictionary";
-// WordScry uses a stricter 2-game limit independent of the global MAX_PUZZLE_ATTEMPTS.
+// Hidden Word uses a stricter 2-game limit independent of the global MAX_PUZZLE_ATTEMPTS.
 // First failure: can retry with halved XP/points. Second failure: permanently locked.
 const WORD_CRACK_MAX_ATTEMPTS = 2;
 
@@ -42,7 +42,7 @@ export async function POST(
     const wordleData = (puzzle.data ?? {}) as Record<string, unknown>;
     const word = String(wordleData.word ?? "").toUpperCase().trim();
 
-    // Check 2-attempt limit for WordScry (each full failed game = 1 attempt)
+    // Check 2-attempt limit for Hidden Word (each full failed game = 1 attempt)
     if (!warzMode) {
       const progress = await prisma.userPuzzleProgress.findUnique({
         where: { userId_puzzleId: { userId: currentUser.id, puzzleId } },
@@ -95,8 +95,8 @@ export async function POST(
       );
     }
 
-    const result = scoreWordScryGuess(cleanGuess, word);
-    const solved = isSolvedWordScryResult(result);
+    const result = scoreHiddenWordGuess(cleanGuess, word);
+    const solved = isSolvedHiddenWordResult(result);
 
     // ── Persist progress ─────────────────────────────────────────────────
     if (!warzMode) try {

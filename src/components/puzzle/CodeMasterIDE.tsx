@@ -336,6 +336,10 @@ export default function CodeMasterIDE({
   // Theory panel — open by default when there is theory content
   const [theoryOpen, setTheoryOpen] = React.useState(Boolean(theory));
 
+  // Below the lg breakpoint, editor and preview show one at a time instead of stacking —
+  // stacking both at min-h-[300px] each forces 600px+ of scroll before reaching the console.
+  const [activeMobileTab, setActiveMobileTab] = React.useState<"editor" | "preview">("editor");
+
   // Error console state
   const [errors, setErrors] = React.useState<string[]>([]);
   const [consoleOpen, setConsoleOpen] = React.useState(false);
@@ -405,6 +409,7 @@ export default function CodeMasterIDE({
     setErrors([]);
     setLiveDoc(buildPreviewDoc(fileMap));
     setIsDirty(false);
+    setActiveMobileTab("preview");
   };
 
   const handleFileChange = (value: string) => {
@@ -599,11 +604,37 @@ export default function CodeMasterIDE({
         })}
       </div>
 
+      {/* ── Mobile editor/preview tab toggle (hidden at lg, where both show side by side) ── */}
+      <div className="grid grid-cols-2 lg:hidden border-b border-slate-800">
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab("editor")}
+          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
+            activeMobileTab === "editor"
+              ? "border-indigo-400 text-white bg-slate-950/80"
+              : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+          }`}
+        >
+          Editor
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMobileTab("preview")}
+          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${
+            activeMobileTab === "preview"
+              ? "border-indigo-400 text-white bg-slate-950/80"
+              : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+          }`}
+        >
+          Preview
+        </button>
+      </div>
+
       {/* ── Editor + Preview ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
 
         {/* Editor pane */}
-        <div className="flex flex-col">
+        <div className={`flex-col ${activeMobileTab === "editor" ? "flex" : "hidden"} lg:flex`}>
           <div className="flex items-center justify-between px-4 py-2 bg-slate-900/60 border-b border-slate-800 text-[11px] text-slate-500">
             <span className="font-mono">{activeFile.replace(/^\//, "")}</span>
             {solved
@@ -625,7 +656,7 @@ export default function CodeMasterIDE({
         </div>
 
         {/* Preview pane */}
-        <div className="flex flex-col">
+        <div className={`flex-col ${activeMobileTab === "preview" ? "flex" : "hidden"} lg:flex`}>
           <div className="flex items-center justify-between px-4 py-2 bg-slate-900/60 border-b border-slate-800">
             <span className="text-[11px] text-slate-500 font-mono">preview</span>
             <button

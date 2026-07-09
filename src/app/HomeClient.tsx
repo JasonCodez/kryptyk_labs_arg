@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import HomepageWordScryCard from "@/components/home/HomepageWordScryCard";
+import HomepageHiddenWordCard from "@/components/home/HomepageHiddenWordCard";
 
 function useReveal(threshold = 0.1) {
   const ref = useRef<HTMLDivElement>(null);
@@ -167,7 +167,7 @@ export default function HomeClient() {
                 ...fade(heroVisible, 0.22, 18),
               }}
             >
-              <HomepageWordScryCard />
+              <HomepageHiddenWordCard />
             </div>
 
             {/* Quick links below the card */}

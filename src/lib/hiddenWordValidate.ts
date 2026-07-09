@@ -1,6 +1,6 @@
-export async function isValidWordScryGuess(word: string): Promise<boolean> {
+export async function isValidHiddenWordGuess(word: string): Promise<boolean> {
   try {
-    const res = await fetch(`/api/wordscry/validate?word=${encodeURIComponent(word)}`);
+    const res = await fetch(`/api/hidden-word/validate?word=${encodeURIComponent(word)}`);
     if (!res.ok) return true; // fail-open: don't block play if the check itself errors
     const data = await res.json();
     return data.valid !== false;

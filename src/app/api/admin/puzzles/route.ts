@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       dailySlotDayNumber,
     } = body;
 
-    // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and WordScry
+    // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and Hidden Word
     if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash') {
       return NextResponse.json(
         { error: "Missing required field: title" },

@@ -25,14 +25,19 @@ export function useJigsawBoardDims(imageUrl: string | null | undefined): { w: nu
       if (cancelled) return;
       const { naturalWidth: nw, naturalHeight: nh } = img;
       if (!nw || !nh) {
-        setDims({ w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX * 0.75 });
+        setDims({ w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX });
         return;
       }
+      // The board is always a perfect square — source images are authored 1:1. Scale off
+      // the smaller natural dimension so an accidentally non-square upload still yields a
+      // square board (JigsawPuzzleCanvas center-crops the image to match at draw time)
+      // rather than a stretched/distorted one.
       const scale = Math.min(JIGSAW_BOARD_MAX / nw, JIGSAW_BOARD_MAX / nh, 1);
-      setDims({ w: Math.round(nw * scale), h: Math.round(nh * scale) });
+      const side = Math.round(Math.min(nw, nh) * scale);
+      setDims({ w: side, h: side });
     };
     img.onerror = () => {
-      if (!cancelled) setDims({ w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX * 0.75 });
+      if (!cancelled) setDims({ w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX });
     };
     img.src = imageUrl;
 

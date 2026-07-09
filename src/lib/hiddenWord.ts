@@ -1,13 +1,13 @@
-export type WordScryLetterStatus = "correct" | "present" | "absent";
+export type HiddenWordLetterStatus = "correct" | "present" | "absent";
 
-export interface WordScryGuessResult {
+export interface HiddenWordGuessResult {
   letter: string;
-  status: WordScryLetterStatus;
+  status: HiddenWordLetterStatus;
 }
 
-export type WordScryGameStatus = "playing" | "won" | "lost";
+export type HiddenWordGameStatus = "playing" | "won" | "lost";
 
-interface StoredWordScryState {
+interface StoredHiddenWordState {
   status?: unknown;
   guessResults?: unknown;
   guesses?: unknown;
@@ -17,24 +17,24 @@ function normalizeWord(value: string): string {
   return value.toUpperCase().trim();
 }
 
-function isGameStatus(value: unknown): value is WordScryGameStatus {
+function isGameStatus(value: unknown): value is HiddenWordGameStatus {
   return value === "playing" || value === "won" || value === "lost";
 }
 
-function isGuessResult(value: unknown): value is WordScryGuessResult {
+function isGuessResult(value: unknown): value is HiddenWordGuessResult {
   if (!value || typeof value !== "object") return false;
   const candidate = value as { letter?: unknown; status?: unknown };
   return typeof candidate.letter === "string"
     && (candidate.status === "correct" || candidate.status === "present" || candidate.status === "absent");
 }
 
-export function scoreWordScryGuess(guess: string, answer: string): WordScryGuessResult[] {
+export function scoreHiddenWordGuess(guess: string, answer: string): HiddenWordGuessResult[] {
   const normalizedGuess = normalizeWord(guess);
   const normalizedAnswer = normalizeWord(answer);
 
   const answerChars = normalizedAnswer.split("");
   const guessChars = normalizedGuess.split("");
-  const result: WordScryGuessResult[] = guessChars.map((letter) => ({
+  const result: HiddenWordGuessResult[] = guessChars.map((letter) => ({
     letter,
     status: "absent",
   }));
@@ -66,22 +66,22 @@ export function scoreWordScryGuess(guess: string, answer: string): WordScryGuess
   return result;
 }
 
-export function isSolvedWordScryResult(result: WordScryGuessResult[]): boolean {
+export function isSolvedHiddenWordResult(result: HiddenWordGuessResult[]): boolean {
   return result.length > 0 && result.every((letter) => letter.status === "correct");
 }
 
-export function serializeWordScryState(guessResults: WordScryGuessResult[][], status: WordScryGameStatus): string {
+export function serializeHiddenWordState(guessResults: HiddenWordGuessResult[][], status: HiddenWordGameStatus): string {
   return JSON.stringify({ guessResults, status });
 }
 
-export function parseStoredWordScryState(raw: string | null, answer: string): {
-  guessResults: WordScryGuessResult[][];
-  status: WordScryGameStatus;
+export function parseStoredHiddenWordState(raw: string | null, answer: string): {
+  guessResults: HiddenWordGuessResult[][];
+  status: HiddenWordGameStatus;
 } | null {
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as StoredWordScryState;
+    const parsed = JSON.parse(raw) as StoredHiddenWordState;
     const status = isGameStatus(parsed.status) ? parsed.status : "playing";
 
     if (Array.isArray(parsed.guessResults)) {
@@ -97,7 +97,7 @@ export function parseStoredWordScryState(raw: string | null, answer: string): {
     if (Array.isArray(parsed.guesses)) {
       const guessResults = parsed.guesses
         .filter((guess): guess is string => typeof guess === "string")
-        .map((guess) => scoreWordScryGuess(guess, answer));
+        .map((guess) => scoreHiddenWordGuess(guess, answer));
 
       if (guessResults.length > 0) {
         return { guessResults, status };

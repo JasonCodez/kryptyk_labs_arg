@@ -3,20 +3,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import DailyWordScrySharePanel from '@/components/daily/DailyWordScrySharePanel';
-import WordCrackPuzzle from '@/components/puzzle/WordCrackPuzzle';
+import DailyHiddenWordSharePanel from '@/components/daily/DailyHiddenWordSharePanel';
+import HiddenWordPuzzle from '@/components/puzzle/HiddenWordPuzzle';
 import GuestRewardModal from '@/components/puzzle/GuestRewardModal';
 import { addPendingRewards, getAnonId } from '@/lib/gridlockAnon';
 import { useReferralLink } from '@/hooks/useReferralLink';
-import { isValidWordScryGuess } from '@/lib/wordScryValidate';
+import { isValidHiddenWordGuess } from '@/lib/hiddenWordValidate';
 import {
-  isSolvedWordScryResult,
-  parseStoredWordScryState,
-  scoreWordScryGuess,
-  serializeWordScryState,
-  type WordScryGameStatus,
-  type WordScryGuessResult,
-} from '@/lib/wordScry';
+  isSolvedHiddenWordResult,
+  parseStoredHiddenWordState,
+  scoreHiddenWordGuess,
+  serializeHiddenWordState,
+  type HiddenWordGameStatus,
+  type HiddenWordGuessResult,
+} from '@/lib/hiddenWord';
 
 type DailyWordResponse = {
   word: string;
@@ -41,7 +41,7 @@ function getCountdownText() {
   return `${hours}:${minutes}:${seconds}`;
 }
 
-export default function HomepageWordScryCard() {
+export default function HomepageHiddenWordCard() {
   const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === 'authenticated';
   const sessionUid = session?.user?.email ?? session?.user?.name ?? '';
@@ -55,8 +55,8 @@ export default function HomepageWordScryCard() {
   const [dailyStreak, setDailyStreak] = useState(0);
   const [nextReward, setNextReward] = useState<{ points: number; xp: number } | null>(null);
   const [guestReward, setGuestReward] = useState<DailyReward | null>(null);
-  const [guessResults, setGuessResults] = useState<WordScryGuessResult[][]>([]);
-  const [gameStatus, setGameStatus] = useState<WordScryGameStatus>('playing');
+  const [guessResults, setGuessResults] = useState<HiddenWordGuessResult[][]>([]);
+  const [gameStatus, setGameStatus] = useState<HiddenWordGameStatus>('playing');
 
   const dateKey = new Date().toISOString().slice(0, 10);
   const storeKey = sessionUid ? `pw_daily_${dateKey}_${sessionUid}` : `pw_daily_${dateKey}`;
@@ -85,7 +85,7 @@ export default function HomepageWordScryCard() {
         setWord(data.word.toUpperCase());
         setDayNum(data.number);
 
-        const saved = parseStoredWordScryState(localStorage.getItem(storeKey), data.word);
+        const saved = parseStoredHiddenWordState(localStorage.getItem(storeKey), data.word);
         setGuessResults(saved?.guessResults ?? []);
         setGameStatus(saved?.status ?? 'playing');
       })
@@ -118,8 +118,8 @@ export default function HomepageWordScryCard() {
       .catch(() => undefined);
   }, [isAuthenticated]);
 
-  const saveState = useCallback((results: WordScryGuessResult[][], status: WordScryGameStatus) => {
-    localStorage.setItem(storeKey, serializeWordScryState(results, status));
+  const saveState = useCallback((results: HiddenWordGuessResult[][], status: HiddenWordGameStatus) => {
+    localStorage.setItem(storeKey, serializeHiddenWordState(results, status));
   }, [storeKey]);
 
   const recordAuthenticatedCompletion = useCallback(async (won: boolean, guessCount: number) => {
@@ -169,7 +169,7 @@ export default function HomepageWordScryCard() {
     }
   }, []);
 
-  const handleStateChange = useCallback((payload: { guesses: WordScryGuessResult[][]; status: WordScryGameStatus }) => {
+  const handleStateChange = useCallback((payload: { guesses: HiddenWordGuessResult[][]; status: HiddenWordGameStatus }) => {
     setGuessResults(payload.guesses);
     setGameStatus(payload.status);
     saveState(payload.guesses, payload.status);
@@ -226,10 +226,10 @@ export default function HomepageWordScryCard() {
           </div>
         ) : (
           <>
-            <WordCrackPuzzle
+            <HiddenWordPuzzle
               key={`${storeKey}:${dayNum}`}
               puzzleId={`homepage-daily-${dayNum}`}
-              wordCrackData={{ wordLength: word.length || 5, maxGuesses: 6 }}
+              hiddenWordData={{ wordLength: word.length || 5, maxGuesses: 6 }}
               alreadySolved={gameStatus === 'won'}
               initialGuesses={guessResults}
               initialStatus={gameStatus}
@@ -240,11 +240,11 @@ export default function HomepageWordScryCard() {
               recordGameLossOnFailure={false}
               showAnimatedBackdrops={false}
               submitGuessRequest={async (guess) => {
-                if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidWordScryGuess(guess))) {
+                if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidHiddenWordGuess(guess))) {
                   return { error: "Not a valid word" };
                 }
-                const result = scoreWordScryGuess(guess, word);
-                return { result, solved: isSolvedWordScryResult(result) };
+                const result = scoreHiddenWordGuess(guess, word);
+                return { result, solved: isSolvedHiddenWordResult(result) };
               }}
               onStateChange={handleStateChange}
               onRoundComplete={({ status, guesses }) => {
@@ -259,7 +259,7 @@ export default function HomepageWordScryCard() {
 
             {gameStatus !== 'playing' && guessResults.length > 0 && (
               <div style={{ marginTop: 12, marginBottom: 4 }}>
-                <DailyWordScrySharePanel
+                <DailyHiddenWordSharePanel
                   puzzleNumber={dayNum}
                   guessResults={guessResults}
                   gameStatus={gameStatus}

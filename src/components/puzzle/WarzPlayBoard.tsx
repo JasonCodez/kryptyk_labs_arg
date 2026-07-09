@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import SudokuGrid from "@/components/puzzle/SudokuGrid";
-import WordCrackPuzzle from "@/components/puzzle/WordCrackPuzzle";
+import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle from "@/components/puzzle/WordSearchPuzzle";
 import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
 import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
@@ -212,9 +212,9 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
     switch (puzzle.puzzleType) {
       case "word_crack":
         return (
-          <WordCrackPuzzle
+          <HiddenWordPuzzle
             puzzleId={puzzle.id}
-            wordCrackData={puzzle.data ?? {}}
+            hiddenWordData={puzzle.data ?? {}}
             alreadySolved={false}
             warzMode
             onSolved={() => handleSolved()}

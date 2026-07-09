@@ -3,18 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAnonId } from "@/lib/gridlockAnon";
 import {
-  DAILY_WORDSCRY_SNAPSHOT_HEIGHT,
-  DAILY_WORDSCRY_SNAPSHOT_WIDTH,
-  type DailyWordScryComparisonStats,
-  buildDailyWordScryShareText,
-  buildDailyWordScrySnapshotSvg,
-} from "@/lib/dailyWordScryShare";
-import type { WordScryGameStatus, WordScryGuessResult } from "@/lib/wordScry";
+  DAILY_HIDDENWORD_SNAPSHOT_HEIGHT,
+  DAILY_HIDDENWORD_SNAPSHOT_WIDTH,
+  type DailyHiddenWordComparisonStats,
+  buildDailyHiddenWordShareText,
+  buildDailyHiddenWordSnapshotSvg,
+} from "@/lib/dailyHiddenWordShare";
+import type { HiddenWordGameStatus, HiddenWordGuessResult } from "@/lib/hiddenWord";
 
-interface DailyWordScrySharePanelProps {
+interface DailyHiddenWordSharePanelProps {
   puzzleNumber: number;
-  guessResults: WordScryGuessResult[][];
-  gameStatus: WordScryGameStatus;
+  guessResults: HiddenWordGuessResult[][];
+  gameStatus: HiddenWordGameStatus;
   maxGuesses: number;
   wordLength: number;
   dailyStreak?: number;
@@ -23,7 +23,7 @@ interface DailyWordScrySharePanelProps {
 
 type DailyComparisonStatsResponse = {
   available?: boolean;
-  comparison?: DailyWordScryComparisonStats | null;
+  comparison?: DailyHiddenWordComparisonStats | null;
 };
 
 function svgToDataUrl(svg: string): string {
@@ -44,8 +44,8 @@ async function svgToPngBlob(svg: string): Promise<Blob> {
     });
 
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth || DAILY_WORDSCRY_SNAPSHOT_WIDTH;
-    canvas.height = image.naturalHeight || DAILY_WORDSCRY_SNAPSHOT_HEIGHT;
+    canvas.width = image.naturalWidth || DAILY_HIDDENWORD_SNAPSHOT_WIDTH;
+    canvas.height = image.naturalHeight || DAILY_HIDDENWORD_SNAPSHOT_HEIGHT;
 
     const context = canvas.getContext("2d");
     if (!context) {
@@ -68,7 +68,7 @@ async function svgToPngBlob(svg: string): Promise<Blob> {
   }
 }
 
-export default function DailyWordScrySharePanel({
+export default function DailyHiddenWordSharePanel({
   puzzleNumber,
   guessResults,
   gameStatus,
@@ -76,10 +76,10 @@ export default function DailyWordScrySharePanel({
   wordLength,
   dailyStreak = 0,
   shareUrl = "https://puzzlewarz.com/daily",
-}: DailyWordScrySharePanelProps) {
+}: DailyHiddenWordSharePanelProps) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
-  const [comparisonStats, setComparisonStats] = useState<DailyWordScryComparisonStats | null>(null);
+  const [comparisonStats, setComparisonStats] = useState<DailyHiddenWordComparisonStats | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
 
   useEffect(() => {
@@ -115,7 +115,7 @@ export default function DailyWordScrySharePanel({
     };
   }, [gameStatus, puzzleNumber]);
 
-  const shareText = useMemo(() => buildDailyWordScryShareText({
+  const shareText = useMemo(() => buildDailyHiddenWordShareText({
     puzzleNumber,
     guessResults,
     gameStatus,
@@ -124,7 +124,7 @@ export default function DailyWordScrySharePanel({
     comparison: comparisonStats,
   }), [comparisonStats, dailyStreak, gameStatus, guessResults, maxGuesses, puzzleNumber]);
 
-  const snapshotSvg = useMemo(() => buildDailyWordScrySnapshotSvg({
+  const snapshotSvg = useMemo(() => buildDailyHiddenWordSnapshotSvg({
     puzzleNumber,
     guessResults,
     gameStatus,

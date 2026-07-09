@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import {
-  isSolvedWordScryResult,
-  type WordScryGameStatus,
-  type WordScryGuessResult,
-} from "@/lib/wordScry";
+  isSolvedHiddenWordResult,
+  type HiddenWordGameStatus,
+  type HiddenWordGuessResult,
+} from "@/lib/hiddenWord";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -18,7 +18,7 @@ const RetroBackground = dynamic(() => import("@/components/RetroBackground"), { 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type LetterStatus = "correct" | "present" | "absent";
-type GuessResult = WordScryGuessResult;
+type GuessResult = HiddenWordGuessResult;
 
 interface SubmitGuessResponse {
   result?: GuessResult[];
@@ -34,11 +34,11 @@ interface SubmitGuessResponse {
 
 interface Props {
   puzzleId: string;
-  wordCrackData: Record<string, unknown>;
+  hiddenWordData: Record<string, unknown>;
   onSolved?: (xpGained?: number) => void;
   onFailed?: () => void;
   onRoundComplete?: (payload: { status: "won" | "lost"; guesses: number; results: GuessResult[][]; xpGained?: number }) => void;
-  onStateChange?: (payload: { guesses: GuessResult[][]; status: WordScryGameStatus }) => void;
+  onStateChange?: (payload: { guesses: GuessResult[][]; status: HiddenWordGameStatus }) => void;
   alreadySolved?: boolean;
   warzMode?: boolean;
   failedAttempts?: number;
@@ -48,7 +48,7 @@ interface Props {
   pointsReward?: number;
   submitGuessRequest?: (guess: string) => Promise<SubmitGuessResponse>;
   initialGuesses?: GuessResult[][];
-  initialStatus?: WordScryGameStatus;
+  initialStatus?: HiddenWordGameStatus;
   showHints?: boolean;
   disableRetry?: boolean;
   recordGameLossOnFailure?: boolean;
@@ -197,9 +197,9 @@ function InstructionsModal({ wordLength, maxGuesses, onClose }: { wordLength: nu
 
 // â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export default function WordCrackPuzzle({
+export default function HiddenWordPuzzle({
   puzzleId,
-  wordCrackData,
+  hiddenWordData,
   onSolved,
   onFailed,
   onRoundComplete,
@@ -223,16 +223,16 @@ export default function WordCrackPuzzle({
   solvedGuessCount,
 }: Props) {
   const skin = usePuzzleSkin();
-  const wordLength = Math.max(3, Math.min(10, Number(wordCrackData.wordLength ?? 5)));
-  const maxGuesses = Math.max(1, Math.min(10, Number(wordCrackData.maxGuesses ?? 6)));
-  const hint = String(wordCrackData.hint ?? "");
+  const wordLength = Math.max(3, Math.min(10, Number(hiddenWordData.wordLength ?? 5)));
+  const maxGuesses = Math.max(1, Math.min(10, Number(hiddenWordData.maxGuesses ?? 6)));
+  const hint = String(hiddenWordData.hint ?? "");
   const MAX_ATTEMPTS = 2;
   const initialGameStatus = initialStatus ?? (alreadySolved ? "won" : "playing");
 
   const [showInstructions, setShowInstructions] = useState(!alreadySolved && initialGuesses.length === 0 && initialGameStatus === "playing");
   const [guesses, setGuesses] = useState<GuessResult[][]>(initialGuesses);
   const [currentInput, setCurrentInput] = useState<string>("");
-  const [gameStatus, setGameStatus] = useState<WordScryGameStatus>(initialGameStatus);
+  const [gameStatus, setGameStatus] = useState<HiddenWordGameStatus>(initialGameStatus);
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   // Synchronous re-entrancy guard for submitGuess. `submitting` (React state) isn't updated

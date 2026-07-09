@@ -265,7 +265,7 @@ const FORUM_TITLES = [
   "Tips for the harder riddles?",
   "Anyone else stuck on the ARG puzzle?",
   "This game is actually making me smarter lmao",
-  "WordScry tips for beginners",
+  "Hidden Word tips for beginners",
   "My strategy for expert difficulty puzzles",
   "New to Puzzle Warz - where do I start?",
   "The Detective case was absolutely insane",
@@ -289,7 +289,7 @@ const FORUM_TITLES = [
 ];
 const FORUM_CONTENTS = [
   "Really loving this platform. The puzzles are challenging but fair. Been playing for about a month now and my logical thinking has definitely improved.",
-  "Pro tip: for WordScry, always start with the most common letters. E, A, R, I, O, T. Work outward from there.",
+  "Pro tip: for Hidden Word, always start with the most common letters. E, A, R, I, O, T. Work outward from there.",
   "The escape room was WAY harder than I expected. Took my team nearly 3 hours but we finally made it through stage 5.",
   "Anyone know if there's a time limit on the ARG puzzles? I keep running out of ideas and having to step away.",
   "Just unlocked the Gold Frame cosmetic and honestly my profile looks fire now 👑",
@@ -321,7 +321,7 @@ const FORUM_COMMENTS = [
   "The weekly leaderboard grind is intense, good luck to everyone competing!",
   "Level 15 is a huge milestone, congrats! 🎉",
   "I've been playing since day 1 and the platform keeps getting better.",
-  "For WordScry, also try thinking about less common letters that could unlock entire sections.",
+  "For Hidden Word, also try thinking about less common letters that could unlock entire sections.",
   "Legend status confirmed, the escape room is genuinely difficult.",
   "The Warz challenges are addictive, fair warning lol",
   "Daily streak at 45 here. The Streak Shield item has saved me twice already!",

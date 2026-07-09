@@ -44,8 +44,8 @@ export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Pr
     return () => clearTimeout(t);
   }, []);
 
-  const isWordCrack = stats.puzzleType === "word_crack";
-  const hasGuessData = isWordCrack && stats.userGuesses !== null && stats.avgGuesses !== null;
+  const isHiddenWord = stats.puzzleType === "word_crack";
+  const hasGuessData = isHiddenWord && stats.userGuesses !== null && stats.avgGuesses !== null;
   const hasPercentile = stats.guessPercentile !== null;
 
   const puzzleUrl = `https://puzzlewarz.com/puzzles/${puzzleId}`;
@@ -135,7 +135,7 @@ export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Pr
           </p>
         </div>
 
-        {/* WordScry — guess comparison */}
+        {/* Hidden Word — guess comparison */}
         {hasGuessData && (
           <div
             className="rounded-xl p-4"
@@ -178,7 +178,7 @@ export default function PuzzleComparisonModal({ puzzleId, stats, onDismiss }: Pr
           </div>
         )}
 
-        {/* Percentile ranking bar (WordScry only) */}
+        {/* Percentile ranking bar (Hidden Word only) */}
         {hasPercentile && (
           <div>
             <div className="flex justify-between text-xs mb-2" style={{ color: "#9ca3af" }}>

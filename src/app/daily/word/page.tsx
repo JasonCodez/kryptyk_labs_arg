@@ -3,21 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Navbar from "@/components/Navbar";
-import DailyWordScrySharePanel from "@/components/daily/DailyWordScrySharePanel";
+import DailyHiddenWordSharePanel from "@/components/daily/DailyHiddenWordSharePanel";
 import GuestRewardModal from "@/components/puzzle/GuestRewardModal";
 import StreakTimer from "@/components/StreakTimer";
-import WordCrackPuzzle from "@/components/puzzle/WordCrackPuzzle";
+import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import { addPendingRewards, getAnonId } from "@/lib/gridlockAnon";
 import { useReferralLink } from "@/hooks/useReferralLink";
-import { isValidWordScryGuess } from "@/lib/wordScryValidate";
+import { isValidHiddenWordGuess } from "@/lib/hiddenWordValidate";
 import {
-  isSolvedWordScryResult,
-  parseStoredWordScryState,
-  scoreWordScryGuess,
-  serializeWordScryState,
-  type WordScryGameStatus,
-  type WordScryGuessResult,
-} from "@/lib/wordScry";
+  isSolvedHiddenWordResult,
+  parseStoredHiddenWordState,
+  scoreHiddenWordGuess,
+  serializeHiddenWordState,
+  type HiddenWordGameStatus,
+  type HiddenWordGuessResult,
+} from "@/lib/hiddenWord";
 
 const MAX_ROWS = 6;
 const WIN_MSGS = ["⚡ LEGENDARY!", "🔮 SHARP EYE!", "💥 IMPRESSIVE!", "👏 NICE WORK!", "😅 JUST MADE IT!", "😤 BY A THREAD!"];
@@ -58,8 +58,8 @@ export default function DailyPage() {
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState("00:00:00");
   const [message, setMessage] = useState("");
-  const [guessResults, setGuessResults] = useState<WordScryGuessResult[][]>([]);
-  const [gameStatus, setGameStatus] = useState<WordScryGameStatus>("playing");
+  const [guessResults, setGuessResults] = useState<HiddenWordGuessResult[][]>([]);
+  const [gameStatus, setGameStatus] = useState<HiddenWordGameStatus>("playing");
   const [guestReward, setGuestReward] = useState<DailyReward | null>(null);
   const [dailyStreak, setDailyStreak] = useState(0);
   const [skipTokens, setSkipTokens] = useState(0);
@@ -103,12 +103,12 @@ export default function DailyPage() {
         setWord(wordData.word.toUpperCase());
         setDayNum(wordData.number);
 
-        const saved = parseStoredWordScryState(localStorage.getItem(storeKey), wordData.word);
+        const saved = parseStoredHiddenWordState(localStorage.getItem(storeKey), wordData.word);
         const serverCompleted = completeData?.completedToday || guestData?.completedToday;
         const serverRecord = completeData?.todayRecord ?? guestData?.todayRecord;
 
         if (serverCompleted && serverRecord) {
-          const serverStatus: WordScryGameStatus = serverRecord.won ? "won" : "lost";
+          const serverStatus: HiddenWordGameStatus = serverRecord.won ? "won" : "lost";
           const resolvedGuesses = saved?.guessResults ?? [];
           setGuessResults(resolvedGuesses);
           setGameStatus(serverStatus);
@@ -116,7 +116,7 @@ export default function DailyPage() {
             setServerGuessCount(serverRecord.guesses);
           }
           if (!saved || saved.status === "playing") {
-            localStorage.setItem(storeKey, serializeWordScryState(resolvedGuesses, serverStatus));
+            localStorage.setItem(storeKey, serializeHiddenWordState(resolvedGuesses, serverStatus));
           }
         } else {
           setGuessResults(saved?.guessResults ?? []);
@@ -138,8 +138,8 @@ export default function DailyPage() {
     };
   }, [storeKey]);
 
-  const saveState = useCallback((results: WordScryGuessResult[][], status: WordScryGameStatus) => {
-    localStorage.setItem(storeKey, serializeWordScryState(results, status));
+  const saveState = useCallback((results: HiddenWordGuessResult[][], status: HiddenWordGameStatus) => {
+    localStorage.setItem(storeKey, serializeHiddenWordState(results, status));
   }, [storeKey]);
 
   const flash = useCallback((text: string) => {
@@ -226,7 +226,7 @@ export default function DailyPage() {
     }
   }, [flash, gameStatus, guessResults, saveState, skipTokens, skipping]);
 
-  const handleStateChange = useCallback((payload: { guesses: WordScryGuessResult[][]; status: WordScryGameStatus }) => {
+  const handleStateChange = useCallback((payload: { guesses: HiddenWordGuessResult[][]; status: HiddenWordGameStatus }) => {
     setGuessResults(payload.guesses);
     setGameStatus(payload.status);
     saveState(payload.guesses, payload.status);
@@ -286,10 +286,10 @@ export default function DailyPage() {
         ) : (
           <>
             <div className="w-full max-w-3xl">
-              <WordCrackPuzzle
+              <HiddenWordPuzzle
                 key={`${storeKey}:${dayNum}`}
                 puzzleId={`daily-${dayNum}`}
-                wordCrackData={{ wordLength: word.length || 5, maxGuesses: MAX_ROWS }}
+                hiddenWordData={{ wordLength: word.length || 5, maxGuesses: MAX_ROWS }}
                 alreadySolved={gameStatus === "won"}
                 initialGuesses={guessResults}
                 initialStatus={gameStatus}
@@ -298,11 +298,11 @@ export default function DailyPage() {
                 recordGameLossOnFailure={false}
                 solvedGuessCount={serverGuessCount ?? undefined}
                 submitGuessRequest={async (guess) => {
-                  if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidWordScryGuess(guess))) {
+                  if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidHiddenWordGuess(guess))) {
                     return { error: "Not a valid word" };
                   }
-                  const result = scoreWordScryGuess(guess, word);
-                  return { result, solved: isSolvedWordScryResult(result) };
+                  const result = scoreHiddenWordGuess(guess, word);
+                  return { result, solved: isSolvedHiddenWordResult(result) };
                 }}
                 onStateChange={handleStateChange}
                 onRoundComplete={({ status, guesses }) => {
@@ -350,7 +350,7 @@ export default function DailyPage() {
 
                 {guessResults.length > 0 ? (
                   <div className="w-full max-w-3xl mt-5">
-                    <DailyWordScrySharePanel
+                    <DailyHiddenWordSharePanel
                       puzzleNumber={dayNum}
                       guessResults={guessResults}
                       gameStatus={gameStatus}
