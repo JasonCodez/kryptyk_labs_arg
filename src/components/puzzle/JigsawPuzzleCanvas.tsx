@@ -749,6 +749,84 @@ export default function JigsawPuzzleSVGWithTray({
     });
   }, []);
 
+  // Tray scrollbar — on mobile, every piece thumbnail sets touchAction:"none" so a pointerdown
+  // on it can be interpreted as "pick this piece up" rather than a native scroll gesture; since
+  // the tray is wall-to-wall thumbnails, that makes swiping across it to browse pieces
+  // unreliable. A persistent draggable bar below the tray is a separate touch target that
+  // doesn't overlap any piece, so it sidesteps that ambiguity entirely instead of trying to
+  // coexist with it.
+  const trayThumbRef = useRef<HTMLDivElement>(null);
+  const [trayThumbGeometry, setTrayThumbGeometry] = useState<{ leftPct: number; widthPct: number } | null>(null);
+  const trayThumbDragRef = useRef<{ active: boolean; pointerId: number | null; startX: number; startScrollLeft: number; scale: number }>(
+    { active: false, pointerId: null, startX: 0, startScrollLeft: 0, scale: 1 }
+  );
+  const updateTrayScrollState = useCallback(() => {
+    const el = trayStripRef.current;
+    if (!el) return;
+    const { scrollWidth, clientWidth, scrollLeft } = el;
+    if (scrollWidth <= clientWidth + 4) {
+      setTrayThumbGeometry(null);
+      return;
+    }
+    const widthPct = Math.max(8, (clientWidth / scrollWidth) * 100);
+    const maxLeftPct = 100 - widthPct;
+    const leftPct = maxLeftPct > 0 ? (scrollLeft / (scrollWidth - clientWidth)) * maxLeftPct : 0;
+    setTrayThumbGeometry({ leftPct, widthPct });
+  }, []);
+  useEffect(() => {
+    updateTrayScrollState();
+    const el = trayStripRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", updateTrayScrollState, { passive: true });
+    window.addEventListener("resize", updateTrayScrollState);
+    return () => {
+      el.removeEventListener("scroll", updateTrayScrollState);
+      window.removeEventListener("resize", updateTrayScrollState);
+    };
+  }, [trayOrder.length, updateTrayScrollState]);
+
+  const onTrayThumbPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const trayEl = trayStripRef.current;
+    if (!trayEl) return;
+    const trackWidth = e.currentTarget.parentElement?.clientWidth ?? 1;
+    const thumbWidthPx = e.currentTarget.clientWidth;
+    // Content scrolls (scrollWidth - clientWidth)px over a track the thumb can travel
+    // (trackWidth - thumbWidthPx)px — scale maps thumb-drag pixels to scrollLeft pixels.
+    const scrollRange = trayEl.scrollWidth - trayEl.clientWidth;
+    const trackRange = Math.max(1, trackWidth - thumbWidthPx);
+    trayThumbDragRef.current = {
+      active: true,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startScrollLeft: trayEl.scrollLeft,
+      scale: scrollRange / trackRange,
+    };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    e.preventDefault();
+  }, []);
+  const onTrayThumbPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = trayThumbDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    const trayEl = trayStripRef.current;
+    if (!trayEl) return;
+    const dx = e.clientX - drag.startX;
+    trayEl.scrollLeft = drag.startScrollLeft + dx * drag.scale;
+  }, []);
+  const onTrayThumbPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (trayThumbDragRef.current.pointerId !== e.pointerId) return;
+    trayThumbDragRef.current.active = false;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+  }, []);
+  // Tapping the empty track (not the thumb itself) jumps the nearest edge of the thumb there.
+  const onTrayTrackPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return; // let the thumb's own handler take taps on itself
+    const trayEl = trayStripRef.current;
+    if (!trayEl) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickFrac = (e.clientX - rect.left) / rect.width;
+    trayEl.scrollLeft = clickFrac * (trayEl.scrollWidth - trayEl.clientWidth);
+  }, []);
+
   // Drag
   const dragRef = useRef<{
     active: boolean; pointerId: number | null;
@@ -2754,44 +2832,74 @@ export default function JigsawPuzzleSVGWithTray({
       </div>
 
       {/* ── Tray strip ───────────────────────────────── */}
-      <div
-        ref={trayStripRef}
-        style={{
-          flexShrink: 0,
-          height: TRAY_H,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          overflowX: "auto",
-          overflowY: "hidden",
-          touchAction: "pan-x",
-          WebkitOverflowScrolling: "touch",
-          padding: "12px 14px",
-          background: "rgba(255,255,255,0.03)",
-          borderTop: "1px solid rgba(255,255,255,0.1)",
-        }}
-      >
-        {trayOrder.length === 0 && (
-          <div style={{ margin: "0 auto", color: "rgba(255,255,255,0.35)", fontSize: 13, fontStyle: "italic" }}>
-            {isSolved ? "Puzzle complete!" : "All pieces are on the board"}
+      <div style={{ position: "relative", flexShrink: 0 }}>
+        <div
+          ref={trayStripRef}
+          className="no-scrollbar"
+          style={{
+            flexShrink: 0,
+            height: TRAY_H,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            overflowX: "auto",
+            overflowY: "hidden",
+            touchAction: "pan-x",
+            WebkitOverflowScrolling: "touch",
+            padding: "12px 14px",
+            background: "rgba(255,255,255,0.03)",
+            borderTop: "1px solid rgba(255,255,255,0.1)",
+          }}
+        >
+          {trayOrder.length === 0 && (
+            <div style={{ margin: "0 auto", color: "rgba(255,255,255,0.35)", fontSize: 13, fontStyle: "italic" }}>
+              {isSolved ? "Puzzle complete!" : "All pieces are on the board"}
+            </div>
+          )}
+          {trayOrder.map((groupId, i) => (
+            <TrayPieceThumb
+              key={groupId}
+              groupId={groupId}
+              members={piecesByGroup.get(groupId) ?? []}
+              pw={pw} ph={ph}
+              pathCache={pathCacheRef.current}
+              img={imageOk ? imgRef.current : null}
+              gridW={gridW} gridH={gridH}
+              rows={rows} cols={cols}
+              cellPx={trayCellPx}
+              onPick={beginDragFromTray}
+              registerNode={registerTrayNode}
+              shiftPx={trayInsertIndex !== null && i >= trayInsertIndex ? ghostTraySizeRef.current.w + 10 : 0}
+            />
+          ))}
+        </div>
+
+        {/* Persistent draggable scrollbar — its own touch target below the tray, entirely
+            separate from the piece thumbnails, so it never competes with picking a piece up. */}
+        {trayThumbGeometry && (
+          <div
+            onPointerDown={onTrayTrackPointerDown}
+            style={{
+              position: "relative", height: 14, margin: "0 14px 8px",
+              background: "rgba(255,255,255,0.06)", borderRadius: 999,
+              touchAction: "none", cursor: "pointer",
+            }}
+          >
+            <div
+              ref={trayThumbRef}
+              onPointerDown={onTrayThumbPointerDown}
+              onPointerMove={onTrayThumbPointerMove}
+              onPointerUp={onTrayThumbPointerUp}
+              onPointerCancel={onTrayThumbPointerUp}
+              style={{
+                position: "absolute", top: 0, height: "100%",
+                left: `${trayThumbGeometry.leftPct}%`, width: `${trayThumbGeometry.widthPct}%`,
+                background: "rgba(255,255,255,0.32)", borderRadius: 999,
+                touchAction: "none", cursor: "grab",
+              }}
+            />
           </div>
         )}
-        {trayOrder.map((groupId, i) => (
-          <TrayPieceThumb
-            key={groupId}
-            groupId={groupId}
-            members={piecesByGroup.get(groupId) ?? []}
-            pw={pw} ph={ph}
-            pathCache={pathCacheRef.current}
-            img={imageOk ? imgRef.current : null}
-            gridW={gridW} gridH={gridH}
-            rows={rows} cols={cols}
-            cellPx={trayCellPx}
-            onPick={beginDragFromTray}
-            registerNode={registerTrayNode}
-            shiftPx={trayInsertIndex !== null && i >= trayInsertIndex ? ghostTraySizeRef.current.w + 10 : 0}
-          />
-        ))}
       </div>
 
       {/* Floating drag-ghost — shown while a piece/cluster is being dragged past the board's
