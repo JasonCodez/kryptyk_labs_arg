@@ -86,6 +86,7 @@ model User {
   blocksReceived         UserBlock[]         @relation("BlockTarget")
   reportsIssued          UserReport[]        @relation("ReportIssuer")
   reportsReceived        UserReport[]        @relation("ReportTarget")
+  bugReports             BugReport[]
 
   // Point Store — consumables
   streakShields          Int                        @default(0)
@@ -313,6 +314,7 @@ model Puzzle {
   warzChallenges           PuzzleWarzChallenge[]  @relation("WarzChallenges")
   gridlockSolves           GridlockSolve[]
   dailySlots               DailyPuzzleSlot[]
+  bugReports               BugReport[]
 
   @@index([categoryId])
   @@index([order])
@@ -1973,4 +1975,25 @@ model UserReport {
   @@index([targetId])
   @@index([status])
   @@map("user_reports")
+}
+
+model BugReport {
+  id            String    @id @default(cuid())
+  userId        String?                        // null for anonymous reporters
+  puzzleId      String?                        // null when "Other" location was chosen, or puzzle later deleted
+  puzzleTitle   String?                        // snapshot at submit time — survives puzzle deletion/rename
+  otherLocation String?                        // free text, only set when puzzleId is null
+  description   String                         // what happened
+  contactEmail  String?                        // optional, for anonymous reporters or an alternate reply-to
+  status        String    @default("pending")  // "pending" | "reviewed" | "dismissed"
+  reviewedAt    DateTime?
+  reviewedBy    String?
+  createdAt     DateTime  @default(now())
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  puzzle        Puzzle?   @relation(fields: [puzzleId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([puzzleId])
+  @@index([status])
+  @@map("bug_reports")
 }

@@ -439,6 +439,7 @@ export default function Dashboard() {
     { href: '/admin/puzzles',    icon: '➕', title: 'Create Puzzle',     desc: 'Add new puzzles to the platform.',                       accent: 'muted' as const },
     { href: '/admin/frequency',  icon: '📡', title: 'Frequency Admin',   desc: 'Schedule questions, reveal results, merge answers.',     accent: 'teal' as const },
     { href: '/admin/reports',    icon: '🚩', title: 'Abuse Reports',     desc: 'Review and act on user-submitted reports.',              accent: 'gold' as const },
+    { href: '/admin/bug-reports',icon: '🐞', title: 'Bug Reports',       desc: 'Review player-submitted bug reports by puzzle.',         accent: 'muted' as const },
   ];
 
   return (

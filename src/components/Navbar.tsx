@@ -64,6 +64,7 @@ const MORE_LINKS = [
   { href: "/learn",        label: "Learn" },
   { href: "/tutorial",     label: "Tutorial 📖" },
   { href: "/faq",          label: "FAQ" },
+  { href: "/report-bug",   label: "Report a Bug 🐞" },
 ];
 
 function isActive(pathname: string, href: string) {

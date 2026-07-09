@@ -26,6 +26,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
+import PuzzleBugReportButton from "./PuzzleBugReportButton";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -310,6 +311,7 @@ interface JigsawPuzzleProps {
     isFullscreen: boolean;
   }) => void;
   puzzleId?: string;
+  puzzleTitle?: string;
   tableBackground?: string;
   funFact?: string;
 }
@@ -606,7 +608,7 @@ export default function JigsawPuzzleSVGWithTray({
   pieceExtFrac, pieceRFrac, pieceNHalfFrac, pieceShoulderStart,
   onComplete, onShowRatingModal,
   suppressInternalCongrats = false, onControlsReady,
-  puzzleId, tableBackground, funFact, containerStyle = {},
+  puzzleId, puzzleTitle, tableBackground, funFact, containerStyle = {},
 }: JigsawPuzzleProps) {
 
   // ── Refs ──────────────────────────────────────────────────────────────────
@@ -2706,6 +2708,15 @@ export default function JigsawPuzzleSVGWithTray({
                                cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
                 Return Loose Pieces
               </button>
+            )}
+            {puzzleId && (
+              <PuzzleBugReportButton
+                puzzleId={puzzleId}
+                puzzleTitle={puzzleTitle || "This puzzle"}
+                style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,0.5)",
+                         color: "white", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer",
+                         fontSize: 13, fontWeight: 600 }}
+              />
             )}
             <button type="button" onClick={() => setIsFullscreen(false)}
                     style={{ padding: "6px 8px", borderRadius: 8, background: "rgba(0,0,0,0.5)",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import PuzzleBugReportButton from "./PuzzleBugReportButton";
 
 interface PuzzleFullscreenFrameProps {
   children: ReactNode;
@@ -8,6 +9,10 @@ interface PuzzleFullscreenFrameProps {
   // would otherwise be hidden behind the fullscreen overlay once it covers the viewport. Shown
   // as a floating control, top-left, only while fullscreen is active.
   extraControls?: ReactNode;
+  // When provided, renders a floating "Report a Bug" trigger pre-filled with this puzzle —
+  // skips the hundreds-of-puzzles picker on /report-bug entirely.
+  puzzleId?: string;
+  puzzleTitle?: string;
 }
 
 // Generic fullscreen/focus-mode toggle for puzzle types that don't have their own (jigsaw and
@@ -18,7 +23,7 @@ interface PuzzleFullscreenFrameProps {
 // Instead `children` always renders inside the exact same wrapper element, at the same position
 // among siblings; only that wrapper's own CSS (static vs. fixed/inset-0) changes on toggle,
 // which React can update in place with no remount.
-export default function PuzzleFullscreenFrame({ children, extraControls }: PuzzleFullscreenFrameProps) {
+export default function PuzzleFullscreenFrame({ children, extraControls, puzzleId, puzzleTitle }: PuzzleFullscreenFrameProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -43,26 +48,36 @@ export default function PuzzleFullscreenFrame({ children, extraControls }: Puzzl
             {extraControls}
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setIsFullscreen((v) => !v)}
+        {/* Grouped together (rather than each independently fixed) so their fixed positioning
+            moves as one unit — avoids hand-offsetting two buttons by pixel guesswork. */}
+        <div
           style={{
-            position: isFullscreen ? "fixed" : "static",
-            top: isFullscreen ? 12 : undefined,
-            right: isFullscreen ? 12 : undefined,
-            zIndex: 12001,
-            padding: "8px 14px",
-            borderRadius: 8,
-            background: "rgba(10,20,40,0.9)",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.2)",
-            cursor: "pointer",
-            fontSize: 13,
-            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            ...(isFullscreen ? { position: "fixed", top: 12, right: 12, zIndex: 12001 } : {}),
           }}
         >
-          {isFullscreen ? "✕ Exit Fullscreen" : "⤢ Fullscreen"}
-        </button>
+          {puzzleId && puzzleTitle && (
+            <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzleTitle} />
+          )}
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              background: "rgba(10,20,40,0.9)",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.2)",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            {isFullscreen ? "✕ Exit Fullscreen" : "⤢ Fullscreen"}
+          </button>
+        </div>
       </div>
       <div
         style={

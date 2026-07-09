@@ -20,6 +20,7 @@ import VaultPuzzle from "@/components/puzzle/VaultPuzzle";
 import CipherClashPuzzle from "@/components/puzzle/CipherClashPuzzle";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
+import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
 
 // The admin puzzle creator persists a few extra tunable fields on jigsaw puzzles
@@ -43,6 +44,7 @@ type JigsawControlsApi = {
 
 interface PuzzleBase {
   id: string;
+  title?: string;
   puzzleType?: string;
   data?: Record<string, unknown>;
   xpReward?: number;
@@ -119,6 +121,11 @@ export function PuzzleTypeRenderer({
               >
                 Return Loose Pieces
               </button>
+              <PuzzleBugReportButton
+                puzzleId={puzzleId}
+                puzzleTitle={puzzle.title || "This puzzle"}
+                className="w-full sm:w-auto px-3 py-2 rounded bg-gray-800 text-white border border-gray-600 hover:opacity-90"
+              />
             </div>
           </div>
         )}
@@ -135,6 +142,7 @@ export function PuzzleTypeRenderer({
           >
             <JigsawPuzzle
               puzzleId={puzzleId}
+              puzzleTitle={puzzle.title || "This puzzle"}
               imageUrl={jigsawPlayable.imageUrl}
               rows={jigsawPlayable.data.gridRows}
               cols={jigsawPlayable.data.gridCols}
@@ -159,7 +167,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'escape_room') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
               ✓ You have already solved this puzzle! Visit the puzzles page to try another one.
@@ -193,7 +201,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'jim_wyze_case') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
               ✓ You have already solved this Jim Wyze case! Visit the puzzles page to start the next file.
@@ -211,7 +219,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'detective_case') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
               ✓ You have already solved this case.
@@ -226,7 +234,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'crime_rpg') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           <CrimeCasePuzzle
             puzzleId={puzzleId}
             onSolved={() => onSolved()}
@@ -239,7 +247,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'parasite_code') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           <ParasiteCodePuzzle
             puzzleId={puzzleId}
             onSolved={() => onSolved()}
@@ -252,7 +260,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'gridlock_file') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           <GridlockFilePuzzle
             puzzleId={puzzleId}
             onSolved={() => onSolved()}
@@ -265,7 +273,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'crack_safe') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
@@ -287,7 +295,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'word_crack') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
@@ -313,7 +321,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'crossword') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
@@ -336,7 +344,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'word_search') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
@@ -359,7 +367,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'anagram_blitz') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
@@ -381,7 +389,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'arg') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
@@ -421,7 +429,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'cipher_clash') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           <CipherClashPuzzle
             puzzleId={puzzleId}
             cipherClashData={(puzzle.data ?? {}) as Record<string, unknown>}
@@ -436,7 +444,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'vault') {
     return (
       <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl}>
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
                  style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>

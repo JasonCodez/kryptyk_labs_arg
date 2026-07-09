@@ -1740,7 +1740,7 @@ export default function PuzzleDetailPage() {
 
                     {/* Render the interactive Sudoku board after the user starts */}
                     {sudokuStarted && (
-                      <PuzzleFullscreenFrame extraControls={skipControl}>
+                      <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"}>
                         <div className="mb-6">
                           <div className="mb-1 flex flex-col items-center gap-1 px-2 py-1 rounded bg-[#071016] text-sm">
                             <div className="text-2xl sm:text-3xl" style={{ color: '#FDE74C', fontWeight: 800, lineHeight: 1 }}>
@@ -1828,7 +1828,7 @@ export default function PuzzleDetailPage() {
 
                 {/* Code Master IDE */}
                 {puzzle?.puzzleType === 'code_master' && (
-                  <PuzzleFullscreenFrame extraControls={skipControl}>
+                  <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"}>
                     <div className="mb-6">
                       <CodeMasterIDE
                         language={String(puzzle?.data?.language || 'html')}
