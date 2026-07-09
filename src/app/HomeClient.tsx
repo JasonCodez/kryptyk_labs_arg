@@ -98,7 +98,10 @@ export default function HomeClient() {
         .pw-feature:hover { transform: translateY(-4px); }
         @media (max-width: 640px) {
           .hw-hero {
-            padding: 32px 16px 24px !important;
+            /* Top padding clears the fixed 56px navbar (plus notch safe-area and a little
+               breathing room) — otherwise the "Daily Hidden Word is live" badge at the top
+               of the hero renders underneath it. */
+            padding: calc(56px + env(safe-area-inset-top, 0px) + 16px) 16px 24px !important;
             min-height: 100vh !important;
             min-height: 100dvh !important;
             display: flex !important;

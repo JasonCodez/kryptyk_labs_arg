@@ -9,7 +9,12 @@ import {
   buildDailyHiddenWordShareText,
   buildDailyHiddenWordSnapshotSvg,
 } from "@/lib/dailyHiddenWordShare";
-import type { HiddenWordGameStatus, HiddenWordGuessResult } from "@/lib/hiddenWord";
+import {
+  HIDDEN_WORD_GRADE_ORDER,
+  getHiddenWordGrade,
+  type HiddenWordGameStatus,
+  type HiddenWordGuessResult,
+} from "@/lib/hiddenWord";
 
 interface DailyHiddenWordSharePanelProps {
   puzzleNumber: number;
@@ -114,6 +119,20 @@ export default function DailyHiddenWordSharePanel({
       ignore = true;
     };
   }, [gameStatus, puzzleNumber]);
+
+  const grade = gameStatus === "won" ? getHiddenWordGrade(guessResults.length, maxGuesses) : null;
+
+  // % of today's solvers whose grade was at least as good as yours (S is best) — the
+  // grade-focused framing this panel leans on instead of just a raw guess-count percentile.
+  const gradeOrBetterPercent = useMemo(() => {
+    if (!comparisonStats) return null;
+    const yourIndex = HIDDEN_WORD_GRADE_ORDER.indexOf(comparisonStats.yourGrade);
+    if (yourIndex === -1 || comparisonStats.totalSolvers === 0) return null;
+    const betterOrEqual = HIDDEN_WORD_GRADE_ORDER
+      .slice(0, yourIndex + 1)
+      .reduce((sum, g) => sum + (comparisonStats.gradeCounts[g] ?? 0), 0);
+    return Math.round((betterOrEqual / comparisonStats.totalSolvers) * 100);
+  }, [comparisonStats]);
 
   const shareText = useMemo(() => buildDailyHiddenWordShareText({
     puzzleNumber,
@@ -269,9 +288,20 @@ export default function DailyHiddenWordSharePanel({
         >
           {comparisonStats ? (
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-              <div style={{ color: "#E5E7EB" }}>
-                <span className="font-black text-white">Rank #{comparisonStats.rank}</span>
-                <span style={{ color: "#9CA3AF" }}> of {comparisonStats.totalSolvers} today</span>
+              <div className="flex items-center gap-3">
+                {grade && (
+                  <span
+                    className="font-black text-2xl leading-none px-2.5 py-1 rounded-lg"
+                    style={{ color: grade.color, background: `${grade.color}1a`, border: `1px solid ${grade.color}55` }}
+                    title="Your grade"
+                  >
+                    {grade.grade}
+                  </span>
+                )}
+                <div style={{ color: "#E5E7EB" }}>
+                  <span className="font-black text-white">Rank #{comparisonStats.rank}</span>
+                  <span style={{ color: "#9CA3AF" }}> of {comparisonStats.totalSolvers} today</span>
+                </div>
               </div>
               <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: "#9BD6E4" }}>
                 <span>More guesses: {comparisonStats.higherGuessCount}</span>
@@ -281,6 +311,11 @@ export default function DailyHiddenWordSharePanel({
               <div style={{ color: "#FDE74C" }}>
                 Beat {comparisonStats.beatPercent}% of today's solvers
               </div>
+              {gradeOrBetterPercent !== null && (
+                <div className="w-full text-xs" style={{ color: "#9BD6E4" }}>
+                  {gradeOrBetterPercent}% of today&apos;s solvers matched grade {comparisonStats.yourGrade} or better
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ color: comparisonLoading ? "#9BD6E4" : "#6B7280" }}>

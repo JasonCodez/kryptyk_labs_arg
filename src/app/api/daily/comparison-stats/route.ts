@@ -5,6 +5,12 @@ import prisma from "@/lib/prisma";
 import { validateSameOrigin } from "@/lib/requestSecurity";
 import type { DailyHiddenWordComparisonStats } from "@/lib/dailyHiddenWordShare";
 import { getTodayDayNumber } from "@/lib/dailyPuzzle";
+import {
+  DAILY_HIDDEN_WORD_MAX_GUESSES,
+  HIDDEN_WORD_GRADE_ORDER,
+  getHiddenWordGrade,
+  type HiddenWordGrade,
+} from "@/lib/hiddenWord";
 
 type DailySolverRecord = {
   key: string;
@@ -38,6 +44,12 @@ function buildComparisonStats(
     : 100;
   const averageGuesses = Math.round((ranked.reduce((sum, solver) => sum + solver.guesses, 0) / ranked.length) * 10) / 10;
 
+  const gradeCounts = Object.fromEntries(HIDDEN_WORD_GRADE_ORDER.map((g) => [g, 0])) as Record<HiddenWordGrade, number>;
+  for (const solver of ranked) {
+    gradeCounts[getHiddenWordGrade(solver.guesses, DAILY_HIDDEN_WORD_MAX_GUESSES).grade]++;
+  }
+  const yourGrade = getHiddenWordGrade(currentSolver.guesses, DAILY_HIDDEN_WORD_MAX_GUESSES).grade;
+
   return {
     rank: currentIndex + 1,
     totalSolvers: ranked.length,
@@ -46,6 +58,8 @@ function buildComparisonStats(
     higherGuessCount,
     beatPercent,
     averageGuesses,
+    yourGrade,
+    gradeCounts,
   };
 }
 

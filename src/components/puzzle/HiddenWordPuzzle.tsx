@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import {
+  getHiddenWordGrade,
   isSolvedHiddenWordResult,
   type HiddenWordGameStatus,
   type HiddenWordGuessResult,
@@ -69,9 +70,11 @@ const KEYBOARD_ROWS = [
 // â”€â”€â”€ Color palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // CORRECT = right letter, right spot  |  CLOSE = in word, wrong spot  |  COLD = not in word
+// Deliberately not green+yellow (Wordle's signature pairing) — CLOSE uses purple, which also
+// keeps it clearly distinct in hue from the blue-gray COLD tiles for colorblind players.
 const COLORS = {
   correct: { bg: "#38D399", border: "#10b981", glow: "rgba(56,211,153,0.65)", text: "#04190f" },
-  present: { bg: "#FDE74C", border: "#d97706", glow: "rgba(253,231,76,0.65)", text: "#3b2b00" },
+  present: { bg: "#a78bfa", border: "#7c3aed", glow: "rgba(167,139,250,0.65)", text: "#1e1147" },
   absent:  { bg: "rgba(56,145,166,0.22)", border: "rgba(56,145,166,0.5)", glow: "none", text: "#E2E8F0" },
   empty:   { bg: "transparent", border: "#374151", glow: "none", text: "#ffffff" },
   active:  { bg: "rgba(253,231,76,0.08)", border: "#FDE74C", glow: "rgba(253,231,76,0.3)", text: "#ffffff" },
@@ -79,7 +82,7 @@ const COLORS = {
 
 const KEY_COLORS: Record<LetterStatus | "unused", string> = {
   correct: "#10b981",
-  present: "#FDE74C",
+  present: "#a78bfa",
   absent:  "rgba(56,145,166,0.4)",
   unused:  "#4b5563",
 };
@@ -153,7 +156,10 @@ function InstructionsModal({ wordLength, maxGuesses, onClose }: { wordLength: nu
 
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg text-black"
-              style={{ background: COLORS.correct.bg, boxShadow: `0 0 12px ${COLORS.correct.glow}` }}>C</div>
+              style={{ position: "relative", background: COLORS.correct.bg, boxShadow: `0 0 12px ${COLORS.correct.glow}` }}>
+              C
+              <span aria-hidden="true" style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: "50%", background: COLORS.correct.text }} />
+            </div>
             <span className="text-sm">
               ✅ <strong className="text-white">CORRECT</strong>
               <span style={{ color: "#9ca3af" }}> — right letter, right position</span>
@@ -162,7 +168,10 @@ function InstructionsModal({ wordLength, maxGuesses, onClose }: { wordLength: nu
 
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg text-black"
-              style={{ background: COLORS.present.bg, boxShadow: `0 0 12px ${COLORS.present.glow}` }}>P</div>
+              style={{ position: "relative", background: COLORS.present.bg, boxShadow: `0 0 12px ${COLORS.present.glow}` }}>
+              P
+              <span aria-hidden="true" style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: "50%", background: "transparent", border: `1.5px solid ${COLORS.present.text}` }} />
+            </div>
             <span className="text-sm">
               🔍 <strong className="text-white">CLOSE</strong>
               <span style={{ color: "#9ca3af" }}> — letter exists, wrong position</span>
@@ -681,14 +690,7 @@ export default function HiddenWordPuzzle({
   const PRAISE = ["⚡ LEGENDARY!", "🔮 SHARP EYE!", "💥 IMPRESSIVE!", "👏 NICE WORK!", "😅 JUST MADE IT!", "😤 BY A THREAD!"];
   const praiseIndex = Math.min(guesses.length - 1, PRAISE.length - 1);
 
-  const getGrade = (count: number, max: number): { grade: string; color: string } => {
-    if (count === 1) return { grade: "S", color: "#38D399" };
-    if (count === 2) return { grade: "A", color: "#a3e635" };
-    if (count <= Math.ceil(max * 0.5)) return { grade: "B", color: "#FDE74C" };
-    if (count <= Math.ceil(max * 0.75)) return { grade: "C", color: "#f97316" };
-    return { grade: "D", color: "#ef4444" };
-  };
-  const grade = getGrade(guesses.length, maxGuesses);
+  const grade = getHiddenWordGrade(guesses.length, maxGuesses);
 
   // Locked overlay — both games used up
   if (attemptsLocked) {
@@ -1090,7 +1092,27 @@ export default function HiddenWordPuzzle({
                       <div className="wc-tile-front" style={{ borderColor: tileColors[kind === "empty" || kind === "active" ? kind : "empty"].border }}>
                         {char}
                       </div>
-                      <div className="wc-tile-back">{char}</div>
+                      <div className="wc-tile-back">
+                        {char}
+                        {/* Shape indicator on top of color (filled = correct, ring = present) so
+                            the result isn't relying on color alone — colorblind-safe and gives
+                            the tile a distinct identity beyond just "green/yellow squares". */}
+                        {(kind === "correct" || kind === "present") && (
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              position: "absolute",
+                              top: 3,
+                              right: 3,
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: kind === "correct" ? c.text : "transparent",
+                              border: kind === "present" ? `1.5px solid ${c.text}` : "none",
+                            }}
+                          />
+                        )}
+                      </div>
                     </div>
                   );
                 })}

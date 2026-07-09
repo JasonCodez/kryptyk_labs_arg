@@ -1,7 +1,9 @@
-import type {
-  HiddenWordGameStatus,
-  HiddenWordGuessResult,
-  HiddenWordLetterStatus,
+import {
+  getHiddenWordGrade,
+  type HiddenWordGameStatus,
+  type HiddenWordGrade,
+  type HiddenWordGuessResult,
+  type HiddenWordLetterStatus,
 } from "@/lib/hiddenWord";
 
 export const DAILY_HIDDENWORD_SNAPSHOT_WIDTH = 1080;
@@ -15,24 +17,30 @@ export interface DailyHiddenWordComparisonStats {
   higherGuessCount: number;
   beatPercent: number;
   averageGuesses: number;
+  // Grade-based framing (the thing plain Wordle clones don't have) — computed alongside the
+  // guess-count comparison above from the same solver data, no extra queries needed.
+  yourGrade: HiddenWordGrade;
+  gradeCounts: Record<HiddenWordGrade, number>;
 }
 
+// Deliberately not the green+yellow square combo Wordle's share text is known for —
+// present uses purple here, matching the in-game tile colors in HiddenWordPuzzle.tsx.
 const EMOJI_BY_STATUS = {
   correct: "🟩",
-  present: "🟨",
+  present: "🟪",
   absent: "⬛",
 } as const;
 
 const TILE_FILL = {
   correct: "#38D399",
-  present: "#FDE74C",
+  present: "#a78bfa",
   absent: "#10242B",
   empty: "rgba(255,255,255,0.03)",
 } as const;
 
 const TILE_STROKE = {
   correct: "#0F9B6F",
-  present: "#D4A912",
+  present: "#7c3aed",
   absent: "rgba(56,145,166,0.38)",
   empty: "rgba(255,255,255,0.08)",
 } as const;
@@ -74,7 +82,9 @@ export function buildDailyHiddenWordShareText({
   comparison = null,
 }: Omit<SharePayload, "wordLength">): string {
   const rows = guessResults.map((guess) => guess.map((letter) => EMOJI_BY_STATUS[letter.status]).join(""));
-  const score = gameStatus === "won" ? `${guessResults.length}/${maxGuesses}` : `X/${maxGuesses}`;
+  const score = gameStatus === "won"
+    ? `Grade ${getHiddenWordGrade(guessResults.length, maxGuesses).grade} (${guessResults.length}/${maxGuesses})`
+    : `X/${maxGuesses}`;
   const streakLine = dailyStreak > 0 ? `\n🔥 ${dailyStreak}-day daily streak` : "";
   const comparisonLine = comparison
     ? `\n📊 Rank #${comparison.rank}/${comparison.totalSolvers} today · beat ${comparison.beatPercent}% of solvers`
@@ -97,7 +107,9 @@ export function buildDailyHiddenWordSnapshotSvg({
   shareUrl,
 }: SharePayload): string {
   const footerUrl = shareUrl ? displayUrl(shareUrl) : "puzzlewarz.com/daily";
-  const score = gameStatus === "won" ? `${guessResults.length}/${maxGuesses}` : `X/${maxGuesses}`;
+  const grade = gameStatus === "won" ? getHiddenWordGrade(guessResults.length, maxGuesses) : null;
+  const score = grade ? `${grade.grade} · ${guessResults.length}/${maxGuesses}` : `X/${maxGuesses}`;
+  const scoreFill = grade ? grade.color : "url(#hero)";
   const title = `Daily Hidden Word #${puzzleNumber}`;
   const subtitle = gameStatus === "won" ? "Locked in." : "Result logged.";
   const caption = dailyStreak > 0 ? `${dailyStreak}-day streak active` : "New streak starts here";
@@ -139,7 +151,9 @@ export function buildDailyHiddenWordSnapshotSvg({
     }).join("");
   }).join("");
 
-  const scoreBoxWidth = 230;
+  // Wider than the plain "4/6" case needed, to comfortably fit the added grade letter (e.g. "S · 4/6").
+  const scoreBoxWidth = grade ? 300 : 230;
+  const scoreFontSize = grade ? 38 : 44;
   const scoreBoxX = Math.round((DAILY_HIDDENWORD_SNAPSHOT_WIDTH - scoreBoxWidth) / 2);
   const comparisonMarkup = comparison
     ? `
@@ -201,7 +215,7 @@ export function buildDailyHiddenWordSnapshotSvg({
   <text x="96" y="258" fill="#D1D5DB" font-size="34" font-family="Arial, Helvetica, sans-serif">${escapeXml(subtitle)}</text>
 
   <rect x="${scoreBoxX}" y="300" width="${scoreBoxWidth}" height="84" rx="42" fill="#0E2430" stroke="rgba(255,255,255,0.12)" stroke-width="3" />
-  <text x="${DAILY_HIDDENWORD_SNAPSHOT_WIDTH / 2}" y="354" fill="url(#hero)" font-size="44" font-family="Arial, Helvetica, sans-serif" font-weight="900" text-anchor="middle">${escapeXml(score)}</text>
+  <text x="${DAILY_HIDDENWORD_SNAPSHOT_WIDTH / 2}" y="354" fill="${scoreFill}" font-size="${scoreFontSize}" font-family="Arial, Helvetica, sans-serif" font-weight="900" text-anchor="middle">${escapeXml(score)}</text>
 
   ${rowsMarkup}
   ${comparisonMarkup}

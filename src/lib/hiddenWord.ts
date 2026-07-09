@@ -70,6 +70,25 @@ export function isSolvedHiddenWordResult(result: HiddenWordGuessResult[]): boole
   return result.length > 0 && result.every((letter) => letter.status === "correct");
 }
 
+// Best (S) to worst (D) — used to rank/bucket grades, e.g. "matched your grade or better".
+export const HIDDEN_WORD_GRADE_ORDER = ["S", "A", "B", "C", "D"] as const;
+export type HiddenWordGrade = (typeof HIDDEN_WORD_GRADE_ORDER)[number];
+
+// The daily puzzle always allows 6 guesses (unlike library word_crack puzzles, which can
+// configure their own maxGuesses per-puzzle) — shared so client and server agree.
+export const DAILY_HIDDEN_WORD_MAX_GUESSES = 6;
+
+// Guess-quality letter grade — the thing Hidden Word has that a plain Wordle clone doesn't.
+// Shared between the client (in-game win banner) and the server (share text/comparison stats),
+// so both must agree on the exact same thresholds.
+export function getHiddenWordGrade(count: number, max: number): { grade: HiddenWordGrade; color: string } {
+  if (count === 1) return { grade: "S", color: "#38D399" };
+  if (count === 2) return { grade: "A", color: "#a3e635" };
+  if (count <= Math.ceil(max * 0.5)) return { grade: "B", color: "#FDE74C" };
+  if (count <= Math.ceil(max * 0.75)) return { grade: "C", color: "#f97316" };
+  return { grade: "D", color: "#ef4444" };
+}
+
 export function serializeHiddenWordState(guessResults: HiddenWordGuessResult[][], status: HiddenWordGameStatus): string {
   return JSON.stringify({ guessResults, status });
 }

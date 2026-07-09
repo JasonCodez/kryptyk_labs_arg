@@ -7,6 +7,7 @@ import DailyHiddenWordSharePanel from "@/components/daily/DailyHiddenWordSharePa
 import GuestRewardModal from "@/components/puzzle/GuestRewardModal";
 import StreakTimer from "@/components/StreakTimer";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
+import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { addPendingRewards, getAnonId } from "@/lib/gridlockAnon";
 import { useReferralLink } from "@/hooks/useReferralLink";
 import { isValidHiddenWordGuess } from "@/lib/hiddenWordValidate";
@@ -285,48 +286,63 @@ export default function DailyPage() {
           </div>
         ) : (
           <>
-            <div className="w-full max-w-3xl">
-              <HiddenWordPuzzle
-                key={`${storeKey}:${dayNum}`}
-                puzzleId={`daily-${dayNum}`}
-                hiddenWordData={{ wordLength: word.length || 5, maxGuesses: MAX_ROWS }}
-                alreadySolved={gameStatus === "won"}
-                initialGuesses={guessResults}
-                initialStatus={gameStatus}
-                showHints={false}
-                disableRetry
-                recordGameLossOnFailure={false}
-                solvedGuessCount={serverGuessCount ?? undefined}
-                submitGuessRequest={async (guess) => {
-                  if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidHiddenWordGuess(guess))) {
-                    return { error: "Not a valid word" };
-                  }
-                  const result = scoreHiddenWordGuess(guess, word);
-                  return { result, solved: isSolvedHiddenWordResult(result) };
-                }}
-                onStateChange={handleStateChange}
-                onRoundComplete={({ status, guesses }) => {
-                  if (isAuthenticated) {
-                    recordAuthenticatedCompletion(status === "won", guesses);
-                    return;
-                  }
+            <PuzzleFullscreenFrame
+              extraControls={
+                gameStatus === "playing" && skipTokens > 0 ? (
+                  <button
+                    onClick={handleSkip}
+                    disabled={skipping}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
+                    style={{ backgroundColor: "rgba(56,145,166,0.9)", border: "1px solid rgba(56,145,166,0.5)", color: "#fff" }}
+                  >
+                    {skipping ? "Skipping..." : `🎫 Skip (${skipTokens})`}
+                  </button>
+                ) : undefined
+              }
+            >
+              <div className="w-full max-w-3xl">
+                <HiddenWordPuzzle
+                  key={`${storeKey}:${dayNum}`}
+                  puzzleId={`daily-${dayNum}`}
+                  hiddenWordData={{ wordLength: word.length || 5, maxGuesses: MAX_ROWS }}
+                  alreadySolved={gameStatus === "won"}
+                  initialGuesses={guessResults}
+                  initialStatus={gameStatus}
+                  showHints={false}
+                  disableRetry
+                  recordGameLossOnFailure={false}
+                  solvedGuessCount={serverGuessCount ?? undefined}
+                  submitGuessRequest={async (guess) => {
+                    if (guess.toUpperCase() !== word.toUpperCase() && !(await isValidHiddenWordGuess(guess))) {
+                      return { error: "Not a valid word" };
+                    }
+                    const result = scoreHiddenWordGuess(guess, word);
+                    return { result, solved: isSolvedHiddenWordResult(result) };
+                  }}
+                  onStateChange={handleStateChange}
+                  onRoundComplete={({ status, guesses }) => {
+                    if (isAuthenticated) {
+                      recordAuthenticatedCompletion(status === "won", guesses);
+                      return;
+                    }
 
-                  if (status === "won") {
-                    void recordGuestCompletion(guesses);
-                  }
-                }}
-              />
-            </div>
-
-            {gameStatus === "playing" && skipTokens > 0 && (
-              <div className="mt-5 flex justify-center">
-                <button onClick={handleSkip} disabled={skipping}
-                        className="px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
-                        style={{ backgroundColor: "rgba(56,145,166,0.1)", border: "1px solid rgba(56,145,166,0.3)", color: "#3891A6" }}>
-                  {skipping ? "Skipping..." : `🎫 Skip today (${skipTokens} token${skipTokens !== 1 ? "s" : ""})`}
-                </button>
+                    if (status === "won") {
+                      void recordGuestCompletion(guesses);
+                    }
+                  }}
+                />
               </div>
-            )}
+
+              {gameStatus === "playing" && skipTokens > 0 && (
+                <div className="mt-5 flex justify-center">
+                  <button onClick={handleSkip} disabled={skipping}
+                          className="px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
+                          style={{ backgroundColor: "rgba(56,145,166,0.1)", border: "1px solid rgba(56,145,166,0.3)", color: "#3891A6" }}>
+                    {skipping ? "Skipping..." : `🎫 Skip today (${skipTokens} token${skipTokens !== 1 ? "s" : ""})`}
+                  </button>
+                </div>
+              )}
+            </PuzzleFullscreenFrame>
 
             {gameStatus !== "playing" && (
               <>
