@@ -75,6 +75,16 @@ export default function PuzzleFullscreenFrame({ children, extraControls }: Puzzl
                 overflow: "auto",
                 WebkitOverflowScrolling: "touch",
                 padding: "56px 12px 20px",
+                // Center the puzzle horizontally in the fullscreen viewport — without this,
+                // puzzle boards narrower than the screen (Sudoku, Anagram Blitz, etc.) sit
+                // pinned to the left edge with empty space on the right. Deliberately not
+                // centering vertically too: with overflow:auto, justify-content:center on
+                // content taller than the viewport makes the portion that overflows above
+                // the fold unreachable by scrolling (scrollTop can't go negative), so tall
+                // puzzles would get their top clipped off with no way to scroll up to it.
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
               }
             : undefined
         }
