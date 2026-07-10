@@ -1,7 +1,9 @@
 /**
- * Sequential puzzle-type progression: puzzles within a type unlock in `order`,
- * grouped into chapters that end at a boss puzzle. See the "How it works"
- * section of the progression-lock plan for the exact lock rules this encodes.
+ * Sequential puzzle-type progression: puzzles within a type unlock strictly
+ * in `order` — each puzzle stays locked until the one immediately before it
+ * (by order, tiebreak createdAt) is solved. Boss puzzles are ordinary links
+ * in that same chain; marking one `isBossPuzzle` labels it for rewards
+ * (achievements) but doesn't change how locking works.
  *
  * A puzzleType is only gated once at least one of its puzzles is marked
  * `isBossPuzzle` — types with no boss puzzle stay fully open, so shipping
@@ -30,15 +32,16 @@ export interface ProgressionPuzzleInput {
 
 export interface PuzzleLockState {
   locked: boolean;
-  /** The boss puzzle whose completion unlocks this one — set only when locked. */
+  /** The puzzle immediately before this one in sequence — set only when locked. */
   unlocksAfter?: { id: string; title: string };
 }
 
 /**
- * Computes lock state for every progression-eligible, boss-gated puzzle.
- * Puzzles that are exempt-type, in a type with no boss puzzle, or otherwise
- * unlocked are simply absent from the returned map — callers should treat a
- * missing entry as unlocked (`locked: false`).
+ * Computes lock state for every progression-eligible puzzle in a strict
+ * 1 -> 2 -> 3 chain per puzzleType. Puzzles that are exempt-type, in a type
+ * with no boss puzzle, or otherwise unlocked are simply absent from the
+ * returned map — callers should treat a missing entry as unlocked
+ * (`locked: false`).
  */
 export function computeLockedPuzzleIds(
   puzzles: ProgressionPuzzleInput[],
@@ -63,35 +66,21 @@ export function computeLockedPuzzleIds(
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
 
-    // Chapter 1 always starts unlocked; each boss solve unlocks the next chapter.
-    let chapterUnlocked = true;
-    let chapterNonBossAllSolved = true;
-    let priorBoss: { id: string; title: string } | undefined;
+    // The first puzzle in the type is always unlocked; every other puzzle
+    // requires the one immediately before it (in this same sorted list) to
+    // be solved, regardless of whether either is a boss.
+    let previousSolved = true;
+    let previous: { id: string; title: string } | undefined;
 
     for (const puzzle of sorted) {
-      if (puzzle.isBossPuzzle) {
-        const bossLocked = !chapterUnlocked || !chapterNonBossAllSolved;
-        result.set(puzzle.id, {
-          locked: bossLocked,
-          // Only point at a specific prerequisite when the whole chapter is
-          // inaccessible; "boss not ready yet" is a same-chapter condition
-          // with no single puzzle to name.
-          unlocksAfter: !chapterUnlocked ? priorBoss : undefined,
-        });
+      const locked = !previousSolved;
+      result.set(puzzle.id, {
+        locked,
+        unlocksAfter: locked ? previous : undefined,
+      });
 
-        const bossSolved = solvedPuzzleIds.has(puzzle.id);
-        chapterUnlocked = chapterUnlocked && bossSolved;
-        chapterNonBossAllSolved = true;
-        priorBoss = { id: puzzle.id, title: puzzle.title };
-      } else {
-        result.set(puzzle.id, {
-          locked: !chapterUnlocked,
-          unlocksAfter: !chapterUnlocked ? priorBoss : undefined,
-        });
-        if (!solvedPuzzleIds.has(puzzle.id)) {
-          chapterNonBossAllSolved = false;
-        }
-      }
+      previousSolved = solvedPuzzleIds.has(puzzle.id);
+      previous = { id: puzzle.id, title: puzzle.title };
     }
   }
 

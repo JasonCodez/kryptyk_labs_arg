@@ -1207,7 +1207,7 @@ export default function PuzzleDetailPage() {
         <div style={{ color: "#AB9F9D" }} className="text-sm max-w-sm">
           {locked.unlocksAfterTitle
             ? <>Complete <span style={{ color: "#FDE74C" }}>{locked.unlocksAfterTitle}</span> first to unlock this one.</>
-            : "Complete the rest of this chapter first to unlock it."}
+            : "Complete the previous puzzle first to unlock it."}
         </div>
         <Link href="/puzzles" style={{ color: "#3891A6" }} className="text-sm font-semibold underline mt-2">
           Back to Puzzles

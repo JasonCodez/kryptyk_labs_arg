@@ -273,7 +273,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
           <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>
             {puzzle.unlocksAfterTitle
               ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</>
-              : 'Complete the rest of this chapter first'}
+              : 'Complete the previous puzzle first'}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap mb-2">
@@ -481,7 +481,7 @@ function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
             <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>
               {puzzle.unlocksAfterTitle
                 ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</>
-                : 'Complete the rest of this chapter first'}
+                : 'Complete the previous puzzle first'}
             </p>
             <div className="flex gap-2 flex-wrap mt-2">
               <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
