@@ -64,14 +64,6 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   extreme: "#3891A6",
 };
 
-const RARITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  common: { bg: "rgba(200, 200, 200, 0.1)", text: "#CCCCCC", border: "#CCCCCC" },
-  uncommon: { bg: "rgba(76, 175, 80, 0.1)", text: "#4CAF50", border: "#4CAF50" },
-  rare: { bg: "rgba(56, 145, 166, 0.1)", text: "#3891A6", border: "#3891A6" },
-  epic: { bg: "rgba(124, 58, 237, 0.08)", text: "#7C3AED", border: "#7C3AED" },
-  legendary: { bg: "rgba(255, 193, 7, 0.1)", text: "#FFC107", border: "#FFC107" },
-};
-
 const CATEGORY_ICONS: Record<string, string> = {
   // Seeded categories
   escape: "🚪",
@@ -92,6 +84,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   crack_safe: "🔒",
   detective_case: "🕵️",
   jim_wyze_case: "🕵️",
+  logic_grid: "🧠",
   // Generic fallbacks
   logic: "🧠",
   crypto: "🔐",
@@ -111,7 +104,7 @@ function formatCategoryName(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function getDisplayTitle(puzzle: any) {
+function getDisplayTitle(puzzle: Puzzle & { name?: unknown; summary?: unknown; content?: unknown }) {
   const puzzleTitle = typeof puzzle?.title === 'string' ? puzzle.title.trim() : '';
   const escapeTitle = typeof puzzle?.escapeRoom?.roomTitle === 'string' ? puzzle.escapeRoom.roomTitle.trim() : '';
 
@@ -124,7 +117,7 @@ function getDisplayTitle(puzzle: any) {
   return title || 'Untitled Puzzle';
 }
 
-function getDisplayDescription(puzzle: any): string {
+function getDisplayDescription(puzzle: Puzzle & { name?: unknown; summary?: unknown; content?: unknown }): string {
   const raw = (puzzle && (puzzle.description ?? puzzle.summary ?? puzzle.content ?? puzzle?.escapeRoom?.roomDescription)) as unknown;
   const desc = typeof raw === 'string' ? raw.trim() : '';
   return desc;
@@ -151,7 +144,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
   const progress = puzzle.userProgress?.[0];
   const status = progress?.solved
     ? "solved"
-    : (puzzle as any).failed
+    : puzzle.failed
     ? "failed"
     : progress?.attempts
     ? "in-progress"
@@ -619,7 +612,7 @@ function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
 }
 
 export default function PuzzlesList({ initialCategory = "all" }: { initialCategory?: string }) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const router = useRouter();
   const [puzzles, setPuzzles] = useState<Puzzle[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -673,7 +666,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
               setTimeout(() => {
                 el.classList.remove("ring-4", "ring-yellow-400");
               }, 3000);
-            } catch (e) {
+            } catch {
               // ignore
             }
           }
@@ -701,7 +694,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                 setTimeout(() => {
                   el.classList.remove("ring-4", "ring-yellow-400");
                 }, 3000);
-              } catch (e) {
+              } catch {
                 // ignore
               }
             }
@@ -720,6 +713,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
 
   useEffect(() => {
     applyFilters();
+    // applyFilters is a plain function redefined every render, but every value it reads is
+    // already listed below — adding the function itself would just re-run this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puzzles, selectedCategory, selectedDifficulty, selectedStatus, searchQuery, sortBy, sortOrder]);
 
   // Which puzzles to display: either focus a single puzzle (via hash) or the filtered list
@@ -736,14 +732,14 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
       if (puzzlesRes.ok) {
         const puzzlesData = await puzzlesRes.json();
         // Annotate puzzles with lockout state for puzzle types that remain permanently locked on failure.
-        const annotated = puzzlesData.map((p: any) => {
+        const annotated = puzzlesData.map((p: Puzzle) => {
           const detectiveCaseFailed = p?.detectiveCaseFailed === true;
           const baseFailedFlag = detectiveCaseFailed;
           const baseFailedReason: string | null = detectiveCaseFailed
             ? (p?.detectiveCaseFailedReason ?? 'incorrect_submission')
             : null;
-          let failedFlag = baseFailedFlag;
-          let failedReason: string | null = baseFailedReason;
+          const failedFlag = baseFailedFlag;
+          const failedReason: string | null = baseFailedReason;
           return { ...p, failed: failedFlag, failedReason };
         });
         setPuzzles(annotated);
@@ -753,7 +749,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
 
       if (categoriesRes.ok) {
         const categoriesData = await categoriesRes.json();
-        const filteredCategories = (categoriesData || []).filter((c: any) => {
+        const filteredCategories = (categoriesData || []).filter((c: Category) => {
           const name = (c && c.name) ? String(c.name).toLowerCase().trim() : "";
           return name !== "team test" && (c.puzzleCount ?? 0) > 0;
         });
@@ -1075,7 +1071,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
               onClick={() => {
                 setFocusedPuzzleId(null);
                 // remove hash from URL
-                try { history.replaceState(null, "", "/puzzles"); } catch (e) {}
+                try { history.replaceState(null, "", "/puzzles"); } catch {}
               }}
               className="px-3 py-1 rounded bg-slate-700 text-white text-sm mb-4"
             >

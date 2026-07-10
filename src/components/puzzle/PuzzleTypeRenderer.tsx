@@ -13,6 +13,7 @@ import CrackTheSafePuzzle from "@/components/puzzle/CrackTheSafePuzzle";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle from "@/components/puzzle/WordSearchPuzzle";
 import CrosswordPuzzle from "@/components/puzzle/CrosswordPuzzle";
+import LogicGridPuzzle from "@/components/puzzle/LogicGridPuzzle";
 import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
 import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
@@ -334,6 +335,21 @@ export function PuzzleTypeRenderer({
             alreadySolved={progress?.solved ?? false}
             hintTokens={effectiveHintTokens}
             onHintUsed={onHintUsed}
+            onSolved={(elapsedSeconds) => onSolved(elapsedSeconds)}
+          />
+        </PuzzleFullscreenFrame>
+      </div>
+    );
+  }
+
+  if (puzzle.puzzleType === 'logic_grid') {
+    return (
+      <div className="mb-8">
+        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
+          <LogicGridPuzzle
+            puzzleId={puzzleId}
+            logicGridData={(puzzle.data ?? {}) as Record<string, unknown>}
+            alreadySolved={progress?.solved ?? false}
             onSolved={(elapsedSeconds) => onSolved(elapsedSeconds)}
           />
         </PuzzleFullscreenFrame>

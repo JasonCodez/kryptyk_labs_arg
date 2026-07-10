@@ -46,20 +46,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Scenario mismatch" }, { status: 400 });
     }
 
-    // Grade against today's selected question indices (same deterministic selection as /today)
-    const indices = getTodaysDebriefQuestionIndices(scenario, 5);
-    const correctAnswers = indices.map((i) => scenario.questions[i].correctIndex);
-    let score = 0;
-    const breakdown = answers.map((a, i) => {
-      // -1 = timed out; never matches a valid correctIndex, so always wrong
-      const correct = a === correctAnswers[i];
-      if (correct) score++;
-      return { correct, correctIndex: correctAnswers[i] };
-    });
-
-    const pointsAwarded = score * 20;
-    const xpAwarded = score * 10;
-
     // Optional auth: anonymous users can play, logged-in users can earn rewards once per scenario.
     const session = await getServerSession(authOptions);
     let userId: string | null = null;
@@ -71,16 +57,41 @@ export async function POST(req: NextRequest) {
       userId = user?.id ?? null;
     }
 
+    // Idempotent: a signed-in player who already has a result for today's scenario gets that
+    // result back as-is rather than being re-graded and re-inserted. The client already gates
+    // replay before this point; this is a defensive backstop against a stale tab or direct call.
+    let score: number;
+    let breakdown: { correct: boolean; correctIndex: number }[];
     let rewardsGranted = false;
-    if (userId) {
-      const alreadyRewarded = await prisma.witnessResult.findFirst({
-        where: { scenarioId, userId },
-        select: { id: true },
+
+    const existing = userId
+      ? await prisma.witnessResult.findFirst({
+          where: { scenarioId, userId },
+          select: { score: true, breakdown: true },
+        })
+      : null;
+
+    if (existing) {
+      score = existing.score;
+      breakdown = (existing.breakdown as { correct: boolean; correctIndex: number }[] | null) ?? [];
+    } else {
+      // Grade against today's selected question indices (same deterministic selection as /today)
+      const indices = getTodaysDebriefQuestionIndices(scenario, 5);
+      const correctAnswers = indices.map((i) => scenario.questions[i].correctIndex);
+      score = 0;
+      breakdown = answers.map((a, i) => {
+        // -1 = timed out; never matches a valid correctIndex, so always wrong
+        const correct = a === correctAnswers[i];
+        if (correct) score++;
+        return { correct, correctIndex: correctAnswers[i] };
       });
 
-      if (!alreadyRewarded) {
+      const pointsAwarded = score * 20;
+      const xpAwarded = score * 10;
+
+      if (userId) {
         await prisma.$transaction([
-          prisma.witnessResult.create({ data: { scenarioId, score, userId } }),
+          prisma.witnessResult.create({ data: { scenarioId, score, breakdown, userId } }),
           prisma.user.update({
             where: { id: userId },
             data: {
@@ -91,13 +102,13 @@ export async function POST(req: NextRequest) {
         ]);
         rewardsGranted = true;
       } else {
-        // Still record the attempt for analytics, but do not re-award points/xp.
-        await prisma.witnessResult.create({ data: { scenarioId, score, userId } });
+        // Persist anonymous attempt.
+        await prisma.witnessResult.create({ data: { scenarioId, score, breakdown } });
       }
-    } else {
-      // Persist anonymous attempt.
-      await prisma.witnessResult.create({ data: { scenarioId, score } });
     }
+
+    const pointsAwarded = score * 20;
+    const xpAwarded = score * 10;
 
     // Re-query aggregate after recording
     const results = await prisma.witnessResult.groupBy({

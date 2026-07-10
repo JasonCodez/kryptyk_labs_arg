@@ -57,13 +57,15 @@ export async function GET() {
     const scoreDist = Array(6).fill(0) as number[];
     for (const r of results) scoreDist[r.score] = r._count.score;
 
-    // Has the current user already completed today's debrief?
-    const completed = userId
-      ? !!(await prisma.witnessResult.findFirst({
+    // Has the current user already completed today's debrief? If so, fetch their persisted
+    // result so the client can render the results screen directly instead of allowing a replay.
+    const existingResult = userId
+      ? await prisma.witnessResult.findFirst({
           where: { scenarioId: scenario.id, userId },
-          select: { id: true },
-        }))
-      : false;
+          select: { score: true, breakdown: true },
+        })
+      : null;
+    const completed = !!existingResult;
 
     // Pick today's 5 questions from the pool (deterministic by day)
     const indices = getTodaysDebriefQuestionIndices(scenario, 5);
@@ -71,6 +73,34 @@ export async function GET() {
       question: scenario.questions[i].question,
       options: scenario.questions[i].options,
     }));
+
+    let result: {
+      score: number;
+      breakdown: { correct: boolean; correctIndex: number }[];
+      scoreDist: number[];
+      totalPlays: number;
+      percentile: number;
+      rewards: { points: number; xp: number; granted: boolean };
+    } | null = null;
+
+    if (existingResult) {
+      const beatCount = scoreDist.slice(0, existingResult.score).reduce((s, c) => s + c, 0);
+      const percentile = totalPlays > 1
+        ? Math.round((beatCount / (totalPlays - 1)) * 100)
+        : 100;
+      result = {
+        score: existingResult.score,
+        breakdown: (existingResult.breakdown as { correct: boolean; correctIndex: number }[] | null) ?? [],
+        scoreDist,
+        totalPlays,
+        percentile,
+        rewards: {
+          points: existingResult.score * 20,
+          xp: existingResult.score * 10,
+          granted: false,
+        },
+      };
+    }
 
     return NextResponse.json({
       scenario: {
@@ -86,6 +116,7 @@ export async function GET() {
         scoreDist,
       },
       completed,
+      result,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load" }, { status: 500 });

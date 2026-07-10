@@ -1112,8 +1112,23 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   useEffect(() => {
     if (puzzleType !== 'detective_case') return;
 
-    const existing = (puzzleData as any)?.detectiveCase;
-    const template = {
+    type DetectiveCaseTemplate = {
+      noirTitle: string;
+      intro: string;
+      prologue: {
+        text: string;
+        narratorName: string;
+        narratorVoice: string;
+        backgroundImage?: string;
+        backgroundVideo?: string;
+        audio?: string;
+        audioLoop?: boolean;
+      };
+      lockMode: string;
+      stages: unknown[];
+    };
+    const existing = puzzleData?.detectiveCase as Partial<DetectiveCaseTemplate> | undefined;
+    const template: DetectiveCaseTemplate = {
       noirTitle: 'The Blackout Ledger',
       intro: 'A city that never sleeps has secrets it never tells.',
       prologue: {
@@ -1188,10 +1203,10 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   useEffect(() => {
     if (puzzleType !== 'jim_wyze_case') return;
 
-    const raw = puzzleData as any;
-    const existingDesignerData = raw?.escapeRoomData;
-    const hasDesignerScenes = Array.isArray(existingDesignerData?.scenes) && existingDesignerData.scenes.length > 0;
-    const hasPersistedRooms = Array.isArray(raw?.rooms) && raw.rooms.length > 0;
+    const raw = puzzleData;
+    const existingDesignerData = raw?.escapeRoomData as Record<string, unknown> | undefined;
+    const hasDesignerScenes = Array.isArray(existingDesignerData?.scenes) && (existingDesignerData?.scenes as unknown[]).length > 0;
+    const hasPersistedRooms = Array.isArray(raw?.rooms) && (raw?.rooms as unknown[]).length > 0;
 
     if (hasDesignerScenes || hasPersistedRooms) return;
 
@@ -1694,7 +1709,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
         </label>
         <p className="text-xs text-gray-500 mb-2">
           Provide a JSON object mapping file paths to code. When set, this replaces the Broken Code field.
-          Example: <code className="text-indigo-300">&#123; "/index.html": "...", "/styles.css": "..." &#125;</code>
+          Example: <code className="text-indigo-300">&#123; &quot;/index.html&quot;: &quot;...&quot;, &quot;/styles.css&quot;: &quot;...&quot; &#125;</code>
         </p>
         <textarea
           value={puzzleData.files ? JSON.stringify(puzzleData.files, null, 2) : ''}
@@ -1789,7 +1804,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   // ── Crime RPG initializer ────────────────────────────────────────────────
   useEffect(() => {
     if (puzzleType !== 'crime_rpg') return;
-    const existing = (puzzleData as any)?.crimeCase;
+    const existing = puzzleData?.crimeCase;
     const template = {
       caseTitle: 'The Cartographer\'s Last Map',
       premise: 'A renowned cartographer is found dead in his locked study. Three colleagues had keys. The map he was working on — rumored to expose a buried secret — is missing. You have 48 hours before the estate is sold and the evidence destroyed.',
@@ -2006,7 +2021,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   // ── Parasite Code initializer ─────────────────────────────────────────────
   useEffect(() => {
     if (puzzleType !== 'parasite_code') return;
-    const existing = (puzzleData as any)?.parasiteCode;
+    const existing = puzzleData?.parasiteCode;
     const template = {
       caseTitle: 'The Refund Siphon',
       programName: 'refund_router_v2.prg',
@@ -2107,7 +2122,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   // ── Gridlock File initializer ─────────────────────────────────────────────
   useEffect(() => {
     if (puzzleType !== 'gridlock_file') return;
-    const existing = getGridlockFileData((puzzleData as any)?.gridlockFile ?? puzzleData);
+    const existing = getGridlockFileData(puzzleData?.gridlockFile ?? puzzleData);
     const template = createDefaultGridlockFileData();
     try {
       const next = existing ?? template;
@@ -2163,7 +2178,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
 
   useEffect(() => {
     if (puzzleType !== 'vault') return;
-    const existing = getVaultPuzzleData((puzzleData as any)?.vault ?? puzzleData);
+    const existing = getVaultPuzzleData(puzzleData?.vault ?? puzzleData);
     const template = createDefaultVaultData();
     const initial = existing ?? template;
     setVaultJson(JSON.stringify(initial, null, 2));
@@ -2185,6 +2200,9 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     if (joined !== cipherPhrasesText.split('\n').map(l => l.trim()).filter(Boolean).join('\n')) {
       setCipherPhrasesText(joined);
     }
+    // Only re-hydrate when switching puzzle types, not on every keystroke — including
+    // cipherPhrasesText/puzzleData.phrases would fight the textarea while the admin is typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puzzleType]);
 
   const renderCipherClashFields = () => {
@@ -2274,7 +2292,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   };
 
   const renderVaultFields = () => {
-    const parsed = getVaultPuzzleData((puzzleData as any)?.vault ?? puzzleData);
+    const parsed = getVaultPuzzleData(puzzleData?.vault ?? puzzleData);
     const derived = parsed ? getVaultDerivedLetters(parsed) : [];
 
     return (
@@ -2343,7 +2361,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
 
   useEffect(() => {
     if (puzzleType !== 'debrief') return;
-    const existing = (puzzleData as any)?.debrief ?? null;
+    const existing = puzzleData?.debrief ?? null;
     const initial = existing ?? DEBRIEF_TEMPLATE;
     setDebriefJson(JSON.stringify(initial, null, 2));
     setDebriefJsonError('');
@@ -2357,7 +2375,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
         Configure <span className="font-semibold">The Debrief</span> daily puzzle. The player reads a classified report for 35 seconds, then answers 5 recall questions (18s each).
       </div>
       <div className="text-xs text-gray-500 space-y-1">
-        <div><span className="text-yellow-400 font-semibold">scenario.id</span> — unique string ID for this scenario (e.g. <code>"debrief-001"</code>)</div>
+        <div><span className="text-yellow-400 font-semibold">scenario.id</span> — unique string ID for this scenario (e.g. <code>&quot;debrief-001&quot;</code>)</div>
         <div><span className="text-yellow-400 font-semibold">scenario.questions</span> — array of at least 5 questions; each has <code>question</code>, <code>options[4]</code>, <code>correctIndex</code></div>
       </div>
       <textarea
@@ -2469,7 +2487,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-300 mb-1">Detective's Monologue</label>
+            <label className="block text-sm font-semibold text-gray-300 mb-1">Detective&apos;s Monologue</label>
             <textarea
               value={dcPrologueText}
               onChange={e => { setDcPrologueText(e.target.value); syncDetectiveCase({ prologueText: e.target.value }); }}
@@ -2672,6 +2690,18 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
       </div>
     </div>
   );
+
+  // Advanced Escape Room Designer integration. Declared here, above the early returns below,
+  // because hooks must be called unconditionally on every render — this used to sit right before
+  // renderEscapeRoomFields further down, which meant it was skipped whenever puzzleType was
+  // 'jigsaw' or 'code_master', violating the rules of hooks (and risking a hook-count mismatch
+  // if an admin switched the puzzle type dropdown without unmounting this component).
+  const escapeRoomOnChange = useCallback((designerData: Record<string, unknown>) => {
+    onDataChange('escapeRoomData', designerData);
+    if (designerData && typeof designerData.title === 'string') {
+      onDataChange('title', designerData.title);
+    }
+  }, [onDataChange]);
 
   if (puzzleType === 'jigsaw') {
     return renderJigsawFields();
@@ -3008,15 +3038,6 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     </div>
   );
 
-  // Advanced Escape Room Designer integration
-  const escapeRoomOnChange = useCallback((designerData: any) => {
-    onDataChange('escapeRoomData', designerData);
-    if (designerData && typeof designerData.title === 'string') {
-      onDataChange('title', designerData.title);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onDataChange]);
-
   const renderEscapeRoomFields = () => {
     // Only render the EscapeRoomDesigner, no extra wrapper or heading
     return (
@@ -3047,6 +3068,9 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
           />
           <p className="text-xs text-gray-500 mt-1">If left blank, a default CSS safe graphic is shown. Paste any image URL or use your media library URL.</p>
           {asString(puzzleData.safeImageUrl, '') && (
+            // next/image requires allow-listed remote domains; this previews an arbitrary
+            // admin-pasted URL, so a plain <img> is the safer choice here.
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={asString(puzzleData.safeImageUrl, '')}
               alt="Safe preview"
@@ -3633,7 +3657,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
                       <textarea rows={3} className={fieldCls} value={asString(stage.riddle, '')}
                         onChange={(e) => updateStage(idx, 'riddle', e.target.value)}
                         placeholder="I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?" />
-                      <p className="text-xs text-gray-500 mt-1">Can be a traditional riddle or an internet-hunt question ("Which US president owned the most cats?").</p>
+                      <p className="text-xs text-gray-500 mt-1">Can be a traditional riddle or an internet-hunt question (&quot;Which US president owned the most cats?&quot;).</p>
                     </div>
                   )}
 
@@ -3697,7 +3721,7 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
             style={{ background: 'rgba(56,145,166,0.1)', border: '1px solid rgba(56,145,166,0.3)', color: '#7dd3fc' }}>
             <p className="font-semibold">{rawStages.length} stage{rawStages.length !== 1 ? 's' : ''} configured</p>
             {rawStages.map((s, i) => (
-              <p key={i}>Stage {i + 1}: [{asString(s.type, '?').toUpperCase()}] {asString(s.title, '')} — answer: "{asString(s.answer, '(missing)')}"</p>
+              <p key={i}>Stage {i + 1}: [{asString(s.type, '?').toUpperCase()}] {asString(s.title, '')} — answer: &quot;{asString(s.answer, '(missing)')}&quot;</p>
             ))}
           </div>
         )}
@@ -4094,7 +4118,7 @@ At [[23:30]], security found the room vacant. The window was unlatched. A single
                   })()}
 
                   <div>
-                    <label className={labelCls}>Hint <span className="font-normal text-gray-500">(optional — shown after wrong attempts if cipher type is "None")</span></label>
+                    <label className={labelCls}>Hint <span className="font-normal text-gray-500">(optional — shown after wrong attempts if cipher type is &quot;None&quot;)</span></label>
                     <input
                       type="text"
                       value={asString(r.hint, '')}
@@ -5527,6 +5551,213 @@ At [[23:30]], security found the room vacant. The window was unlatched. A single
     );
   };
 
+  const renderLogicGridFields = () => {
+    const fieldCls = 'w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600 text-white placeholder-gray-500 text-sm';
+    const labelCls = 'block text-xs font-semibold text-gray-400 mb-1';
+    const MAX_CATEGORIES = 6;
+
+    const slugify = (value: string): string =>
+      value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+    const categoriesRaw = (Array.isArray(puzzleData.categories) ? puzzleData.categories : []) as Record<string, unknown>[];
+    const clues = asStringArray(puzzleData.clues);
+    const solutionRaw = (puzzleData.solution && typeof puzzleData.solution === 'object'
+      ? puzzleData.solution
+      : {}) as Record<string, Record<string, unknown>>;
+    const intro = asString(puzzleData.intro, '');
+
+    const primaryRaw = categoriesRaw[0];
+    const otherCategoriesRaw = categoriesRaw.slice(1);
+    const primaryEntries = asStringArray(primaryRaw?.entries);
+
+    const updateCategory = (index: number, patch: Record<string, unknown>) => {
+      const next = categoriesRaw.map((cat, i) => (i === index ? { ...cat, ...patch } : cat));
+      onDataChange('categories', next);
+    };
+
+    const addCategory = () => {
+      if (categoriesRaw.length >= MAX_CATEGORIES) return;
+      onDataChange('categories', [...categoriesRaw, { id: '', name: '', entries: [] }]);
+    };
+
+    const removeCategory = (index: number) => {
+      onDataChange('categories', categoriesRaw.filter((_, i) => i !== index));
+    };
+
+    const updateClue = (index: number, value: string) => {
+      onDataChange('clues', clues.map((clue, i) => (i === index ? value : clue)));
+    };
+
+    const addClue = () => onDataChange('clues', [...clues, '']);
+    const removeClue = (index: number) => onDataChange('clues', clues.filter((_, i) => i !== index));
+
+    const updateSolutionCell = (primaryEntry: string, categoryId: string, value: string) => {
+      const nextRow = { ...(solutionRaw[primaryEntry] ?? {}), [categoryId]: value };
+      onDataChange('solution', { ...solutionRaw, [primaryEntry]: nextRow });
+    };
+
+    // Every non-primary category's assigned values must be unique across primary rows (a
+    // valid one-to-one mapping) — flag any category where the same entry got picked twice.
+    const duplicateCategoryIds = new Set<string>();
+    for (const other of otherCategoriesRaw) {
+      const otherId = asString(other.id, '');
+      const assigned = primaryEntries
+        .map((entry) => asString(solutionRaw[entry]?.[otherId], ''))
+        .filter(Boolean);
+      if (new Set(assigned).size !== assigned.length) duplicateCategoryIds.add(otherId);
+    }
+
+    const entryCountsMatch = otherCategoriesRaw.length > 0
+      && otherCategoriesRaw.every((other) => asStringArray(other.entries).length === primaryEntries.length);
+    const showSolutionMatrix = primaryEntries.length > 0 && entryCountsMatch;
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <label className={labelCls}>Scenario Intro (optional flavor text)</label>
+          <textarea
+            className={fieldCls}
+            rows={3}
+            value={intro}
+            onChange={(e) => onDataChange('intro', e.target.value)}
+            placeholder="Four suspects were seen near the gallery the night of the heist..."
+          />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className={labelCls} style={{ marginBottom: 0 }}>
+              Categories ({categoriesRaw.length}/{MAX_CATEGORIES}) — first category is the primary
+            </label>
+            {categoriesRaw.length < MAX_CATEGORIES && (
+              <button type="button" onClick={addCategory} className="text-xs font-semibold text-teal-400 hover:text-teal-300">
+                + Add Category
+              </button>
+            )}
+          </div>
+          <div className="space-y-3">
+            {categoriesRaw.map((cat, i) => {
+              const name = asString(cat.name, '');
+              const entries = asStringArray(cat.entries);
+              const mismatched = i > 0 && primaryEntries.length > 0 && entries.length !== primaryEntries.length;
+              return (
+                <div key={i} className="p-3 rounded-lg border border-slate-600 bg-slate-800/40">
+                  <div className="flex items-center gap-2 mb-2">
+                    {i === 0 && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-400 px-2 py-0.5 rounded-full border border-amber-400/40 whitespace-nowrap">
+                        Primary
+                      </span>
+                    )}
+                    <input
+                      className={fieldCls}
+                      value={name}
+                      onChange={(e) => updateCategory(i, { name: e.target.value, id: asString(cat.id, '') || slugify(e.target.value) })}
+                      placeholder="Category name (e.g. Suspect)"
+                    />
+                    <button type="button" onClick={() => removeCategory(i)} className="text-xs text-red-400 hover:text-red-300 whitespace-nowrap">
+                      Remove
+                    </button>
+                  </div>
+                  <textarea
+                    className={fieldCls}
+                    rows={3}
+                    value={entries.join('\n')}
+                    onChange={(e) => updateCategory(i, { entries: asStringArray(e.target.value) })}
+                    placeholder={'One entry per line, e.g.\nColonel Mustard\nProfessor Plum'}
+                  />
+                  {mismatched && (
+                    <p className="text-xs text-red-400 mt-1">
+                      Must have {primaryEntries.length} entries to match the primary category.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            {categoriesRaw.length === 0 && <p className="text-xs text-gray-500">No categories yet.</p>}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className={labelCls} style={{ marginBottom: 0 }}>Clues</label>
+            <button type="button" onClick={addClue} className="text-xs font-semibold text-teal-400 hover:text-teal-300">
+              + Add Clue
+            </button>
+          </div>
+          <div className="space-y-2">
+            {clues.map((clue, i) => (
+              <div key={i} className="flex gap-2 items-start">
+                <span className="text-xs text-gray-500 mt-2 w-5 flex-shrink-0">{i + 1}.</span>
+                <textarea
+                  className={fieldCls}
+                  rows={2}
+                  value={clue}
+                  onChange={(e) => updateClue(i, e.target.value)}
+                  placeholder="e.g. The person who owns the cat does not drink coffee."
+                />
+                <button type="button" onClick={() => removeClue(i)} className="text-xs text-red-400 hover:text-red-300 mt-2">✕</button>
+              </div>
+            ))}
+            {clues.length === 0 && <p className="text-xs text-gray-500">No clues yet.</p>}
+          </div>
+        </div>
+
+        {showSolutionMatrix && (
+          <div>
+            <label className={labelCls}>Solution Key</label>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="text-left text-xs text-gray-400 pb-2 pr-3">{asString(primaryRaw?.name, 'Primary')}</th>
+                    {otherCategoriesRaw.map((other, i) => {
+                      const otherId = asString(other.id, '');
+                      return (
+                        <th key={otherId || i} className="text-left text-xs text-gray-400 pb-2 pr-3">
+                          {asString(other.name, '')}
+                          {duplicateCategoryIds.has(otherId) && <span className="text-red-400 ml-1">⚠</span>}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {primaryEntries.map((entry) => (
+                    <tr key={entry}>
+                      <td className="pr-3 py-1 text-gray-200">{entry}</td>
+                      {otherCategoriesRaw.map((other, i) => {
+                        const otherId = asString(other.id, '');
+                        return (
+                          <td key={otherId || i} className="pr-3 py-1">
+                            <select
+                              className={fieldCls}
+                              value={asString(solutionRaw[entry]?.[otherId], '')}
+                              onChange={(e) => updateSolutionCell(entry, otherId, e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {asStringArray(other.entries).map((val) => (
+                                <option key={val} value={val}>{val}</option>
+                              ))}
+                            </select>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {duplicateCategoryIds.size > 0 && (
+              <p className="text-xs text-red-400 mt-2">
+                ⚠ Some categories have the same entry assigned to more than one row — each entry must be used exactly once.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const typeSpecificRenders: Record<string, () => JSX.Element> = {
     cipher: renderCipherFields,
     text_extraction: renderTextExtractionFields,
@@ -5552,6 +5783,7 @@ At [[23:30]], security found the room vacant. The window was unlatched. A single
     blackout: renderBlackoutFields,
     arg: renderArgFields,
     crossword: renderCrosswordFields,
+    logic_grid: renderLogicGridFields,
     vault: renderVaultFields,
     cipher_clash: renderCipherClashFields,
   };

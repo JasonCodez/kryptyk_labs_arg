@@ -729,7 +729,10 @@ export default function WitnessPage() {
   const [questionSecondsLeft, setQuestionSecondsLeft] = useState(QUESTION_SECONDS);
   const questionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [tabWarning, setTabWarning] = useState(false);
-  const [alreadyRead, setAlreadyRead] = useState<"reading" | "complete" | null>(null);
+  // "reading" = started reading but hasn't finished answering yet; the reading window has
+  // closed so re-showing the report text is blocked (answer from memory instead). Full
+  // completion is no longer tracked here — that's server-authoritative, see the load effect.
+  const [alreadyRead, setAlreadyRead] = useState<"reading" | null>(null);
 
   // Refs so handleTimeout can read latest state without stale closure
   const answersRef = useRef<number[]>([]);
@@ -765,9 +768,18 @@ export default function WitnessPage() {
       .then((data) => {
         setScenario(data.scenario);
         setStats(data.stats);
-        // sessionStorage gate — prevent re-reading in the same browser session
-        const gate = sessionStorage.getItem(`witness_${data.scenario.id}`) as "reading" | "complete" | null;
-        if (gate) setAlreadyRead(gate);
+        if (data.completed && data.result) {
+          // Already completed today's debrief (server-authoritative) — show the persisted
+          // results directly instead of allowing another read-through/answer flow.
+          setSubmitResult(data.result);
+          setStage("witness-results");
+          setVisible(true);
+          return;
+        }
+        // sessionStorage gate — prevent re-reading the report within the same browser session
+        // after the reading window closed but before questions were answered.
+        const gate = sessionStorage.getItem(`witness_${data.scenario.id}`);
+        if (gate === "reading") setAlreadyRead("reading");
         setStage("witness-intro");
         setVisible(true);
       })
@@ -1156,35 +1168,31 @@ export default function WitnessPage() {
                         Document Destroyed
                       </p>
                       <p style={{ color: MUTED, fontSize: 13, lineHeight: 1.5 }}>
-                        {alreadyRead === "complete"
-                          ? "You've already completed this test in this session. Come back tomorrow."
-                          : "You already opened this report. The reading window has closed — answer from memory."}
+                        You already opened this report. The reading window has closed — answer from memory.
                       </p>
                     </div>
-                    {alreadyRead === "reading" && (
-                      <button
-                        onClick={() => {
-                          setCurrentQ(0);
-                          setOptionState(Array(4).fill("idle"));
-                          setStage("witness-questions");
-                          fadeIn();
-                        }}
-                        style={{
-                          width: "100%",
-                          padding: "15px",
-                          borderRadius: 10,
-                          fontWeight: 700,
-                          fontSize: 15,
-                          color: "#fff",
-                          backgroundColor: PURPLE,
-                          border: "none",
-                          cursor: "pointer",
-                          letterSpacing: "0.02em",
-                        }}
-                      >
-                        Answer from memory →
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setCurrentQ(0);
+                        setOptionState(Array(4).fill("idle"));
+                        setStage("witness-questions");
+                        fadeIn();
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "15px",
+                        borderRadius: 10,
+                        fontWeight: 700,
+                        fontSize: 15,
+                        color: "#fff",
+                        backgroundColor: PURPLE,
+                        border: "none",
+                        cursor: "pointer",
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      Answer from memory →
+                    </button>
                   </div>
                 ) : (
                   <button
@@ -1597,26 +1605,34 @@ export default function WitnessPage() {
                 <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 16 }}>
                   Breakdown
                 </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {scenario.questions.map((q, i) => {
-                    const res = submitResult.breakdown[i];
-                    return (
-                      <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                        <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>
-                          {res.correct ? "✅" : "❌"}
-                        </span>
-                        <div>
-                          <p style={{ color: TEXT, fontSize: 13, fontWeight: 500, lineHeight: 1.4 }}>{q.question}</p>
-                          {!res.correct && (
-                            <p style={{ color: GOLD, fontSize: 12, marginTop: 3 }}>
-                              Correct: {q.options[res.correctIndex]}
-                            </p>
-                          )}
+                {submitResult.breakdown.length < scenario.questions.length ? (
+                  // Result recorded before per-question detail was tracked (legacy completion) —
+                  // only the aggregate score survived, so there's nothing to break down here.
+                  <p style={{ color: MUTED, fontSize: 13, lineHeight: 1.5 }}>
+                    Per-question detail isn&apos;t available for this result — only your final score was recorded.
+                  </p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {scenario.questions.map((q, i) => {
+                      const res = submitResult.breakdown[i];
+                      return (
+                        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>
+                            {res.correct ? "✅" : "❌"}
+                          </span>
+                          <div>
+                            <p style={{ color: TEXT, fontSize: 13, fontWeight: 500, lineHeight: 1.4 }}>{q.question}</p>
+                            {!res.correct && (
+                              <p style={{ color: GOLD, fontSize: 12, marginTop: 3 }}>
+                                Correct: {q.options[res.correctIndex]}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Score distribution */}

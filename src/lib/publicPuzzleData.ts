@@ -3,6 +3,7 @@ import {
   type CrosswordPuzzleDataInput,
   validateCrosswordPuzzleData,
 } from "@/lib/crosswordCore";
+import { stripLogicGridSolution, validateLogicGridPuzzleData } from "@/lib/logicGridCore";
 
 function sanitizeHiddenWordData(rawData: Record<string, unknown>): Record<string, unknown> {
   const safeData = { ...rawData };
@@ -42,6 +43,23 @@ function sanitizeCrosswordData(rawData: Record<string, unknown>): Record<string,
   };
 }
 
+function sanitizeLogicGridData(rawData: Record<string, unknown>): Record<string, unknown> {
+  // Defensively strip the raw `solution` key regardless of whether the data validates —
+  // an admin-authored puzzle with otherwise-malformed data should still never leak its answer.
+  const safeData = { ...rawData };
+  delete safeData.solution;
+
+  const logicGrid = validateLogicGridPuzzleData(rawData, { requireSolution: false });
+  if (!logicGrid.valid || !logicGrid.normalized) {
+    return safeData;
+  }
+
+  return {
+    ...safeData,
+    ...stripLogicGridSolution(logicGrid.normalized),
+  };
+}
+
 export function sanitizePublicPuzzleData(puzzleType: unknown, rawData: unknown): unknown {
   if (!rawData || typeof rawData !== "object") {
     return rawData;
@@ -56,6 +74,10 @@ export function sanitizePublicPuzzleData(puzzleType: unknown, rawData: unknown):
 
   if (normalizedType === "crossword") {
     return sanitizeCrosswordData(data);
+  }
+
+  if (normalizedType === "logic_grid") {
+    return sanitizeLogicGridData(data);
   }
 
   return data;

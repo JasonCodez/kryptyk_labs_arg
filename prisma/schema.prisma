@@ -1934,6 +1934,7 @@ model WitnessResult {
   id         String   @id @default(cuid())
   scenarioId String
   score      Int      // 0–5
+  breakdown  Json?    // [{ correct: boolean, correctIndex: number }, ...] per-question detail
   userId     String?
   createdAt  DateTime @default(now())
 

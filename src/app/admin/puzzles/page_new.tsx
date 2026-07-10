@@ -68,6 +68,7 @@ const PUZZLE_TYPES = [
   { value: 'word_crack', label: 'Hidden Word 🟩' },
   { value: 'word_search', label: 'Word Trove 🔍' },
   { value: 'crossword', label: 'Crossword ✏️' },
+  { value: 'logic_grid', label: 'Logic Grid 🧠' },
   { value: 'anagram_blitz', label: 'Anagram Blitz 🔀' },
   { value: 'blackout', label: 'Blackout ⬛' },
   { value: 'vault', label: 'The Vault 🔐' },
@@ -88,6 +89,31 @@ interface PuzzleListItem {
   category: { name: string } | null;
   escapeRoom?: { roomTitle: string } | null;
   dailySlots?: { dayNumber: number }[];
+}
+
+// Shape of a puzzle as returned by GET /api/admin/puzzles/:id — used only to load an existing
+// puzzle into the edit form, so this only declares the fields loadPuzzleForEdit actually reads.
+interface RawPuzzleEdit {
+  title?: string;
+  description?: string;
+  content?: string;
+  category?: { name?: string };
+  difficulty?: string;
+  puzzleType?: string;
+  solutions?: { answer?: string; points?: number }[];
+  xpReward?: number;
+  hints?: { text: string; costPoints?: number }[];
+  data?: Record<string, unknown>;
+  isWarzExclusive?: boolean;
+  schedule?: { releaseAt?: string } | null;
+  dailySlots?: { dayNumber?: number | string }[];
+  jigsaw?: {
+    gridRows?: number;
+    gridCols?: number;
+    snapTolerance?: number;
+    rotationEnabled?: boolean;
+    imageUrl?: string;
+  };
 }
 
 export default function AdminPuzzlesPage() {
@@ -157,7 +183,10 @@ export default function AdminPuzzlesPage() {
     if (session?.user?.email) {
       checkAdminStatus();
     }
-  }, [session, status]);
+    // checkAdminStatus is a plain function redefined every render — intentionally omitted so
+    // this only re-runs on an actual session/status change, not every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, status, router]);
 
   const checkAdminStatus = async () => {
     try {
@@ -198,7 +227,7 @@ export default function AdminPuzzlesPage() {
         const data = await res.json().catch(() => ({}));
         setDeleteError(data.error || "Delete failed");
       }
-    } catch (e) {
+    } catch {
       setDeleteError("Network error — could not delete puzzle");
     } finally {
       setDeletingId(null);
@@ -221,7 +250,7 @@ export default function AdminPuzzlesPage() {
         const data = await res.json().catch(() => ({}));
         setDeleteError(data.error || "Failed to update puzzle status");
       }
-    } catch (e) {
+    } catch {
       setDeleteError("Network error — could not update puzzle status");
     } finally {
       setTogglingActiveId(null);
@@ -235,7 +264,7 @@ export default function AdminPuzzlesPage() {
     try {
       const res = await fetch(`/api/admin/puzzles/${id}`);
       if (!res.ok) throw new Error("Failed to load puzzle data");
-      const p = await res.json();
+      const p = (await res.json()) as RawPuzzleEdit;
 
       const baseData: PuzzleFormData = {
         title: p.title || "",
@@ -246,31 +275,31 @@ export default function AdminPuzzlesPage() {
         puzzleType: p.puzzleType || "general",
         correctAnswer: p.solutions?.[0]?.answer || "",
         pointsReward: p.solutions?.[0]?.points || 100,
-        xpReward: (p as any).xpReward || 50,
-        hints: p.hints?.map((h: { text: string; costPoints?: number }) => ({ text: h.text, costPoints: h.costPoints ?? 10 })) || [],
+        xpReward: p.xpReward || 50,
+        hints: p.hints?.map((h) => ({ text: h.text, costPoints: h.costPoints ?? 10 })) || [],
         isMultiPart: false,
         parts: [
           { title: "Part 1", content: "", answer: "", points: 50 },
           { title: "Part 2", content: "", answer: "", points: 50 },
         ],
-        puzzleData: (p.data as Record<string, unknown>) || {},
-        isWarzExclusive: (p as any).isWarzExclusive === true,
-        gridlockReleaseAt: (p as any).schedule?.releaseAt && (p as any).puzzleType === 'gridlock_file'
+        puzzleData: p.data || {},
+        isWarzExclusive: p.isWarzExclusive === true,
+        gridlockReleaseAt: p.schedule?.releaseAt && p.puzzleType === 'gridlock_file'
           ? (() => {
-              const d = new Date((p as any).schedule.releaseAt);
+              const d = new Date(p.schedule!.releaseAt!);
               const pad = (n: number) => String(n).padStart(2, '0');
               return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
             })()
           : "",
-        debriefReleaseAt: (p as any).schedule?.releaseAt && (p as any).puzzleType === 'debrief'
+        debriefReleaseAt: p.schedule?.releaseAt && p.puzzleType === 'debrief'
           ? (() => {
-              const d = new Date((p as any).schedule.releaseAt);
+              const d = new Date(p.schedule!.releaseAt!);
               const pad = (n: number) => String(n).padStart(2, '0');
               return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
             })()
           : "",
-        dailySlotDayNumber: Array.isArray((p as any).dailySlots) && (p as any).dailySlots[0]
-          ? String((p as any).dailySlots[0].dayNumber)
+        dailySlotDayNumber: Array.isArray(p.dailySlots) && p.dailySlots[0]
+          ? String(p.dailySlots[0].dayNumber)
           : "",
       };
 
@@ -390,7 +419,7 @@ export default function AdminPuzzlesPage() {
 
   const handlePuzzleDataChange = useCallback((key: string, value: unknown) => {
     setFormData((prev) => {
-      let next = {
+      const next = {
         ...prev,
         puzzleData: {
           ...prev.puzzleData,
@@ -398,12 +427,14 @@ export default function AdminPuzzlesPage() {
         },
       };
       // If the designerData (value) is an object with a title, sync it to formData.title
-      if ((key === undefined || key === null) && value && typeof value === 'object' && 'title' in value && typeof (value as any).title === 'string') {
-        next.title = (value as any).title;
+      if ((key === undefined || key === null) && value && typeof value === 'object' && 'title' in value) {
+        const maybeTitle = (value as Record<string, unknown>).title;
+        if (typeof maybeTitle === 'string') {
+          next.title = maybeTitle;
+        }
       }
       return next;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // File uploads removed — images are provided via external URL only
@@ -466,7 +497,7 @@ export default function AdminPuzzlesPage() {
       throw new Error(`Network error: ${e?.message || e}`);
     });
 
-    let data: any = null;
+    let data: { url?: string; error?: string; message?: string } | null = null;
     try {
       data = await res.json();
     } catch {
@@ -491,122 +522,11 @@ export default function AdminPuzzlesPage() {
       // Validate URL
       new URL(jigsawImageUrl);
       setJigsawImagePreview(jigsawImageUrl);
-    } catch (err) {
+    } catch {
       setFormError("Invalid image URL");
     }
   };
 
-  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.currentTarget.files;
-    if (!files) return;
-
-    setUploadingMedia(true);
-    setFormError("");
-
-    try {
-      const promises: Promise<void>[] = [];
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        
-        console.log(`[MEDIA UPLOAD] Processing file ${i + 1}/${files.length}: ${file.name} (${file.type})`);
-        
-        if (puzzleId) {
-          console.log(`[MEDIA UPLOAD] Puzzle exists (${puzzleId}), uploading to API`);
-          
-          const uploadPromise = (async () => {
-            const formDataUpload = new FormData();
-            formDataUpload.append("file", file);
-            formDataUpload.append("puzzleId", puzzleId);
-
-            const response = await fetch("/api/admin/media", {
-              method: "POST",
-              body: formDataUpload,
-            }).catch(err => {
-              console.error(`[MEDIA UPLOAD] Fetch failed for ${file.name}:`, err);
-              throw new Error(`Network error uploading ${file.name}`);
-            });
-
-            if (!response.ok) {
-              const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-              console.error(`[MEDIA UPLOAD] Upload failed:`, error);
-              throw new Error(error.error || "Failed to upload file");
-            }
-
-            const mediaData = await response.json();
-            console.log(`[MEDIA UPLOAD] Upload successful:`, mediaData);
-            setMediaFiles((prev) => [...prev, mediaData]);
-          })();
-          
-          promises.push(uploadPromise);
-        } else {
-          console.log(`[MEDIA UPLOAD] No puzzle ID yet, creating temporary data URL`);
-          
-          const tempPromise = new Promise<void>((resolve, reject) => {
-            const reader = new FileReader();
-            
-            reader.onload = () => {
-              const tempMedia: MediaFile = {
-                id: `temp-${Date.now()}-${i}`,
-                fileName: file.name,
-                fileSize: file.size,
-                url: reader.result as string,
-                type: file.type.startsWith("image/") ? "image" : 
-                      file.type.startsWith("video/") ? "video" :
-                      file.type.startsWith("audio/") ? "audio" : "document",
-                isTemporary: true,
-              };
-              console.log(`[MEDIA UPLOAD] Temporary media created:`, tempMedia);
-              setMediaFiles((prev) => [...prev, tempMedia]);
-              resolve();
-            };
-            
-            reader.onerror = () => {
-              console.error(`[MEDIA UPLOAD] FileReader error for ${file.name}`);
-              reject(new Error(`Failed to read file: ${file.name}`));
-            };
-            
-            reader.readAsDataURL(file);
-          });
-          
-          promises.push(tempPromise);
-        }
-      }
-      
-      await Promise.all(promises);
-      console.log("[MEDIA UPLOAD] All files processed successfully");
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Upload failed";
-      console.error("[MEDIA UPLOAD] Error:", errorMsg);
-      setFormError(errorMsg);
-    } finally {
-      setUploadingMedia(false);
-      // Clear the file input
-      if (e.currentTarget) {
-        e.currentTarget.value = "";
-      }
-    }
-  };
-
-  const handleDeleteMedia = async (mediaId: string) => {
-    if (!confirm("Delete this media file?")) return;
-
-    try {
-      if (mediaId.startsWith("temp-")) {
-        setMediaFiles((prev) => prev.filter((m) => m.id !== mediaId));
-      } else {
-        const response = await fetch(`/api/admin/media?id=${mediaId}`, {
-          method: "DELETE",
-        });
-
-        if (!response.ok) throw new Error("Failed to delete media");
-
-        setMediaFiles((prev) => prev.filter((m) => m.id !== mediaId));
-      }
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Delete failed");
-    }
-  };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -635,22 +555,22 @@ export default function AdminPuzzlesPage() {
       });
 
       // Remove any non-serializable properties from items in puzzleData
-      let cleanedPuzzleData: any = formData.puzzleData || {};
+      let cleanedPuzzleData: Record<string, unknown> = formData.puzzleData || {};
       // If the escape-room Designer stored data under `escapeRoomData`, map it into the shape
       // expected by the puzzle persistence route (puzzleData.rooms -> layouts.hotspots)
       if (formData.puzzleType === 'escape_room' || formData.puzzleType === 'jim_wyze_case') {
         const designer = formData.puzzleData?.escapeRoomData || formData.puzzleData;
         console.log('[SUBMIT] Escape room designer payload:', designer);
         if (designer && typeof designer === 'object') {
-          const d = designer as any;
+          const d = designer as Record<string, unknown>;
           if (Array.isArray(d.scenes)) {
-            const rooms = d.scenes.map((scene: any) => {
+            const rooms = d.scenes.map((scene: Record<string, unknown>) => {
               const layout = {
                 title: scene.name || null,
                 backgroundUrl: scene.backgroundUrl || null,
                 width: scene.width || null,
                 height: scene.height || null,
-                hotspots: Array.isArray(scene.interactiveZones) ? scene.interactiveZones.map((z: any) => ({
+                hotspots: Array.isArray(scene.interactiveZones) ? (scene.interactiveZones as Record<string, unknown>[]).map((z) => ({
                   x: Number(z.x) || 0,
                   y: Number(z.y) || 0,
                   w: Number(z.width) || Number(z.w) || 32,
@@ -686,7 +606,7 @@ export default function AdminPuzzlesPage() {
                       miniPuzzle: z.miniPuzzle,
                       codeEntry: z.codeEntry,
                     };
-                    if (z.meta && typeof z.meta === 'object') return { ...(z.meta as any), ...base };
+                    if (z.meta && typeof z.meta === 'object') return { ...(z.meta as Record<string, unknown>), ...base };
                     // If `z.meta` was a string (already serialized), preserve it as-is.
                     if (typeof z.meta === 'string') return z.meta;
                     return base;
@@ -710,7 +630,7 @@ export default function AdminPuzzlesPage() {
         if (formData.puzzleData && Array.isArray(formData.puzzleData.scenes)) {
           cleanedPuzzleData = {
             ...formData.puzzleData,
-            scenes: formData.puzzleData.scenes.map((scene: any) => ({
+            scenes: (formData.puzzleData.scenes as Record<string, unknown>[]).map((scene) => ({
               ...scene,
               items: Array.isArray(scene.items) ? scene.items : [],
               interactiveZones: Array.isArray(scene.interactiveZones) ? scene.interactiveZones : [],
@@ -728,7 +648,7 @@ export default function AdminPuzzlesPage() {
           gridlockFile: parsedGridlock,
         };
       }
-      const submitBody: any = { ...formData, hints: filteredHints, puzzleData: cleanedPuzzleData };
+      const submitBody: Record<string, unknown> = { ...formData, hints: filteredHints, puzzleData: cleanedPuzzleData };
       if (formData.puzzleType === 'sudoku' && sudokuPuzzle) {
         submitBody.sudokuGrid = sudokuPuzzle.puzzle;
         submitBody.sudokuSolution = sudokuPuzzle.solution;
@@ -842,7 +762,7 @@ export default function AdminPuzzlesPage() {
       });
 
       if (!response.ok) {
-        let errorData: any = null;
+        let errorData: { error?: string; details?: string; raw?: string } | null = null;
         let rawText = "";
         try {
           rawText = await response.text();
@@ -908,8 +828,8 @@ export default function AdminPuzzlesPage() {
             }).catch((e) => { throw new Error(`Network error: ${e?.message || e}`); });
 
             const txt = await imp.text().catch(() => '');
-            let impData: any = null;
-            try { impData = txt ? JSON.parse(txt) : null; } catch (e) { impData = { raw: txt }; }
+            let impData: { error?: string; message?: string; imageUrl?: string; raw?: string } | null = null;
+            try { impData = txt ? JSON.parse(txt) : null; } catch { impData = { raw: txt }; }
             console.log('[SUBMIT] import-image response', imp.status, impData);
             if (!imp.ok) {
               const errMsg = (impData && (impData.error || impData.message)) || `Import failed (${imp.status})`;
@@ -955,7 +875,7 @@ export default function AdminPuzzlesPage() {
                   throw new Error(`Failed to fetch data URL: ${response.status}`);
                 }
                 blob = await response.blob();
-              } catch (e) {
+              } catch {
                 console.error(`[SUBMIT] Data URL fetch failed, using alternative method`);
                 // Fallback: convert data URL directly
                 const parts = tempMedia.url.split(',');
@@ -1029,7 +949,7 @@ export default function AdminPuzzlesPage() {
             setFormError("⚠️ Puzzle created, but failed to verify image link.");
             setFormSuccess("");
           }
-        } catch (e) {
+        } catch {
           setFormError("⚠️ Puzzle created, but error verifying image link.");
           setFormSuccess("");
         }
@@ -1397,6 +1317,7 @@ export default function AdminPuzzlesPage() {
                               onClick={async () => {
                                 setImportImageResult(null);
                                 setImportImageError(null);
+                                setUploadingMedia(true);
                                 try {
                                   if (!jigsawImageFile) throw new Error('No file selected');
                                   if (!puzzleId) throw new Error('Save the puzzle first to upload');
@@ -1404,6 +1325,8 @@ export default function AdminPuzzlesPage() {
                                 } catch (err) {
                                   const msg = err instanceof Error ? err.message : String(err);
                                   setImportImageError(msg);
+                                } finally {
+                                  setUploadingMedia(false);
                                 }
                               }}
                               className="px-4 py-2 rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-semibold whitespace-nowrap"
@@ -1450,7 +1373,7 @@ export default function AdminPuzzlesPage() {
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ puzzleId, imageUrl: jigsawImageUrl }),
                                   }).catch((e) => { throw new Error(`Network error: ${e?.message || e}`); });
-                                  let data: any = null;
+                                  let data: { error?: string; message?: string; imageUrl?: string; raw?: string } | null = null;
                                   const txt = await res.text().catch(() => '');
                                   try { data = txt ? JSON.parse(txt) : null; } catch { data = { raw: txt }; }
                                   if (!res.ok) {
@@ -1490,6 +1413,8 @@ export default function AdminPuzzlesPage() {
                         )}
                         {jigsawImagePreview && (
                           <div className="flex items-center gap-3">
+                            {/* next/image can't render blob: object URLs (used here for local file previews before upload) */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={jigsawImagePreview} alt="preview" className="max-h-20 max-w-[160px] object-contain bg-[#111] rounded border border-slate-600" />
                             <button
                               type="button"

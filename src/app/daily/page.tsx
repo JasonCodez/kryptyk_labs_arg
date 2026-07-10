@@ -45,6 +45,9 @@ export default function DailyHubPage() {
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState("00:00:00");
+  // The Debrief lives on its own system (WitnessResult, not the shared dailyPuzzleRecord/streak
+  // infra the other five cards use) so its completion status is fetched separately.
+  const [debriefCompleted, setDebriefCompleted] = useState(false);
 
   useEffect(() => {
     setCountdown(getCountdown());
@@ -67,6 +70,19 @@ export default function DailyHubPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/debrief/today", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setDebriefCompleted(!!data.completed);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div style={{ backgroundColor: "#020202", minHeight: "100vh" }}>
       <Navbar />
@@ -74,7 +90,7 @@ export default function DailyHubPage() {
       <main className="pt-24 pb-16 flex flex-col items-center px-3">
         <div className="w-full max-w-5xl mt-6 mb-6 text-center">
           <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3891A6" }}>Daily Puzzles</p>
-          <h1 className="text-white text-3xl font-black tracking-tight mt-1">Five fresh puzzles, every day</h1>
+          <h1 className="text-white text-3xl font-black tracking-tight mt-1">Six fresh puzzles, every day</h1>
           <p className="text-xs font-mono mt-2" style={{ color: "#FDE74C" }}>Resets in {countdown}</p>
         </div>
 
@@ -126,6 +142,40 @@ export default function DailyHubPage() {
                 </Link>
               );
             })}
+
+            {/* The Debrief — separate system (no dayNumber/streak), so rendered by hand rather
+                than through CARDS. */}
+            <Link
+              href="/debrief"
+              className="rounded-2xl p-5 flex flex-col gap-3 transition-transform hover:-translate-y-0.5"
+              style={{
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(255,255,255,0.03)",
+                textDecoration: "none",
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-3xl select-none">🔍</span>
+                {debriefCompleted && (
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(56,211,153,0.15)", color: "#38D399" }}>
+                    ✓ Done
+                  </span>
+                )}
+              </div>
+              <div>
+                <h2 className="text-white font-bold text-lg">The Debrief</h2>
+              </div>
+
+              {!isAuthenticated ? (
+                <p className="text-xs mt-auto" style={{ color: "#AB9F9D" }}>Sign in to play</p>
+              ) : debriefCompleted ? (
+                <p className="text-xs mt-auto" style={{ color: "#666" }}>Come back tomorrow for a new case</p>
+              ) : (
+                <div className="mt-auto flex items-center gap-2 text-xs font-semibold" style={{ color: "#FDE74C" }}>
+                  🕵️ Read the report →
+                </div>
+              )}
+            </Link>
           </div>
         )}
       </main>

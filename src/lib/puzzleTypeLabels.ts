@@ -22,6 +22,7 @@ export const PUZZLE_TYPE_LABELS: Record<string, string> = {
   blackout:        "Declassify",
   code_master:     "Code Master",
   arg:             "ARG",
+  logic_grid:      "Logic Grid",
 };
 
 /**

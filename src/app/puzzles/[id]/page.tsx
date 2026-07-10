@@ -1632,7 +1632,7 @@ export default function PuzzleDetailPage() {
             />
 
             {/* Default form — text / sudoku / code_master puzzle types */}
-            {!['jigsaw','escape_room','jim_wyze_case','detective_case','crime_rpg','parasite_code','gridlock_file','crack_safe','word_crack','crossword','word_search','anagram_blitz','arg','blackout','vault'].includes(puzzle?.puzzleType ?? '') && (
+            {!['jigsaw','escape_room','jim_wyze_case','detective_case','crime_rpg','parasite_code','gridlock_file','crack_safe','word_crack','crossword','word_search','anagram_blitz','arg','blackout','vault','logic_grid'].includes(puzzle?.puzzleType ?? '') && (
               <form onSubmit={handleSubmit} className="mb-8">
                 {progress?.solved && (
                   <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
