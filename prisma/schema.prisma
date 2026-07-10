@@ -970,6 +970,11 @@ model Achievement {
   requirement      String
   conditionType    String
   conditionValue   Int?
+  // Which puzzleType + chapter (1-indexed boss position within that type) this achievement is
+  // for — set only for boss-puzzle achievements (conditionType "boss_chapter_cleared"). See
+  // src/lib/puzzleProgression.ts for how chapters are computed.
+  relatedPuzzleType   String?
+  relatedChapterIndex Int?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   userAchievements UserAchievement[]

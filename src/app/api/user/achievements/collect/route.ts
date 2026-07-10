@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     // Validate that the achievement can be unlocked based on condition type
     // Only allow collection for achievements with automatic unlock conditions
-    const autoUnlockTypes = ["puzzles_solved", "boss_puzzles_solved", "submission_accuracy", "points_earned", "streak", "custom"];
+    const autoUnlockTypes = ["puzzles_solved", "boss_chapter_cleared", "submission_accuracy", "points_earned", "streak", "custom"];
     if (!autoUnlockTypes.includes(achievement.conditionType)) {
       return NextResponse.json(
         { error: "This achievement cannot be auto-collected" },
@@ -105,14 +105,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // For boss_puzzles_solved achievements, validate the condition is met — same shape as
-    // puzzles_solved but scoped to chapter-gating boss puzzles (see src/lib/puzzleProgression.ts).
-    if (achievement.conditionType === "boss_puzzles_solved") {
-      const bossSolvedCount = await prisma.userPuzzleProgress.count({
-        where: { userId: user.id, solved: true, puzzle: { isBossPuzzle: true } },
+    // For boss_chapter_cleared achievements, identify the specific Nth boss puzzle of
+    // achievement.relatedPuzzleType (same order/createdAt sort as ensureBossPuzzleAchievements
+    // in src/lib/ensureCoreAchievements.ts) and check that this user solved that exact puzzle.
+    if (achievement.conditionType === "boss_chapter_cleared") {
+      if (!achievement.relatedPuzzleType || !achievement.relatedChapterIndex) {
+        return NextResponse.json(
+          { error: "Condition not met for this achievement" },
+          { status: 400 }
+        );
+      }
+
+      const bossPuzzlesOfType = await prisma.puzzle.findMany({
+        where: {
+          isActive: true,
+          isWarzExclusive: false,
+          isBossPuzzle: true,
+          puzzleType: achievement.relatedPuzzleType,
+        },
+        select: { id: true },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       });
 
-      if (bossSolvedCount < (achievement.conditionValue || 1)) {
+      const targetBossPuzzle = bossPuzzlesOfType[achievement.relatedChapterIndex - 1];
+
+      if (!targetBossPuzzle) {
+        return NextResponse.json(
+          { error: "Condition not met for this achievement" },
+          { status: 400 }
+        );
+      }
+
+      const solvedRecord = await prisma.userPuzzleProgress.findUnique({
+        where: { userId_puzzleId: { userId: user.id, puzzleId: targetBossPuzzle.id } },
+        select: { solved: true },
+      });
+
+      if (!solvedRecord?.solved) {
         return NextResponse.json(
           { error: "Condition not met for this achievement" },
           { status: 400 }
