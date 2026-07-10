@@ -96,7 +96,7 @@ export default function AdminTeamsPage() {
         const data = await res.json().catch(() => ({}));
         setDeleteError(data.error || "Delete failed");
       }
-    } catch (e) {
+    } catch {
       setDeleteError("Network error — could not delete team");
     } finally {
       setDeletingId(null);

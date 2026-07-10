@@ -82,7 +82,7 @@ export async function POST(
     if (ctx instanceof NextResponse) return ctx;
 
     const [progress, user] = await Promise.all([
-      (prisma as any).teamEscapeProgress.findFirst({
+      prisma.teamEscapeProgress.findFirst({
         where: progressWhereClause(ctx),
         select: {
           id: true,
@@ -123,7 +123,7 @@ export async function POST(
       const acks = safeJsonParse<BriefingAcksMap>(progress.briefingAcks, {});
       acks[ctx.userId] = nowIso();
 
-      const updated = await (prisma as any).teamEscapeProgress.update({
+      const updated = await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: { briefingAcks: JSON.stringify(acks) },
         select: { briefingAcks: true, runStartedAt: true, runExpiresAt: true },
@@ -186,7 +186,7 @@ export async function POST(
       if (!ctx.isLobby && !ctx.isSolo) {
         const memberIdList = Array.from(memberIds);
         if (memberIdList.length > 0) {
-          await (prisma as any).teamEscapeProgress.updateMany({
+          await prisma.teamEscapeProgress.updateMany({
             where: {
               soloUserId: { in: memberIdList },
               escapeRoomId: ctx.escapeRoomId,
@@ -205,7 +205,7 @@ export async function POST(
         }
       }
 
-      const updated = await (prisma as any).teamEscapeProgress.update({
+      const updated = await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: { runStartedAt: startedAt, runExpiresAt: expiresAt },
         select: { runStartedAt: true, runExpiresAt: true, briefingAcks: true },
@@ -262,7 +262,7 @@ export async function POST(
         expiresAt: new Date(Date.now() + ttlMs).toISOString(),
       };
 
-      const updated = await (prisma as any).teamEscapeProgress.update({
+      const updated = await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: { inventoryLocks: JSON.stringify(locks) },
         select: { inventoryLocks: true },
@@ -303,7 +303,7 @@ export async function POST(
 
       delete locks[itemKey];
 
-      const updated2 = await (prisma as any).teamEscapeProgress.update({
+      const updated2 = await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: { inventoryLocks: JSON.stringify(locks) },
         select: { inventoryLocks: true },
@@ -331,7 +331,7 @@ export async function POST(
 
       delete locks[itemKey];
 
-      const updated = await (prisma as any).teamEscapeProgress.update({
+      const updated = await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: { inventoryLocks: JSON.stringify(locks) },
         select: { inventoryLocks: true },

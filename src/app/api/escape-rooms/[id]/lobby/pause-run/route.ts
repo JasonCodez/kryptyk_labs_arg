@@ -42,11 +42,11 @@ export async function POST(
     if (!escapeRoom) return NextResponse.json({ ok: true }); // no-op
 
     // How many members are still connected to this lobby?
-    const remainingMembers = await (prisma as any).escapeRoomLobbyMember.count({
+    const remainingMembers = await prisma.escapeRoomLobbyMember.count({
       where: { lobbyId },
     });
 
-    const progress = await (prisma as any).teamEscapeProgress.findFirst({
+    const progress = await prisma.teamEscapeProgress.findFirst({
       where: { lobbyId, escapeRoomId: escapeRoom.id },
       select: {
         id: true,
@@ -72,7 +72,7 @@ export async function POST(
     if (remainingMembers > 0) {
       // Others still playing — create a solo save snapshot for the disconnecting player
       // without touching the shared progress record.
-      const existing = await (prisma as any).teamEscapeProgress.findFirst({
+      const existing = await prisma.teamEscapeProgress.findFirst({
         where: {
           soloUserId: userId,
           escapeRoomId: escapeRoom.id,
@@ -95,9 +95,9 @@ export async function POST(
       };
 
       if (existing) {
-        await (prisma as any).teamEscapeProgress.update({ where: { id: existing.id }, data: snapshotData });
+        await prisma.teamEscapeProgress.update({ where: { id: existing.id }, data: snapshotData });
       } else {
-        await (prisma as any).teamEscapeProgress.create({
+        await prisma.teamEscapeProgress.create({
           data: { escapeRoomId: escapeRoom.id, ...snapshotData },
         });
       }
@@ -105,7 +105,7 @@ export async function POST(
       // Last player — pause the shared record in place (stop the timer).
       if (progress.pausedAt) return NextResponse.json({ ok: true }); // already paused
 
-      await (prisma as any).teamEscapeProgress.update({
+      await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: {
           pausedAt: new Date(),

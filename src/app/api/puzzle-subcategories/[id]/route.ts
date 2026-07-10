@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       data: { name, description },
     });
     return NextResponse.json(subcategory);
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Failed to update subcategory.' }, { status: 500 });
   }
 }
@@ -33,7 +33,7 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
     const { id } = await context.params;
     await prisma.puzzleSubcategory.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Failed to delete subcategory.' }, { status: 500 });
   }
 }

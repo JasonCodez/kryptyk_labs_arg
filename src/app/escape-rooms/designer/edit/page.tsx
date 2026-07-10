@@ -22,7 +22,7 @@ function EscapeRoomDesignerEditPageContent() {
         else setInitialData(data);
         setLoading(false);
       })
-      .catch(err => {
+      .catch(() => {
         setError("Failed to load escape room");
         setLoading(false);
       });

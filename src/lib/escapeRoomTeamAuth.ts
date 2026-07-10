@@ -45,7 +45,7 @@ export async function getSessionMembers(ctx: EscapeRoomTeamContext) {
     return [{ userId: ctx.userId }];
   }
   if (ctx.isLobby) {
-    const rows = await (prisma as any).escapeRoomLobbyMember.findMany({
+    const rows = await prisma.escapeRoomLobbyMember.findMany({
       where: { lobbyId: ctx.teamId },
       select: { userId: true },
     });
@@ -61,7 +61,7 @@ export async function getSessionMembers(ctx: EscapeRoomTeamContext) {
  */
 export async function getLobbyHostId(ctx: EscapeRoomTeamContext): Promise<string | null> {
   if (!ctx.isLobby) return null;
-  const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+  const lobby = await prisma.escapeRoomLobby.findUnique({
     where: { id: ctx.teamId },
     select: { hostId: true },
   });
@@ -130,14 +130,14 @@ export async function requireEscapeRoomTeamContext(
       }
     }
 
-    let progress = await (prisma as any).teamEscapeProgress.findFirst({
+    let progress = await prisma.teamEscapeProgress.findFirst({
       where: { soloUserId: userId, escapeRoomId: escapeRoom.id },
       orderBy: { startedAt: "desc" },
       select: { id: true, failedAt: true, completedAt: true },
     });
 
     if (!progress) {
-      progress = await (prisma as any).teamEscapeProgress.create({
+      progress = await prisma.teamEscapeProgress.create({
         data: {
           escapeRoomId: escapeRoom.id,
           soloUserId: userId,
@@ -163,7 +163,7 @@ export async function requireEscapeRoomTeamContext(
   // ── Lobby mode (ad-hoc 1-4 player run, no permanent team required) ──
   const lobbyId = options?.lobbyId ?? request.nextUrl.searchParams.get("lobbyId");
   if (lobbyId) {
-    const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+    const lobby = await prisma.escapeRoomLobby.findUnique({
       where: { id: lobbyId },
       select: { id: true, puzzleId: true, status: true },
     });
@@ -172,7 +172,7 @@ export async function requireEscapeRoomTeamContext(
       return NextResponse.json({ error: "Lobby is not for this puzzle" }, { status: 400 });
     }
 
-    const member = await (prisma as any).escapeRoomLobbyMember.findUnique({
+    const member = await prisma.escapeRoomLobbyMember.findUnique({
       where: { lobbyId_userId: { lobbyId, userId } },
       select: { id: true },
     });
@@ -197,7 +197,7 @@ export async function requireEscapeRoomTeamContext(
       if (lobby.status !== "started") {
         return NextResponse.json({ error: "The lobby run has not started yet." }, { status: 409 });
       }
-      const progress = await (prisma as any).teamEscapeProgress.findFirst({
+      const progress = await prisma.teamEscapeProgress.findFirst({
         where: { lobbyId, escapeRoomId: escapeRoom.id },
         select: { id: true, failedAt: true, completedAt: true },
       });
@@ -256,7 +256,7 @@ export async function requireEscapeRoomTeamContext(
   }
 
   if (requireStarted) {
-    const progress = await (prisma as any).teamEscapeProgress.findFirst({
+    const progress = await prisma.teamEscapeProgress.findFirst({
       where: { teamId, escapeRoomId: escapeRoom.id },
       select: { id: true, failedAt: true, completedAt: true },
     });

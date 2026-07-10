@@ -18,7 +18,7 @@ export interface LogActivityParams {
   icon?: string;
   relatedId?: string;
   relatedType?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

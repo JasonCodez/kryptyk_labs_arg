@@ -256,7 +256,7 @@ export default function PublicProfilePage() {
         setNameError(v.reason || 'Invalid name');
         return;
       }
-    } catch (e) {
+    } catch {
       // fallback to simple regexp if import fails
       const validRe = /^[A-Za-z0-9]{3,16}$/;
       if (!validRe.test(candidate)) {

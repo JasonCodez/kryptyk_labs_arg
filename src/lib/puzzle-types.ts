@@ -127,7 +127,7 @@ export interface SceneAnimation {
   animationType: 'fade' | 'slide' | 'scale' | 'bounce' | 'custom';
   duration: number; // milliseconds
   delay: number; // milliseconds
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
 }
 
 export interface SceneAnimationData {
@@ -135,7 +135,7 @@ export interface SceneAnimationData {
   animationType: 'fade' | 'slide' | 'scale' | 'bounce' | 'custom';
   duration: number;
   delay: number;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
 }
 
 export interface PuzzleProgress {
@@ -146,7 +146,7 @@ export interface PuzzleProgress {
   solved: boolean;
   attempts: number;
   timeSpent: number; // seconds
-  progress: Record<string, any>; // puzzle-specific progress data
+  progress: Record<string, unknown>; // puzzle-specific progress data
 }
 
 // Import PIXI types

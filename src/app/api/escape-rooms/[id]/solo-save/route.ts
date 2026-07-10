@@ -27,7 +27,7 @@ export async function GET(
     });
     if (!escapeRoom) return NextResponse.json({ save: null });
 
-    const save = await (prisma as any).teamEscapeProgress.findFirst({
+    const save = await prisma.teamEscapeProgress.findFirst({
       where: {
         soloUserId: user.id,
         escapeRoomId: escapeRoom.id,
@@ -86,7 +86,7 @@ export async function DELETE(
     if (!escapeRoom) return NextResponse.json({ ok: true });
 
     // Mark as abandoned (failed) so it no longer blocks resume.
-    await (prisma as any).teamEscapeProgress.updateMany({
+    await prisma.teamEscapeProgress.updateMany({
       where: {
         soloUserId: user.id,
         escapeRoomId: escapeRoom.id,

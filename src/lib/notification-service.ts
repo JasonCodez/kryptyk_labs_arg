@@ -15,7 +15,7 @@ const NOTIFICATION_EMAILS_ENABLED = false;
 
 interface CreateNotificationOptions {
   userId: string;
-  type: "puzzle_released" | "achievement_unlocked" | "team_update" | "leaderboard_change" | "slot_win" | "system";
+  type: "puzzle_released" | "achievement_unlocked" | "team_update" | "leaderboard_change" | "slot_win" | "system" | "team_lobby_invite";
   title: string;
   message: string;
   icon?: string;
@@ -86,7 +86,7 @@ export async function createNotification(options: CreateNotificationOptions) {
     // Log creation for debugging lobby invite flows
     try {
       console.log(`Created notification: id=${notification.id} user=${notification.userId} type=${notification.type} relatedId=${notification.relatedId}`);
-    } catch (e) {
+    } catch {
       // ignore logging failures
     }
 
@@ -98,7 +98,7 @@ export async function createNotification(options: CreateNotificationOptions) {
         if (!resp || !resp.ok) {
           // not fatal — socket server may not be running
         }
-      } catch (e) {
+      } catch {
         // ignore push failures
       }
     })();

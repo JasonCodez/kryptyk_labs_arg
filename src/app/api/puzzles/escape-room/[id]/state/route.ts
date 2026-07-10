@@ -25,7 +25,7 @@ export async function GET(
     if (ctx instanceof NextResponse) return ctx;
 
     const [progress, escapeRoom] = await Promise.all([
-      (prisma as any).teamEscapeProgress.findFirst({
+      prisma.teamEscapeProgress.findFirst({
         where: progressWhereClause(ctx),
         select: {
           id: true,
@@ -95,7 +95,7 @@ export async function GET(
         new Date(progress.runExpiresAt).getTime() <= Date.now()
       ) {
         const failAt = new Date();
-        const updated = await (prisma as any).teamEscapeProgress.update({
+        const updated = await prisma.teamEscapeProgress.update({
           where: { id: progress.id },
           data: { failedAt: failAt, failedReason: "Time expired" },
           select: { failedAt: true, failedReason: true },
@@ -108,7 +108,7 @@ export async function GET(
         // Lock out all team members for this escape room.
         await markUsersFailed(failAt, 'time_expired');
       }
-    } catch (e) {
+    } catch {
       // non-fatal
     }
 
@@ -139,8 +139,8 @@ export async function GET(
     }
 
     const briefingAcks = safeJsonParse<Record<string, string>>(progress?.briefingAcks, {});
-    const inventoryLocks = safeJsonParse<Record<string, any>>(progress?.inventoryLocks, {});
-    const sceneState = safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {});
+    const inventoryLocks = safeJsonParse<Record<string, unknown>>(progress?.inventoryLocks, {});
+    const sceneState = safeJsonParse<Record<string, unknown>>((progress as any)?.sceneState, {});
 
     return NextResponse.json({
       inventory,

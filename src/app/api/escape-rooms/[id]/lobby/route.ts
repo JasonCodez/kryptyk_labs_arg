@@ -45,7 +45,7 @@ export async function POST(
     let code = generateCode();
     let attempts = 0;
     while (attempts < 10) {
-      const existing = await (prisma as any).escapeRoomLobby.findUnique({ where: { code } });
+      const existing = await prisma.escapeRoomLobby.findUnique({ where: { code } });
       if (!existing) break;
       code = generateCode();
       attempts++;
@@ -53,7 +53,7 @@ export async function POST(
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minute lobby window
 
-    const lobby = await (prisma as any).escapeRoomLobby.create({
+    const lobby = await prisma.escapeRoomLobby.create({
       data: {
         code,
         puzzleId,

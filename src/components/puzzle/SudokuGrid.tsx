@@ -147,7 +147,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
           // @ts-ignore - canvas-confetti has no type declarations in this project
           const confetti = (await import('canvas-confetti')).default;
           confetti({ particleCount: 140, spread: 70, origin: { y: 0.6 } });
-        } catch (e) {
+        } catch {
           // ignore if not available
         }
       }
@@ -163,7 +163,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
           const confetti = (await import('canvas-confetti')).default;
           confetti({ particleCount: 90, spread: 100, origin: { y: 0.5 }, angle: 60 });
           confetti({ particleCount: 90, spread: 100, origin: { y: 0.5 }, angle: 120 });
-        } catch (e) {
+        } catch {
           // ignore if not available
         }
       }
@@ -230,7 +230,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
     try {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       setReducedMotion(Boolean(mq.matches));
-    } catch (e) {
+    } catch {
       setReducedMotion(false);
     }
   }, []);

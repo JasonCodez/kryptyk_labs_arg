@@ -49,7 +49,7 @@ export default function TeamsPage() {
       fetchTeams();
       if (session?.user?.email) fetchInvitationCount();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [status, session?.user?.email]);
 
   // Ensure viewMode is set consistently for unauthenticated users

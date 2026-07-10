@@ -69,7 +69,7 @@ interface EscapeRoomItem {
   perspectiveDistance?: number;
   /** CSS transform-origin override (default 'center center'). */
   transformOrigin?: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   /** Ambient animation effect shown on this item in the player. */
   ambientEffect?: 'none' | 'glow' | 'pulse' | 'float' | 'sparkle' | 'shimmer';
 }
@@ -616,7 +616,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
   }, [editId, MAX_CLIENT_UPLOAD]);
 
   const parseManifestScenes = useCallback((manifestRaw: unknown): EscapeRoomScene[] => {
-    const manifest = (manifestRaw && typeof manifestRaw === 'object') ? (manifestRaw as Record<string, any>) : {};
+    const manifest = (manifestRaw && typeof manifestRaw === 'object') ? (manifestRaw as Record<string, unknown>) : {};
     const scenesRaw = Array.isArray(manifest.scenes) ? manifest.scenes : [];
     if (scenesRaw.length === 0) {
       throw new Error('Manifest has no scenes array.');
@@ -631,7 +631,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
     };
 
     return scenesRaw.map((sceneRaw, idx) => {
-      const sceneObj = (sceneRaw && typeof sceneRaw === 'object') ? (sceneRaw as Record<string, any>) : {};
+      const sceneObj = (sceneRaw && typeof sceneRaw === 'object') ? (sceneRaw as Record<string, unknown>) : {};
       const sceneId = typeof sceneObj.id === 'string' && sceneObj.id.trim() ? sceneObj.id.trim() : `scene_${idx + 1}`;
       const variantsRaw = Array.isArray(sceneObj.stateVariants)
         ? sceneObj.stateVariants
@@ -639,7 +639,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
 
       const stateVariants: SceneVisualVariant[] = variantsRaw
         .map((variantRaw: any, variantIdx: number) => {
-          const v = (variantRaw && typeof variantRaw === 'object') ? (variantRaw as Record<string, any>) : {};
+          const v = (variantRaw && typeof variantRaw === 'object') ? (variantRaw as Record<string, unknown>) : {};
           const variantId = typeof v.id === 'string' && v.id.trim() ? v.id.trim() : `${sceneId}_variant_${variantIdx + 1}`;
           const variantLabel = typeof v.label === 'string' && v.label.trim() ? v.label.trim() : `Variant ${variantIdx + 1}`;
           return {
@@ -656,7 +656,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
 
       const itemsRaw = Array.isArray(sceneObj.items) ? sceneObj.items : [];
       const items: EscapeRoomItem[] = itemsRaw.map((itemRaw: any, itemIdx: number) => {
-        const it = (itemRaw && typeof itemRaw === 'object') ? (itemRaw as Record<string, any>) : {};
+        const it = (itemRaw && typeof itemRaw === 'object') ? (itemRaw as Record<string, unknown>) : {};
         return {
           id: typeof it.id === 'string' && it.id.trim() ? it.id.trim() : `${sceneId}_item_${itemIdx + 1}`,
           name: typeof it.name === 'string' ? it.name : '',
@@ -666,7 +666,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
           y: Number.isFinite(Number(it.y)) ? Number(it.y) : 50,
           w: Number.isFinite(Number(it.w)) ? Number(it.w) : 48,
           h: Number.isFinite(Number(it.h)) ? Number(it.h) : 48,
-          properties: (it.properties && typeof it.properties === 'object') ? (it.properties as Record<string, any>) : {},
+          properties: (it.properties && typeof it.properties === 'object') ? (it.properties as Record<string, unknown>) : {},
           ambientEffect: (it.ambientEffect === 'glow' || it.ambientEffect === 'pulse' || it.ambientEffect === 'float' || it.ambientEffect === 'sparkle' || it.ambientEffect === 'shimmer')
             ? it.ambientEffect
             : undefined,
@@ -675,8 +675,8 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
 
       const zonesRaw = Array.isArray(sceneObj.interactiveZones) ? sceneObj.interactiveZones : [];
       const interactiveZones: InteractiveZone[] = zonesRaw.map((zoneRaw: any, zoneIdx: number) => {
-        const z = (zoneRaw && typeof zoneRaw === 'object') ? (zoneRaw as Record<string, any>) : {};
-        const useEffectRaw = (z.useEffect && typeof z.useEffect === 'object') ? (z.useEffect as Record<string, any>) : null;
+        const z = (zoneRaw && typeof zoneRaw === 'object') ? (zoneRaw as Record<string, unknown>) : {};
+        const useEffectRaw = (z.useEffect && typeof z.useEffect === 'object') ? (z.useEffect as Record<string, unknown>) : null;
 
         const useEffect = useEffectRaw
           ? {
@@ -949,9 +949,9 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
   useEffect(() => {
     try {
       const url = scenes?.[previewSceneIdx]?.backgroundUrl;
-      // eslint-disable-next-line no-console
+       
       console.log('[Designer] Preview scene backgroundUrl:', url);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [scenes, previewSceneIdx]);
@@ -2087,7 +2087,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
                       if (typeof stateKey === 'string' && stateKey.trim()) {
                         const spriteStates = sceneItem?.properties?.spriteStates;
                         if (spriteStates && typeof spriteStates === 'object') {
-                          const stateImage = spriteStates[stateKey];
+                          const stateImage = (spriteStates as Record<string, unknown>)[stateKey];
                           if (typeof stateImage === 'string' && stateImage.trim()) {
                             pickupImageUrl = stateImage;
                           }
@@ -3921,7 +3921,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
                                 const updated = [...scenes];
                                 const cur = updated[idx].items[itemIdx];
                                 const curStates = { ...((cur.properties?.spriteStates && typeof cur.properties.spriteStates === 'object') ? cur.properties.spriteStates : {}) } as Record<string, string>;
-                                let baseKey = 'state';
+                                const baseKey = 'state';
                                 let nextKey = baseKey;
                                 let suffix = 2;
                                 while (Object.prototype.hasOwnProperty.call(curStates, nextKey)) {
@@ -3946,7 +3946,7 @@ export default function EscapeRoomDesigner({ initialData, editId, onChange, sing
                                   const updated = [...scenes];
                                   const cur = updated[idx].items[itemIdx];
                                   const value = e.target.value.trim();
-                                  const nextProps = { ...(cur.properties || {}) } as Record<string, any>;
+                                  const nextProps = { ...(cur.properties || {}) } as Record<string, unknown>;
                                   if (!value) {
                                     delete nextProps.stateTransitionMs;
                                   } else {

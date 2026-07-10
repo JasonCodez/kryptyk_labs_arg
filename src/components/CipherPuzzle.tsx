@@ -41,7 +41,7 @@ export default function CipherPuzzle({ puzzle, onSolve }: CipherPuzzleProps) {
       } else {
         setFeedback({ type: 'error', text: result.feedback });
       }
-    } catch (error) {
+    } catch {
       setFeedback({ type: 'error', text: 'Failed to submit answer' });
     } finally {
       setSubmitting(false);

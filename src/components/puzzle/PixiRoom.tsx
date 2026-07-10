@@ -316,7 +316,7 @@ export default function PixiRoom({
         try {
           canvas.width = Math.max(1, Math.floor(width * dpr));
           canvas.height = Math.max(1, Math.floor(height * dpr));
-        } catch (err) { /* ignore */ }
+        } catch { /* ignore */ }
         // Pixi v8: create Application then await `app.init()`.
         // We still keep a legacy fallback in case a different build is present.
         const appOptions = {
@@ -382,7 +382,7 @@ export default function PixiRoom({
             try { console.info('[PixiRoom] canvas present in DOM?', !!(canvas && canvas.parentNode), 'canvas size:', { cw: canvas.width, ch: canvas.height, cssW: canvas.style?.width, cssH: canvas.style?.height }); } catch (_) { /* ignore */ }
 
             // Pixi v8: constructor does NOT fully initialize renderer; call `app.init()`.
-            // eslint-disable-next-line new-cap
+             
             const maybeApp = new (PIXI as any).Application();
             if (maybeApp && typeof maybeApp.init === 'function') {
               await maybeApp.init(appOptions);
@@ -398,7 +398,7 @@ export default function PixiRoom({
               console.info('[PixiRoom] Application.init() completed; renderer present?', !!(app as any).renderer);
             } else {
               // Legacy: some builds still accept constructor options.
-              // eslint-disable-next-line new-cap
+               
               app = new PIXI.Application({ ...(appOptions as any), view: canvas } as any);
               console.info('[PixiRoom] Legacy constructor created app', !!app, 'renderer present?', !!(app as any).renderer);
             }
@@ -434,7 +434,7 @@ export default function PixiRoom({
             canvas.style.width = width + 'px';
             canvas.style.height = height + 'px';
           } catch (_) { /* ignore */ }
-        } catch (err) { /* ignore */ }
+        } catch { /* ignore */ }
         appRef.current = app;
         // If the created PIXI Application lacks a renderer (some builds strip renderers),
         // enable the pure-canvas fallback immediately so the user sees a visible output.
@@ -504,7 +504,7 @@ export default function PixiRoom({
                           return;
                         }
                       }
-                    } catch (e) { /* ignore overlay click errors */ }
+                    } catch { /* ignore overlay click errors */ }
                   };
                   try { overlay.addEventListener('pointerdown', overlayPointerHandler); } catch (_) { /* ignore */ }
                 }
@@ -579,7 +579,7 @@ export default function PixiRoom({
               delete fallbackOptions.view;
               // ensure we still pass resolution/autoDensity/width/height/forceCanvas
               try { console.info('[PixiRoom] attempting new PIXI.Application without view', { resolution: fallbackOptions.resolution, forceCanvas: fallbackOptions.forceCanvas || false }); } catch (_) { /* ignore */ }
-              // eslint-disable-next-line new-cap
+               
               const altApp = new (PIXI as any).Application(fallbackOptions) as any;
               if (altApp && altApp.renderer) {
                 try {
@@ -645,7 +645,7 @@ export default function PixiRoom({
               /* enforced canvas size */
             } catch (_) { /* ignore */ }
           }
-        } catch (err) { /* ignore */ }
+        } catch { /* ignore */ }
       } catch (err) {
         console.error('[PixiRoom] PIXI.Application init failed', err);
         return;
@@ -1754,7 +1754,7 @@ export default function PixiRoom({
               (c as any)._dragOffset.y = pos.y - c.y;
               (c as any)._downPos.x = pos.x;
               (c as any)._downPos.y = pos.y;
-            } catch (err) {
+            } catch {
               // fallback
               (c as any)._dragOffset.x = 0;
               (c as any)._dragOffset.y = 0;
@@ -1792,7 +1792,7 @@ export default function PixiRoom({
               try { (c as any).hitArea = new PIXI.Rectangle(0, 0, currW, currH); } catch (_) { /* ignore */ }
               try {
                 (appInst as any).renderer.render(appInst.stage);
-              } catch (err) {
+              } catch {
                 try {
                   const rendererName = (appInst as any)?.renderer?.constructor?.name || '';
                   const isWebGL = /webgl/i.test(String(rendererName));
@@ -1804,7 +1804,7 @@ export default function PixiRoom({
                 } catch (_) { /* ignore */ }
               }
               return;
-            } catch (err) {
+            } catch {
               return;
             }
           }
@@ -1854,7 +1854,7 @@ export default function PixiRoom({
               try { (c as any).hitArea = new PIXI.Rectangle(0, 0, currW, currH); } catch (_) { /* ignore */ }
               try {
                 (appInst as any).renderer.render(appInst.stage);
-              } catch (err) {
+              } catch {
                 try {
                   const rendererName = (appInst as any)?.renderer?.constructor?.name || '';
                   const isWebGL = /webgl/i.test(String(rendererName));
@@ -1866,7 +1866,7 @@ export default function PixiRoom({
                 } catch (_) { /* ignore */ }
               }
               return;
-            } catch (err) {
+            } catch {
               return;
             }
           }

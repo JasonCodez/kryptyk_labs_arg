@@ -22,7 +22,7 @@ export async function POST(
     const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+    const lobby = await prisma.escapeRoomLobby.findUnique({
       where: { code: code.toUpperCase() },
       select: {
         id: true,
@@ -38,12 +38,12 @@ export async function POST(
     if (lobby.puzzleId !== puzzleId) return NextResponse.json({ error: "Lobby is not for this puzzle" }, { status: 400 });
     if (lobby.status !== "waiting") return NextResponse.json({ error: "This lobby has already started or expired" }, { status: 409 });
     if (new Date(lobby.expiresAt) < new Date()) {
-      await (prisma as any).escapeRoomLobby.update({ where: { id: lobby.id }, data: { status: "expired" } });
+      await prisma.escapeRoomLobby.update({ where: { id: lobby.id }, data: { status: "expired" } });
       return NextResponse.json({ error: "Lobby has expired" }, { status: 409 });
     }
 
     // Already a member?
-    const existing = await (prisma as any).escapeRoomLobbyMember.findUnique({
+    const existing = await prisma.escapeRoomLobbyMember.findUnique({
       where: { lobbyId_userId: { lobbyId: lobby.id, userId: user.id } },
       select: { id: true },
     });
@@ -52,7 +52,7 @@ export async function POST(
       if (lobby._count.members >= lobby.maxPlayers) {
         return NextResponse.json({ error: "Lobby is full" }, { status: 409 });
       }
-      await (prisma as any).escapeRoomLobbyMember.create({
+      await prisma.escapeRoomLobbyMember.create({
         data: { lobbyId: lobby.id, userId: user.id },
       });
     }

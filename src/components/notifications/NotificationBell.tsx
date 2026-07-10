@@ -18,7 +18,7 @@ export default function NotificationBell({ onActivate }: { onActivate?: () => vo
         // Increment immediately and also refresh to be safe
         setUnreadCount((n) => n + 1);
         fetchUnreadCount();
-      } catch (err) {
+      } catch {
         // ignore
       }
     };

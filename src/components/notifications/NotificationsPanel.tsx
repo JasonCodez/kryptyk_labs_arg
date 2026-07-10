@@ -307,7 +307,7 @@ export default function NotificationsPanel({
                                   setModalVariant('error');
                                   setModalOpen(true);
                                 }
-                              } catch (err) {
+                              } catch {
                                 setModalTitle('Unable to open team');
                                 setModalMessage('There was a problem locating this team.');
                                 setModalVariant('error');

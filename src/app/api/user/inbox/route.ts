@@ -26,7 +26,15 @@ export async function GET(req: NextRequest) {
     });
 
     // Build threads map keyed by otherUserId
-    const threads: Record<string, any> = {};
+    interface ThreadEntry {
+      userId: string;
+      userName: string | null;
+      userImage: string | null;
+      lastMessage: string;
+      lastAt: Date;
+      unreadCount: number;
+    }
+    const threads: Record<string, ThreadEntry> = {};
     for (const m of msgs) {
       const otherId = m.senderId === currentUser.id ? m.recipientId : m.senderId;
       if (!threads[otherId]) {
@@ -55,7 +63,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Return threads sorted by lastAt desc
-    const sorted = Object.values(threads).sort((a: any, b: any) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
+    const sorted = Object.values(threads).sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
     return NextResponse.json({ threads: sorted });
   } catch (error) {
     console.error('Failed to fetch inbox:', error);

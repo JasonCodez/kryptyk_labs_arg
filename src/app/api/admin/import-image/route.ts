@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     // Validate URL
     let parsedUrl: URL;
     try { parsedUrl = new URL(imageUrl); }
-    catch (e) { return NextResponse.json({ error: 'Invalid imageUrl' }, { status: 400 }); }
+    catch { return NextResponse.json({ error: 'Invalid imageUrl' }, { status: 400 }); }
 
     if (!/^https?:$/i.test(parsedUrl.protocol)) {
       return NextResponse.json({ error: 'Only http/https URLs supported' }, { status: 400 });

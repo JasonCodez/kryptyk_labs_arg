@@ -43,7 +43,7 @@ export async function POST(
       if (ok) {
         // Persist solved stage to team progress (best-effort)
         try {
-          const progress = await (prisma as any).teamEscapeProgress.findFirst({
+          const progress = await prisma.teamEscapeProgress.findFirst({
             where: progressWhereClause(ctx),
             select: { id: true, solvedStages: true, currentStageIndex: true, sceneState: true },
           });
@@ -69,7 +69,7 @@ export async function POST(
           if (!solvedStages.includes(stage.order)) solvedStages.push(stage.order);
           solvedStages.sort((a, b) => a - b);
 
-          await (prisma as any).teamEscapeProgress.update({
+          await prisma.teamEscapeProgress.update({
             where: { id: progress!.id },
             data: {
               solvedStages: JSON.stringify(solvedStages),
@@ -77,7 +77,7 @@ export async function POST(
               sceneState: JSON.stringify(sceneStateWithContribution),
             },
           });
-        } catch (e) {
+        } catch {
           // ignore progress write failures
         }
 

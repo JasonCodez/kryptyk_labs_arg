@@ -2,7 +2,7 @@
 let externalBannedWords: string[] | null = null;
 try {
   // try common CJS/ESM shapes
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const lib = require('the-big-username-blacklist');
   if (Array.isArray(lib)) externalBannedWords = lib as string[];
   else if (Array.isArray((lib as any).default)) externalBannedWords = (lib as any).default as string[];
@@ -10,7 +10,7 @@ try {
     const maybe = (lib as any).getList();
     if (Array.isArray(maybe)) externalBannedWords = maybe;
   }
-} catch (e) {
+} catch {
   // package not installed or import failed - we'll use fallback
 }
 

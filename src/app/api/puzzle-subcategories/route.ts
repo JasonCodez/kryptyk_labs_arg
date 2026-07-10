@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       data: { name, description, categoryId },
     });
     return NextResponse.json(subcategory, { status: 201 });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Failed to create subcategory.' }, { status: 500 });
   }
 }

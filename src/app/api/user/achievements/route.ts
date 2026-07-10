@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        let checkDate = new Date(uniqueDates[0]);
+        const checkDate = new Date(uniqueDates[0]);
         checkDate.setHours(0, 0, 0, 0);
         
         // Allow streak to be broken by at most 1 day (solved yesterday or today)

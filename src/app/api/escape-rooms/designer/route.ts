@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAdminUser } from '@/lib/requireAdmin';
+import { Prisma } from '@prisma/client';
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,12 +12,12 @@ export async function POST(req: NextRequest) {
 
     const data = await req.json();
     // Destructure the designer config
-    const { title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes, userSpecialties } = data;
+    const { title, description, timeLimit, startMode, minTeamSize, playerMode, intro, outro, scenes } = data;
     // For now, require a dummy puzzleId (should be replaced with real puzzle linkage)
     const dummyPuzzle = await prisma.puzzle.findFirst({ where: { isActive: false, puzzleType: 'escape_room' } })
       || await prisma.puzzle.findFirst();
     if (!dummyPuzzle) return NextResponse.json({ error: 'No puzzle found. Please create a puzzle first.' }, { status: 400 });
-    const createData: any = {
+    const createData: Record<string, unknown> = {
       roomTitle: title,
       roomDescription: description,
       puzzleId: dummyPuzzle.id,
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
     if (typeof timeLimit !== 'undefined' && timeLimit !== null) createData.timeLimitSeconds = Number(timeLimit);
 
     const escapeRoom = await prisma.escapeRoomPuzzle.create({
-      data: createData,
+      data: createData as Prisma.EscapeRoomPuzzleCreateInput,
     });
     // Create scenes (RoomLayout)
     for (const scene of scenes) {
@@ -64,29 +65,29 @@ export async function POST(req: NextRequest) {
               zoneId: typeof zone?.id === 'string' ? zone.id : undefined,
               label: zone.label,
               modalContent: zone.modalContent,
-              itemId: (zone as any).itemId,
-              imageUrl: (zone as any).imageUrl,
-              interactions: (zone as any).interactions,
+              itemId: zone.itemId,
+              imageUrl: zone.imageUrl,
+              interactions: zone.interactions,
               linkedPuzzleId: zone.linkedPuzzleId,
               eventId: zone.eventId,
-              targetSceneId: (zone as any).targetSceneId,
-              pickupAnimationPreset: (zone as any).pickupAnimationPreset,
-              pickupAnimationUrl: (zone as any).pickupAnimationUrl,
-              sfx: (zone as any).sfx || undefined,
-              penaltySeconds: (zone as any).penaltySeconds || undefined,
-              miniPuzzle: (zone as any).miniPuzzle || undefined,
-              codeEntry: (zone as any).codeEntry || undefined,
-              requiredItemId: (zone as any).requiredItemId,
-              consumeItemOnUse: (zone as any).consumeItemOnUse,
-              disabledByDefault: (zone as any).disabledByDefault,
-              useEffect: (zone as any).useEffect,
+              targetSceneId: zone.targetSceneId,
+              pickupAnimationPreset: zone.pickupAnimationPreset,
+              pickupAnimationUrl: zone.pickupAnimationUrl,
+              sfx: zone.sfx || undefined,
+              penaltySeconds: zone.penaltySeconds || undefined,
+              miniPuzzle: zone.miniPuzzle || undefined,
+              codeEntry: zone.codeEntry || undefined,
+              requiredItemId: zone.requiredItemId,
+              consumeItemOnUse: zone.consumeItemOnUse,
+              disabledByDefault: zone.disabledByDefault,
+              useEffect: zone.useEffect,
               actionType: zone.actionType,
             }),
           },
         });
       }
       // Create triggers (RoomTrigger) for trigger zones
-      for (const zone of (scene.interactiveZones.filter((z: any) => z.actionType === 'trigger'))) {
+      for (const zone of (scene.interactiveZones.filter((z: Record<string, unknown>) => z.actionType === 'trigger'))) {
         await prisma.roomTrigger.create({
           data: {
             layoutId: layout.id,
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
 
     // Persist full designer payload for runtime reconstruction (item positions, variants, foreground, etc).
     const puzzle = await prisma.puzzle.findUnique({ where: { id: dummyPuzzle.id }, select: { data: true } });
-    const curData: any = puzzle?.data && typeof puzzle.data === 'object' ? puzzle.data : {};
+    const curData: Record<string, unknown> = puzzle?.data && typeof puzzle.data === 'object' ? (puzzle.data as Record<string, unknown>) : {};
     const nextData = {
       ...curData,
       escapeRoomData: {
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
 
     // Optionally: Save userSpecialties (not implemented here)
     return NextResponse.json({ success: true, escapeRoomId: escapeRoom.id });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[ESCAPE ROOM DESIGNER CREATE] Failed to create escape room', error);
     return NextResponse.json({ error: 'Failed to create escape room' }, { status: 500 });
   }

@@ -152,7 +152,7 @@ describe("POST /api/store/purchase", () => {
       warzRematchTokens: 0,
     }));
 
-    mockedPrisma.user.update.mockImplementation(({ data }: { data: Record<string, any> }) => {
+    mockedPrisma.user.update.mockImplementation(({ data }: { data: { totalPoints?: { decrement?: number }; purchasedPoints?: { decrement?: number } } }) => {
       wallet = {
         totalPoints: wallet.totalPoints - (data.totalPoints?.decrement ?? 0),
         purchasedPoints: wallet.purchasedPoints - (data.purchasedPoints?.decrement ?? 0),
@@ -184,7 +184,7 @@ describe("POST /api/store/purchase", () => {
       },
     ]);
 
-    mockedPrisma.userPuzzleProgress.findMany.mockImplementation(({ select }: { select: Record<string, any> }) => {
+    mockedPrisma.userPuzzleProgress.findMany.mockImplementation(({ select }: { select: Record<string, unknown> }) => {
       if (select?.puzzle) {
         return [
           {

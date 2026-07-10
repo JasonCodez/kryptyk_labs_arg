@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "lobbyId and newHostId required" }, { status: 400 });
     }
 
-    const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+    const lobby = await prisma.escapeRoomLobby.findUnique({
       where: { id: lobbyId },
       select: { id: true, hostId: true },
     });
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     // Only update if the host actually changed (idempotent).
     if (lobby.hostId !== newHostId) {
-      await (prisma as any).escapeRoomLobby.update({
+      await prisma.escapeRoomLobby.update({
         where: { id: lobbyId },
         data: { hostId: newHostId },
       });

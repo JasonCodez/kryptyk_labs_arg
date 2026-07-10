@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
       // External URL path — fetch the remote resource and validate
       try {
         new URL(externalUrl);
-      } catch (err) {
+      } catch {
         return NextResponse.json({ error: "Invalid URL provided" }, { status: 400 });
       }
 
@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
         const parsed = new URL(externalUrl);
         const parts = parsed.pathname.split("/").filter(Boolean);
         fileName = parts.length ? decodeURIComponent(parts[parts.length - 1]) : parsed.hostname;
-      } catch (e) {
+      } catch {
         fileName = externalUrl;
       }
 

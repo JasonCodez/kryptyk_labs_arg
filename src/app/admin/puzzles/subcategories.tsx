@@ -143,7 +143,7 @@ function SubcategoryItem({ subcategory, onUpdated, onDeleted }: SubcategoryItemP
       const updated = await res.json();
       onUpdated(updated);
       setEditing(false);
-    } catch (e) {
+    } catch {
       setError("Update failed");
     } finally {
       setLoading(false);
@@ -160,7 +160,7 @@ function SubcategoryItem({ subcategory, onUpdated, onDeleted }: SubcategoryItemP
       });
       if (!res.ok) throw new Error("Failed to delete");
       onDeleted();
-    } catch (e) {
+    } catch {
       setError("Delete failed");
     } finally {
       setLoading(false);

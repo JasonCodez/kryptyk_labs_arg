@@ -35,7 +35,7 @@ export default function CreateEscapeRoomForm({ onCreated }: { onCreated?: () => 
         setPuzzleId('');
         if (onCreated) onCreated();
       }
-    } catch (err) {
+    } catch {
       setError('Network error');
     }
     setLoading(false);

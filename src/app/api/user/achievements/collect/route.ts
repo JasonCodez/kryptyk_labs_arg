@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           
-          let checkDate = new Date(uniqueDates[0]);
+          const checkDate = new Date(uniqueDates[0]);
           checkDate.setHours(0, 0, 0, 0);
           
           const daysDiff = Math.floor((today.getTime() - checkDate.getTime()) / (1000 * 60 * 60 * 24));

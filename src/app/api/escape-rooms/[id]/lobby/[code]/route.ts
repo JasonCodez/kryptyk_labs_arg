@@ -18,7 +18,7 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+    const lobby = await prisma.escapeRoomLobby.findUnique({
       where: { code: code.toUpperCase() },
       select: {
         id: true,
@@ -45,7 +45,7 @@ export async function GET(
 
     // Auto-expire check
     if (lobby.status === "waiting" && new Date(lobby.expiresAt) < new Date()) {
-      await (prisma as any).escapeRoomLobby.update({
+      await prisma.escapeRoomLobby.update({
         where: { id: lobby.id },
         data: { status: "expired" },
       });

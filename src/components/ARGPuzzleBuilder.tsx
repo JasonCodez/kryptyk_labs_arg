@@ -11,7 +11,16 @@ interface ARGPuzzleFormData {
   orderIndex: number;
   solution: string;
   hints: string[];
-  puzzleData: Record<string, any>;
+  puzzleData: Record<string, unknown>;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : (value == null ? fallback : String(value));
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
@@ -38,7 +47,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
     }));
   };
 
-  const handlePuzzleDataChange = (key: string, value: any) => {
+  const handlePuzzleDataChange = (key: string, value: unknown) => {
     setFormData((prev) => ({
       ...prev,
       puzzleData: {
@@ -75,7 +84,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Cipher Type</label>
               <select
-                value={formData.puzzleData.cipherType || 'caesar'}
+                value={asString(formData.puzzleData.cipherType, 'caesar')}
                 onChange={(e) => handlePuzzleDataChange('cipherType', e.target.value)}
                 className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
               >
@@ -90,7 +99,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
               <label className="block text-sm font-semibold text-gray-300 mb-2">Plain Text (Original)</label>
               <input
                 type="text"
-                value={formData.puzzleData.plainText || ''}
+                value={asString(formData.puzzleData.plainText, '')}
                 onChange={(e) => handlePuzzleDataChange('plainText', e.target.value)}
                 placeholder="e.g., HELLO WORLD"
                 className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
@@ -101,7 +110,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
               <label className="block text-sm font-semibold text-gray-300 mb-2">Encrypted Text</label>
               <input
                 type="text"
-                value={formData.puzzleData.encryptedText || ''}
+                value={asString(formData.puzzleData.encryptedText, '')}
                 onChange={(e) => handlePuzzleDataChange('encryptedText', e.target.value)}
                 placeholder="e.g., KHOOR ZRUOG"
                 className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
@@ -115,7 +124,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
                   type="number"
                   min="1"
                   max="25"
-                  value={formData.puzzleData.key || 3}
+                  value={asNumber(formData.puzzleData.key, 3)}
                   onChange={(e) => handlePuzzleDataChange('key', parseInt(e.target.value))}
                   className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
                 />
@@ -125,7 +134,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Clue for Players</label>
               <textarea
-                value={formData.puzzleData.clue || ''}
+                value={asString(formData.puzzleData.clue, '')}
                 onChange={(e) => handlePuzzleDataChange('clue', e.target.value)}
                 placeholder="Help players understand what they're decoding"
                 rows={3}
@@ -143,7 +152,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Extraction Method</label>
               <select
-                value={formData.puzzleData.extractionMethod || 'first-letters'}
+                value={asString(formData.puzzleData.extractionMethod, 'first-letters')}
                 onChange={(e) => handlePuzzleDataChange('extractionMethod', e.target.value)}
                 className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
               >
@@ -157,7 +166,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Source Text</label>
               <textarea
-                value={formData.puzzleData.sourceText || ''}
+                value={asString(formData.puzzleData.sourceText, '')}
                 onChange={(e) => handlePuzzleDataChange('sourceText', e.target.value)}
                 placeholder="Paste the text that contains the hidden message"
                 rows={5}
@@ -169,7 +178,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
               <label className="block text-sm font-semibold text-gray-300 mb-2">Extracted Text (Answer)</label>
               <input
                 type="text"
-                value={formData.puzzleData.extractedText || ''}
+                value={asString(formData.puzzleData.extractedText, '')}
                 onChange={(e) => handlePuzzleDataChange('extractedText', e.target.value)}
                 placeholder="What should be extracted"
                 className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
@@ -179,7 +188,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Clue</label>
               <textarea
-                value={formData.puzzleData.clue || ''}
+                value={asString(formData.puzzleData.clue, '')}
                 onChange={(e) => handlePuzzleDataChange('clue', e.target.value)}
                 placeholder="Guide players on how to extract the answer"
                 rows={3}
@@ -200,7 +209,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
                 <input
                   type="number"
                   step="0.0001"
-                  value={formData.puzzleData.latitude || ''}
+                  value={asString(formData.puzzleData.latitude, '')}
                   onChange={(e) => handlePuzzleDataChange('latitude', parseFloat(e.target.value))}
                   placeholder="e.g., 40.7128"
                   className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
@@ -211,7 +220,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
                 <input
                   type="number"
                   step="0.0001"
-                  value={formData.puzzleData.longitude || ''}
+                  value={asString(formData.puzzleData.longitude, '')}
                   onChange={(e) => handlePuzzleDataChange('longitude', parseFloat(e.target.value))}
                   placeholder="e.g., -74.0060"
                   className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
@@ -223,7 +232,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
               <label className="block text-sm font-semibold text-gray-300 mb-2">Display Text (for players)</label>
               <input
                 type="text"
-                value={formData.puzzleData.displayText || ''}
+                value={asString(formData.puzzleData.displayText, '')}
                 onChange={(e) => handlePuzzleDataChange('displayText', e.target.value)}
                 placeholder="e.g., Find the location of..."
                 className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
@@ -233,7 +242,7 @@ export default function ARGPuzzleBuilder({ phaseId }: { phaseId: string }) {
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">Hint</label>
               <textarea
-                value={formData.puzzleData.hint || ''}
+                value={asString(formData.puzzleData.hint, '')}
                 onChange={(e) => handlePuzzleDataChange('hint', e.target.value)}
                 placeholder="Help players find these coordinates"
                 rows={3}

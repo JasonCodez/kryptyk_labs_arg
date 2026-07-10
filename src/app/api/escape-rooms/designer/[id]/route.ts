@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAdminUser } from '@/lib/requireAdmin';
+import { Prisma } from '@prisma/client';
 
 const safeJsonParse = <T,>(raw: unknown, fallback: T): T => {
   if (typeof raw !== 'string' || !raw.trim()) return fallback;
@@ -50,14 +51,16 @@ export async function GET(
 
     // Preferred source of truth for designer editing is Puzzle.data.escapeRoomData,
     // because it stores item positions (x/y/w/h) that aren't persisted in the DB tables.
-    const pAny: any = escapeRoom.puzzle as any;
-    const escapeRoomData = pAny?.data && typeof pAny.data === 'object' && 'escapeRoomData' in pAny.data
-      ? (pAny.data as any).escapeRoomData
+    const puzzleData = escapeRoom.puzzle?.data && typeof escapeRoom.puzzle.data === 'object'
+      ? (escapeRoom.puzzle.data as Record<string, unknown>)
+      : null;
+    const escapeRoomData = puzzleData && 'escapeRoomData' in puzzleData
+      ? (puzzleData.escapeRoomData as Record<string, unknown>)
       : null;
 
-    let scenes: any[] = [];
+    let scenes: Record<string, unknown>[] = [];
     if (escapeRoomData && Array.isArray(escapeRoomData.scenes)) {
-      scenes = escapeRoomData.scenes;
+      scenes = escapeRoomData.scenes as Record<string, unknown>[];
     } else {
       // Fallback: map DB structure to a minimal designer format (zones only).
       scenes = (escapeRoom.layouts || []).map((layout) => ({
@@ -67,7 +70,7 @@ export async function GET(
         description: '',
         items: [],
         interactiveZones: (layout.hotspots || []).map((zone) => {
-          const meta = safeJsonParse<Record<string, any>>(zone.meta, {});
+          const meta = safeJsonParse<Record<string, unknown>>(zone.meta, {});
           return {
             id: zone.id,
             label: typeof meta.label === 'string' ? meta.label : '',
@@ -80,9 +83,9 @@ export async function GET(
             imageUrl: typeof meta.imageUrl === 'string' ? meta.imageUrl : undefined,
             modalContent: typeof meta.modalContent === 'string' ? meta.modalContent : '',
             interactions: Array.isArray(meta.interactions)
-              ? meta.interactions
-                  .map((x: any) => ({ label: x?.label, modalContent: x?.modalContent }))
-                  .filter((x: any) => typeof x.label === 'string' && typeof x.modalContent === 'string')
+              ? (meta.interactions as Record<string, unknown>[])
+                  .map((x) => ({ label: x?.label, modalContent: x?.modalContent }))
+                  .filter((x): x is { label: string; modalContent: string } => typeof x.label === 'string' && typeof x.modalContent === 'string')
               : [],
             linkedPuzzleId: typeof meta.linkedPuzzleId === 'string' ? meta.linkedPuzzleId : undefined,
             eventId: typeof meta.eventId === 'string' ? meta.eventId : undefined,
@@ -103,20 +106,19 @@ export async function GET(
       }));
     }
 
-    const er: any = escapeRoom;
     return NextResponse.json({
-      title: escapeRoomData?.title || er.roomTitle,
-      description: escapeRoomData?.description || er.roomDescription,
-      minTeamSize: escapeRoomData?.minTeamSize || er.minTeamSize || 1,
-      maxPlayers: er.maxTeamSize || 8,
-      timeLimit: escapeRoomData?.timeLimit ?? er.timeLimitSeconds,
+      title: escapeRoomData?.title || escapeRoom.roomTitle,
+      description: escapeRoomData?.description || escapeRoom.roomDescription,
+      minTeamSize: escapeRoomData?.minTeamSize || escapeRoom.minTeamSize || 1,
+      maxPlayers: escapeRoom.maxTeamSize || 8,
+      timeLimit: escapeRoomData?.timeLimit ?? escapeRoom.timeLimitSeconds,
       startMode: escapeRoomData?.startMode || 'leader-start',
       playerMode: escapeRoomData?.playerMode || 'shared',
       intro: escapeRoomData?.intro || undefined,
       outro: escapeRoomData?.outro || undefined,
       scenes,
       userSpecialties: [], // Not implemented yet
-      isPublished: er.puzzle?.isActive ?? false,
+      isPublished: escapeRoom.puzzle?.isActive ?? false,
     });
   } catch (error) {
     console.error('[ESCAPE ROOM DESIGNER GET] Failed to load escape room designer payload', error);
@@ -152,7 +154,7 @@ export async function PUT(
     const puzzleId = existing.puzzleId;
 
     // Update main room
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       roomTitle: title,
       roomDescription: description,
       minTeamSize: (typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : 1,
@@ -161,7 +163,7 @@ export async function PUT(
     if (typeof timeLimit !== 'undefined' && timeLimit !== null) updateData.timeLimitSeconds = Number(timeLimit);
 
     await prisma.$transaction(async (tx) => {
-      await tx.escapeRoomPuzzle.update({ where: { id: escapeRoomId }, data: updateData });
+      await tx.escapeRoomPuzzle.update({ where: { id: escapeRoomId }, data: updateData as Prisma.EscapeRoomPuzzleUpdateInput });
 
       // For simplicity: delete all layouts/items/hotspots/triggers and recreate (can optimize later)
       await tx.roomLayout.deleteMany({ where: { escapeRoomId: escapeRoomId } });
@@ -180,7 +182,7 @@ export async function PUT(
         });
 
         const itemIdToDefId = new Map<string, string>();
-        const sceneItems: any[] = Array.isArray(scene?.items) ? scene.items : [];
+        const sceneItems: Record<string, unknown>[] = Array.isArray(scene?.items) ? scene.items : [];
         for (const item of sceneItems) {
           const designerItemId = typeof item?.id === 'string' ? item.id : '';
           const created = await tx.itemDefinition.create({
@@ -196,7 +198,7 @@ export async function PUT(
           if (designerItemId) itemIdToDefId.set(designerItemId, created.id);
         }
 
-        const zones: any[] = Array.isArray(scene?.interactiveZones) ? scene.interactiveZones : [];
+        const zones: Record<string, unknown>[] = Array.isArray(scene?.interactiveZones) ? scene.interactiveZones : [];
         for (const zone of zones) {
           const actionType = zone?.actionType || zone?.type || 'modal';
           const rawCollectItemId = (typeof zone?.collectItemId === 'string' && zone.collectItemId) ? zone.collectItemId : null;
@@ -241,7 +243,7 @@ export async function PUT(
           });
         }
 
-        for (const zone of zones.filter((z: any) => (z?.actionType || z?.type) === 'trigger')) {
+        for (const zone of zones.filter((z) => (z?.actionType || z?.type) === 'trigger')) {
           await tx.roomTrigger.create({
             data: {
               layoutId: layout.id,
@@ -255,16 +257,17 @@ export async function PUT(
       // Also persist the full designer payload into Puzzle.data.escapeRoomData so the player view
       // has access to item positions + modal metadata.
       const puzzle = await tx.puzzle.findUnique({ where: { id: puzzleId }, select: { data: true } });
-      const curData: any = puzzle?.data && typeof puzzle.data === 'object' ? puzzle.data : {};
+      const curData: Record<string, unknown> = puzzle?.data && typeof puzzle.data === 'object' ? (puzzle.data as Record<string, unknown>) : {};
+      const curEscapeRoomData = curData?.escapeRoomData as Record<string, unknown> | undefined;
       const nextData = {
         ...curData,
         escapeRoomData: {
           title,
           description,
           timeLimit,
-          startMode: startMode || curData?.escapeRoomData?.startMode || 'leader-start',
-          minTeamSize: (typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : (curData?.escapeRoomData?.minTeamSize || 1),
-          playerMode: playerMode || curData?.escapeRoomData?.playerMode || 'shared',
+          startMode: startMode || curEscapeRoomData?.startMode || 'leader-start',
+          minTeamSize: (typeof minTeamSize === 'number' && minTeamSize > 0) ? minTeamSize : (curEscapeRoomData?.minTeamSize || 1),
+          playerMode: playerMode || curEscapeRoomData?.playerMode || 'shared',
           intro: intro || undefined,
           outro: outro || undefined,
           scenes,

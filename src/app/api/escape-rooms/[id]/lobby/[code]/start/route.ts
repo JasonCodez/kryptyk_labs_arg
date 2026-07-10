@@ -22,7 +22,7 @@ export async function POST(
     const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+    const lobby = await prisma.escapeRoomLobby.findUnique({
       where: { code: code.toUpperCase() },
       select: {
         id: true,
@@ -39,7 +39,7 @@ export async function POST(
     if (lobby.hostId !== user.id) return NextResponse.json({ error: "Only the host can start the run" }, { status: 403 });
     if (lobby.status !== "waiting") return NextResponse.json({ error: "Lobby is not in waiting state" }, { status: 409 });
     if (new Date(lobby.expiresAt) < new Date()) {
-      await (prisma as any).escapeRoomLobby.update({ where: { id: lobby.id }, data: { status: "expired" } });
+      await prisma.escapeRoomLobby.update({ where: { id: lobby.id }, data: { status: "expired" } });
       return NextResponse.json({ error: "Lobby has expired" }, { status: 409 });
     }
 
@@ -52,7 +52,7 @@ export async function POST(
 
     // Check if the starting user has a paused solo save for this escape room.
     // If so, re-link it to this new lobby and restore the timer instead of creating fresh progress.
-    const pausedSave = await (prisma as any).teamEscapeProgress.findFirst({
+    const pausedSave = await prisma.teamEscapeProgress.findFirst({
       where: {
         soloUserId: user.id,
         escapeRoomId: escapeRoom.id,
@@ -67,7 +67,7 @@ export async function POST(
     if (pausedSave) {
       // Expire the old lobby this save was linked to (best-effort).
       if (pausedSave.lobbyId && pausedSave.lobbyId !== lobby.id) {
-        await (prisma as any).escapeRoomLobby.updateMany({
+        await prisma.escapeRoomLobby.updateMany({
           where: { id: pausedSave.lobbyId, status: { not: "expired" } },
           data: { status: "expired" },
         });
@@ -77,7 +77,7 @@ export async function POST(
       const restoredExpiry = typeof pausedSave.pausedRemainingMs === 'number'
         ? new Date(now.getTime() + pausedSave.pausedRemainingMs)
         : null;
-      await (prisma as any).teamEscapeProgress.update({
+      await prisma.teamEscapeProgress.update({
         where: { id: pausedSave.id },
         data: {
           lobbyId: lobby.id,
@@ -89,19 +89,19 @@ export async function POST(
       });
     } else {
       // Prevent double-start
-      const existingProgress = await (prisma as any).teamEscapeProgress.findFirst({
+      const existingProgress = await prisma.teamEscapeProgress.findFirst({
         where: { lobbyId: lobby.id, escapeRoomId: escapeRoom.id },
         select: { id: true },
       });
       if (!existingProgress) {
-        await (prisma as any).teamEscapeProgress.create({
+        await prisma.teamEscapeProgress.create({
           data: { lobbyId: lobby.id, escapeRoomId: escapeRoom.id },
         });
       }
     }
 
     const now = new Date();
-    await (prisma as any).escapeRoomLobby.update({
+    await prisma.escapeRoomLobby.update({
       where: { id: lobby.id },
       data: { status: "started", startedAt: now },
     });

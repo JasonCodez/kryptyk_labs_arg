@@ -75,7 +75,7 @@ type EscapeActivityEntry = {
   type: string;
   title: string;
   actor?: { id: string; name: string };
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 };
 
 type LobbyChatMessage = {
@@ -162,7 +162,7 @@ export function EscapeRoomPuzzle({
   const [inspectingItem, setInspectingItem] = useState<InventoryItem | null>(null);
   const [briefingAcks, setBriefingAcks] = useState<Record<string, string>>({});
   const [inventoryLocks, setInventoryLocks] = useState<InventoryLocksMap>({});
-  const [sceneState, setSceneState] = useState<Record<string, any>>({});
+  const [sceneState, setSceneState] = useState<Record<string, unknown>>({});
   const [sideTab, setSideTab] = useState<'inventory' | 'activity'>('inventory');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<'inventory' | 'chat'>('inventory');
@@ -1138,7 +1138,7 @@ export function EscapeRoomPuzzle({
     } else {
       bgmRef.current = null;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [stageAnimConfig]);
 
   // Pause/resume BGM when soundEnabled toggles
@@ -2397,7 +2397,7 @@ export function EscapeRoomPuzzle({
                                       <div className="flex items-center gap-2">
                                         {imageUrl ? (
                                           isVideoUrl(imageUrl) ? (
-                                            // eslint-disable-next-line jsx-a11y/media-has-caption
+                                             
                                             <video src={imageUrl} autoPlay loop muted playsInline className="h-9 w-9 rounded object-contain bg-neutral-900/60 border border-amber-600/25" />
                                           ) : (
                                             // eslint-disable-next-line @next/next/no-img-element
@@ -2674,7 +2674,7 @@ export function EscapeRoomPuzzle({
                 >
                   {pendingPickup.imageUrl ? (
                     isVideoUrl(pendingPickup.imageUrl) ? (
-                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                       
                       <video
                         src={pendingPickup.imageUrl}
                         autoPlay

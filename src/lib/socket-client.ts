@@ -2,7 +2,7 @@ export async function postToSocket(endpoint: string, body: any) {
   try {
     const socketUrl = process.env.SOCKET_URL || process.env.NEXT_PUBLIC_SOCKET_URL || (process.env.NODE_ENV !== 'production' ? 'http://localhost:4000' : '');
     if (!socketUrl) {
-      try { console.warn('postToSocket skipped: SOCKET_URL/NEXT_PUBLIC_SOCKET_URL not set'); } catch (e) {}
+      try { console.warn('postToSocket skipped: SOCKET_URL/NEXT_PUBLIC_SOCKET_URL not set'); } catch {}
       return null;
     }
     const url = socketUrl.replace(/\/$/, '') + (endpoint.startsWith('/') ? endpoint : '/' + endpoint);
@@ -13,14 +13,14 @@ export async function postToSocket(endpoint: string, body: any) {
       try {
         const text = await res.text();
         console.warn('postToSocket non-OK response', { url, status: res.status, text });
-      } catch (e) {
+      } catch {
         console.warn('postToSocket non-OK response', { url, status: res.status });
       }
     }
     return res;
   } catch (e) {
     // surface a warning so server logs include socket POST failures
-    try { console.warn('postToSocket failed', e); } catch (err) {}
+    try { console.warn('postToSocket failed', e); } catch {}
     return null;
   }
 }

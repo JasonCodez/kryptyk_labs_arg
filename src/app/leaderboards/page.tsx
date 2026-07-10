@@ -73,7 +73,7 @@ export default function LeaderboardsPage() {
     if (session?.user?.email) {
       fetchLeaderboard(activeTab);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [session?.user?.email, activeTab]);
 
   const fetchLeaderboard = async (tab: Tab) => {
@@ -111,7 +111,7 @@ export default function LeaderboardsPage() {
     const handler = () => fetchLeaderboard(activeTab);
     window.addEventListener("puzzlewarz:puzzle-solved", handler);
     return () => window.removeEventListener("puzzlewarz:puzzle-solved", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [activeTab]);
 
   if (status === "loading" || loading) {

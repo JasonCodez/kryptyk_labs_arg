@@ -17,7 +17,7 @@ async function createSoloSnapshot(lobbyId: string, soloUserId: string, puzzleId:
     });
     if (!escapeRoom) return;
 
-    const progress = await (prisma as any).teamEscapeProgress.findFirst({
+    const progress = await prisma.teamEscapeProgress.findFirst({
       where: { lobbyId, escapeRoomId: escapeRoom.id },
       select: {
         runStartedAt: true,
@@ -37,7 +37,7 @@ async function createSoloSnapshot(lobbyId: string, soloUserId: string, puzzleId:
       : null;
 
     // If they already have a paused save for this room, update it; otherwise create a new one.
-    const existing = await (prisma as any).teamEscapeProgress.findFirst({
+    const existing = await prisma.teamEscapeProgress.findFirst({
       where: { soloUserId, escapeRoomId: escapeRoom.id, pausedAt: { not: null }, completedAt: null, failedAt: null },
       select: { id: true },
     });
@@ -54,9 +54,9 @@ async function createSoloSnapshot(lobbyId: string, soloUserId: string, puzzleId:
     };
 
     if (existing) {
-      await (prisma as any).teamEscapeProgress.update({ where: { id: existing.id }, data: snapshotData });
+      await prisma.teamEscapeProgress.update({ where: { id: existing.id }, data: snapshotData });
     } else {
-      await (prisma as any).teamEscapeProgress.create({ data: { escapeRoomId: escapeRoom.id, ...snapshotData } });
+      await prisma.teamEscapeProgress.create({ data: { escapeRoomId: escapeRoom.id, ...snapshotData } });
     }
   } catch {
     // non-fatal
@@ -72,7 +72,7 @@ async function pauseActiveRun(lobbyId: string, soloUserId: string, puzzleId: str
     });
     if (!escapeRoom) return;
 
-    const progress = await (prisma as any).teamEscapeProgress.findFirst({
+    const progress = await prisma.teamEscapeProgress.findFirst({
       where: { lobbyId, escapeRoomId: escapeRoom.id },
       select: { id: true, runStartedAt: true, runExpiresAt: true, completedAt: true, failedAt: true, pausedAt: true },
     });
@@ -83,7 +83,7 @@ async function pauseActiveRun(lobbyId: string, soloUserId: string, puzzleId: str
       ? Math.max(0, new Date(progress.runExpiresAt).getTime() - Date.now())
       : null;
 
-    await (prisma as any).teamEscapeProgress.update({
+    await prisma.teamEscapeProgress.update({
       where: { id: progress.id },
       data: {
         pausedAt: new Date(),
@@ -115,7 +115,7 @@ export async function POST(
     const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const lobby = await (prisma as any).escapeRoomLobby.findUnique({
+    const lobby = await prisma.escapeRoomLobby.findUnique({
       where: { code: code.toUpperCase() },
       select: {
         id: true,
@@ -130,7 +130,7 @@ export async function POST(
     if (lobby.puzzleId !== puzzleId) return NextResponse.json({ error: "Wrong puzzle" }, { status: 400 });
 
     // Remove member
-    await (prisma as any).escapeRoomLobbyMember.deleteMany({
+    await prisma.escapeRoomLobbyMember.deleteMany({
       where: { lobbyId: lobby.id, userId: user.id },
     });
 
@@ -141,7 +141,7 @@ export async function POST(
       if (lobby.status === "started") {
         await pauseActiveRun(lobby.id, user.id, puzzleId);
       }
-      await (prisma as any).escapeRoomLobby.update({ where: { id: lobby.id }, data: { status: "expired" } });
+      await prisma.escapeRoomLobby.update({ where: { id: lobby.id }, data: { status: "expired" } });
     } else {
       // Others still playing — snapshot this player's stage progress so they can resume solo.
       if (lobby.status === "started") {
@@ -149,7 +149,7 @@ export async function POST(
       }
       if (lobby.hostId === user.id) {
         // Host left — transfer to next member
-        await (prisma as any).escapeRoomLobby.update({
+        await prisma.escapeRoomLobby.update({
           where: { id: lobby.id },
           data: { hostId: remaining[0].userId },
         });

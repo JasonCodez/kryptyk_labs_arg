@@ -123,7 +123,7 @@ export async function POST(request: NextRequest, context: { params: { id: string
 					try {
 						const re = new RegExp(regex, ignoreCase ? 'i' : undefined);
 						return NextResponse.json({ correct: re.test(normalizedAnswer) });
-					} catch (e) {
+					} catch {
 						return NextResponse.json({ correct: false, message: 'Invalid regex configuration.' });
 					}
 				}
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest, context: { params: { id: string
 		}
 
 		return NextResponse.json({ correct: isCorrect });
-	} catch (err) {
+	} catch {
 		return NextResponse.json({ error: "Server error" }, { status: 500 });
 	}
 }

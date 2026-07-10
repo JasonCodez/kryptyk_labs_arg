@@ -16,7 +16,7 @@ export async function GET(
     // Read current team inventory so collected items can be hidden from the scene.
     let collectedDesignerItemIds = new Set<string>();
     try {
-      const progress = await (prisma as any).teamEscapeProgress.findFirst({
+      const progress = await prisma.teamEscapeProgress.findFirst({
         where: progressWhereClause(ctx),
         select: { inventory: true },
       });
@@ -173,7 +173,7 @@ export async function GET(
                   ambientEffect: it.ambientEffect || null,
                 }));
             }
-          } catch (err) {
+          } catch {
             items = [];
           }
           return {

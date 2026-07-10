@@ -5,8 +5,56 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import ConfirmModal from "@/components/ConfirmModal";
 import ActionModal from "@/components/ActionModal";
 import { AlertTriangle, CheckCircle2, Crown, LogOut, Mail, MessageSquareText, Play, Power, RefreshCw, Send, Shield, Sparkles, UserPlus, Users } from "lucide-react";
+import type { Socket } from "socket.io-client";
 
-function getPuzzleDisplayTitle(p: any): string {
+interface TeamMemberUser {
+  id?: string;
+  name?: string;
+  email?: string;
+  image?: string;
+}
+interface TeamMember {
+  user?: TeamMemberUser;
+  [key: string]: unknown;
+}
+interface LobbyInvite {
+  id?: string;
+  userId?: string;
+  email?: string;
+  displayName?: string;
+  invitedBy?: string;
+  status?: string;
+  createdAt?: number;
+}
+interface ChatMessage {
+  id?: string;
+  userId?: string;
+  user?: TeamMemberUser;
+  createdAt?: string | number;
+  content?: string;
+}
+interface TeamPuzzle {
+  id: string;
+  title?: string;
+  puzzleType?: string;
+  escapeRoom?: { roomTitle?: string };
+  parts?: unknown[];
+  partsCount?: number;
+  minTeamSize?: number;
+  requiredPlayers?: number;
+  [key: string]: unknown;
+}
+interface Lobby {
+  participants?: (string | { userId?: string; id?: string; name?: string; userName?: string; user?: TeamMemberUser })[];
+  invites?: LobbyInvite[];
+  ready?: Record<string, boolean>;
+  leaderId?: string;
+  started?: boolean;
+  puzzleOpenedAt?: number;
+  [key: string]: unknown;
+}
+
+function getPuzzleDisplayTitle(p: TeamPuzzle): string {
   const escapeTitle = typeof p?.escapeRoom?.roomTitle === 'string' ? p.escapeRoom.roomTitle.trim() : '';
   const puzzleTitle = typeof p?.title === 'string' ? p.title.trim() : '';
   if (p?.puzzleType === 'escape_room' && escapeTitle) return escapeTitle;
@@ -22,23 +70,23 @@ export default function TeamLobbyPage() {
   const puzzleIdFromQuery = searchParams.get('puzzleId') || '';
 
   const [puzzleId, setPuzzleId] = useState("");
-  const [teamPuzzles, setTeamPuzzles] = useState<any[]>([]);
-  const [selectedPuzzle, setSelectedPuzzle] = useState<any | null>(null);
+  const [teamPuzzles, setTeamPuzzles] = useState<TeamPuzzle[]>([]);
+  const [selectedPuzzle, setSelectedPuzzle] = useState<TeamPuzzle | null>(null);
   const [navHeight, setNavHeight] = useState<number | null>(null);
-  const [lobby, setLobby] = useState<any>(null);
-  const [members, setMembers] = useState<any[]>([]);
+  const [lobby, setLobby] = useState<Lobby | null>(null);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [teamLeaderId, setTeamLeaderId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   // Chat state
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const chatAbortRef = useRef<AbortController | null>(null);
-  const socketRef = useRef<any>(null);
+  const socketRef = useRef<Socket | null>(null);
   const prevParticipantsRef = useRef<string[]>([]);
   const autoJoinAttemptRef = useRef<string | null>(null);
-  const membersRef = useRef<any[]>([]);
+  const membersRef = useRef<TeamMember[]>([]);
   const skipLeaveOnUnmountRef = useRef(false);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -48,7 +96,6 @@ export default function TeamLobbyPage() {
   const [actionModalTitle, setActionModalTitle] = useState<string | undefined>(undefined);
   const [actionModalMessage, setActionModalMessage] = useState<string | undefined>(undefined);
   const [redirectUrlOnClose, setRedirectUrlOnClose] = useState<string | null>(null);
-  const [selfLeaving, setSelfLeaving] = useState(false);
 
   const handleRefresh = async (e?: React.MouseEvent) => {
     try {
@@ -84,8 +131,8 @@ export default function TeamLobbyPage() {
       try {
         const uid = currentUserId;
         if (socketRef.current && socketRef.current.connected && teamId && puzzleId && uid) {
-          const member = (membersRef.current || []).find((m: any) => m.user?.id === uid);
-          const adminFlag = !!member && ["admin", "moderator"].includes(member.role);
+          const member = (membersRef.current || []).find((m: TeamMember) => m.user?.id === uid);
+          const adminFlag = !!member && ["admin", "moderator"].includes(String(member.role));
           const displayName = member?.user?.name || member?.user?.email || '';
           socketRef.current.emit('joinLobby', { teamId, puzzleId, userId: uid, name: displayName, isAdmin: adminFlag });
         }
@@ -119,7 +166,7 @@ export default function TeamLobbyPage() {
       const res = await fetch(`/api/puzzles?limit=100&isTeam=true`);
       if (!res.ok) return;
       const list = await res.json();
-      const normalized = list.map((p: any) => {
+      const normalized = list.map((p: Record<string, unknown>) => {
         const partsCount = Array.isArray(p.parts) ? p.parts.length : 0;
         const minTeamSize = typeof p.minTeamSize === 'number' ? p.minTeamSize : 0;
         const isEscapeRoom = p?.puzzleType === 'escape_room' || !!p?.escapeRoom;
@@ -129,7 +176,7 @@ export default function TeamLobbyPage() {
       });
       setTeamPuzzles(normalized);
       if (!puzzleId) {
-        const fromQuery = puzzleIdFromQuery && normalized.find((p: any) => p.id === puzzleIdFromQuery);
+        const fromQuery = puzzleIdFromQuery && normalized.find((p: TeamPuzzle) => p.id === puzzleIdFromQuery);
         const pick = fromQuery || normalized[0];
         if (pick) {
           setPuzzleId(pick.id);
@@ -147,7 +194,7 @@ export default function TeamLobbyPage() {
       if (!res.ok) return;
       const j = await res.json();
       setCurrentUserId(j.id || null);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -186,7 +233,7 @@ export default function TeamLobbyPage() {
       const j = await res.json();
       setChatMessages(Array.isArray(j.messages) ? j.messages : []);
     } catch (e) {
-      if (e && (e as any).name === 'AbortError') return;
+      if (e instanceof Error && e.name === 'AbortError') return;
       console.error('Failed to fetch chat', e);
     }
   };
@@ -206,12 +253,12 @@ export default function TeamLobbyPage() {
         if (socketRef.current) {
           socketRef.current.emit('chatMessage', { teamId, puzzleId, message: { userId: currentUserId, content, createdAt: new Date().toISOString() } });
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
     } catch (e) {
       console.error('Failed to post chat', e);
-      openActionModal('error', 'Chat Error', (e as any).message || 'Failed to post message');
+      openActionModal('error', 'Chat Error', (e instanceof Error ? e.message : '') || 'Failed to post message');
     }
   };
 
@@ -225,12 +272,14 @@ export default function TeamLobbyPage() {
       await fetchChat();
     } catch (e) {
       console.error('Failed to delete chat message', e);
-      openActionModal('error', 'Chat Error', (e as any).message || 'Failed to delete message');
+      openActionModal('error', 'Chat Error', (e instanceof Error ? e.message : '') || 'Failed to delete message');
     }
   };
 
   useEffect(() => {
     fetchMembers();
+    // fetchMembers is a plain function redefined every render; only re-fetch on teamId change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   useEffect(() => {
@@ -239,6 +288,8 @@ export default function TeamLobbyPage() {
 
   useEffect(() => {
     fetchTeamPuzzles();
+    // Mount-only fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If the URL puzzleId changes (e.g. clicking a card/invite), sync selection.
@@ -246,7 +297,7 @@ export default function TeamLobbyPage() {
     if (!puzzleIdFromQuery) return;
     if (puzzleIdFromQuery === puzzleId) return;
     // if we have puzzle list, validate it; otherwise still set so downstream effects run
-    const found = teamPuzzles.find((p: any) => p.id === puzzleIdFromQuery);
+    const found = teamPuzzles.find((p: TeamPuzzle) => p.id === puzzleIdFromQuery);
     setPuzzleId(puzzleIdFromQuery);
     if (found) setSelectedPuzzle(found);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,7 +310,7 @@ export default function TeamLobbyPage() {
         const nav = document.getElementById("global-nav");
         const h = nav ? nav.offsetHeight : 0;
         setNavHeight(h ? h + 12 : 72);
-      } catch (e) {
+      } catch {
         setNavHeight(72);
       }
     }
@@ -344,17 +395,21 @@ export default function TeamLobbyPage() {
 
         // refresh lobby and seed prevParticipants to avoid false "removed" modal during immediate join
         const newLobby = await fetchLobby();
-        try { prevParticipantsRef.current = (newLobby?.participants || []).slice(); } catch (e) {}
+        try { prevParticipantsRef.current = (newLobby?.participants || []).slice(); } catch {}
         // Ensure we have a current user id for ready/chat/socket flows.
         if (!currentUserId) {
-          try { await fetchCurrentUser(); } catch (e) { /* ignore */ }
+          try { await fetchCurrentUser(); } catch { /* ignore */ }
         }
       } catch (e) {
         console.error("Auto-join failed", e);
       }
     }
     joinIfNeeded();
-  }, [teamId, puzzleId]);
+    // fetchLobby is a plain function redefined every render, and currentUserId is only read as
+    // a "do we already have one" check here (not something that should re-trigger auto-join) —
+    // both intentionally omitted. router is stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, puzzleId, router]);
 
   useEffect(() => {
     if (!lobby || !currentUserId) return;
@@ -381,34 +436,37 @@ export default function TeamLobbyPage() {
         socket.on('connect', () => {
           try {
             const currentMembers = membersRef.current || [];
-            const member = currentMembers.find((m: any) => m.user?.id === currentUserId);
-            const adminFlag = !!member && ["admin", "moderator"].includes(member.role);
+            const member = currentMembers.find((m: TeamMember) => m.user?.id === currentUserId);
+            const adminFlag = !!member && ["admin", "moderator"].includes(String(member.role));
             const displayName = member?.user?.name || member?.user?.email || '';
             socket.emit('joinLobby', { teamId, puzzleId, userId: currentUserId, name: displayName, isAdmin: adminFlag });
-          } catch (e) {
+          } catch {
             socket.emit('joinLobby', { teamId, puzzleId, userId: currentUserId, name: '', isAdmin: false });
           }
         });
 
-        socket.on('lobbyState', (state: any) => {
+        socket.on('lobbyState', (state: Record<string, unknown>) => {
           if (!mounted) return;
           // merge into local lobby shape minimally
-          setLobby((prev: any) => ({
+          const participants = Array.isArray(state.participants)
+            ? (state.participants as Record<string, unknown>[]).map((p) => p.userId as string)
+            : [];
+          setLobby((prev) => ({
             ...(prev || {}),
-            participants: (state.participants || []).map((p: any) => p.userId),
-            ready: state.ready,
-            leaderId: state.leaderId ?? prev?.leaderId,
-            started: state.started ?? prev?.started,
-            puzzleOpenedAt: state.puzzleOpenedAt ?? prev?.puzzleOpenedAt,
+            participants,
+            ready: state.ready as Record<string, boolean> | undefined,
+            leaderId: (state.leaderId as string | undefined) ?? prev?.leaderId,
+            started: (state.started as boolean | undefined) ?? prev?.started,
+            puzzleOpenedAt: (state.puzzleOpenedAt as number | undefined) ?? prev?.puzzleOpenedAt,
           }));
         });
 
-        socket.on('chatMessage', (msg: any) => {
+        socket.on('chatMessage', (msg: Record<string, unknown>) => {
           if (!mounted) return;
           setChatMessages((prev) => (prev || []).concat(msg));
         });
 
-        socket.on('lobbyDestroyed', ({ teamId: t, puzzleId: p, reason }: any) => {
+        socket.on('lobbyDestroyed', ({ puzzleId: p, reason }: { teamId?: string; puzzleId?: string; reason?: string }) => {
           if (!mounted) return;
           setActionModalVariant('info');
           const r = reason ? String(reason) : '';
@@ -440,7 +498,7 @@ export default function TeamLobbyPage() {
           router.push(`/puzzles/${effectivePuzzleId}?teamId=${encodeURIComponent(effectiveTeamId)}`);
         });
 
-        socket.on('teamPuzzleChanged', ({ toPuzzleId }: any) => {
+        socket.on('teamPuzzleChanged', ({ toPuzzleId }: { toPuzzleId?: string }) => {
           if (!mounted) return;
           if (!toPuzzleId) return;
           try {
@@ -450,28 +508,28 @@ export default function TeamLobbyPage() {
           }
         });
 
-        socket.on('startFailed', (err: any) => {
+        socket.on('startFailed', (err: Record<string, unknown>) => {
           if (!mounted) return;
-          openActionModal('error', 'Start Failed', err?.error || 'Failed to start puzzle');
+          openActionModal('error', 'Start Failed', (err?.error as string | undefined) || 'Failed to start puzzle');
         });
 
         // beforeunload handler: try to notify server that user left
         beforeUnloadHandler = () => {
           try {
             if (socketRef.current && socketRef.current.connected && currentUserId) {
-              try { socketRef.current.emit('leaveLobby', { teamId, puzzleId, userId: currentUserId }); } catch (e) {}
+              try { socketRef.current.emit('leaveLobby', { teamId, puzzleId, userId: currentUserId }); } catch {}
             }
-          } catch (e) {
+          } catch {
             // ignore
           }
           try {
             const payload = JSON.stringify({ action: 'leave', teamId, puzzleId });
-            try { navigator.sendBeacon('/api/team/lobby', payload); } catch (e) { /* ignore */ }
-          } catch (e) {
+            try { navigator.sendBeacon('/api/team/lobby', payload); } catch { /* ignore */ }
+          } catch {
             // ignore
           }
         };
-        try { window.addEventListener('beforeunload', beforeUnloadHandler); } catch (e) { /* ignore */ }
+        try { window.addEventListener('beforeunload', beforeUnloadHandler); } catch { /* ignore */ }
       } catch (e) {
         console.error('Socket setup failed', e);
       }
@@ -485,18 +543,18 @@ export default function TeamLobbyPage() {
         if (!skipLeaveOnUnmountRef.current) {
           // inform server we are leaving the lobby (SPA navigation)
           if (socketRef.current && currentUserId) {
-            try { socketRef.current.emit('leaveLobby', { teamId, puzzleId, userId: currentUserId }); } catch (e) {}
+            try { socketRef.current.emit('leaveLobby', { teamId, puzzleId, userId: currentUserId }); } catch {}
           }
           // attempt an async leave request
           (async () => {
-            try { await fetch('/api/team/lobby', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave', teamId, puzzleId }) }); } catch (e) { /* ignore */ }
+            try { await fetch('/api/team/lobby', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'leave', teamId, puzzleId }) }); } catch { /* ignore */ }
           })();
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
-      try { if (beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler); } catch (e) {}
-      try { socketRef.current?.disconnect(); } catch (e) {}
+      try { if (beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler); } catch {}
+      try { socketRef.current?.disconnect(); } catch {}
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -505,17 +563,17 @@ export default function TeamLobbyPage() {
   // Ensure server gets updated isAdmin flag if members or currentUserId change after socket connected
   useEffect(() => {
     try {
-      const member = members.find((m: any) => m.user?.id === currentUserId);
-      const adminFlag = !!member && ["admin", "moderator"].includes(member.role);
+      const member = members.find((m: TeamMember) => m.user?.id === currentUserId);
+      const adminFlag = !!member && ["admin", "moderator"].includes(String(member.role));
       if (socketRef.current && socketRef.current.connected) {
         try {
           const displayName = member?.user?.name || member?.user?.email || '';
           socketRef.current.emit('joinLobby', { teamId, puzzleId, userId: currentUserId, name: displayName, isAdmin: adminFlag });
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -525,7 +583,7 @@ export default function TeamLobbyPage() {
   useEffect(() => {
     // 'kicked' will be emitted by the lobby API when an admin removes a participant
     try {
-      const handler = (payload: any) => {
+      const handler = (payload: Record<string, unknown>) => {
         try {
           const target = payload?.targetUserId;
           if (target && target === currentUserId) {
@@ -536,24 +594,24 @@ export default function TeamLobbyPage() {
             setActionModalOpen(true);
           } else {
             // someone else was kicked — show a small info modal
-            const removedMember = members.find((m: any) => m.user?.id === target);
-            const label = removedMember ? (removedMember.user.name || removedMember.user.email) : target;
+            const removedMember = members.find((m: TeamMember) => m.user?.id === target);
+            const label = removedMember ? (removedMember.user?.name || removedMember.user?.email) : target;
             setActionModalVariant('info');
             setActionModalTitle('Player Removed');
             setActionModalMessage(`${label} has been removed from the lobby.`);
             setActionModalOpen(true);
           }
-        } catch (e) {
+        } catch {
           // ignore
         }
       };
 
       socketRef.current?.on('kicked', handler);
-      return () => { try { socketRef.current?.off('kicked', handler); } catch (e) {} };
-    } catch (e) {
+      return () => { try { socketRef.current?.off('kicked', handler); } catch {} };
+    } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [currentUserId, members]);
 
   // Show notice passed through URL (e.g., ?notice=...)
@@ -571,14 +629,14 @@ export default function TeamLobbyPage() {
         const base = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
         history.replaceState({}, '', base);
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
 
   // determine if current user is admin/moderator of the team
-  const currentMember = members.find((m: any) => m.user?.id === currentUserId);
-  const isAdmin = !!currentMember && ["admin", "moderator"].includes(currentMember.role);
+  const currentMember = members.find((m: TeamMember) => m.user?.id === currentUserId);
+  const isAdmin = !!currentMember && ["admin", "moderator"].includes(String(currentMember.role));
   const isLeader = !!teamLeaderId && !!currentUserId && teamLeaderId === currentUserId;
 
   // Keep selectedPuzzle in sync when we arrive via ?puzzleId before teamPuzzles loads.
@@ -587,15 +645,15 @@ export default function TeamLobbyPage() {
       setSelectedPuzzle(null);
       return;
     }
-    const found = teamPuzzles.find((p: any) => p.id === puzzleId) || null;
-    setSelectedPuzzle((prev: any) => {
+    const found = teamPuzzles.find((p: TeamPuzzle) => p.id === puzzleId) || null;
+    setSelectedPuzzle((prev) => {
       if (prev?.id && found?.id && prev.id === found.id) return prev;
       if (!prev && !found) return prev;
       return found;
     });
   }, [teamPuzzles, puzzleId]);
 
-  const getRequiredPlayersForPuzzle = (puzzle: any): number => {
+  const getRequiredPlayersForPuzzle = (puzzle: TeamPuzzle): number => {
     if (!puzzle) return 0;
     if (puzzle?.puzzleType === 'escape_room' || puzzle?.escapeRoom) {
       const m = typeof puzzle.minTeamSize === 'number' && puzzle.minTeamSize > 0 ? puzzle.minTeamSize : 1;
@@ -612,7 +670,7 @@ export default function TeamLobbyPage() {
   const participantIds = Array.from(
     new Set(
       (lobby?.participants || [])
-        .map((p: any) => (typeof p === 'string' ? p : (p?.userId as string | undefined)))
+        .map((p) => (typeof p === 'string' ? p : p?.userId))
         .filter(Boolean),
     ),
   ) as string[];
@@ -620,7 +678,6 @@ export default function TeamLobbyPage() {
   const participantsCount = participantIds.length;
   const requiredPlayers = selectedPuzzle ? getRequiredPlayersForPuzzle(selectedPuzzle) : 0;
   const hasEnoughPlayers = !!selectedPuzzle && requiredPlayers > 0 && participantsCount >= requiredPlayers;
-  const hasExactPlayers = !!selectedPuzzle && requiredPlayers > 0 && participantsCount === requiredPlayers;
   const allReady = participantsCount > 0 && participantIds.every((id: string) => !!(lobby?.ready && lobby.ready[id]));
 
   // Fallback redirect for cases where realtime socket events are delayed/missed.
@@ -730,8 +787,8 @@ export default function TeamLobbyPage() {
         // Redirect the user to the dashboard immediately after leaving the lobby.
         // Use a hard navigation fallback because some socket/update flows can re-trigger lobby joins.
         skipLeaveOnUnmountRef.current = true;
-        try { router.replace('/dashboard'); } catch (e) { /* ignore */ }
-        try { window.location.assign('/dashboard'); } catch (e) { window.location.href = '/dashboard'; }
+        try { router.replace('/dashboard'); } catch { /* ignore */ }
+        try { window.location.assign('/dashboard'); } catch { window.location.href = '/dashboard'; }
         return;
       }
       if (confirmAction === "invite") {
@@ -939,15 +996,15 @@ export default function TeamLobbyPage() {
                     </div>
                   ) : (
                     members
-                      .filter((m: any) => m.user?.id && m.user.id !== currentUserId)
-                      .map((m: any) => {
-                        const memberId = m.user.id;
+                      .filter((m: TeamMember) => m.user?.id && m.user.id !== currentUserId)
+                      .map((m: TeamMember) => {
+                        const memberId = m.user?.id as string;
                         const alreadyParticipant = participantIds.includes(memberId);
-                        const alreadyInvited = (lobby?.invites || []).some((inv: any) => inv.userId === memberId || inv.email === m.user.email);
+                        const alreadyInvited = (lobby?.invites || []).some((inv: LobbyInvite) => inv.userId === memberId || inv.email === m.user?.email);
                         const inviteLimitReached = selectedPuzzle && (((participantsCount) + (lobby?.invites?.length || 0)) >= requiredPlayers || hasEnoughPlayers);
                         return (
                           <div key={memberId} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                            <div className="text-sm text-slate-200">{m.user.name || m.user.email}</div>
+                            <div className="text-sm text-slate-200">{m.user?.name || m.user?.email}</div>
                             <div>
                               {alreadyParticipant ? (
                                 <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-400">Participant</span>
@@ -963,13 +1020,13 @@ export default function TeamLobbyPage() {
                                       const j = await res.json().catch(() => ({}));
                                       if (!res.ok) return openActionModal('error', 'Invite Failed', j?.error || res.statusText);
                                       await fetchLobby();
-                                      openActionModal('success', 'Invited', `Invitation sent to ${m.user.name || m.user.email}`);
+                                      openActionModal('success', 'Invited', `Invitation sent to ${m.user?.name || m.user?.email}`);
                                     } catch (err) {
                                       console.error('Invite failed', err);
                                       openActionModal('error', 'Invite Failed', 'An unexpected error occurred.');
                                     }
                                   }}
-                                  disabled={!selectedPuzzle || inviteLimitReached}
+                                  disabled={!selectedPuzzle || !!inviteLimitReached}
                                   className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <UserPlus className="h-3.5 w-3.5" />
@@ -1076,17 +1133,18 @@ export default function TeamLobbyPage() {
               )}
 
               {(() => {
-                const rawParts = (lobby?.participants || []).map((p: any, index: number) => {
+                interface DisplayParticipant { userId?: string; name?: string; _index: number }
+                const rawParts: DisplayParticipant[] = (lobby?.participants || []).map((p, index): DisplayParticipant | null => {
                   if (!p) return null;
                   if (typeof p === 'string') return { userId: p, name: undefined, _index: index };
                   const userId = p.userId || p.id || p.user?.id;
                   const name = p.name || p.userName || p.user?.name || undefined;
                   return { userId, name, _index: index };
-                }).filter(Boolean as any);
+                }).filter((p): p is DisplayParticipant => p !== null);
 
                 const parts = (() => {
                   const seen = new Set<string>();
-                  const deduped: any[] = [];
+                  const deduped: DisplayParticipant[] = [];
                   for (const part of rawParts) {
                     const uid = part?.userId;
                     if (uid && !seen.has(uid)) {
@@ -1099,10 +1157,10 @@ export default function TeamLobbyPage() {
                   return deduped;
                 })();
 
-                return parts.map((part: any) => {
+                return parts.map((part) => {
                   const uid: string | undefined = part.userId;
-                  const member = members.find((m: any) => m.user?.id === uid);
-                  const label = member ? (member.user.name || member.user.email) : (part.name || uid);
+                  const member = members.find((m: TeamMember) => m.user?.id === uid);
+                  const label = member ? (member.user?.name || member.user?.email) : (part.name || uid);
                   const initial = (label || "?").charAt(0).toUpperCase();
                   return (
                     <div key={uid ? `user:${uid}` : `idx:${part._index}`} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
@@ -1150,10 +1208,10 @@ export default function TeamLobbyPage() {
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/55 p-4">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">Pending Invites</h3>
                 <div className="mt-3 space-y-2">
-                  {lobby.invites.map((inv: any, idx: number) => {
-                    const inviter = members.find((m: any) => m.user?.id === inv.invitedBy);
-                    const inviterLabel = inviter ? (inviter.user.name || inviter.user.email) : inv.invitedBy;
-                    const invitedMember = inv.userId ? members.find((m: any) => m.user?.id === inv.userId) : null;
+                  {lobby.invites.map((inv: LobbyInvite, idx: number) => {
+                    const inviter = members.find((m: TeamMember) => m.user?.id === inv.invitedBy);
+                    const inviterLabel = inviter ? (inviter.user?.name || inviter.user?.email) : inv.invitedBy;
+                    const invitedMember = inv.userId ? members.find((m: TeamMember) => m.user?.id === inv.userId) : null;
                     const inviteeLabel =
                       (invitedMember?.user?.name as string | undefined) ||
                       (inv.displayName as string | undefined) ||
@@ -1213,7 +1271,7 @@ export default function TeamLobbyPage() {
               )}
 
               {chatMessages.map((m, idx) => {
-                const member = (members || []).find((mm: any) => mm.user?.id && m?.userId && mm.user.id === m.userId);
+                const member = (members || []).find((mm: TeamMember) => mm.user?.id && m?.userId && mm.user.id === m.userId);
                 const senderLabel =
                   (m?.user?.name as string | undefined) ||
                   (m?.user?.email as string | undefined) ||
@@ -1233,7 +1291,7 @@ export default function TeamLobbyPage() {
                       <div className="min-w-0">
                         <div className="truncate text-xs text-slate-300">
                           <span className="font-semibold text-white">{senderLabel}</span>
-                          <span className="ml-2 text-slate-500">{new Date(m.createdAt).toLocaleTimeString()}</span>
+                          <span className="ml-2 text-slate-500">{m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : ''}</span>
                         </div>
                         <div className="mt-0.5 break-words text-sm text-slate-200">{m.content}</div>
                       </div>
@@ -1241,7 +1299,7 @@ export default function TeamLobbyPage() {
 
                     {isAdmin && (
                       <button
-                        onClick={async () => { if (confirm('Delete this message?')) await deleteChatMessage(m.id); }}
+                        onClick={async () => { if (m.id && confirm('Delete this message?')) await deleteChatMessage(m.id); }}
                         className="rounded-md border border-rose-700/70 bg-rose-950/40 px-2 py-1 text-[11px] font-semibold text-rose-200 transition hover:bg-rose-950/60"
                       >
                         Delete
@@ -1327,7 +1385,7 @@ export default function TeamLobbyPage() {
         onClose={() => {
           setActionModalOpen(false);
           if (redirectUrlOnClose) {
-            try { router.push(redirectUrlOnClose); } catch (e) { /* ignore */ }
+            try { router.push(redirectUrlOnClose); } catch { /* ignore */ }
             setRedirectUrlOnClose(null);
           }
         }}

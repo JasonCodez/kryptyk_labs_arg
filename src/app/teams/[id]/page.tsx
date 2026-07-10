@@ -163,7 +163,7 @@ export default function TeamDetailPage() {
             if (t.ok) setTeam(await t.json());
           }
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
     };
@@ -195,7 +195,7 @@ export default function TeamDetailPage() {
             if (m.ok) setUserRole((await m.json()).role);
           }
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };
@@ -241,7 +241,7 @@ export default function TeamDetailPage() {
           .map((i: any) => (i.item?.metadata as any)?.value)
           .filter(Boolean);
         setOwnedTeamThemes(themes);
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore */ }
     })();
   }, [userRole]);
 
@@ -399,7 +399,7 @@ export default function TeamDetailPage() {
                           return;
                         }
                         let body: any = null;
-                        try { body = await res.json(); } catch (e) { /* ignore */ }
+                        try { body = await res.json(); } catch { /* ignore */ }
                         const errorMsg = body?.error || (await res.text().catch(() => null)) || 'Failed to apply';
                         if (typeof errorMsg === 'string' && /pending|already/i.test(errorMsg)) {
                           setInviteStatus('pending');
@@ -909,7 +909,7 @@ export default function TeamDetailPage() {
             setModalOpen(true);
             // show the modal briefly, then navigate back to teams list so user sees confirmation
             setTimeout(() => {
-              try { router.push('/teams'); } catch (e) { /* ignore */ }
+              try { router.push('/teams'); } catch { /* ignore */ }
             }, 1200);
           } catch (err) {
             console.error(err);

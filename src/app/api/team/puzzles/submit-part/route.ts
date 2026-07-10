@@ -33,7 +33,7 @@ async function checkAnswer(
         if (regex.test(userAnswer)) {
           return { isCorrect: true, pointsEarned: solution.points };
         }
-      } catch (e) {
+      } catch {
         // Regex error, continue
         continue;
       }

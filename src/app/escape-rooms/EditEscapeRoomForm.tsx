@@ -31,7 +31,7 @@ export default function EditEscapeRoomForm({ room, onUpdated }: { room: any, onU
       } else {
         if (onUpdated) onUpdated();
       }
-    } catch (err) {
+    } catch {
       setError('Network error');
     }
     setLoading(false);

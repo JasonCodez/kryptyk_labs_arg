@@ -96,7 +96,7 @@ export default function ActionModal({
               <div className="px-6 py-5 overflow-y-auto" style={{ maxHeight: "calc(min(92dvh, 920px) - 116px)" }}>
                 {resolvedImageSrc ? (
                   isVideo ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                     
                     <video
                       src={resolvedImageSrc}
                       autoPlay
@@ -186,7 +186,7 @@ export default function ActionModal({
               <div className="px-6 py-5 overflow-y-auto" style={{ maxHeight: "calc(min(92dvh, 920px) - 116px)" }}>
                 {resolvedImageSrc ? (
                   isVideo ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                     
                     <video
                       src={resolvedImageSrc}
                       autoPlay
@@ -328,7 +328,7 @@ export default function ActionModal({
         <div className="bg-slate-900 p-6 overflow-y-auto" style={{ maxHeight: "calc(min(92dvh, 920px) - 74px)" }}>
           {resolvedImageSrc ? (
             isVideo ? (
-              // eslint-disable-next-line jsx-a11y/media-has-caption
+               
               <video
                 src={resolvedImageSrc}
                 autoPlay

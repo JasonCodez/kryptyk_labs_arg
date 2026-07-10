@@ -18,7 +18,7 @@ type MultiPartInput = {
   points?: number;
 };
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    let {
+    const {
       title,
       description,
       content,
@@ -101,13 +101,15 @@ export async function POST(request: NextRequest) {
       sudokuSolution,
       sudokuDifficulty,
       timeLimitSeconds,
-      puzzleData,
       isWarzExclusive,
       isActive,
       gridlockReleaseAt,
       debriefReleaseAt,
       dailySlotDayNumber,
     } = body;
+    // Reassigned below (e.g. for jigsaw shape-designer overrides), so kept separate from the
+    // const destructure above.
+    let { puzzleData } = body;
 
     // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and Hidden Word
     if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash') {
@@ -325,7 +327,7 @@ export async function POST(request: NextRequest) {
       'Untitled Puzzle');
 
     // Create puzzle
-    const createData: any = {
+    const createData: Record<string, unknown> = {
       title: finalTitle,
       description: puzzleDescription,
       content: puzzleContent,
@@ -342,7 +344,7 @@ export async function POST(request: NextRequest) {
             // Escape rooms created from the admin maker should be immediately playable.
             // Allow explicit override via payload when needed.
             isActive: typeof isActive === 'boolean' ? isActive : true,
-            minTeamSize: (() => { const v = puzzleData?.minTeamSize ?? (puzzleData as any)?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
+            minTeamSize: (() => { const v = puzzleData?.minTeamSize ?? puzzleData?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
           }
         : puzzleType === 'jim_wyze_case'
           ? {
@@ -530,7 +532,7 @@ export async function POST(request: NextRequest) {
     }
 
     const puzzle = await prisma.puzzle.create({
-      data: createData,
+      data: createData as Prisma.PuzzleCreateInput,
       include: {
         hints: true,
         solutions: true,
@@ -546,7 +548,7 @@ export async function POST(request: NextRequest) {
     // Create Sudoku puzzle if applicable
     if (puzzleType === 'sudoku' && sudokuGrid && sudokuSolution) {
       // Basic validation for grid shape and values to avoid DB errors
-      const validateGrid = (g: any) => {
+      const validateGrid = (g: unknown) => {
         if (!Array.isArray(g) || g.length !== 9) return false;
         for (const row of g) {
           if (!Array.isArray(row) || row.length !== 9) return false;
@@ -607,7 +609,7 @@ export async function POST(request: NextRequest) {
     if ((puzzle.puzzleType === 'escape_room' || puzzle.puzzleType === 'jim_wyze_case') && puzzleData && Array.isArray(puzzleData.rooms)) {
       try {
         // Create escape room and related records in a transaction
-        const rooms = puzzleData.rooms as any[];
+        const rooms = puzzleData.rooms as Record<string, unknown>[];
         await prisma.$transaction(async (tx) => {
           const isJimWyze = puzzle.puzzleType === 'jim_wyze_case';
           const escapeRoom = await tx.escapeRoomPuzzle.create({
@@ -616,7 +618,7 @@ export async function POST(request: NextRequest) {
               roomTitle: puzzleData.roomTitle || (puzzle.title || 'Escape Room'),
               roomDescription: puzzleData.roomDescription || (puzzle.description || ''),
               timeLimitSeconds: typeof puzzleData.timeLimitSeconds !== 'undefined' && puzzleData.timeLimitSeconds !== null ? Number(puzzleData.timeLimitSeconds) : undefined,
-              minTeamSize: isJimWyze ? 1 : (() => { const v = puzzleData?.minTeamSize ?? (puzzleData as any)?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
+              minTeamSize: isJimWyze ? 1 : (() => { const v = puzzleData?.minTeamSize ?? puzzleData?.escapeRoomData?.minTeamSize; return (typeof v === 'number' && v > 0) ? v : 1; })(),
               maxTeamSize: isJimWyze ? 1 : ((typeof puzzleData.maxTeamSize === 'number' && puzzleData.maxTeamSize > 0) ? puzzleData.maxTeamSize : 8),
             },
           });
@@ -625,11 +627,11 @@ export async function POST(request: NextRequest) {
           // Hotspots use targetId = ItemDefinition.id.
           const itemIdToDefinitionId = new Map<string, string>();
           try {
-            const d: any = (puzzleData as any).escapeRoomData;
-            const scenes: any[] = Array.isArray(d?.scenes) ? d.scenes : [];
+            const d: Record<string, unknown> = puzzleData.escapeRoomData;
+            const scenes: Record<string, unknown>[] = Array.isArray(d?.scenes) ? (d.scenes as Record<string, unknown>[]) : [];
             const seenItemIds = new Set<string>();
             for (const scene of scenes) {
-              const items: any[] = Array.isArray(scene?.items) ? scene.items : [];
+              const items: Record<string, unknown>[] = Array.isArray(scene?.items) ? (scene.items as Record<string, unknown>[]) : [];
               for (const it of items) {
                 const itemId = typeof it?.id === 'string' ? it.id : null;
                 if (!itemId || seenItemIds.has(itemId)) continue;
@@ -658,12 +660,12 @@ export async function POST(request: NextRequest) {
           for (const r of rooms) {
             // Persist layout if present
             if (r.layout) {
-              const layout = r.layout;
+              const layout = r.layout as Record<string, unknown>;
               const createdLayout = await tx.roomLayout.create({
                 data: {
                   escapeRoomId: escapeRoom.id,
-                  title: layout.title || null,
-                  backgroundUrl: layout.backgroundUrl || null,
+                  title: (layout.title as string) || null,
+                  backgroundUrl: (layout.backgroundUrl as string) || null,
                   width: layout.width ? Number(layout.width) : null,
                   height: layout.height ? Number(layout.height) : null,
                 },
@@ -671,9 +673,9 @@ export async function POST(request: NextRequest) {
 
               // Persist hotspots if provided
               if (Array.isArray(layout.hotspots)) {
-                for (const hs of layout.hotspots) {
+                for (const hs of layout.hotspots as Record<string, unknown>[]) {
                   // If the client provided a designer item id (collectItemId), map it to ItemDefinition.id.
-                  let targetId: string | null = hs.targetId || null;
+                  let targetId: string | null = (hs.targetId as string) || null;
                   if (targetId && itemIdToDefinitionId.has(targetId)) {
                     targetId = itemIdToDefinitionId.get(targetId) || null;
                   }
@@ -685,7 +687,7 @@ export async function POST(request: NextRequest) {
                       y: Number(hs.y) || 0,
                       w: Number(hs.w) || 32,
                       h: Number(hs.h) || 32,
-                      type: hs.type || 'interactive',
+                      type: (hs.type as string) || 'interactive',
                       targetId,
                       meta: hs.meta ? (typeof hs.meta === 'string' ? hs.meta : JSON.stringify(hs.meta)) : null,
                     },
@@ -696,19 +698,19 @@ export async function POST(request: NextRequest) {
 
             // Persist stages for this room
             if (Array.isArray(r.stages)) {
-              for (const s of r.stages) {
+              for (const s of r.stages as Record<string, unknown>[]) {
                 await tx.escapeStage.create({
                   data: {
                     escapeRoomId: escapeRoom.id,
                     order: stageOrder++,
-                    title: s.title || `Stage ${stageOrder}`,
-                    description: s.description || '',
-                    puzzleType: s.puzzleType || 'text',
-                    puzzleData: s.puzzleData && typeof s.puzzleData !== 'string' ? JSON.stringify(s.puzzleData) : (s.puzzleData || '{}'),
-                    correctAnswer: s.correctAnswer || '',
-                    hints: s.hints && Array.isArray(s.hints) ? JSON.stringify(s.hints) : (s.hints || '[]'),
-                    rewardItem: s.rewardItem || null,
-                    rewardDescription: s.rewardDescription || null,
+                    title: (s.title as string) || `Stage ${stageOrder}`,
+                    description: (s.description as string) || '',
+                    puzzleType: (s.puzzleType as string) || 'text',
+                    puzzleData: s.puzzleData && typeof s.puzzleData !== 'string' ? JSON.stringify(s.puzzleData) : ((s.puzzleData as string) || '{}'),
+                    correctAnswer: (s.correctAnswer as string) || '',
+                    hints: s.hints && Array.isArray(s.hints) ? JSON.stringify(s.hints) : ((s.hints as string) || '[]'),
+                    rewardItem: (s.rewardItem as string) || null,
+                    rewardDescription: (s.rewardDescription as string) || null,
                   },
                 });
               }

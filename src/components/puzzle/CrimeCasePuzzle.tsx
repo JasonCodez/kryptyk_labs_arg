@@ -292,7 +292,7 @@ export default function CrimeCasePuzzle({ puzzleId, onSolved }: CrimeCasePuzzleP
       }
     }, 1000);
     return () => clearInterval(id);
-  }, []); // eslint-disable-line
+  }, []);  
 
   useEffect(() => {
     if (serverState?.solved) timerActiveRef.current = false;

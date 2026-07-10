@@ -27,7 +27,7 @@ export function useUserPreferences() {
     const loadPreferences = () => {
       try {
         const stored = localStorage.getItem("userPreferences");
-        let preferences = stored
+        const preferences = stored
           ? JSON.parse(stored)
           : DEFAULT_PREFERENCES;
 

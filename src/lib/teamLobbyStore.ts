@@ -8,6 +8,7 @@ export type LobbyState = {
     id: string;
     userId?: string;
     email?: string;
+    displayName?: string;
     invitedBy: string;
     status: string; // pending/accepted/declined
     createdAt: number;

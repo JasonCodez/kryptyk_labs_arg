@@ -73,7 +73,7 @@ export default function TeamLobbyInviteModalProvider() {
     };
     window.addEventListener("notificationReceived", handler as EventListener);
     return () => window.removeEventListener("notificationReceived", handler as EventListener);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // On mount, also check unread notifications so invites show even if the socket event was missed.
@@ -96,7 +96,7 @@ export default function TeamLobbyInviteModalProvider() {
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const dismissCurrent = () => {

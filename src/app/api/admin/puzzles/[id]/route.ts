@@ -97,7 +97,7 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Puzzle not found" }, { status: 404 });
 
   const body = await req.json();
-  let {
+  const {
     title,
     description,
     content,
@@ -107,7 +107,6 @@ export async function PUT(
     pointsReward,
     hints,
     puzzleType,
-    puzzleData,
     sudokuGrid,
     sudokuSolution,
     sudokuDifficulty,
@@ -119,6 +118,8 @@ export async function PUT(
     debriefReleaseAt,
     dailySlotDayNumber,
   } = body;
+  // Reassigned below, so kept separate from the const destructure above.
+  let { puzzleData } = body;
 
   // Normalise snake_case category values coming from the admin dropdown to display names
   const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
@@ -242,17 +243,17 @@ export async function PUT(
   const isEscapeRoomType = puzzleType === 'escape_room';
   const isJimWyzeType = puzzleType === 'jim_wyze_case';
   const escapeMinTeamSize = isEscapeRoomType
-    ? (toPositiveInt(minTeamSize, (puzzleData as any)?.minTeamSize, (puzzleData as any)?.escapeRoomData?.minTeamSize) ?? 1)
+    ? (toPositiveInt(minTeamSize, puzzleData?.minTeamSize, puzzleData?.escapeRoomData?.minTeamSize) ?? 1)
     : isJimWyzeType
       ? 1
       : undefined;
   const escapeMaxTeamSize = isEscapeRoomType
-    ? toPositiveInt(maxTeamSize, (puzzleData as any)?.maxTeamSize, (puzzleData as any)?.escapeRoomData?.maxTeamSize)
+    ? toPositiveInt(maxTeamSize, puzzleData?.maxTeamSize, puzzleData?.escapeRoomData?.maxTeamSize)
     : isJimWyzeType
       ? 1
       : undefined;
   const escapeTimeLimitSeconds = (isEscapeRoomType || isJimWyzeType)
-    ? toPositiveInt(timeLimitSeconds, (puzzleData as any)?.timeLimitSeconds, (puzzleData as any)?.escapeRoomData?.timeLimit)
+    ? toPositiveInt(timeLimitSeconds, puzzleData?.timeLimitSeconds, puzzleData?.escapeRoomData?.timeLimit)
     : undefined;
 
   await prisma.$transaction(async (tx) => {
@@ -301,15 +302,16 @@ export async function PUT(
 
     // 2. Replace hints
     await tx.puzzleHint.deleteMany({ where: { puzzleId } });
-    const filteredHints = Array.isArray(hints) ? hints.filter((h: any) => {
-      const text = typeof h === 'string' ? h : h?.text;
-      return text?.trim();
+    const filteredHints = Array.isArray(hints) ? hints.filter((h: unknown) => {
+      const text = typeof h === 'string' ? h : (h as Record<string, unknown>)?.text;
+      return typeof text === 'string' && text.trim();
     }) : [];
     if (filteredHints.length > 0) {
       await tx.puzzleHint.createMany({
-        data: filteredHints.map((h: any, order: number) => {
-          const text = typeof h === 'string' ? h : h.text;
-          const costPoints = typeof h === 'string' ? 10 : (h.costPoints ?? 10);
+        data: filteredHints.map((h: unknown, order: number) => {
+          const text = String(typeof h === 'string' ? h : (h as Record<string, unknown>).text);
+          const costPointsRaw = typeof h === 'string' ? 10 : ((h as Record<string, unknown>).costPoints ?? 10);
+          const costPoints = typeof costPointsRaw === 'number' ? costPointsRaw : Number(costPointsRaw) || 10;
           return { puzzleId, text, order, costPoints };
         }),
       });
@@ -438,16 +440,16 @@ export async function PUT(
       await tx.escapeRoomPuzzle.upsert({
         where: { puzzleId },
         update: {
-          roomTitle: ((puzzleData as any)?.roomTitle || title || "Untitled Puzzle"),
-          roomDescription: ((puzzleData as any)?.roomDescription || description || ""),
+          roomTitle: (puzzleData?.roomTitle || title || "Untitled Puzzle"),
+          roomDescription: (puzzleData?.roomDescription || description || ""),
           minTeamSize: resolvedMin,
           maxTeamSize: resolvedMax,
           ...(typeof escapeTimeLimitSeconds === 'number' ? { timeLimitSeconds: escapeTimeLimitSeconds } : {}),
         },
         create: {
           puzzleId,
-          roomTitle: ((puzzleData as any)?.roomTitle || title || "Untitled Puzzle"),
-          roomDescription: ((puzzleData as any)?.roomDescription || description || ""),
+          roomTitle: (puzzleData?.roomTitle || title || "Untitled Puzzle"),
+          roomDescription: (puzzleData?.roomDescription || description || ""),
           minTeamSize: resolvedMin,
           maxTeamSize: resolvedMax,
           ...(typeof escapeTimeLimitSeconds === 'number' ? { timeLimitSeconds: escapeTimeLimitSeconds } : {}),

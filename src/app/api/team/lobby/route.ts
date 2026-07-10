@@ -12,7 +12,7 @@ async function resetTeamEscapeProgressForPuzzle(teamId: string, puzzleId: string
   try {
     const puzzle = await prisma.puzzle.findUnique({ where: { id: puzzleId }, include: { escapeRoom: true } });
     if (!puzzle?.escapeRoom?.id) return;
-    await (prisma as any).teamEscapeProgress.deleteMany({ where: { teamId, escapeRoomId: puzzle.escapeRoom.id } });
+    await prisma.teamEscapeProgress.deleteMany({ where: { teamId, escapeRoomId: puzzle.escapeRoom.id } });
   } catch {
     // ignore
   }
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
         });
         const escapeRoomId = puzzle?.escapeRoom?.id;
         if (escapeRoomId) {
-          const progress = await (prisma as any).teamEscapeProgress.findFirst({
+          const progress = await prisma.teamEscapeProgress.findFirst({
             where: { teamId, escapeRoomId },
             select: { failedAt: true, completedAt: true },
           });
@@ -134,8 +134,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
-      const reason = (body as any)?.reason ? String((body as any).reason) : 'abort';
-      const skipEmit = !!(body as any)?.skipEmit;
+      const reason = body?.reason ? String(body.reason) : 'abort';
+      const skipEmit = !!body?.skipEmit;
 
       // Reset escape-room progress (so the team can restart).
       await resetTeamEscapeProgressForPuzzle(teamId, puzzleId);
@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
         try {
           if (lobby?.invites && lobby.invites.length > 0) {
             const before = lobby.invites.length;
-            lobby.invites = lobby.invites.filter((inv: any) => !(inv.userId === userId || (inv.email && inv.email === userEmail)));
+            lobby.invites = lobby.invites.filter((inv) => !(inv.userId === userId || (inv.email && inv.email === userEmail)));
             const removed = before - lobby.invites.length;
             if (removed > 0) {
               console.log(`declineInvite removed ${removed} invite(s) for user ${userId}`);
@@ -315,7 +315,7 @@ export async function POST(req: NextRequest) {
       // Ensure participants list is unique (protect against concurrent duplicate adds)
       try {
         lobby.participants = Array.from(new Set(lobby.participants));
-      } catch (e) {
+      } catch {
         // ignore
       }
 
@@ -383,7 +383,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Only the lobby leader can remove participants' }, { status: 403 });
         }
 
-        const { targetUserId } = body as any;
+        const { targetUserId } = body;
         if (!targetUserId) return NextResponse.json({ error: 'targetUserId required' }, { status: 400 });
 
         if (!lobby.participants || !lobby.participants.includes(targetUserId)) {
@@ -395,7 +395,7 @@ export async function POST(req: NextRequest) {
 
         // If no participants remain, destroy the lobby and clean persistent lobby data
         if (!lobby.participants || lobby.participants.length === 0) {
-          try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
+          try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch { /* ignore */ }
           deleteLobby(teamId, puzzleId);
           return NextResponse.json({ success: true, removed: targetUserId, destroyed: true });
         }
@@ -405,7 +405,7 @@ export async function POST(req: NextRequest) {
         try {
           const { postToSocket } = await import('@/lib/socket-client');
           await postToSocket('/emit', { room: key, event: 'kicked', payload: { teamId, puzzleId, targetUserId } });
-        } catch (e) {
+        } catch {
           // ignore
         }
         })();
@@ -437,7 +437,7 @@ export async function POST(req: NextRequest) {
 
         // if no participants remain, destroy the lobby and clean persistent lobby data
         if (!lobby.participants || lobby.participants.length === 0) {
-          try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
+          try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch { /* ignore */ }
           deleteLobby(teamId, puzzleId);
           return NextResponse.json({ success: true, destroyed: true });
         }
@@ -447,7 +447,7 @@ export async function POST(req: NextRequest) {
           try {
             const { postToSocket } = await import('@/lib/socket-client');
             await postToSocket('/emit', { room: key, event: 'participantLeft', payload: { teamId, puzzleId, userId, userName } });
-          } catch (e) {
+          } catch {
             // ignore
           }
         })();
@@ -472,13 +472,13 @@ export async function POST(req: NextRequest) {
           try {
             const { postToSocket } = await import('@/lib/socket-client');
             await postToSocket('/emit', { room: key, event: 'lobbyDestroyed', payload: { teamId, puzzleId, reason: 'leader_shutdown' } });
-          } catch (e) {
+          } catch {
             // ignore
           }
         })();
         // Reset escape-room progress as part of destroying the lobby.
         await resetTeamEscapeProgressForPuzzle(teamId, puzzleId);
-        try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch (e) { /* ignore */ }
+        try { await cleanupPersistentLobbyData(teamId, puzzleId); } catch { /* ignore */ }
         deleteLobby(teamId, puzzleId);
         return NextResponse.json({ success: true, destroyed: true });
       } catch (e) {
@@ -495,7 +495,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Only the lobby leader can reset the lobby' }, { status: 403 });
         }
 
-        const reason = (body as any)?.reason ? String((body as any).reason) : 'reset';
+        const reason = body?.reason ? String(body.reason) : 'reset';
 
         try {
           const { postToSocket } = await import('@/lib/socket-client');
@@ -565,7 +565,7 @@ export async function POST(req: NextRequest) {
         // IMPORTANT: If a previous run existed, we must clear briefing acks and any old run state.
         if (puzzle.escapeRoom) {
           try {
-            await (prisma as any).teamEscapeProgress.upsert({
+            await prisma.teamEscapeProgress.upsert({
               where: { teamId_escapeRoomId: { teamId, escapeRoomId: puzzle.escapeRoom.id } },
               create: {
                 teamId,
@@ -636,7 +636,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Only the lobby leader can invite members' }, { status: 403 });
         }
 
-        const { inviteeEmail, inviteeUserId } = body as any;
+        const { inviteeEmail, inviteeUserId } = body;
         let inviteeId: string | undefined = undefined;
         let inviteeEmailFinal: string | undefined = undefined;
         let inviteeDisplayName: string | undefined = undefined;
@@ -678,11 +678,11 @@ export async function POST(req: NextRequest) {
           if (requiredPlayers > 0 && participants.length + pendingInvites >= requiredPlayers) {
             return NextResponse.json({ error: `Cannot invite: lobby already has ${participants.length} participants and ${pendingInvites} pending invites; puzzle requires ${requiredPlayers} players` }, { status: 400 });
           }
-        } catch (e) {
+        } catch {
           // ignore puzzle lookup errors; proceed with invite
         }
 
-        lobby.invites.push(invite as any);
+        lobby.invites.push(invite);
 
         let notificationCreated = false;
         let emailSent = false;
@@ -717,7 +717,7 @@ export async function POST(req: NextRequest) {
             const puzzle = await prisma.puzzle.findUnique({ where: { id: puzzleId }, select: { title: true } });
             const inviteTitle = `Lobby invite from ${inviter?.name || inviter?.email || 'a teammate'}`;
             const inviteMsg = `You've been invited to join a team lobby for '${puzzle?.title || 'a puzzle'}'. Click Join to go to the lobby.`;
-            const notification = await createNotification({ userId: inviteeId, type: 'team_lobby_invite' as any, title: inviteTitle, message: inviteMsg, relatedId: `${teamId}::${puzzleId}` });
+            const notification = await createNotification({ userId: inviteeId, type: 'team_lobby_invite', title: inviteTitle, message: inviteMsg, relatedId: `${teamId}::${puzzleId}` });
             notificationCreated = !!notification;
             notificationId = notification?.id;
 
@@ -728,7 +728,7 @@ export async function POST(req: NextRequest) {
                 create: { userId: inviteeId },
                 update: {},
               });
-            } catch (e) {
+            } catch {
               // ignore
             }
 
@@ -776,7 +776,6 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Only the lobby leader can open the puzzle' }, { status: 403 });
         }
 
-        const participants = Array.isArray(lobby.participants) ? lobby.participants : [];
         // Participant count was already validated at start; no hard-coded check here.
 
         lobby.started = true;
@@ -808,7 +807,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Only the lobby leader can revoke invites' }, { status: 403 });
         }
 
-        const { inviteId, inviteeUserId, inviteeEmail } = body as any;
+        const { inviteId, inviteeUserId, inviteeEmail } = body;
 
         if (!lobby.invites || lobby.invites.length === 0) {
           return NextResponse.json({ error: 'No pending invites to revoke' }, { status: 400 });
@@ -817,13 +816,13 @@ export async function POST(req: NextRequest) {
         // find matching invite in the in-memory lobby
         let foundIndex = -1;
         if (inviteId) {
-          foundIndex = lobby.invites.findIndex((inv: any) => inv.id === inviteId);
+          foundIndex = lobby.invites.findIndex((inv) => inv.id === inviteId);
         }
         if (foundIndex === -1 && inviteeUserId) {
-          foundIndex = lobby.invites.findIndex((inv: any) => inv.userId === inviteeUserId);
+          foundIndex = lobby.invites.findIndex((inv) => inv.userId === inviteeUserId);
         }
         if (foundIndex === -1 && inviteeEmail) {
-          foundIndex = lobby.invites.findIndex((inv: any) => inv.email === inviteeEmail);
+          foundIndex = lobby.invites.findIndex((inv) => inv.email === inviteeEmail);
         }
 
         if (foundIndex === -1) {

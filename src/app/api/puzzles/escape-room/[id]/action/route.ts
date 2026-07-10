@@ -117,13 +117,11 @@ async function resolveTargetLayoutIdForScene(
 
   if (!layouts.length) return null;
 
-  const pAny: any = puzzle;
-  const escapeRoomData = pAny?.data && typeof pAny.data === 'object' && 'escapeRoomData' in pAny.data
-    ? pAny.data.escapeRoomData
-    : null;
-  const scenes = Array.isArray(escapeRoomData?.scenes) ? escapeRoomData.scenes : [];
+  const data = puzzle?.data && typeof puzzle.data === 'object' ? (puzzle.data as Record<string, unknown>) : null;
+  const escapeRoomData = data && 'escapeRoomData' in data ? (data.escapeRoomData as Record<string, unknown> | null) : null;
+  const scenes = Array.isArray(escapeRoomData?.scenes) ? (escapeRoomData.scenes as Record<string, unknown>[]) : [];
 
-  const targetSceneIdx = scenes.findIndex((scene: any) => {
+  const targetSceneIdx = scenes.findIndex((scene) => {
     const sceneId = typeof scene?.id === 'string' ? scene.id.trim() : '';
     return sceneId === trimmedTarget;
   });
@@ -144,7 +142,7 @@ async function resolveTargetLayoutIdForScene(
   return null;
 }
 
-async function emitEscapeSession(teamId: string, puzzleId: string, payload: any) {
+async function emitEscapeSession(teamId: string, puzzleId: string, payload: Record<string, unknown>) {
   try {
     const { postToSocket } = await import("@/lib/socket-client");
     const room = `escape:${teamId}::${puzzleId}`;
@@ -154,7 +152,7 @@ async function emitEscapeSession(teamId: string, puzzleId: string, payload: any)
   }
 }
 
-async function emitEscapeActivity(teamId: string, puzzleId: string, payload: any) {
+async function emitEscapeActivity(teamId: string, puzzleId: string, payload: Record<string, unknown>) {
   try {
     const { postToSocket } = await import("@/lib/socket-client");
     const room = `escape:${teamId}::${puzzleId}`;
@@ -178,7 +176,7 @@ async function applyTimePenalty(
   }
   const newExpiry = new Date(currentRunExpiresAt.getTime() - penaltySecs * 1000);
   try {
-    await (prisma as any).teamEscapeProgress.update({
+    await prisma.teamEscapeProgress.update({
       where: { id: progressId },
       data: { runExpiresAt: newExpiry },
     });
@@ -201,19 +199,19 @@ function normalizeSfx(raw: unknown): SfxPayload | null {
     return url ? { url } : null;
   }
   if (raw && typeof raw === 'object') {
-    const anyRaw: any = raw;
-    const url = typeof anyRaw.url === 'string' ? anyRaw.url.trim() : '';
+    const rawObj = raw as Record<string, unknown>;
+    const url = typeof rawObj.url === 'string' ? rawObj.url.trim() : '';
     if (!url) return null;
-    const v = Number(anyRaw.volume);
+    const v = Number(rawObj.volume);
     const volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : undefined;
     return { url, ...(volume !== undefined ? { volume } : {}) };
   }
   return null;
 }
 
-function extractSfx(meta: Record<string, any>, kind: 'pickup' | 'use' | 'trigger' | 'loot'): SfxPayload | null {
+function extractSfx(meta: Record<string, unknown>, kind: 'pickup' | 'use' | 'trigger' | 'loot'): SfxPayload | null {
   try {
-    const sfx = meta && typeof meta.sfx === 'object' ? (meta.sfx as any) : null;
+    const sfx = meta && typeof meta.sfx === 'object' ? (meta.sfx as Record<string, unknown>) : null;
     if (!sfx) return null;
     return normalizeSfx(sfx[kind]);
   } catch {
@@ -271,7 +269,7 @@ export async function POST(
     }
 
     // Block actions unless a run is actively started (prevents door opens/pickups during briefing).
-    const progress = await (prisma as any).teamEscapeProgress.findFirst({
+    const progress = await prisma.teamEscapeProgress.findFirst({
       where: progressWhereClause(ctx),
       select: {
         id: true,
@@ -311,7 +309,7 @@ export async function POST(
         return NextResponse.json({ error: 'Item not part of this escape room' }, { status: 403 });
       }
 
-      const pickupMeta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+      const pickupMeta = safeJsonParse<Record<string, unknown>>(hotspot.meta, {});
       const pickupSfx = extractSfx(pickupMeta, 'pickup');
       const presetRaw = typeof pickupMeta?.pickupAnimationPreset === 'string' ? pickupMeta.pickupAnimationPreset : 'cinematic';
       const pickupAnimationPreset = ['cinematic', 'quickSpin', 'floatIn', 'powerDrop', 'spiral', 'bounce', 'glitch', 'flash'].includes(presetRaw)
@@ -337,7 +335,7 @@ export async function POST(
       // If hotspot.targetId points to an ItemDefinition id, add item key to player state
       if (!hotspot.targetId) return NextResponse.json({ error: 'No item to pick up' }, { status: 400 });
 
-      const pickupMeta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+      const pickupMeta = safeJsonParse<Record<string, unknown>>(hotspot.meta, {});
 
       const pickupSfx = extractSfx(pickupMeta, 'pickup');
 
@@ -358,14 +356,14 @@ export async function POST(
       if (!inventory.includes(item.key)) inventory.push(item.key);
 
       const pickupStageIndex = Math.max(1, Number(progress.currentStageIndex || 1));
-      const pickupSceneStateBase = normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {}));
+      const pickupSceneStateBase = normalizeSceneState(safeJsonParse<Record<string, unknown>>(progress?.sceneState, {}));
       const pickupSceneState = recordStageContribution({
         sceneStateRaw: pickupSceneStateBase,
         stageIndex: pickupStageIndex,
         userId: ctx.userId,
       });
 
-      await (prisma as any).teamEscapeProgress.update({
+      await prisma.teamEscapeProgress.update({
         where: { id: progress.id },
         data: {
           inventory: JSON.stringify(inventory),
@@ -465,7 +463,7 @@ export async function POST(
               itemName: item.name,
               puzzleId,
             });
-          } catch (socketErr) {
+          } catch {
             // non-fatal
           }
         } catch (outerErr) {
@@ -499,7 +497,7 @@ export async function POST(
         return NextResponse.json({ error: 'Item is not in inventory' }, { status: 400 });
       }
 
-      const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+      const meta = safeJsonParse<Record<string, unknown>>(hotspot.meta, {});
 
       const useSfx = extractSfx(meta, 'use');
       const lootSfx = extractSfx(meta, 'loot');
@@ -507,19 +505,19 @@ export async function POST(
       const derivedRequiredItemKey = requiredItemId ? makeDesignerItemKey(String(escapeRoom.id), requiredItemId) : null;
 
       const requiresItemIds: string[] = Array.isArray(meta.requiresItemIds)
-        ? meta.requiresItemIds.filter((x: any) => typeof x === 'string')
+        ? meta.requiresItemIds.filter((x: unknown): x is string => typeof x === 'string')
         : [];
       const derivedRequiresItems: string[] = requiresItemIds.map((id) => makeDesignerItemKey(String(escapeRoom.id), id));
 
       const requiresItems: string[] = Array.from(
         new Set([
-          ...(Array.isArray(meta.requiresItems) ? meta.requiresItems.filter((x: any) => typeof x === 'string') : []),
+          ...(Array.isArray(meta.requiresItems) ? meta.requiresItems.filter((x: unknown): x is string => typeof x === 'string') : []),
           ...derivedRequiresItems,
         ])
       );
       const requiredItemKey = typeof meta.requiredItemKey === 'string' ? meta.requiredItemKey : derivedRequiredItemKey;
 
-      const useEffect = (meta && typeof meta.useEffect === 'object' && meta.useEffect) ? (meta.useEffect as any) : null;
+      const useEffect = (meta && typeof meta.useEffect === 'object' && meta.useEffect) ? (meta.useEffect as Record<string, unknown>) : null;
 
       // Seconds to deduct from the run timer on a wrong/failed interaction.
       const usePenaltySecs = typeof meta.penaltySeconds === 'number' && meta.penaltySeconds > 0
@@ -558,7 +556,7 @@ export async function POST(
       if (useEffect) {
         const strict = useEffect?.strict === true;
 
-        const baseSceneState = normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {}));
+        const baseSceneState = normalizeSceneState(safeJsonParse<Record<string, unknown>>(progress?.sceneState, {}));
         const flags = new Set(baseSceneState.flags || []);
         const hiddenItemIds = new Set(baseSceneState.hiddenItemIds);
         const shownItemIds = new Set(baseSceneState.shownItemIds);
@@ -571,13 +569,13 @@ export async function POST(
         const itemRotationOverrides = { ...(baseSceneState.itemRotationOverrides || {}) };
         const itemTintOverrides = { ...(baseSceneState.itemTintOverrides || {}) };
 
-        const hideItemIds: string[] = Array.isArray(useEffect.hideItemIds) ? useEffect.hideItemIds.filter((x: any) => typeof x === 'string') : [];
-        const showItemIds: string[] = Array.isArray(useEffect.showItemIds) ? useEffect.showItemIds.filter((x: any) => typeof x === 'string') : [];
-        const disableHotspotIds: string[] = Array.isArray(useEffect.disableHotspotIds) ? useEffect.disableHotspotIds.filter((x: any) => typeof x === 'string') : [];
-        const enableHotspotIds: string[] = Array.isArray(useEffect.enableHotspotIds) ? useEffect.enableHotspotIds.filter((x: any) => typeof x === 'string') : [];
-        const grantFlags: string[] = Array.isArray(useEffect.grantFlags) ? useEffect.grantFlags.filter((x: any) => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim()) : [];
-        const revokeFlags: string[] = Array.isArray(useEffect.revokeFlags) ? useEffect.revokeFlags.filter((x: any) => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim()) : [];
-        const grantItemKeys: string[] = Array.isArray(useEffect.grantItemKeys) ? useEffect.grantItemKeys.filter((x: any) => typeof x === 'string') : [];
+        const hideItemIds: string[] = Array.isArray(useEffect.hideItemIds) ? useEffect.hideItemIds.filter((x: unknown): x is string => typeof x === 'string') : [];
+        const showItemIds: string[] = Array.isArray(useEffect.showItemIds) ? useEffect.showItemIds.filter((x: unknown): x is string => typeof x === 'string') : [];
+        const disableHotspotIds: string[] = Array.isArray(useEffect.disableHotspotIds) ? useEffect.disableHotspotIds.filter((x: unknown): x is string => typeof x === 'string') : [];
+        const enableHotspotIds: string[] = Array.isArray(useEffect.enableHotspotIds) ? useEffect.enableHotspotIds.filter((x: unknown): x is string => typeof x === 'string') : [];
+        const grantFlags: string[] = Array.isArray(useEffect.grantFlags) ? useEffect.grantFlags.filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim()) : [];
+        const revokeFlags: string[] = Array.isArray(useEffect.revokeFlags) ? useEffect.revokeFlags.filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim()) : [];
+        const grantItemKeys: string[] = Array.isArray(useEffect.grantItemKeys) ? useEffect.grantItemKeys.filter((x: unknown): x is string => typeof x === 'string') : [];
         const setItemStateById: Record<string, string> = Object.fromEntries(
           Object.entries((useEffect?.setItemStateById && typeof useEffect.setItemStateById === 'object') ? useEffect.setItemStateById : {}).filter(
             ([itemId, state]) => typeof itemId === 'string' && typeof state === 'string' && itemId.trim().length > 0 && state.trim().length > 0
@@ -619,7 +617,7 @@ export async function POST(
         ) as Record<string, string>;
 
         const consumeItemKeys: string[] = Array.isArray(useEffect.consumeItemKeys)
-          ? useEffect.consumeItemKeys.filter((x: any) => typeof x === 'string')
+          ? useEffect.consumeItemKeys.filter((x: unknown): x is string => typeof x === 'string')
           : [];
         const consumeRequiredItems = useEffect.consumeRequiredItems === true;
 
@@ -635,11 +633,11 @@ export async function POST(
               },
               select: { id: true, meta: true },
             });
-            const foundIdSet = new Set(all.map((h: any) => String(h.id)));
+            const foundIdSet = new Set(all.map((h) => String(h.id)));
             const foundZoneIdSet = new Set(
               all
-                .map((h: any) => safeJsonParse<Record<string, any>>(h.meta, {}))
-                .map((m: any) => (typeof m?.zoneId === 'string' ? m.zoneId : ''))
+                .map((h) => safeJsonParse<Record<string, unknown>>(h.meta, {}))
+                .map((m) => (typeof m?.zoneId === 'string' ? m.zoneId : ''))
                 .filter(Boolean)
             );
 
@@ -664,7 +662,7 @@ export async function POST(
               where: { escapeRoomId: escapeRoom.id, key: { in: itemKeysToCheck } },
               select: { key: true },
             });
-            const foundKeys = new Set(defs.map((d: any) => String(d.key)));
+            const foundKeys = new Set(defs.map((d) => String(d.key)));
             const missing = itemKeysToCheck.filter((k) => !foundKeys.has(String(k)));
             if (missing.length > 0) {
               return NextResponse.json({ error: `Invalid item key(s) in useEffect: ${missing.join(', ')}` }, { status: 400 });
@@ -737,7 +735,7 @@ export async function POST(
 
         // Optionally grant loot to inventory immediately (no separate pickup hotspot required)
         // Keys must correspond to ItemDefinition.key for this escape room.
-        let granted: Array<{ key: string; name: string }> = [];
+        const granted: Array<{ key: string; name: string }> = [];
         if (grantItemKeys.length > 0) {
           const uniqueGrantKeys = Array.from(new Set(grantItemKeys)).filter(Boolean);
           if (uniqueGrantKeys.length > 0) {
@@ -747,7 +745,7 @@ export async function POST(
             });
 
             if (strict) {
-              const found = new Set(defs.map((d: any) => String(d.key)));
+              const found = new Set(defs.map((d) => String(d.key)));
               const missing = uniqueGrantKeys.filter((k) => !found.has(String(k)));
               if (missing.length > 0) {
                 return NextResponse.json({ error: `Invalid grantItemKeys: ${missing.join(', ')}` }, { status: 400 });
@@ -797,10 +795,10 @@ export async function POST(
           itemScaleOverrides,
           itemRotationOverrides,
           itemTintOverrides,
-          stageContributions: (sceneStateWithContribution as any).stageContributions || {},
+          stageContributions: (sceneStateWithContribution.stageContributions as Record<string, Record<string, number>>) || {},
         };
 
-        const updated = await (prisma as any).teamEscapeProgress.update({
+        await prisma.teamEscapeProgress.update({
           where: { id: progress.id },
           data: {
             inventory: JSON.stringify(nextInventory),
@@ -910,8 +908,8 @@ export async function POST(
       let totalRooms = 0;
       try {
         const puzzle = await prisma.puzzle.findUnique({ where: { id: puzzleId } });
-        const pAny: any = puzzle;
-        const escapeRoomData = pAny?.data && typeof pAny.data === 'object' && 'escapeRoomData' in pAny.data ? pAny.data.escapeRoomData : null;
+        const data = puzzle?.data && typeof puzzle.data === 'object' ? (puzzle.data as Record<string, unknown>) : null;
+        const escapeRoomData = data && 'escapeRoomData' in data ? (data.escapeRoomData as Record<string, unknown> | null) : null;
         if (escapeRoomData && Array.isArray(escapeRoomData.scenes)) {
           totalRooms = escapeRoomData.scenes.length;
         }
@@ -928,7 +926,7 @@ export async function POST(
 
       const cur = Math.max(1, Number(progress.currentStageIndex || 1));
       const sceneStateForUseAdvance = recordStageContribution({
-        sceneStateRaw: normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {})),
+        sceneStateRaw: normalizeSceneState(safeJsonParse<Record<string, unknown>>(progress?.sceneState, {})),
         stageIndex: cur,
         userId: ctx.userId,
       });
@@ -965,7 +963,7 @@ export async function POST(
       const nextInventory = inventory.filter((k) => k !== itemKey);
 
       // Optimistic concurrency: only advance if stage hasn't already moved.
-      const useUpdateResult = await (prisma as any).teamEscapeProgress.updateMany({
+      const useUpdateResult = await prisma.teamEscapeProgress.updateMany({
         where: { id: progress.id, currentStageIndex: cur },
         data: {
           currentStageIndex: nextStageIndex,
@@ -977,10 +975,13 @@ export async function POST(
       });
 
       const useAlreadyAdvanced = useUpdateResult.count === 0;
-      const updated = await (prisma as any).teamEscapeProgress.findUnique({
+      const updated = await prisma.teamEscapeProgress.findUnique({
         where: { id: progress.id },
         select: { currentStageIndex: true, solvedStages: true, completedAt: true, inventory: true, sceneState: true },
       });
+      if (!updated) {
+        return NextResponse.json({ error: "Progress record not found" }, { status: 500 });
+      }
 
       const currentInventory: string[] = safeJsonParse<string[]>(updated?.inventory, []);
       const inventoryItems = await buildInventoryItems(escapeRoom.id, currentInventory);
@@ -993,7 +994,7 @@ export async function POST(
         completedAt: updated.completedAt,
         inventory: currentInventory,
         inventoryItems,
-        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, unknown>>(updated.sceneState, {})),
         contribution: contributionSummary,
       });
 
@@ -1019,7 +1020,7 @@ export async function POST(
         completedAt: updated.completedAt,
         inventory: currentInventory,
         inventoryItems,
-        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, unknown>>(updated.sceneState, {})),
         contribution: contributionSummary,
         consumed: { itemKey },
         ...(useSfx ? { sfx: useSfx } : {}),
@@ -1028,13 +1029,13 @@ export async function POST(
 
     if (action === 'trigger') {
       // Trigger/door hotspot: advance rooms or complete the run.
-      const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
-      const triggerUseEffect = (meta && typeof meta.useEffect === 'object' && meta.useEffect) ? (meta.useEffect as any) : null;
+      const meta = safeJsonParse<Record<string, unknown>>(hotspot.meta, {});
+      const triggerUseEffect = (meta && typeof meta.useEffect === 'object' && meta.useEffect) ? (meta.useEffect as Record<string, unknown>) : null;
       const grantFlags: string[] = Array.isArray(triggerUseEffect?.grantFlags)
-        ? triggerUseEffect.grantFlags.filter((x: any) => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim())
+        ? triggerUseEffect.grantFlags.filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim())
         : [];
       const revokeFlags: string[] = Array.isArray(triggerUseEffect?.revokeFlags)
-        ? triggerUseEffect.revokeFlags.filter((x: any) => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim())
+        ? triggerUseEffect.revokeFlags.filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 0).map((x: string) => x.trim())
         : [];
 
       const triggerSfx = extractSfx(meta, 'trigger');
@@ -1054,7 +1055,7 @@ export async function POST(
       const triggerRunExpiresAt: Date | null = progress?.runExpiresAt ? new Date(progress.runExpiresAt) : null;
 
       // Optional gating: require items to be present in inventory
-      const requiresItems: string[] = Array.isArray(meta.requiresItems) ? meta.requiresItems.filter((x: any) => typeof x === 'string') : [];
+      const requiresItems: string[] = Array.isArray(meta.requiresItems) ? meta.requiresItems.filter((x: unknown): x is string => typeof x === 'string') : [];
       if (requiresItems.length > 0) {
         const missing = requiresItems.filter((k) => !inventory.includes(k));
         if (missing.length > 0) {
@@ -1074,7 +1075,7 @@ export async function POST(
           return NextResponse.json({ error: `Target scene not found: ${targetSceneId}` }, { status: 400 });
         }
 
-        const baseSceneState = normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {}));
+        const baseSceneState = normalizeSceneState(safeJsonParse<Record<string, unknown>>(progress?.sceneState, {}));
         const nextFlags = new Set(baseSceneState.flags || []);
         for (const flag of grantFlags) nextFlags.add(flag);
         for (const flag of revokeFlags) nextFlags.delete(flag);
@@ -1088,7 +1089,7 @@ export async function POST(
           userId: ctx.userId,
         });
 
-        const updated = await (prisma as any).teamEscapeProgress.update({
+        const updated = await prisma.teamEscapeProgress.update({
           where: { id: progress.id },
           data: {
             sceneState: JSON.stringify(nextSceneState),
@@ -1102,7 +1103,7 @@ export async function POST(
           currentStageIndex: updated.currentStageIndex,
           solvedStages: updated.solvedStages,
           completedAt: updated.completedAt,
-          sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+          sceneState: normalizeSceneState(safeJsonParse<Record<string, unknown>>(updated.sceneState, {})),
         });
 
         await emitEscapeActivity(ctx.teamId, puzzleId, {
@@ -1130,7 +1131,7 @@ export async function POST(
           currentStageIndex: updated.currentStageIndex,
           solvedStages: updated.solvedStages,
           completedAt: updated.completedAt,
-          sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+          sceneState: normalizeSceneState(safeJsonParse<Record<string, unknown>>(updated.sceneState, {})),
           ...(triggerSfx ? { sfx: triggerSfx } : {}),
         });
       }
@@ -1139,8 +1140,8 @@ export async function POST(
       let totalRooms = 0;
       try {
         const puzzle = await prisma.puzzle.findUnique({ where: { id: puzzleId } });
-        const pAny: any = puzzle;
-        const escapeRoomData = pAny?.data && typeof pAny.data === 'object' && 'escapeRoomData' in pAny.data ? pAny.data.escapeRoomData : null;
+        const data = puzzle?.data && typeof puzzle.data === 'object' ? (puzzle.data as Record<string, unknown>) : null;
+        const escapeRoomData = data && 'escapeRoomData' in data ? (data.escapeRoomData as Record<string, unknown> | null) : null;
         if (escapeRoomData && Array.isArray(escapeRoomData.scenes)) {
           totalRooms = escapeRoomData.scenes.length;
         }
@@ -1155,7 +1156,7 @@ export async function POST(
         }
       }
 
-      const baseSceneStateForTrigger = normalizeSceneState(safeJsonParse<Record<string, any>>((progress as any)?.sceneState, {}));
+      const baseSceneStateForTrigger = normalizeSceneState(safeJsonParse<Record<string, unknown>>(progress?.sceneState, {}));
       const nextTriggerFlags = new Set(baseSceneStateForTrigger.flags || []);
       for (const flag of grantFlags) nextTriggerFlags.add(flag);
       for (const flag of revokeFlags) nextTriggerFlags.delete(flag);
@@ -1201,7 +1202,7 @@ export async function POST(
       // Two players clicking the same door at once would both read cur=N, but only
       // the first writer matches WHERE currentStageIndex=N; the second gets count=0
       // and fetches the already-advanced state rather than double-advancing.
-      const triggerUpdateResult = await (prisma as any).teamEscapeProgress.updateMany({
+      const triggerUpdateResult = await prisma.teamEscapeProgress.updateMany({
         where: { id: progress.id, currentStageIndex: cur },
         data: {
           currentStageIndex: nextStageIndex,
@@ -1212,10 +1213,13 @@ export async function POST(
       });
 
       const alreadyAdvanced = triggerUpdateResult.count === 0;
-      const updated = await (prisma as any).teamEscapeProgress.findUnique({
+      const updated = await prisma.teamEscapeProgress.findUnique({
         where: { id: progress.id },
         select: { currentStageIndex: true, solvedStages: true, completedAt: true, sceneState: true },
       });
+      if (!updated) {
+        return NextResponse.json({ error: "Progress record not found" }, { status: 500 });
+      }
 
       await emitEscapeSession(ctx.teamId, puzzleId, {
         teamId: ctx.teamId,
@@ -1223,7 +1227,7 @@ export async function POST(
         currentStageIndex: updated.currentStageIndex,
         solvedStages: updated.solvedStages,
         completedAt: updated.completedAt,
-        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, unknown>>(updated.sceneState, {})),
         contribution: contributionSummary,
       });
 
@@ -1262,18 +1266,20 @@ export async function POST(
         currentStageIndex: updated.currentStageIndex,
         solvedStages: updated.solvedStages,
         completedAt: updated.completedAt,
-        sceneState: normalizeSceneState(safeJsonParse<Record<string, any>>(updated.sceneState, {})),
+        sceneState: normalizeSceneState(safeJsonParse<Record<string, unknown>>(updated.sceneState, {})),
         contribution: contributionSummary,
         ...(triggerSfx ? { sfx: triggerSfx } : {}),
       });
     }
 
     if (action === 'miniPuzzlePenalty') {
-      const meta = safeJsonParse<Record<string, any>>(hotspot.meta, {});
+      const meta = safeJsonParse<Record<string, unknown>>(hotspot.meta, {});
+      const miniPuzzle = meta?.miniPuzzle as Record<string, unknown> | undefined;
+      const miniPuzzleConfig = miniPuzzle?.config as Record<string, unknown> | undefined;
+      const timePenaltySeconds = miniPuzzleConfig?.timePenaltySeconds;
       const penaltySecs =
-        typeof meta?.miniPuzzle?.config?.timePenaltySeconds === 'number' &&
-        meta.miniPuzzle.config.timePenaltySeconds > 0
-          ? Math.min(Math.floor(meta.miniPuzzle.config.timePenaltySeconds), 300)
+        typeof timePenaltySeconds === 'number' && timePenaltySeconds > 0
+          ? Math.min(Math.floor(timePenaltySeconds), 300)
           : 0;
       const runExpiry: Date | null = progress?.runExpiresAt ? new Date(progress.runExpiresAt) : null;
       const penalty = await applyTimePenalty(progress.id, penaltySecs, runExpiry);

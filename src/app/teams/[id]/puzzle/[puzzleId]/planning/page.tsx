@@ -74,8 +74,8 @@ export default function PlanningPage() {
             const name = payload?.userName || 'A teammate';
             // redirect back to lobby and show a notice
             const url = `/teams/${teamId}/lobby?puzzleId=${encodeURIComponent(puzzleId)}&notice=${encodeURIComponent(`${name} left the lobby`)}`;
-            try { router.push(url); } catch (e) { window.location.href = url; }
-          } catch (e) {
+            try { router.push(url); } catch { window.location.href = url; }
+          } catch {
             // ignore
           }
         });
@@ -90,26 +90,26 @@ export default function PlanningPage() {
                   ? 'A teammate did not reach the puzzle page in time. The lobby was reset — please restart.'
                   : 'A teammate disconnected. The lobby was reset — please restart.';
               const url = `/teams/${teamId}/lobby?puzzleId=${encodeURIComponent(puzzleId)}&notice=${encodeURIComponent(notice)}`;
-              try { router.push(url); } catch (e) { window.location.href = url; }
+              try { router.push(url); } catch { window.location.href = url; }
               return;
             }
 
             // Leader shutdown (or other reasons): send everyone back to dashboard.
             const msg = 'The team leader shut down the lobby. You will be returned to the dashboard.';
-            try { alert(msg); } catch (e) {}
-            try { router.push('/dashboard'); } catch (e) { window.location.href = '/dashboard'; }
-          } catch (e) {
+            try { alert(msg); } catch {}
+            try { router.push('/dashboard'); } catch { window.location.href = '/dashboard'; }
+          } catch {
             // ignore
           }
         });
-      } catch (e) {
+      } catch {
         // ignore socket errors
       }
     })();
 
     return () => {
       clearInterval(t);
-      try { socketRef.current?.disconnect(); } catch (e) {}
+      try { socketRef.current?.disconnect(); } catch {}
     };
   }, [teamId, puzzleId]);
 
@@ -133,9 +133,9 @@ export default function PlanningPage() {
         try {
           const displayName = member?.user?.name || member?.user?.email || '';
           socketRef.current.emit('joinLobby', { teamId, puzzleId, userId: currentUserId || '', name: displayName, isAdmin: isLeader });
-        } catch (e) {}
+        } catch {}
       }
-    } catch (e) {}
+    } catch {}
   }, [members, currentUserId, lobbyLeaderId]);
 
   async function ensureJoinedLobby() {
@@ -163,7 +163,7 @@ export default function PlanningPage() {
       if (!res.ok) return;
       const j = await res.json();
       setCurrentUserId(j.id || null);
-    } catch (e) {}
+    } catch {}
   }
 
   async function fetchMembers() {
@@ -172,7 +172,7 @@ export default function PlanningPage() {
       if (!res.ok) return;
       const j = await res.json();
       setMembers(j.members || []);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -184,7 +184,7 @@ export default function PlanningPage() {
       const j = await res.json();
       setLobby(j);
       setLobbyLeaderId(j?.leaderId || null);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -205,7 +205,7 @@ export default function PlanningPage() {
 
       // Navigate immediately for the leader; other participants will follow via socket 'puzzleOpened'.
       router.push(`/puzzles/${puzzleId}?teamId=${encodeURIComponent(teamId)}`);
-    } catch (e) {
+    } catch {
       alert('Failed to open puzzle');
     }
   }

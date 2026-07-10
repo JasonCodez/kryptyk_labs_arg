@@ -123,7 +123,7 @@ function GlobalAchievementModal() {
             }
           });
         }
-      } catch (error) {
+      } catch {
         // ignore
       }
     };
@@ -151,7 +151,7 @@ function GlobalAchievementModal() {
       });
       // best-effort; modal is already dismissed
       void response;
-    } catch (error) {
+    } catch {
       // ignore
     } finally {
       setCollecting(null);
@@ -232,7 +232,7 @@ function AuthenticatedEffects() {
   useEffect(() => {
     if (!isAuthenticated) {
       // disconnect any existing socket when logged out
-      try { globalSocket?.disconnect(); } catch (e) {}
+      try { globalSocket?.disconnect(); } catch {}
       globalSocket = null;
       return;
     }
@@ -258,7 +258,7 @@ function AuthenticatedEffects() {
                 socket.emit('identify', { userId: uid });
               }
             }
-          } catch (e) {
+          } catch {
             // ignore
           }
         });
@@ -266,16 +266,16 @@ function AuthenticatedEffects() {
         socket.on('notification', (notif: any) => {
           try {
             window.dispatchEvent(new CustomEvent('notificationReceived', { detail: notif }));
-          } catch (e) {
+          } catch {
             // ignore
           }
         });
-      } catch (e) {
+      } catch {
         // ignore if socket client can't load
       }
     })();
     return () => {
-      try { globalSocket?.disconnect(); } catch (e) {}
+      try { globalSocket?.disconnect(); } catch {}
       globalSocket = null;
     };
   }, [isAuthenticated]);

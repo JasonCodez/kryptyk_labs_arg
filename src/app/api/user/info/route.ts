@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
         where: { email: session.user.email },
         select: { id: true, role: true, image: true, nameChanged: true, xp: true, level: true, xpTitle: true, name: true, totalPoints: true, activeFlair: true, activeSkin: true, activeTitle: true, isFounder: true, forumRulesAcceptedAt: true },
       });
-    } catch (e) {
+    } catch {
       // Fallback to older schema without `nameChanged`
       try {
       user = await prisma.user.findUnique({
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, role: true, image: true, nameChanged: true },
         });
         return NextResponse.json({ id: created.id, role: created.role, image: created.image, nameChanged: created.nameChanged ?? false });
-      } catch (e) {
+      } catch {
         const created = await prisma.user.create({
           data: {
             email: session.user.email,

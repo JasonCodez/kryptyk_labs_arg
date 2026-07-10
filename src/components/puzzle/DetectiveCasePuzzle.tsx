@@ -54,7 +54,7 @@ export default function DetectiveCasePuzzle({ puzzleId }: { puzzleId: string }) 
         return;
       }
       setState(data);
-    } catch (e) {
+    } catch {
       setError('Failed to load case');
       setState(null);
     } finally {
@@ -124,7 +124,7 @@ export default function DetectiveCasePuzzle({ puzzleId }: { puzzleId: string }) 
 
       setAnswer('');
       await loadState();
-    } catch (e) {
+    } catch {
       setError('Submission failed');
     } finally {
       setSubmitting(false);
