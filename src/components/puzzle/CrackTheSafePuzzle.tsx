@@ -236,7 +236,9 @@ export default function CrackTheSafePuzzle({ puzzleId, safeData, onSolved, alrea
     }
   }, [curr, digits, history, isPlaying, maxAttempts, puzzleId, submitting, onSolved]);
 
-  // Locked overlay
+  // Locked overlay — the server already resets the attempt counter the
+  // moment it hits the cap (see recordGameLoss in attempt-actions.ts), so
+  // "Play Again" just needs to reset this component's local state.
   if (attemptsLocked) {
     return (
       <div className="flex flex-col items-center gap-6 p-8 text-center">
@@ -251,6 +253,18 @@ export default function CrackTheSafePuzzle({ puzzleId, safeData, onSolved, alrea
             </span>
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            setFailedAttempts(0);
+            setRevealedCode(null);
+            resetForNewAttempt();
+          }}
+          className="mt-2 px-5 py-2 rounded-xl font-black text-sm tracking-wider transition-all hover:scale-105 active:scale-95"
+          style={{ background: "#FDE74C", color: "#020202" }}
+        >
+          PLAY AGAIN
+        </button>
       </div>
     );
   }

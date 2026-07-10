@@ -7,9 +7,10 @@ import { awardSeasonXp } from "@/lib/seasonXp";
 import { getXpMultiplier } from "@/lib/getXpMultiplier";
 import { isSolvedHiddenWordResult, scoreHiddenWordGuess } from "@/lib/hiddenWord";
 import { isValidDictionaryWord } from "@/lib/dictionary";
-// Hidden Word uses a stricter 2-game limit independent of the global MAX_PUZZLE_ATTEMPTS.
-// First failure: can retry with halved XP/points. Second failure: permanently locked.
-const WORD_CRACK_MAX_ATTEMPTS = 2;
+import { WORD_CRACK_MAX_ATTEMPTS } from "@/lib/puzzleConstants";
+// First failure: can retry with halved XP/points. Second failure locks the
+// puzzle for that round, but recordGameLoss() resets it right after so the
+// player gets a fresh pair of attempts instead of being shut out forever.
 
 export async function POST(
   request: NextRequest,

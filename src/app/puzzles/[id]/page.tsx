@@ -502,8 +502,12 @@ export default function PuzzleDetailPage() {
     };
   }, [puzzle?.puzzleType, timeLimitExceeded, maxAttemptsExceeded, router]);
 
-  // Persist Sudoku failure to the server when the time limit is exceeded.
-  // Without this, the puzzle can reappear as "available" after refresh.
+  // On Sudoku time-out, log the failure then immediately reset the server-side
+  // timer state (same as "give up") so the puzzle is playable again on the next
+  // visit instead of being permanently hidden from the library. Players should
+  // be able to retry a timed puzzle as many times as they need — a missed
+  // deadline is not a one-way lockout, especially for puzzles gated behind
+  // campaign progression (see src/lib/puzzleProgression.ts).
   useEffect(() => {
     if (puzzle?.puzzleType !== 'sudoku') return;
     if (!timeLimitExceeded) return;
@@ -530,6 +534,15 @@ export default function PuzzleDetailPage() {
             reason: 'time_limit',
             durationSeconds: sudokuStartRef.current ? Math.round((Date.now() - sudokuStartRef.current) / 1000) : 0,
           }),
+        });
+      } catch {
+        // ignore
+      }
+      try {
+        await fetch(`/api/puzzles/${puzzleId}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'clear_state' }),
         });
       } catch {
         // ignore
@@ -1836,6 +1849,15 @@ export default function PuzzleDetailPage() {
                                         reason: 'max_attempts',
                                         durationSeconds: sudokuStartRef.current ? Math.round((Date.now() - sudokuStartRef.current) / 1000) : 0,
                                       }),
+                                    });
+                                  } catch { /* ignore */ }
+                                  // Reset afterward (same as the time-limit and give-up paths) so
+                                  // the player can retry instead of being permanently locked out.
+                                  try {
+                                    await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'clear_state' }),
                                     });
                                   } catch { /* ignore */ }
                                 })();

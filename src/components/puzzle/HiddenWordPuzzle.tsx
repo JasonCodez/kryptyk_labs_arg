@@ -692,7 +692,9 @@ export default function HiddenWordPuzzle({
 
   const grade = getHiddenWordGrade(guesses.length, maxGuesses);
 
-  // Locked overlay — both games used up
+  // Locked overlay — both games used up. The server already resets the
+  // attempt counter the moment it hits the cap (see recordGameLoss in
+  // attempt-actions.ts), so "Play Again" just needs to reset local state.
   if (attemptsLocked) {
     return (
       <div className="flex flex-col items-center gap-6 p-8 text-center">
@@ -707,6 +709,18 @@ export default function HiddenWordPuzzle({
             </span>
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            setFailedAttempts(0);
+            setRevealedWord(null);
+            resetForNewAttempt();
+          }}
+          className="mt-2 px-5 py-2 rounded-xl font-black text-sm tracking-wider transition-all hover:scale-105 active:scale-95"
+          style={{ background: "#FDE74C", color: "#020202" }}
+        >
+          PLAY AGAIN
+        </button>
       </div>
     );
   }

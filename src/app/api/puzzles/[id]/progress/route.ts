@@ -9,6 +9,7 @@ import { validateSameOrigin } from "@/lib/requestSecurity";
 import { startSession, endSession } from "@/lib/puzzle-progress/session-actions";
 import { startSudokuTimer, lockSudoku, clearSudokuState } from "@/lib/puzzle-progress/sudoku-actions";
 import { logAttempt, handleAttemptSuccess, recordGameLoss } from "@/lib/puzzle-progress/attempt-actions";
+import { MAX_PUZZLE_ATTEMPTS, WORD_CRACK_MAX_ATTEMPTS } from "@/lib/puzzleConstants";
 
 // GET /api/puzzles/[id]/progress - Fetch user's progress for puzzle
 export async function GET(
@@ -204,6 +205,12 @@ export async function POST(
       });
     }
 
+    // For record_game_loss, the underlying failedAttempts counter is reset the
+    // moment it hits the cap (see recordGameLoss), so the generic re-fetch
+    // below would report 0 even on the round that just used up the last
+    // attempt. Capture the true count here to override the response with.
+    let reportedFailedAttempts: number | undefined;
+
     switch (action) {
       case "start_session":
         await startSession(progress.id, user.id, id);
@@ -246,9 +253,12 @@ export async function POST(
         break;
       }
 
-      case "record_game_loss":
-        await recordGameLoss(progress, user.id);
+      case "record_game_loss": {
+        const maxAttempts = puzzleRecord?.puzzleType === "word_crack" ? WORD_CRACK_MAX_ATTEMPTS : MAX_PUZZLE_ATTEMPTS;
+        const trueCount = await recordGameLoss(progress, user.id, maxAttempts);
+        if (trueCount !== null) reportedFailedAttempts = trueCount;
         break;
+      }
     }
 
     // Return updated progress
@@ -263,7 +273,12 @@ export async function POST(
       },
     });
 
-    return NextResponse.json(updatedProgress);
+    const responseBody =
+      updatedProgress && reportedFailedAttempts !== undefined
+        ? { ...updatedProgress, failedAttempts: reportedFailedAttempts }
+        : updatedProgress;
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -29,3 +29,21 @@ export async function recordFailedAttempt(
   });
   return result.failedAttempts;
 }
+
+/**
+ * Resets a player's failed-attempt count for a puzzle back to zero. Callers
+ * should invoke this right after a player's failed-attempt count reaches the
+ * type's cap, so the next visit gets a fresh set of attempts instead of a
+ * permanent lockout — the caller's own response should still report the true
+ * just-hit count so the "you're out of attempts" message for that round is
+ * accurate.
+ */
+export async function resetFailedAttempts(
+  userId: string,
+  puzzleId: string
+): Promise<void> {
+  await prisma.userPuzzleProgress.update({
+    where: { userId_puzzleId: { userId, puzzleId } },
+    data: { failedAttempts: 0 },
+  });
+}

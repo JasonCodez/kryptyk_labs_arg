@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { HIDDEN_PUZZLE_TYPES } from "@/lib/featureFlags";
 import { computeLockedPuzzleIds } from "@/lib/puzzleProgression";
+import { MAX_PUZZLE_ATTEMPTS } from "@/lib/puzzleConstants";
 
 export async function GET(request: NextRequest) {
   try {
@@ -172,7 +173,11 @@ export async function GET(request: NextRequest) {
       escapeRoomFailedByPuzzleId = new Map();
     }
 
-    // Detective-case lockout state (per-user): a single incorrect submission locks the case forever.
+    // Detective-case lockout state (per-user): mirrors the real 3-attempt limit
+    // enforced in /api/puzzles/[id]/detective/submit (which auto-resets once
+    // the cap is hit, so a player is never permanently shut out — this used to
+    // check for a single incorrect submission, which was stricter than the
+    // actual rule and could hide a puzzle the player still had attempts left on).
     let detectiveCaseFailedByPuzzleId = new Map<string, { failed: boolean; reason: string | null }>();
     try {
       const detectivePuzzleIds = puzzles
@@ -181,12 +186,12 @@ export async function GET(request: NextRequest) {
         .filter(Boolean);
 
       if (detectivePuzzleIds.length > 0) {
-        const failures = await prisma.puzzleSubmission.findMany({
-          where: { userId: user.id, puzzleId: { in: detectivePuzzleIds }, isCorrect: false },
+        const lockedRows = await prisma.userPuzzleProgress.findMany({
+          where: { userId: user.id, puzzleId: { in: detectivePuzzleIds }, failedAttempts: { gte: MAX_PUZZLE_ATTEMPTS } },
           select: { puzzleId: true },
         });
-        for (const f of failures) {
-          detectiveCaseFailedByPuzzleId.set(f.puzzleId, { failed: true, reason: 'incorrect_submission' });
+        for (const row of lockedRows) {
+          detectiveCaseFailedByPuzzleId.set(row.puzzleId, { failed: true, reason: 'attempts_exhausted' });
         }
       }
     } catch {

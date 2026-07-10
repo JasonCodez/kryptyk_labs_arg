@@ -117,7 +117,12 @@ export default function DetectiveCasePuzzle({ puzzleId }: { puzzleId: string }) 
       }
 
       if (data && data.correct === false) {
-        setError('Incorrect. Case locked — no retry.');
+        const remaining = typeof data.attemptsRemaining === 'number' ? data.attemptsRemaining : undefined;
+        setError(
+          data.locked
+            ? 'Incorrect. Out of attempts for this round — come back and try again.'
+            : `Incorrect.${remaining !== undefined ? ` ${remaining} attempt${remaining !== 1 ? 's' : ''} left.` : ''}`
+        );
         await loadState();
         return;
       }
@@ -456,8 +461,15 @@ export default function DetectiveCasePuzzle({ puzzleId }: { puzzleId: string }) 
   if (state.locked) {
     return (
       <div className="rounded-xl border border-red-900/60 bg-black/50 p-6">
-        <div className="text-red-200 text-xl font-semibold">Case Closed</div>
-        <div className="mt-2 text-zinc-300">You made a wrong call. This case is locked forever.</div>
+        <div className="text-red-200 text-xl font-semibold">Case Closed — For Now</div>
+        <div className="mt-2 text-zinc-300">You&apos;re out of attempts for this round. Come back and reopen the case to try again.</div>
+        <button
+          type="button"
+          onClick={() => { void loadState(); }}
+          className="mt-4 px-4 py-2 rounded-lg bg-red-900/40 border border-red-800/60 text-red-100 text-sm font-semibold hover:bg-red-900/60 transition-colors"
+        >
+          Check Again
+        </button>
       </div>
     );
   }

@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { getParasiteCodeData, validateQuarantine, calcRank, createFallbackParasiteCodeCase } from '@/lib/parasiteCode';
-import { recordFailedAttempt, MAX_PUZZLE_ATTEMPTS } from '@/lib/attemptLimit';
+import { recordFailedAttempt, resetFailedAttempts, MAX_PUZZLE_ATTEMPTS } from '@/lib/attemptLimit';
 import { getPuzzleAccessState } from '@/lib/puzzle-state/getPuzzleAccessState';
 
 export async function POST(
@@ -169,6 +169,12 @@ export async function POST(
       const attemptsUsed = await recordFailedAttempt(user.id, puzzleId);
       const attemptsRemaining = Math.max(0, MAX_PUZZLE_ATTEMPTS - attemptsUsed);
       const locked = attemptsRemaining === 0;
+      // Reset right away so the player gets a fresh set of attempts next time
+      // instead of a permanent lockout; this response still reports the true
+      // just-hit count for this round's message.
+      if (locked) {
+        await resetFailedAttempts(user.id, puzzleId);
+      }
 
       return NextResponse.json({
         correct: false,

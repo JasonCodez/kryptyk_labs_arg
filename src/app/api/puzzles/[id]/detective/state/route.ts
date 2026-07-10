@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { getDetectiveCaseData, sanitizeStageForClient } from '@/lib/detectiveCase';
+import { getPuzzleAccessState } from '@/lib/puzzle-state/getPuzzleAccessState';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,18 +33,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Detective case is not configured' }, { status: 500 });
     }
 
-    // Any incorrect submission locks the case forever.
-    const anyIncorrect = await prisma.puzzleSubmission.findFirst({
-      where: { puzzleId, userId: user.id, isCorrect: false },
-      select: { id: true, submittedAt: true },
-    });
+    // Mirrors the real 3-attempt limit enforced in /api/puzzles/[id]/detective/submit
+    // (which auto-resets once the cap is hit, so a player is never permanently
+    // shut out). This used to lock forever after a single incorrect submission,
+    // which was stricter than the actual rule the submit route enforces.
+    const accessState = await getPuzzleAccessState(user.id, puzzleId);
 
     const correctCount = await prisma.puzzleSubmission.count({
       where: { puzzleId, userId: user.id, isCorrect: true },
     });
 
-    const solved = !anyIncorrect && correctCount >= dc.stages.length;
-    const locked = Boolean(anyIncorrect) && !solved;
+    const solved = accessState.isSolved;
+    const locked = accessState.isAttemptLocked && !solved;
 
     const currentStageIndex = solved ? dc.stages.length : Math.min(correctCount, dc.stages.length - 1);
     const currentStage = solved ? null : dc.stages[currentStageIndex];
@@ -56,7 +57,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       totalStages: dc.stages.length,
       solved,
       locked,
-      lockedReason: locked ? 'incorrect_submission' : null,
+      lockedReason: locked ? 'attempts_exhausted' : null,
       currentStageIndex,
       stage: currentStage ? sanitizeStageForClient(currentStage) : null,
     });

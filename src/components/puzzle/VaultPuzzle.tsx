@@ -238,6 +238,10 @@ export default function VaultPuzzle({
     }
   };
 
+  // Locked overlay — the server already resets the attempt counter the
+  // moment it hits the cap (see submit/route.ts's attemptLimitTypes branch),
+  // so "Play Again" just needs to reset this component's local state and
+  // restart from stage 1.
   if (attemptsLocked) {
     return (
       <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-8 text-center text-white">
@@ -246,6 +250,22 @@ export default function VaultPuzzle({
         {revealedAnswer ? (
           <p className="mt-4 text-lg font-black tracking-[0.35em] text-yellow-300">{revealedAnswer}</p>
         ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            setFailedAttempts(0);
+            setRevealedAnswer(null);
+            setCenterGuess("");
+            setWordGuess("");
+            setCodeGuess("");
+            setStageOneSolved(false);
+            setStageTwoSolved(false);
+            setError("");
+          }}
+          className="mt-5 rounded-xl bg-amber-300 px-5 py-3 text-sm font-black uppercase tracking-[0.2em] text-slate-950"
+        >
+          Play Again
+        </button>
       </div>
     );
   }

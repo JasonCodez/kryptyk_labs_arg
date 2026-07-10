@@ -957,6 +957,7 @@ function QuarantinePanel({
   onRemove,
   onClearAll,
   onSubmit,
+  onCheckAgain,
   submitting,
   submitResult,
   submitError,
@@ -971,6 +972,7 @@ function QuarantinePanel({
   onRemove: (id: string) => void;
   onClearAll: () => void;
   onSubmit: () => void;
+  onCheckAgain: () => void;
   submitting: boolean;
   submitResult: SubmitResult | null;
   submitError: string | null;
@@ -1077,8 +1079,15 @@ function QuarantinePanel({
       )}
 
       {locked && !solved && (
-        <div className="border border-red-500/30 rounded p-3 bg-red-900/10 text-xs font-mono text-red-300">
-          Case locked. You have no retries remaining for this puzzle.
+        <div className="border border-red-500/30 rounded p-3 bg-red-900/10 text-xs font-mono text-red-300 flex items-center justify-between gap-3">
+          <span>Case locked for this round. Your attempts reset automatically — check again to retry.</span>
+          <button
+            type="button"
+            onClick={onCheckAgain}
+            className="shrink-0 px-3 py-1.5 rounded border border-red-500/40 text-red-200 hover:bg-red-900/20 transition-colors"
+          >
+            Check Again
+          </button>
         </div>
       )}
 
@@ -1649,6 +1658,7 @@ export default function ParasiteCodePuzzle({ puzzleId, onSolved }: ParasiteCodeP
             onRemove={id => setFlaggedIds(prev => { const n = new Set(prev); n.delete(id); return n; })}
             onClearAll={() => setFlaggedIds(new Set())}
             onSubmit={handleSubmit}
+            onCheckAgain={() => { void loadState(); }}
             submitting={submitting}
             submitResult={submitResult}
             submitError={submitError}

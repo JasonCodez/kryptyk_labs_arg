@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { awardSolveRewards } from "./awardSolveRewards";
+import { MAX_PUZZLE_ATTEMPTS } from "@/lib/puzzleConstants";
 
 type AttemptProgress = {
   id: string;
@@ -72,10 +73,17 @@ export async function handleAttemptSuccess(
       return NextResponse.json({ error: "Sudoku timer not started" }, { status: 403 });
     }
     if (now.getTime() > progress.sudokuExpiresAt.getTime()) {
+      // Reset (not permanently lock) so the player can start a fresh attempt
+      // next time instead of being shut out of the puzzle entirely.
       try {
         await prisma.userPuzzleProgress.update({
           where: { id: progress.id },
-          data: { sudokuLockedAt: now, sudokuLockReason: "time_limit" },
+          data: {
+            sudokuStartedAt: null,
+            sudokuExpiresAt: null,
+            sudokuLockedAt: null,
+            sudokuLockReason: null,
+          },
         });
       } catch { /* ignore */ }
       return NextResponse.json({ error: "Time limit exceeded" }, { status: 403 });
@@ -175,18 +183,37 @@ export async function handleAttemptSuccess(
   return null;
 }
 
+/**
+ * Records a full failed game/round. Returns the true failed-attempt count at
+ * the moment of this loss (before any reset below) so the caller can report
+ * an accurate "you're out of attempts" message for this round, even though
+ * the underlying counter gets reset once the cap is hit.
+ */
 export async function recordGameLoss(
   progress: { id: string; solved: boolean },
   userId: string,
-): Promise<void> {
-  if (!progress.solved) {
+  maxAttempts: number = MAX_PUZZLE_ATTEMPTS,
+): Promise<number | null> {
+  if (progress.solved) return null;
+
+  const updated = await prisma.userPuzzleProgress.update({
+    where: { id: progress.id },
+    data: { failedAttempts: { increment: 1 }, lastAttemptAt: new Date() },
+    select: { failedAttempts: true },
+  });
+  await prisma.user.update({
+    where: { id: userId },
+    data: { tripleOrNothingActive: false },
+  });
+
+  // Reset immediately once the cap is hit so the player gets a fresh set of
+  // attempts on their next visit instead of a permanent lockout.
+  if (updated.failedAttempts >= maxAttempts) {
     await prisma.userPuzzleProgress.update({
       where: { id: progress.id },
-      data: { failedAttempts: { increment: 1 }, lastAttemptAt: new Date() },
-    });
-    await prisma.user.update({
-      where: { id: userId },
-      data: { tripleOrNothingActive: false },
+      data: { failedAttempts: 0 },
     });
   }
+
+  return updated.failedAttempts;
 }
