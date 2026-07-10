@@ -547,6 +547,17 @@ export default function PuzzleDetailPage() {
       } catch {
         // ignore
       }
+      // Clear the locally-cached start timestamp too — otherwise the next
+      // "Start" click resurrects the old (already-expired) deadline and the
+      // puzzle immediately re-triggers "time's up" in an infinite loop.
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(`sudoku-progress:${puzzleId}`);
+          localStorage.removeItem(`sudoku-start:${puzzleId}`);
+        }
+      } catch {
+        // ignore
+      }
     })();
   }, [puzzle?.puzzleType, timeLimitExceeded, progress?.solved, puzzleId]);
 
