@@ -30,6 +30,10 @@ interface Puzzle {
   // server-reported detective-case lockout state
   detectiveCaseFailed?: boolean;
   detectiveCaseFailedReason?: string | null;
+  // server-computed sequential-progression lock state
+  locked?: boolean;
+  unlocksAfterTitle?: string | null;
+  isBossPuzzle?: boolean;
   category: {
     id: string;
     name: string;
@@ -144,6 +148,8 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
   const progress = puzzle.userProgress?.[0];
   const status = progress?.solved
     ? "solved"
+    : puzzle.locked
+    ? "locked"
     : puzzle.failed
     ? "failed"
     : progress?.attempts
@@ -152,6 +158,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
   const statusConfig: Record<string, { color: string; label: string }> = {
     solved: { color: "#38D399", label: "✓ Solved" },
     "in-progress": { color: "#FDE74C", label: "~ In Progress" },
+    locked: { color: "#8b8b95", label: "🔒 Locked" },
     failed: { color: "#EF4444", label: "✗ Failed" },
     unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
   };
@@ -172,7 +179,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
       >
         <div className="mb-4">
           <div className="flex justify-between items-start mb-2">
-            <h3 className="text-xl font-bold text-white flex-1">{getDisplayTitle(puzzle)}</h3>
+            <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
                 {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
@@ -230,6 +237,60 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
     );
   }
 
+  if (status === 'locked') {
+    return (
+      <div
+        id={`puzzle-${puzzle.id}`}
+        className="group rounded-xl border p-4 sm:p-6 transition-all duration-300"
+        style={{
+          backgroundColor: 'rgba(139, 139, 149, 0.05)',
+          borderColor: 'rgba(139,139,149,0.3)',
+          borderWidth: '1px',
+          opacity: 0.55,
+          cursor: 'not-allowed'
+        }}
+      >
+        <div className="mb-4">
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">
+              <span aria-hidden>🔒</span>
+              {getDisplayTitle(puzzle)}
+              {puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}
+            </h3>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
+                {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
+              </span>
+              <div className="flex gap-2 flex-col items-end">
+                {puzzle.order && puzzle.order > 0 ? (
+                  <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
+                    #{puzzle.order}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>
+            {puzzle.unlocksAfterTitle
+              ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</>
+              : 'Complete the rest of this chapter first'}
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap mb-2">
+          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
+            {puzzle.category?.name || 'General'}
+          </span>
+          <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
+            {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
+          </span>
+          <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
+            {statusConfig[status].label}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (status === 'failed') {
     return (
       <div
@@ -245,7 +306,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
       >
         <div className="mb-4">
           <div className="flex justify-between items-start mb-2">
-            <h3 className="text-xl font-bold text-white flex-1">{getDisplayTitle(puzzle)}</h3>
+            <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
                 {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
@@ -312,7 +373,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
     >
       <div className="mb-4">
         <div className="flex justify-between items-start mb-2">
-          <h3 className="text-xl font-bold text-white flex-1">{getDisplayTitle(puzzle)}</h3>
+          <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
           <div className="flex items-center gap-3">
             <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
               {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
@@ -386,12 +447,58 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
 
 function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }: PuzzleCardProps) {
   const progress = puzzle.userProgress?.[0];
-  const status = progress?.solved ? "solved" : puzzle.failed ? "failed" : progress?.attempts ? "in-progress" : "unsolved";
+  const status = progress?.solved ? "solved" : puzzle.locked ? "locked" : puzzle.failed ? "failed" : progress?.attempts ? "in-progress" : "unsolved";
   const statusConfig: Record<string, { color: string; label: string }> = {
     solved: { color: "#38D399", label: "✓ Solved" },
     "in-progress": { color: "#FDE74C", label: "~ In Progress" },
+    locked: { color: "#8b8b95", label: "🔒 Locked" },
+    failed: { color: "#EF4444", label: "✗ Failed" },
     unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
   };
+
+  if (status === 'locked') {
+    return (
+      <div
+        id={`puzzle-${puzzle.id}`}
+        className="group rounded-xl border p-4 transition-all duration-300 block"
+        style={{
+          backgroundColor: 'rgba(139, 139, 149, 0.05)',
+          borderColor: 'rgba(139,139,149,0.3)',
+          borderWidth: '1px',
+          opacity: 0.55,
+          cursor: 'not-allowed'
+        }}
+      >
+        <div className="flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">
+                <span aria-hidden>🔒</span>
+                {getDisplayTitle(puzzle)}
+                {puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}
+              </h3>
+            </div>
+            <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>
+              {puzzle.unlocksAfterTitle
+                ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</>
+                : 'Complete the rest of this chapter first'}
+            </p>
+            <div className="flex gap-2 flex-wrap mt-2">
+              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
+                {puzzle.category?.name || 'General'}
+              </span>
+              <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
+                {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
+              </span>
+              <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
+                {statusConfig[status].label}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (status === 'failed') {
     return (
@@ -414,7 +521,7 @@ function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
                   #{puzzle.order}
                 </span>
               ) : null}
-              <h3 className="text-lg font-bold text-white truncate">{getDisplayTitle(puzzle)}</h3>
+              <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
               <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
                 {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
               </span>
@@ -463,7 +570,7 @@ function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
                   #{puzzle.order}
                 </span>
               ) : null}
-              <h3 className="text-lg font-bold text-white truncate">{getDisplayTitle(puzzle)}</h3>
+              <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
               <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
                 {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
               </span>
@@ -558,7 +665,7 @@ function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
                 #{puzzle.order}
               </span>
             ) : null}
-            <h3 className="text-lg font-bold text-white truncate">{getDisplayTitle(puzzle)}</h3>
+            <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
             <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
               {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
             </span>

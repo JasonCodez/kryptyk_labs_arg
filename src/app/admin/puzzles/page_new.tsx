@@ -35,6 +35,8 @@ interface PuzzleFormData {
   gridlockReleaseAt: string; // ISO date string YYYY-MM-DD, gridlock_file only
   debriefReleaseAt: string; // ISO date string, debrief only
   dailySlotDayNumber: string; // daily-rotation day number, sudoku/crossword/word_search/jigsaw only
+  order: number; // sequence position within this puzzleType, for progression locking
+  isBossPuzzle: boolean; // chapter-ending gate — see src/lib/puzzleProgression.ts
 }
 
 interface PuzzlePart {
@@ -86,6 +88,8 @@ interface PuzzleListItem {
   isActive: boolean;
   isWarzExclusive: boolean;
   createdAt: string;
+  order: number;
+  isBossPuzzle: boolean;
   category: { name: string } | null;
   escapeRoom?: { roomTitle: string } | null;
   dailySlots?: { dayNumber: number }[];
@@ -105,6 +109,8 @@ interface RawPuzzleEdit {
   hints?: { text: string; costPoints?: number }[];
   data?: Record<string, unknown>;
   isWarzExclusive?: boolean;
+  order?: number;
+  isBossPuzzle?: boolean;
   schedule?: { releaseAt?: string } | null;
   dailySlots?: { dayNumber?: number | string }[];
   jigsaw?: {
@@ -165,6 +171,8 @@ export default function AdminPuzzlesPage() {
     gridlockReleaseAt: "",
     debriefReleaseAt: "",
     dailySlotDayNumber: "",
+    order: 0,
+    isBossPuzzle: false,
   });
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
@@ -284,6 +292,8 @@ export default function AdminPuzzlesPage() {
         ],
         puzzleData: p.data || {},
         isWarzExclusive: p.isWarzExclusive === true,
+        order: typeof p.order === 'number' ? p.order : 0,
+        isBossPuzzle: p.isBossPuzzle === true,
         gridlockReleaseAt: p.schedule?.releaseAt && p.puzzleType === 'gridlock_file'
           ? (() => {
               const d = new Date(p.schedule!.releaseAt!);
@@ -363,6 +373,8 @@ export default function AdminPuzzlesPage() {
       gridlockReleaseAt: "",
       debriefReleaseAt: "",
       dailySlotDayNumber: "",
+      order: 0,
+      isBossPuzzle: false,
     });
     setJigsawImageUrl("");
     setJigsawImagePreview("");
@@ -376,7 +388,7 @@ export default function AdminPuzzlesPage() {
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => {
-      const nextValue = name === "pointsReward" || name === "xpReward" ? parseInt(value) : value;
+      const nextValue = name === "pointsReward" || name === "xpReward" || name === "order" ? parseInt(value) : value;
       const nextState = {
         ...prev,
         [name]: nextValue,
@@ -987,6 +999,8 @@ export default function AdminPuzzlesPage() {
           gridlockReleaseAt: "",
           debriefReleaseAt: "",
           dailySlotDayNumber: "",
+          order: 0,
+          isBossPuzzle: false,
         });
         setMediaFiles([]);
         setJigsawImagePreview("");
@@ -1526,6 +1540,49 @@ export default function AdminPuzzlesPage() {
                         </div>
                       </div>
                     )
+                  )}
+
+                  {/* Progression sequencing — same exemptions as the Difficulty/Category block above. */}
+                  {formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && formData.puzzleType !== 'crime_rpg' && formData.puzzleType !== 'parasite_code' && formData.puzzleType !== 'gridlock_file' && formData.puzzleType !== 'debrief' && (
+                    <div className="grid md:grid-cols-2 gap-4 items-end">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-300 mb-2">
+                          Sequence Order <span className="text-xs font-normal text-gray-500">(progression order within this puzzle type)</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            name="order"
+                            value={formData.order}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sameType = allPuzzles.filter((p) => p.puzzleType === formData.puzzleType);
+                              const nextOrder = sameType.length > 0 ? Math.max(...sameType.map((p) => p.order || 0)) + 1 : 1;
+                              setFormData((prev) => ({ ...prev, order: nextOrder }));
+                            }}
+                            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold whitespace-nowrap"
+                          >
+                            Append to end
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pb-2">
+                        <input
+                          type="checkbox"
+                          id="isBossPuzzle"
+                          checked={formData.isBossPuzzle}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, isBossPuzzle: e.target.checked }))}
+                          className="h-4 w-4"
+                        />
+                        <label htmlFor="isBossPuzzle" className="text-sm font-semibold text-gray-300">
+                          👑 Boss Puzzle <span className="text-xs font-normal text-gray-500">(gates the next chapter for this puzzle type)</span>
+                        </label>
+                      </div>
+                    </div>
                   )}
 
                   {/* Correct Answer is hidden for puzzle types that store/validate answers elsewhere. */}

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { HIDDEN_PUZZLE_TYPES } from "@/lib/featureFlags";
+import { computeLockedPuzzleIds } from "@/lib/puzzleProgression";
 
 export async function GET(request: NextRequest) {
   try {
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest) {
         isTeamPuzzle: true,
         minTeamSize: true,
         puzzleType: true,
+        isBossPuzzle: true,
         escapeRoom: { select: { id: true, roomTitle: true, roomDescription: true } },
         parts: isTeam === "true" ? { select: { id: true } } : false,
         xpReward: true,
@@ -119,6 +121,33 @@ export async function GET(request: NextRequest) {
       take: limit,
       skip,
     });
+
+    // Progression locks: computed against the FULL catalog (ignoring this request's
+    // category/difficulty/search filters and pagination) so a filtered/paginated view
+    // never miscomputes a chapter because an earlier puzzle in the sequence got filtered out.
+    let lockStateByPuzzleId = new Map<string, { locked: boolean; unlocksAfter?: { id: string; title: string } }>();
+    try {
+      const [progressionCatalog, solvedRows] = await Promise.all([
+        prisma.puzzle.findMany({
+          where: {
+            isActive: true,
+            isWarzExclusive: false,
+            puzzleType: { notIn: [...HIDDEN_PUZZLE_TYPES] },
+          },
+          select: { id: true, title: true, puzzleType: true, order: true, isBossPuzzle: true, createdAt: true },
+        }),
+        prisma.userPuzzleProgress.findMany({
+          where: { userId: user.id, solved: true },
+          select: { puzzleId: true },
+        }),
+      ]);
+      lockStateByPuzzleId = computeLockedPuzzleIds(
+        progressionCatalog,
+        new Set(solvedRows.map((r) => r.puzzleId))
+      );
+    } catch {
+      lockStateByPuzzleId = new Map();
+    }
 
     // Escape-room per-user failure history (for UI metadata).
     let escapeRoomFailedByPuzzleId = new Map<string, { failed: boolean; reason: string | null }>();
@@ -214,6 +243,7 @@ export async function GET(request: NextRequest) {
 
       const escapeRoomFail = escapeRoomFailedByPuzzleId.get(p.id) || null;
       const detectiveFail = detectiveCaseFailedByPuzzleId.get(p.id) || null;
+      const lockState = lockStateByPuzzleId.get(p.id);
 
       return {
         ...p,
@@ -223,6 +253,8 @@ export async function GET(request: NextRequest) {
         escapeRoomFailedReason: escapeRoomFail?.reason || null,
         detectiveCaseFailed: detectiveFail?.failed || false,
         detectiveCaseFailedReason: detectiveFail?.reason || null,
+        locked: lockState?.locked || false,
+        unlocksAfterTitle: lockState?.unlocksAfter?.title || null,
         pointsReward: p.solutions[0]?.points || 100,
         xpReward: p.xpReward ?? 50,
         completionCount: stats?.completedCount || 0,

@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     // Validate that the achievement can be unlocked based on condition type
     // Only allow collection for achievements with automatic unlock conditions
-    const autoUnlockTypes = ["puzzles_solved", "submission_accuracy", "points_earned", "streak", "custom"];
+    const autoUnlockTypes = ["puzzles_solved", "boss_puzzles_solved", "submission_accuracy", "points_earned", "streak", "custom"];
     if (!autoUnlockTypes.includes(achievement.conditionType)) {
       return NextResponse.json(
         { error: "This achievement cannot be auto-collected" },
@@ -98,6 +98,21 @@ export async function POST(request: NextRequest) {
       });
       
       if (userPuzzleProgress.length < (achievement.conditionValue || 1)) {
+        return NextResponse.json(
+          { error: "Condition not met for this achievement" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // For boss_puzzles_solved achievements, validate the condition is met — same shape as
+    // puzzles_solved but scoped to chapter-gating boss puzzles (see src/lib/puzzleProgression.ts).
+    if (achievement.conditionType === "boss_puzzles_solved") {
+      const bossSolvedCount = await prisma.userPuzzleProgress.count({
+        where: { userId: user.id, solved: true, puzzle: { isBossPuzzle: true } },
+      });
+
+      if (bossSolvedCount < (achievement.conditionValue || 1)) {
         return NextResponse.json(
           { error: "Condition not met for this achievement" },
           { status: 400 }

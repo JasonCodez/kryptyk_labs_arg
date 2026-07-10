@@ -222,6 +222,7 @@ export default function PuzzleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [locked, setLocked] = useState<{ unlocksAfterTitle: string | null } | null>(null);
   const [success, setSuccess] = useState(false);
   const [showSolvedMessage, setShowSolvedMessage] = useState(false);
   const [showProgress, setShowProgress] = useState(true);
@@ -346,7 +347,16 @@ export default function PuzzleDetailPage() {
     const fetchPuzzle = async () => {
       try {
         const response = await fetch(`/api/puzzles/${puzzleId}`);
-        if (!response.ok) throw new Error("Failed to fetch puzzle");
+        if (!response.ok) {
+          if (response.status === 403) {
+            const data = await response.json().catch(() => ({}));
+            if (data?.error === "locked") {
+              setLocked({ unlocksAfterTitle: data.unlocksAfterTitle || null });
+              return;
+            }
+          }
+          throw new Error("Failed to fetch puzzle");
+        }
         const data = await response.json();
         setPuzzle(data);
       } catch (err) {
@@ -1183,6 +1193,25 @@ export default function PuzzleDetailPage() {
     return (
       <div className="min-h-screen" style={{ backgroundColor: "#020202" }}>
         <PuzzlePageSkeleton />
+      </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center" style={{ backgroundColor: "#020202" }}>
+        <div style={{ fontSize: 40 }}>🔒</div>
+        <div style={{ color: "#F5F5F5" }} className="text-lg font-bold">
+          This puzzle is locked
+        </div>
+        <div style={{ color: "#AB9F9D" }} className="text-sm max-w-sm">
+          {locked.unlocksAfterTitle
+            ? <>Complete <span style={{ color: "#FDE74C" }}>{locked.unlocksAfterTitle}</span> first to unlock this one.</>
+            : "Complete the rest of this chapter first to unlock it."}
+        </div>
+        <Link href="/puzzles" style={{ color: "#3891A6" }} className="text-sm font-semibold underline mt-2">
+          Back to Puzzles
+        </Link>
       </div>
     );
   }

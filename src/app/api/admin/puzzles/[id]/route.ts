@@ -117,6 +117,8 @@ export async function PUT(
     gridlockReleaseAt,
     debriefReleaseAt,
     dailySlotDayNumber,
+    order,
+    isBossPuzzle,
   } = body;
   // Reassigned below, so kept separate from the const destructure above.
   let { puzzleData } = body;
@@ -264,7 +266,11 @@ export async function PUT(
       content: content || "",
       difficulty: safeDifficulty,
       isWarzExclusive: isWarzExclusive === true,
+      isBossPuzzle: isBossPuzzle === true,
     };
+    if (typeof order === 'number' && Number.isFinite(order)) {
+      puzzleUpdateData.order = order;
+    }
     if (categoryRecord) {
       puzzleUpdateData.categoryId = categoryRecord.id;
     }

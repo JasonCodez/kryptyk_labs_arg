@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { sanitizePublicPuzzleData } from "@/lib/publicPuzzleData";
-import { isHiddenPuzzleType } from "@/lib/featureFlags";
+import { HIDDEN_PUZZLE_TYPES, isHiddenPuzzleType } from "@/lib/featureFlags";
+import { computeLockedPuzzleIds, isProgressionExemptType } from "@/lib/puzzleProgression";
 
 export async function GET(
   _request: NextRequest,
@@ -89,20 +90,51 @@ export async function GET(
       );
     }
 
+    const session = await getServerSession(authOptions);
+    let requester: { id: string; role: string } | null = null;
+    if (session?.user?.email) {
+      requester = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true, role: true },
+      });
+    }
+
     if (isHiddenPuzzleType(puzzle.puzzleType)) {
-      const session = await getServerSession(authOptions);
-      let isAdmin = false;
-      if (session?.user?.email) {
-        const requester = await prisma.user.findUnique({
-          where: { email: session.user.email },
-          select: { role: true },
-        });
-        isAdmin = requester?.role === "admin";
-      }
-      if (!isAdmin) {
+      if (requester?.role !== "admin") {
         return NextResponse.json(
           { error: "Puzzle not found" },
           { status: 404 }
+        );
+      }
+    }
+
+    // Sequential progression lock — mirrors the library listing's lock computation
+    // (src/app/api/puzzles/route.ts) so direct navigation to a locked puzzle's URL
+    // is blocked too, not just hidden from the list. Anonymous requests are left
+    // alone here (no session to check progress against); auth is enforced elsewhere.
+    if (requester && !isProgressionExemptType(puzzle.puzzleType)) {
+      const [progressionCatalog, solvedRows] = await Promise.all([
+        prisma.puzzle.findMany({
+          where: {
+            isActive: true,
+            isWarzExclusive: false,
+            puzzleType: { notIn: [...HIDDEN_PUZZLE_TYPES] },
+          },
+          select: { id: true, title: true, puzzleType: true, order: true, isBossPuzzle: true, createdAt: true },
+        }),
+        prisma.userPuzzleProgress.findMany({
+          where: { userId: requester.id, solved: true },
+          select: { puzzleId: true },
+        }),
+      ]);
+      const lockState = computeLockedPuzzleIds(
+        progressionCatalog,
+        new Set(solvedRows.map((r) => r.puzzleId))
+      ).get(puzzle.id);
+      if (lockState?.locked) {
+        return NextResponse.json(
+          { error: "locked", unlocksAfterTitle: lockState.unlocksAfter?.title || null },
+          { status: 403 }
         );
       }
     }

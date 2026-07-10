@@ -41,6 +41,8 @@ export async function GET() {
         isActive: true,
         isWarzExclusive: true,
         createdAt: true,
+        order: true,
+        isBossPuzzle: true,
         category: { select: { name: true } },
         escapeRoom: { select: { roomTitle: true } },
         dailySlots: { select: { dayNumber: true } },
@@ -106,6 +108,8 @@ export async function POST(request: NextRequest) {
       gridlockReleaseAt,
       debriefReleaseAt,
       dailySlotDayNumber,
+      order,
+      isBossPuzzle,
     } = body;
     // Reassigned below (e.g. for jigsaw shape-designer overrides), so kept separate from the
     // const destructure above.
@@ -338,6 +342,8 @@ export async function POST(request: NextRequest) {
       puzzleType: puzzleType || 'general',
       xpReward: typeof xpReward === 'number' && xpReward > 0 ? xpReward : 50,
       isWarzExclusive: isWarzExclusive === true,
+      order: typeof order === 'number' && Number.isFinite(order) ? order : 0,
+      isBossPuzzle: isBossPuzzle === true,
       ...(puzzleType === 'escape_room'
         ? {
             isTeamPuzzle: true,

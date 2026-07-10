@@ -271,6 +271,7 @@ model Puzzle {
   subcategoryId            String?
   subcategory              PuzzleSubcategory?         @relation(fields: [subcategoryId], references: [id])
   difficulty               String                     @default("medium")
+  isBossPuzzle             Boolean                    @default(false)
   requiredPreviousPuzzleId String?
   isActive                 Boolean                    @default(true)
   unlocksAt                DateTime?
