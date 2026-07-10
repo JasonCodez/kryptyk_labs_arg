@@ -247,8 +247,19 @@ export default function PuzzleDetailPage() {
       .catch(() => {});
   }, []);
 
+  // Reset transient Sudoku/attempt UI state immediately on navigation to a
+  // different puzzle. `puzzle` and `progress` are fetched by two separate
+  // effects that can resolve in either order — without this, the Sudoku
+  // timer effect can briefly see the *new* puzzle paired with the *previous*
+  // puzzle's already-expired timer data and incorrectly flip
+  // timeLimitExceeded to true, which nothing else ever resets back to false.
   useEffect(() => {
     sudokuLockSentRef.current = false;
+    setTimeLimitExceeded(false);
+    setMaxAttemptsExceeded(false);
+    setSudokuStarted(false);
+    setShowSudokuStartModal(false);
+    setSudokuElapsed(0);
   }, [puzzleId]);
 
   // --- SUDOKU MODAL STATE ---
