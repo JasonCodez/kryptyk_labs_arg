@@ -431,13 +431,13 @@ function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
             <span className="font-semibold" style={{ color: '#FDE74C' }}>
               {totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0}%
             </span>
-            {' have attempted'}
+            {' of players attempted'}
           </div>
           <div style={{ color: '#DDDBF1' }}>
             <span className="font-semibold" style={{ color: '#38D399' }}>
               {(puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0}%
             </span>
-            {' of attempted completed'}
+            {' of players completed'}
           </div>
         </div>
       </div>
@@ -621,13 +621,13 @@ function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }
                 <span className="font-semibold" style={{ color: '#FDE74C' }}>
                   {totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0}%
                 </span>
-                {' have attempted'}
+                {' of players attempted'}
               </div>
               <div>
                 <span className="font-semibold" style={{ color: '#38D399' }}>
                   {(puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0}%
                 </span>
-                {' of attempted completed'}
+                {' of players completed'}
               </div>
             </div>
             {(puzzle.userProgress?.[0]?.totalTimeSpent ?? 0) > 0 && (
