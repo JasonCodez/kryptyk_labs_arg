@@ -39,18 +39,18 @@ interface CurrentUser {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, { bg: string; border: string; text: string; label: string }> = {
-  OPEN: { bg: "rgba(253,231,76,0.1)", border: "rgba(253,231,76,0.4)", text: "#FDE74C", label: "Open" },
-  IN_PROGRESS: { bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.4)", text: "#93c5fd", label: "In Progress" },
-  COMPLETED: { bg: "rgba(74,222,128,0.1)", border: "rgba(74,222,128,0.4)", text: "#4ade80", label: "Completed" },
-  EXPIRED: { bg: "rgba(107,114,128,0.1)", border: "rgba(107,114,128,0.3)", text: "#6b7280", label: "Expired" },
-  CANCELLED: { bg: "rgba(107,114,128,0.1)", border: "rgba(107,114,128,0.3)", text: "#6b7280", label: "Cancelled" },
+  OPEN: { bg: "rgba(255,201,74,0.1)", border: "rgba(255,201,74,0.4)", text: "#FFC94A", label: "Open" },
+  IN_PROGRESS: { bg: "rgba(61,127,255,0.1)", border: "rgba(61,127,255,0.4)", text: "#3D7FFF", label: "In Progress" },
+  COMPLETED: { bg: "rgba(46,217,145,0.1)", border: "rgba(46,217,145,0.4)", text: "#2ED991", label: "Completed" },
+  EXPIRED: { bg: "rgba(98,93,118,0.1)", border: "rgba(98,93,118,0.3)", text: "#8891AC", label: "Expired" },
+  CANCELLED: { bg: "rgba(98,93,118,0.1)", border: "rgba(98,93,118,0.3)", text: "#8891AC", label: "Cancelled" },
 };
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  easy: "#4ade80",
-  medium: "#FDE74C",
+  easy: "#2ED991",
+  medium: "#FFC94A",
   hard: "#f97316",
-  expert: "#ef4444",
+  expert: "#FF3B5C",
 };
 
 
@@ -98,8 +98,8 @@ function PuzzlePickerModal({
         exit={{ scale: 0.9, opacity: 0 }}
         className="w-full max-w-lg rounded-2xl border-2 shadow-2xl flex flex-col"
         style={{
-          backgroundColor: "rgba(10,8,0,0.99)",
-          borderColor: "rgba(253,231,76,0.35)",
+          background: "linear-gradient(160deg, rgba(19,24,41,0.99), rgba(11,14,26,0.99))",
+          borderColor: "rgba(255,201,74,0.35)",
           maxHeight: "80vh",
         }}
       >
@@ -107,7 +107,7 @@ function PuzzlePickerModal({
         <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <div>
             <h2 className="text-xl font-extrabold text-white">Choose Your Puzzle</h2>
-            <p className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
+            <p className="text-xs mt-0.5" style={{ color: "#8891AC" }}>
               Only puzzles you&apos;ve never attempted are shown.
             </p>
           </div>
@@ -131,11 +131,11 @@ function PuzzlePickerModal({
                 onClick={() => setTypeFilter(t)}
                 className="px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors"
                 style={{
-                  backgroundColor: typeFilter === t ? "rgba(253,231,76,0.2)" : "rgba(255,255,255,0.05)",
+                  backgroundColor: typeFilter === t ? "rgba(255,201,74,0.2)" : "rgba(255,255,255,0.05)",
                   borderWidth: 1,
                   borderStyle: "solid",
-                  borderColor: typeFilter === t ? "#FDE74C" : "rgba(255,255,255,0.1)",
-                  color: typeFilter === t ? "#FDE74C" : "#9ca3af",
+                  borderColor: typeFilter === t ? "#FFC94A" : "rgba(255,255,255,0.1)",
+                  color: typeFilter === t ? "#FFC94A" : "#8891AC",
                 }}
               >
                 {t === "all" ? "All" : getPuzzleTypeLabel(t)}
@@ -151,7 +151,7 @@ function PuzzlePickerModal({
               <img src="/images/puzzle_warz_logo.png" alt="Loading…" width={40} height={40} style={{ animation: "pw-logo-spin 1.4s ease-in-out infinite", objectFit: "contain" }} />
             </div>
           ) : filtered.length === 0 ? (
-            <p className="text-center text-sm py-8" style={{ color: "#6b7280" }}>
+            <p className="text-center text-sm py-8" style={{ color: "#8891AC" }}>
               {puzzles.length === 0
                 ? "You've already attempted all available puzzles."
                 : "No puzzles match your filter."}
@@ -161,10 +161,10 @@ function PuzzlePickerModal({
               <button
                 key={puzzle.id}
                 onClick={() => onSelect(puzzle)}
-                className="w-full text-left px-4 py-3 rounded-xl border transition-all hover:scale-[1.01]"
+                className="pw-bevel w-full text-left px-4 py-3 border transition-all hover:scale-[1.01]"
                 style={{
-                  backgroundColor: "rgba(253,231,76,0.04)",
-                  borderColor: "rgba(253,231,76,0.15)",
+                  background: "linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",
+                  borderColor: "rgba(255,201,74,0.25)",
                 }}
               >
                 <div className="flex items-center justify-between">
@@ -172,14 +172,14 @@ function PuzzlePickerModal({
                   <div className="flex gap-1.5 shrink-0 ml-2">
                     <span
                       className="px-1.5 py-0.5 rounded text-xs font-bold leading-none"
-                      style={{ color: "#FFB86B", backgroundColor: "rgba(255,184,107,0.08)" }}
+                      style={{ color: "#B24BF3", backgroundColor: "rgba(178,75,243,0.1)" }}
                     >
                       {getPuzzleTypeLabel(puzzle.puzzleType)}
                     </span>
                   </div>
                 </div>
                 {puzzle.category?.name && (
-                  <span className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{puzzle.category.name}</span>
+                  <span className="text-xs mt-0.5" style={{ color: "#8891AC" }}>{puzzle.category.name}</span>
                 )}
               </button>
             ))
@@ -219,12 +219,16 @@ function ChallengeCard({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border p-4 hover:border-yellow-400/30 transition-all"
-      style={{ backgroundColor: "rgba(253,231,76,0.03)", borderColor: challenge.spotlightUntil && new Date(challenge.spotlightUntil) > new Date() ? "rgba(253,231,76,0.5)" : "rgba(255,255,255,0.08)" }}
+      className="pw-bevel border p-4 transition-all"
+      style={{
+        background: "linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",
+        borderColor: challenge.spotlightUntil && new Date(challenge.spotlightUntil) > new Date() ? "rgba(255,201,74,0.5)" : "rgba(255,255,255,0.08)",
+        boxShadow: challenge.spotlightUntil && new Date(challenge.spotlightUntil) > new Date() ? "0 0 20px -8px rgba(255,201,74,0.5)" : undefined,
+      }}
     >
       {/* Spotlight badge */}
       {challenge.spotlightUntil && new Date(challenge.spotlightUntil) > new Date() && (
-        <div className="flex items-center gap-1 mb-2 text-xs font-bold" style={{ color: '#FDE74C' }}>
+        <div className="flex items-center gap-1 mb-2 text-xs font-bold" style={{ color: '#FFC94A' }}>
           ✨ Spotlighted
         </div>
       )}
@@ -233,21 +237,21 @@ function ChallengeCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-white font-bold text-sm truncate">{challenge.puzzle.title}</span>
-            <span className="px-1.5 py-0.5 rounded text-xs font-bold" style={{ color: "#FFB86B", backgroundColor: "rgba(255,184,107,0.07)" }}>
+            <span className="px-1.5 py-0.5 rounded text-xs font-bold" style={{ color: "#B24BF3", backgroundColor: "rgba(178,75,243,0.1)" }}>
               {getPuzzleTypeLabel(challenge.puzzle.puzzleType)}
             </span>
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-xs" style={{ color: "#6b7280" }}>
-              by <span className="font-medium" style={{ color: "#9ca3af" }}>@{challenge.challenger.name ?? "Unknown"}</span>
+            <span className="text-xs" style={{ color: "#8891AC" }}>
+              by <span className="font-medium" style={{ color: "#8891AC" }}>@{challenge.challenger.name ?? "Unknown"}</span>
             </span>
             {challenge.invitedUser && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: "rgba(59,130,246,0.1)", color: "#93c5fd" }}>
+              <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: "rgba(61,127,255,0.1)", color: "#3D7FFF" }}>
                 → @{challenge.invitedUser.name}
               </span>
             )}
             {challenge.status === "OPEN" && (
-              <span className="text-xs" style={{ color: "#6b7280" }}>
+              <span className="text-xs" style={{ color: "#8891AC" }}>
                 expires in {timeLeft(challenge.expiresAt)}
               </span>
             )}
@@ -265,9 +269,9 @@ function ChallengeCard({
       {/* Wager + action */}
       <div className="flex items-center justify-between">
         <div className="text-sm">
-          <span className="font-bold" style={{ color: "#FFB86B" }}>🪙 {challenge.challengerWager}</span>
-          <span className="text-xs ml-1" style={{ color: "#6b7280" }}>
-            pts each · pot <span className="font-semibold" style={{ color: "#4ade80" }}>{pot}</span> pts
+          <span className="font-bold" style={{ color: "#FFC94A" }}>🪙 {challenge.challengerWager}</span>
+          <span className="text-xs ml-1" style={{ color: "#8891AC" }}>
+            pts each · pot <span className="font-semibold" style={{ color: "#2ED991" }}>{pot}</span> pts
           </span>
         </div>
 
@@ -283,7 +287,7 @@ function ChallengeCard({
               <button
                 onClick={handleAction}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
+                style={{ background: "linear-gradient(135deg, #FFC94A, #AD8932)", color: "#0B0E1A" }}
               >
                 ⚔️ Accept
               </button>
@@ -294,7 +298,7 @@ function ChallengeCard({
             <button
               onClick={handleAction}
               className="px-3 py-1.5 rounded-lg text-xs font-bold"
-              style={{ backgroundColor: "rgba(59,130,246,0.2)", border: "1px solid rgba(59,130,246,0.4)", color: "#93c5fd" }}
+              style={{ backgroundColor: "rgba(61,127,255,0.2)", border: "1px solid rgba(61,127,255,0.4)", color: "#3D7FFF" }}
             >
               ▶ Play
             </button>
@@ -304,7 +308,7 @@ function ChallengeCard({
             <Link
               href={`/warz/challenge/${challenge.id}`}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#9ca3af" }}
+              style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#8891AC" }}
             >
               View Result
             </Link>
@@ -315,7 +319,7 @@ function ChallengeCard({
             <Link
               href={`/warz/challenge/${challenge.id}`}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#9ca3af" }}
+              style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#8891AC" }}
             >
               View
             </Link>
@@ -345,7 +349,7 @@ function CancelButton({ challengeId }: { challengeId: string }) {
   };
 
   if (cancelled) {
-    return <span className="text-xs" style={{ color: "#6b7280" }}>Cancelled</span>;
+    return <span className="text-xs" style={{ color: "#8891AC" }}>Cancelled</span>;
   }
 
   return (
@@ -353,7 +357,7 @@ function CancelButton({ challengeId }: { challengeId: string }) {
       onClick={handleCancel}
       disabled={cancelling}
       className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
-      style={{ backgroundColor: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.3)", color: "#fca5a5" }}
+      style={{ backgroundColor: "rgba(255,59,92,0.12)", border: "1px solid rgba(255,59,92,0.3)", color: "#FF3B5C" }}
     >
       {cancelling ? "…" : "Cancel"}
     </button>
@@ -456,17 +460,23 @@ function WarzLobbyInner() {
     tab === "open" ? openChallenges : tab === "mine" ? myChallenges : historyChallenges;
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#0A0800" }}>
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F",
+      }}
+    >
       {/* ── Hero header ── */}
       <div
         className="relative px-6 pt-28 pb-12 text-center overflow-hidden"
-        style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(253,231,76,0.12) 0%, transparent 70%)" }}
+        style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(255,201,74,0.14) 0%, transparent 70%), radial-gradient(ellipse at 15% 30%, rgba(178,75,243,0.1) 0%, transparent 60%)" }}
       >
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-3xl min-[450px]:text-5xl font-black mb-3 whitespace-nowrap"
-          style={{ color: "#FDE74C", textShadow: "0 0 40px rgba(253,231,76,0.35)" }}
+          style={{ color: "#FFC94A", textShadow: "0 0 40px rgba(255,201,74,0.35)" }}
         >
           ⚔️ Puzzle Warz
         </motion.h1>
@@ -474,7 +484,7 @@ function WarzLobbyInner() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1, transition: { delay: 0.15 } }}
           className="text-lg mb-8 max-w-lg mx-auto"
-          style={{ color: "#AB9F9D" }}
+          style={{ color: "#8891AC" }}
         >
           Pick your puzzle, set your wager, solve the puzzle, post your challenge. Fastest time wins the pot!
         </motion.p>
@@ -485,25 +495,25 @@ function WarzLobbyInner() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: 0.25 } }}
             className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full border mb-8"
-            style={{ backgroundColor: "rgba(255,184,107,0.08)", borderColor: "rgba(255,184,107,0.25)" }}
+            style={{ backgroundColor: "rgba(255,201,74,0.1)", borderColor: "rgba(255,201,74,0.3)", boxShadow: "0 0 16px -6px rgba(255,201,74,0.6)" }}
           >
-            <span className="text-sm font-semibold" style={{ color: "#FFB86B" }}>
+            <span className="text-sm font-semibold" style={{ color: "#FFC94A" }}>
               🪙 {currentUser.totalPoints} pts
             </span>
-            <span className="text-xs" style={{ color: "#6b7280" }}>Level {currentUser.level}</span>
+            <span className="text-xs" style={{ color: "#8891AC" }}>Level {currentUser.level}</span>
           </motion.div>
         )}
 
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1, transition: { delay: 0.3 } }}>
           {searchParams.get("invite") && (
-            <p className="text-sm mb-3 font-semibold" style={{ color: "#FDE74C" }}>
+            <p className="text-sm mb-3 font-semibold" style={{ color: "#FFC94A" }}>
               ⚔️ Targeting a rival — pick a puzzle to begin!
             </p>
           )}
           <button
             onClick={handleOpenPicker}
-            className="px-8 py-4 rounded-2xl font-extrabold text-lg transition-all hover:scale-105 shadow-lg"
-            style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
+            className="px-8 py-4 rounded-2xl font-extrabold text-lg transition-all hover:scale-105"
+            style={{ background: "linear-gradient(135deg, #FFC94A, #AD8932)", color: "#0B0E1A", boxShadow: "0 0 30px -6px rgba(255,201,74,0.6)" }}
           >
             ⚔️ Issue a Challenge
           </button>
@@ -519,7 +529,7 @@ function WarzLobbyInner() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl font-bold text-sm shadow-xl"
-            style={{ backgroundColor: "rgba(74,222,128,0.15)", border: "1px solid #4ade80", color: "#4ade80" }}
+            style={{ backgroundColor: "rgba(46,217,145,0.15)", border: "1px solid #2ED991", color: "#2ED991" }}
           >
             ✅ Challenge posted! Waiting for an opponent…
           </motion.div>
@@ -530,22 +540,22 @@ function WarzLobbyInner() {
       {featuredChallenges.length > 0 && (
         <div className="max-w-3xl mx-auto px-4 pt-8">
           <div
-            className="rounded-2xl border p-5 mb-6"
+            className="pw-bevel border p-5 mb-6"
             style={{
-              background: "linear-gradient(135deg, rgba(253,231,76,0.07) 0%, rgba(255,184,107,0.05) 100%)",
-              borderColor: "rgba(253,231,76,0.35)",
-              boxShadow: "0 0 40px rgba(253,231,76,0.08) inset",
+              background: "radial-gradient(420px 200px at 15% 0%, rgba(255,201,74,0.16), transparent 60%), radial-gradient(360px 180px at 100% 100%, rgba(178,75,243,0.12), transparent 60%), linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",
+              borderColor: "rgba(255,201,74,0.4)",
+              boxShadow: "0 0 30px -10px rgba(255,201,74,0.4)",
             }}
           >
             {/* Section header */}
             <div className="flex items-center gap-2 mb-4">
               <span className="text-lg leading-none">✨</span>
-              <span className="font-extrabold text-sm uppercase tracking-widest" style={{ color: "#FDE74C" }}>
+              <span className="font-extrabold text-sm uppercase tracking-widest" style={{ color: "#FFC94A" }}>
                 Featured Challenges
               </span>
               <span
                 className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold"
-                style={{ backgroundColor: "rgba(253,231,76,0.15)", color: "#FDE74C" }}
+                style={{ backgroundColor: "rgba(255,201,74,0.15)", color: "#FFC94A" }}
               >
                 {featuredChallenges.length} spotlighted
               </span>
@@ -560,45 +570,45 @@ function WarzLobbyInner() {
                     key={c.id}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0, transition: { delay: i * 0.05 } }}
-                    className="rounded-xl border p-4 relative overflow-hidden"
+                    className="pw-bevel border p-4 relative overflow-hidden"
                     style={{
-                      backgroundColor: "rgba(253,231,76,0.04)",
-                      borderColor: "rgba(253,231,76,0.4)",
-                      boxShadow: "0 0 20px rgba(253,231,76,0.06)",
+                      background: "linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",
+                      borderColor: "rgba(255,201,74,0.4)",
+                      boxShadow: "0 0 20px -8px rgba(255,201,74,0.4)",
                     }}
                   >
                     {/* Gold shimmer strip */}
                     <div
                       className="absolute top-0 left-0 right-0 h-0.5 rounded-t-xl"
-                      style={{ background: "linear-gradient(90deg, transparent, rgba(253,231,76,0.6), transparent)" }}
+                      style={{ background: "linear-gradient(90deg, transparent, rgba(255,201,74,0.6), transparent)" }}
                     />
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-white font-bold text-sm">{c.puzzle.title}</span>
-                          <span className="px-1.5 py-0.5 rounded text-xs font-bold" style={{ color: "#FFB86B", backgroundColor: "rgba(255,184,107,0.07)" }}>
+                          <span className="px-1.5 py-0.5 rounded text-xs font-bold" style={{ color: "#B24BF3", backgroundColor: "rgba(178,75,243,0.1)" }}>
                             {getPuzzleTypeLabel(c.puzzle.puzzleType)}
                           </span>
                         </div>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
-                          <span className="text-xs" style={{ color: "#6b7280" }}>
-                            by <span className="font-medium" style={{ color: "#9ca3af" }}>@{c.challenger.name ?? "Unknown"}</span>
+                          <span className="text-xs" style={{ color: "#8891AC" }}>
+                            by <span className="font-medium" style={{ color: "#8891AC" }}>@{c.challenger.name ?? "Unknown"}</span>
                           </span>
-                          <span className="text-xs font-semibold" style={{ color: "#FDE74C" }}>
+                          <span className="text-xs font-semibold" style={{ color: "#FFC94A" }}>
                             ⏱ {remainingMins}m spotlight left
                           </span>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-2 shrink-0">
-                        <span className="text-sm font-bold" style={{ color: "#FFB86B" }}>
-                          🪙 pot: <span style={{ color: "#4ade80" }}>{pot}</span> pts
+                        <span className="text-sm font-bold" style={{ color: "#FFC94A" }}>
+                          🪙 pot: <span style={{ color: "#2ED991" }}>{pot}</span> pts
                         </span>
                         {currentUser && c.challenger.id !== currentUser.id && (
                           (!c.invitedUser || c.invitedUser.id === currentUser.id) && (
                             <a
                               href={`/warz/challenge/${c.id}`}
                               className="px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all hover:scale-105"
-                              style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
+                              style={{ background: "linear-gradient(135deg, #FFC94A, #AD8932)", color: "#0B0E1A" }}
                             >
                               ⚔️ Accept
                             </a>
@@ -630,15 +640,15 @@ function WarzLobbyInner() {
               className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all"
               style={
                 tab === t.key
-                  ? { backgroundColor: "rgba(253,231,76,0.15)", color: "#FDE74C" }
-                  : { color: "#6b7280" }
+                  ? { backgroundColor: "rgba(255,201,74,0.15)", color: "#FFC94A" }
+                  : { color: "#8891AC" }
               }
             >
               {t.label}
               {t.count > 0 && (
                 <span
                   className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs"
-                  style={{ backgroundColor: tab === t.key ? "rgba(253,231,76,0.2)" : "rgba(255,255,255,0.07)", color: "inherit" }}
+                  style={{ backgroundColor: tab === t.key ? "rgba(255,201,74,0.2)" : "rgba(255,255,255,0.07)", color: "inherit" }}
                 >
                   {t.count}
                 </span>
@@ -656,7 +666,7 @@ function WarzLobbyInner() {
             <p className="font-semibold text-white mb-1">
               {tab === "open" ? "No open challenges" : tab === "mine" ? "You haven't battled yet" : "No history yet"}
             </p>
-            <p className="text-sm" style={{ color: "#6b7280" }}>
+            <p className="text-sm" style={{ color: "#8891AC" }}>
               {tab === "open" ? "Be the first to issue one!" : "Issue a challenge to get started."}
             </p>
           </div>

@@ -47,15 +47,17 @@ const BETA_PUBLIC_PATHS = [
   '/sw.js',
 ];
 
-// Paths that require authentication
+// Page routes that require authentication — redirects to /auth/signin (an HTML page,
+// correct for a browser navigation). API routes are deliberately excluded: they already
+// enforce their own auth (getServerSession/requireAuthenticatedUser) and return a proper
+// JSON 401, which client-side fetch() calls rely on. Redirecting an API route here instead
+// hands back an HTML sign-in page with a 200 status once the redirect is followed, which
+// breaks any `res.json()` call on the client with a "Unexpected token '<'" parse error.
 const protectedPaths = [
   "/dashboard",
   "/puzzles",
   "/teams",
   "/leaderboards",
-  "/api/user",
-  "/api/teams",
-  "/api/puzzles/submit",
 ];
 
 export async function proxy(request: NextRequest) {

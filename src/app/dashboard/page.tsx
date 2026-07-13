@@ -55,27 +55,30 @@ function StatCard({ label, value, icon, color, bgColor, borderColor, prefix = ''
 
   return (
     <div
+      className="pw-bevel"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        backgroundColor: bgColor,
+        background: `linear-gradient(160deg, ${bgColor.replace(/[\d.]+\)$/, '0.22)')}, var(--pw-surface) 65%)`,
         border: `1px solid ${hovered ? color : borderColor}`,
-        borderRadius: 16,
         padding: '24px',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(24px)',
         transition: `opacity 0.6s ease ${delay}s, transform 0.6s ease ${delay}s, border-color 0.25s, box-shadow 0.25s`,
-        boxShadow: hovered ? `0 8px 32px ${bgColor}` : 'none',
+        boxShadow: hovered ? `0 8px 32px ${bgColor}` : `0 0 18px -6px ${bgColor}`,
         cursor: 'default',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color }}>{label}</p>
-        <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, backgroundColor: bgColor, border: `1px solid ${borderColor}` }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+          backgroundColor: bgColor, border: `1px solid ${borderColor}`, boxShadow: `0 0 14px -3px ${color}`,
+        }}>
           {icon}
         </div>
       </div>
-      <p style={{ fontSize: 36, fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-0.02em' }}>
+      <p style={{ fontSize: 36, fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-0.02em', textShadow: `0 0 24px ${bgColor}` }}>
         {prefix}{displayVal}{suffix}
       </p>
     </div>
@@ -123,15 +126,15 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
         position: 'relative',
         overflow: 'hidden',
         borderRadius: 20,
-        border: `1px solid ${hovered ? 'rgba(0,212,255,0.55)' : 'rgba(0,212,255,0.22)'}`,
-        background: 'linear-gradient(135deg, rgba(0,10,14,0.98) 0%, rgba(0,26,35,0.95) 60%, rgba(0,10,20,0.98) 100%)',
+        border: `1px solid ${hovered ? 'rgba(178,75,243,0.55)' : 'rgba(178,75,243,0.22)'}`,
+        background: 'linear-gradient(135deg, rgba(11,14,26,0.98) 0%, rgba(19,24,41,0.95) 60%, rgba(11,14,26,0.98) 100%)',
         padding: '36px 40px',
         marginBottom: 40,
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(24px)',
         transition: `opacity 0.65s ease 0.05s, transform 0.65s ease 0.05s, border-color 0.3s, box-shadow 0.3s`,
         boxShadow: hovered
-          ? '0 20px 60px rgba(0,212,255,0.12), 0 0 0 1px rgba(0,212,255,0.15) inset'
+          ? '0 20px 60px rgba(178,75,243,0.16), 0 0 0 1px rgba(178,75,243,0.2) inset'
           : '0 8px 40px rgba(0,0,0,0.5)',
         cursor: 'pointer',
       }}
@@ -139,20 +142,20 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
       {/* Scan-line overlay */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
-        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,212,255,0.018) 3px, rgba(0,212,255,0.018) 4px)',
+        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(178,75,243,0.02) 3px, rgba(178,75,243,0.02) 4px)',
         borderRadius: 20,
       }} />
 
       {/* Corner accent lines */}
-      <div style={{ position: 'absolute', top: 12, left: 12, width: 20, height: 20, borderTop: '2px solid rgba(0,212,255,0.5)', borderLeft: '2px solid rgba(0,212,255,0.5)', borderRadius: '2px 0 0 0' }} />
-      <div style={{ position: 'absolute', top: 12, right: 12, width: 20, height: 20, borderTop: '2px solid rgba(0,212,255,0.5)', borderRight: '2px solid rgba(0,212,255,0.5)', borderRadius: '0 2px 0 0' }} />
-      <div style={{ position: 'absolute', bottom: 12, left: 12, width: 20, height: 20, borderBottom: '2px solid rgba(0,212,255,0.5)', borderLeft: '2px solid rgba(0,212,255,0.5)', borderRadius: '0 0 0 2px' }} />
-      <div style={{ position: 'absolute', bottom: 12, right: 12, width: 20, height: 20, borderBottom: '2px solid rgba(0,212,255,0.5)', borderRight: '2px solid rgba(0,212,255,0.5)', borderRadius: '0 0 2px 0' }} />
+      <div style={{ position: 'absolute', top: 12, left: 12, width: 20, height: 20, borderTop: '2px solid rgba(178,75,243,0.5)', borderLeft: '2px solid rgba(178,75,243,0.5)', borderRadius: '2px 0 0 0' }} />
+      <div style={{ position: 'absolute', top: 12, right: 12, width: 20, height: 20, borderTop: '2px solid rgba(178,75,243,0.5)', borderRight: '2px solid rgba(178,75,243,0.5)', borderRadius: '0 2px 0 0' }} />
+      <div style={{ position: 'absolute', bottom: 12, left: 12, width: 20, height: 20, borderBottom: '2px solid rgba(178,75,243,0.5)', borderLeft: '2px solid rgba(178,75,243,0.5)', borderRadius: '0 0 0 2px' }} />
+      <div style={{ position: 'absolute', bottom: 12, right: 12, width: 20, height: 20, borderBottom: '2px solid rgba(178,75,243,0.5)', borderRight: '2px solid rgba(178,75,243,0.5)', borderRadius: '0 0 2px 0' }} />
 
       {/* Glow blob */}
       <div style={{
         position: 'absolute', top: -60, right: -60, width: 300, height: 300,
-        background: 'radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, rgba(178,75,243,0.1) 0%, transparent 70%)',
         pointerEvents: 'none',
       }} />
 
@@ -161,11 +164,11 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
         <div style={{
           flexShrink: 0,
           width: 80, height: 80, borderRadius: 18,
-          background: 'rgba(0,212,255,0.08)',
-          border: '1px solid rgba(0,212,255,0.3)',
+          background: 'rgba(178,75,243,0.1)',
+          border: '1px solid rgba(178,75,243,0.3)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 36,
-          boxShadow: hovered ? '0 0 24px rgba(0,212,255,0.2)' : 'none',
+          boxShadow: hovered ? '0 0 24px rgba(178,75,243,0.25)' : 'none',
           transition: 'box-shadow 0.3s, transform 0.3s',
           transform: hovered ? 'scale(1.08)' : 'scale(1)',
         }}>
@@ -178,17 +181,17 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase',
-              color: '#00D4FF', padding: '3px 10px', borderRadius: 999,
-              background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.28)',
+              color: '#B24BF3', padding: '3px 10px', borderRadius: 999,
+              background: 'rgba(178,75,243,0.12)', border: '1px solid rgba(178,75,243,0.28)',
             }}>
               Featured Puzzle
             </span>
             {teaser && (
               <span style={{
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase',
-                color: 'rgba(255,215,0,0.85)', display: 'flex', alignItems: 'center', gap: 5,
+                color: 'rgba(255,201,74,0.9)', display: 'flex', alignItems: 'center', gap: 5,
               }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FFD700', boxShadow: '0 0 6px rgba(255,215,0,0.7)', animation: 'db-pulse 2s ease-in-out infinite', display: 'inline-block' }} />
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FFC94A', boxShadow: '0 0 6px rgba(255,201,74,0.7)', animation: 'db-pulse 2s ease-in-out infinite', display: 'inline-block' }} />
                 Live Today
               </span>
             )}
@@ -202,13 +205,13 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
           </h2>
 
           {teaser && (
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', color: 'rgba(0,212,255,0.7)', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', color: 'rgba(178,75,243,0.8)', marginBottom: 8 }}>
               CASE #{String(teaser.caseNumber).padStart(4, '0')} &nbsp;·&nbsp;
-              <span style={{ color: 'rgba(255,100,80,0.85)' }}>{teaser.classification.toUpperCase()}</span>
+              <span style={{ color: '#FF3B5C' }}>{teaser.classification.toUpperCase()}</span>
             </div>
           )}
 
-          <p style={{ color: '#6B7280', fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 500 }}>
+          <p style={{ color: '#8891AC', fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 500 }}>
             You have 35 seconds to read an incident report. Then it disappears. Five questions follow. Every detail matters.
           </p>
         </div>
@@ -220,7 +223,7 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
               <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
                 {teaser.totalPlays.toLocaleString()}
               </div>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4B5563', marginTop: 3 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#5B6483', marginTop: 3 }}>
                 Investigators
               </div>
             </div>
@@ -230,9 +233,9 @@ function FeaturedBanner({ visible }: { visible: boolean }) {
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '11px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13,
             letterSpacing: '0.04em',
-            background: hovered ? 'rgba(0,212,255,0.18)' : 'rgba(0,212,255,0.1)',
-            border: `1px solid ${hovered ? 'rgba(0,212,255,0.6)' : 'rgba(0,212,255,0.35)'}`,
-            color: '#00D4FF',
+            background: hovered ? 'rgba(178,75,243,0.22)' : 'rgba(178,75,243,0.12)',
+            border: `1px solid ${hovered ? 'rgba(178,75,243,0.6)' : 'rgba(178,75,243,0.35)'}`,
+            color: '#B24BF3',
             transition: 'all 0.25s',
             whiteSpace: 'nowrap',
           }}>
@@ -260,9 +263,9 @@ interface ActionCardProps {
 function ActionCard({ href, icon, title, desc, accent, delay, visible, badge, tourId }: ActionCardProps) {
   const [hovered, setHovered] = useState(false);
   const colors = {
-    teal:  { bg: 'rgba(0,212,255,0.10)',  border: 'rgba(0,212,255,0.35)',  hover: 'rgba(0,212,255,0.65)',  glow: 'rgba(0,212,255,0.25)',  icon: 'rgba(0,212,255,0.20)',  iconBorder: 'rgba(0,212,255,0.4)',  accent: '#00D4FF' },
-    gold:  { bg: 'rgba(255,215,0,0.08)',  border: 'rgba(255,215,0,0.32)',  hover: 'rgba(255,215,0,0.6)',   glow: 'rgba(255,215,0,0.20)', icon: 'rgba(255,215,0,0.14)',  iconBorder: 'rgba(255,215,0,0.35)', accent: '#FFD700' },
-    muted: { bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.28)',  hover: 'rgba(167,139,250,0.55)',  glow: 'rgba(167,139,250,0.20)',icon: 'rgba(167,139,250,0.16)', iconBorder: 'rgba(167,139,250,0.35)',accent: '#A78BFA' },
+    teal:  { bg: 'rgba(61,127,255,0.10)',  border: 'rgba(61,127,255,0.35)',  hover: 'rgba(61,127,255,0.65)',  glow: 'rgba(61,127,255,0.25)',  icon: 'rgba(61,127,255,0.20)',  iconBorder: 'rgba(61,127,255,0.4)',  accent: '#3D7FFF' },
+    gold:  { bg: 'rgba(255,201,74,0.08)',  border: 'rgba(255,201,74,0.32)',  hover: 'rgba(255,201,74,0.6)',   glow: 'rgba(255,201,74,0.20)', icon: 'rgba(255,201,74,0.14)',  iconBorder: 'rgba(255,201,74,0.35)', accent: '#FFC94A' },
+    muted: { bg: 'rgba(178,75,243,0.08)', border: 'rgba(178,75,243,0.28)',  hover: 'rgba(178,75,243,0.55)',  glow: 'rgba(178,75,243,0.20)',icon: 'rgba(178,75,243,0.16)', iconBorder: 'rgba(178,75,243,0.35)',accent: '#B24BF3' },
   };
   const c = colors[accent];
 
@@ -270,19 +273,19 @@ function ActionCard({ href, icon, title, desc, accent, delay, visible, badge, to
     <Link
       href={href}
       id={tourId}
+      className="pw-bevel"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'block',
         textDecoration: 'none',
-        backgroundColor: c.bg,
+        background: `radial-gradient(220px 140px at 100% 0%, ${c.glow}, transparent 65%), linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)`,
         border: `1px solid ${hovered ? c.hover : c.border}`,
-        borderRadius: 16,
         padding: '24px',
         opacity: visible ? 1 : 0,
         transform: visible ? (hovered ? 'translateY(-5px)' : 'translateY(0)') : 'translateY(28px)',
         transition: `opacity 0.6s ease ${delay}s, transform 0.5s ease ${delay}s, border-color 0.22s, box-shadow 0.22s`,
-        boxShadow: hovered ? `0 12px 40px ${c.glow}` : 'none',
+        boxShadow: hovered ? `0 12px 40px ${c.glow}` : `0 0 20px -8px ${c.glow}`,
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -292,24 +295,25 @@ function ActionCard({ href, icon, title, desc, accent, delay, visible, badge, to
           position: 'absolute', top: 14, right: 14,
           fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
           padding: '3px 8px', borderRadius: 999,
-          backgroundColor: 'rgba(253,231,76,0.12)', color: '#FDE74C', border: '1px solid rgba(253,231,76,0.25)',
+          backgroundColor: 'rgba(255,201,74,0.12)', color: '#FFC94A', border: '1px solid rgba(255,201,74,0.25)',
         }}>{badge}</span>
       )}
       <div style={{
         width: 48, height: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 22, marginBottom: 16,
         backgroundColor: c.icon, border: `1px solid ${c.iconBorder}`,
-        transition: 'transform 0.22s',
+        boxShadow: `0 0 16px -4px ${c.accent}`,
+        transition: 'transform 0.22s, box-shadow 0.22s',
         transform: hovered ? 'scale(1.1)' : 'scale(1)',
       }}>
         {icon}
       </div>
       <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{title}</h3>
-      <p style={{ color: '#6B7280', fontSize: 13, lineHeight: 1.5 }}>{desc}</p>
+      <p style={{ color: '#8891AC', fontSize: 13, lineHeight: 1.5 }}>{desc}</p>
       <div style={{
         marginTop: 16, fontSize: 12, fontWeight: 600, color: c.accent,
         display: 'flex', alignItems: 'center', gap: 4,
-        opacity: hovered ? 1 : 0.5, transition: 'opacity 0.22s',
+        opacity: hovered ? 1 : 0.7, transition: 'opacity 0.22s',
       }}>
         Open <span style={{ transition: 'transform 0.22s', transform: hovered ? 'translateX(3px)' : 'none' }}>→</span>
       </div>
@@ -379,12 +383,15 @@ export default function Dashboard() {
   /* ── Loading skeleton ─────────────────────────────────── */
   if (status === 'loading' || loading) {
     return (
-      <div style={{ backgroundColor: '#020202', minHeight: '100vh' }}>
+      <div style={{
+        background: 'radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F',
+        minHeight: '100vh',
+      }}>
         <Navbar />
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 48px' }}>
           {/* Header skeleton */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 48 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(56,145,166,0.12)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(178,75,243,0.12)', animation: 'pulse 1.5s ease-in-out infinite' }} />
             <div>
               <div style={{ width: 200, height: 22, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 10, animation: 'pulse 1.5s ease-in-out infinite' }} />
               <div style={{ width: 140, height: 14, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite' }} />
@@ -414,10 +421,10 @@ export default function Dashboard() {
     .split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   const statCards = [
-    { label: 'Puzzles Solved', value: stats?.totalPuzzlesSolved ?? 0, icon: '🧩', color: '#00D4FF', bgColor: 'rgba(0,212,255,0.12)', borderColor: 'rgba(0,212,255,0.35)', animate: true },
-    { label: 'Total Points',   value: stats?.totalPoints ?? 0,        icon: '⚡', color: '#FFD700', bgColor: 'rgba(255,215,0,0.10)',  borderColor: 'rgba(255,215,0,0.32)',  animate: true },
-    { label: 'Active Teams',   value: stats?.currentTeams ?? 0,       icon: '👥', color: '#A78BFA', bgColor: 'rgba(167,139,250,0.10)', borderColor: 'rgba(167,139,250,0.30)', animate: true },
-    { label: 'Global Rank',    value: stats?.rank ? `#${stats.rank}` : 'Unranked', icon: '🏆', color: '#F97316', bgColor: 'rgba(249,115,22,0.10)', borderColor: 'rgba(249,115,22,0.30)', animate: false },
+    { label: 'Puzzles Solved', value: stats?.totalPuzzlesSolved ?? 0, icon: '🧩', color: '#3D7FFF', bgColor: 'rgba(61,127,255,0.12)', borderColor: 'rgba(61,127,255,0.35)', animate: true },
+    { label: 'Total Points',   value: stats?.totalPoints ?? 0,        icon: '⚡', color: '#FFC94A', bgColor: 'rgba(255,201,74,0.10)',  borderColor: 'rgba(255,201,74,0.32)',  animate: true },
+    { label: 'Active Teams',   value: stats?.currentTeams ?? 0,       icon: '👥', color: '#B24BF3', bgColor: 'rgba(178,75,243,0.10)', borderColor: 'rgba(178,75,243,0.30)', animate: true },
+    { label: 'Global Rank',    value: stats?.rank ? `#${stats.rank}` : 'Unranked', icon: '🏆', color: '#E8934A', bgColor: 'rgba(232,147,74,0.10)', borderColor: 'rgba(232,147,74,0.30)', animate: false },
   ];
 
   const coreCards = [
@@ -447,10 +454,13 @@ export default function Dashboard() {
       <style>{`
         @keyframes db-fade-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes db-pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
-        @keyframes db-glow { 0%,100%{box-shadow:0 0 0 0 rgba(56,145,166,0)} 50%{box-shadow:0 0 0 6px rgba(56,145,166,0)} }
+        @keyframes db-glow { 0%,100%{box-shadow:0 0 0 0 rgba(178,75,243,0)} 50%{box-shadow:0 0 0 6px rgba(178,75,243,0)} }
       `}</style>
 
-      <main style={{ backgroundColor: '#020202', minHeight: '100vh' }}>
+      <main style={{
+        background: 'radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F',
+        minHeight: '100vh',
+      }}>
         <Navbar />
 
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 64px' }}>
@@ -466,12 +476,12 @@ export default function Dashboard() {
               {/* Avatar */}
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 {session.user.image ? (
-                  <img src={session.user.image} alt="avatar" style={{ width: 60, height: 60, borderRadius: '50%', border: '2px solid rgba(56,145,166,0.5)', objectFit: 'cover' }} onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
+                  <img src={session.user.image} alt="avatar" style={{ width: 60, height: 60, borderRadius: '50%', border: '2px solid rgba(178,75,243,0.5)', objectFit: 'cover' }} onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
                 ) : (
                   <div style={{
                     width: 60, height: 60, borderRadius: '50%',
-                    background: 'linear-gradient(135deg, rgba(56,145,166,0.35) 0%, rgba(56,145,166,0.15) 100%)',
-                    border: '2px solid rgba(56,145,166,0.4)',
+                    background: 'linear-gradient(135deg, rgba(178,75,243,0.35) 0%, rgba(178,75,243,0.15) 100%)',
+                    border: '2px solid rgba(178,75,243,0.4)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 20, fontWeight: 800, color: '#9BD1D6',
                   }}>{initials}</div>
@@ -479,8 +489,8 @@ export default function Dashboard() {
                 {/* Online dot */}
                 <div style={{
                   position: 'absolute', bottom: 2, right: 2, width: 12, height: 12,
-                  borderRadius: '50%', backgroundColor: '#22c55e',
-                  border: '2px solid #020202', boxShadow: '0 0 6px rgba(34,197,94,0.6)',
+                  borderRadius: '50%', backgroundColor: '#2ED991',
+                  border: '2px solid #0B0E1A', boxShadow: '0 0 6px rgba(46,217,145,0.6)',
                 }} />
               </div>
 
@@ -490,12 +500,12 @@ export default function Dashboard() {
                     Welcome back, {session.user.name?.split(' ')[0] || 'Player'}
                   </h1>
                   {isAdmin && (
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 999, backgroundColor: 'rgba(253,231,76,0.1)', color: '#FDE74C', border: '1px solid rgba(253,231,76,0.25)' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 999, backgroundColor: 'rgba(255,201,74,0.1)', color: '#FFC94A', border: '1px solid rgba(255,201,74,0.25)' }}>
                       Admin
                     </span>
                   )}
                 </div>
-                <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
+                <p style={{ color: '#8891AC', fontSize: 14, margin: 0 }}>
                   {stats?.rank ? `Global Rank #${stats.rank} · ` : ''}{stats?.totalPoints?.toLocaleString() || 0} pts
                 </p>
               </div>
@@ -515,21 +525,21 @@ export default function Dashboard() {
 
           {/* ── Referral widget ─────────────────────────── */}
           {referral && (
-            <div style={{
+            <div className="pw-bevel" style={{
               marginBottom: 48,
-              padding: '20px 24px',
-              borderRadius: 16,
-              background: 'linear-gradient(135deg, rgba(255,208,0,0.06) 0%, rgba(0,0,0,0) 70%)',
-              border: '1px solid rgba(255,208,0,0.2)',
+              padding: '22px 26px',
+              background: 'radial-gradient(320px 160px at 0% 0%, rgba(255,201,74,0.16), transparent 65%), linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)',
+              border: '1px solid rgba(255,201,74,0.3)',
+              boxShadow: '0 0 24px -10px rgba(255,201,74,0.5)',
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16,
               opacity: mounted ? 1 : 0, transform: mounted ? 'translateY(0)' : 'translateY(18px)',
               transition: 'opacity 0.6s ease 0.35s, transform 0.5s ease 0.35s',
             }}>
               <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#FFD700', marginBottom: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#FFC94A', marginBottom: 4, textShadow: '0 0 16px rgba(255,201,74,0.4)' }}>
                   🔗 Invite Friends
                 </div>
-                <div style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.5 }}>
+                <div style={{ fontSize: 13, color: '#8891AC', lineHeight: 1.5 }}>
                   {referral.signedUp > 0
                     ? `${referral.signedUp} player${referral.signedUp !== 1 ? 's' : ''} joined via your link`
                     : 'Share your link — every solver on the board makes it more competitive'}
@@ -537,8 +547,8 @@ export default function Dashboard() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <code style={{
-                  fontSize: 12, fontFamily: 'ui-monospace, monospace', color: '#FFD700',
-                  background: 'rgba(255,208,0,0.08)', border: '1px solid rgba(255,208,0,0.2)',
+                  fontSize: 12, fontFamily: 'ui-monospace, monospace', color: '#FFC94A',
+                  background: 'rgba(255,201,74,0.1)', border: '1px solid rgba(255,201,74,0.25)',
                   borderRadius: 8, padding: '6px 12px', letterSpacing: '0.05em',
                   maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   display: 'block',
@@ -552,11 +562,12 @@ export default function Dashboard() {
                     setTimeout(() => setReferralCopied(false), 2000);
                   }}
                   style={{
-                    padding: '7px 16px', borderRadius: 8, fontWeight: 700, fontSize: 12,
+                    padding: '8px 18px', borderRadius: 8, fontWeight: 700, fontSize: 12,
                     fontFamily: 'ui-monospace, monospace', cursor: 'pointer',
-                    background: referralCopied ? 'rgba(125,249,170,0.15)' : 'rgba(255,208,0,0.12)',
-                    border: referralCopied ? '1px solid rgba(125,249,170,0.4)' : '1px solid rgba(255,208,0,0.35)',
-                    color: referralCopied ? '#7DF9AA' : '#FFD700',
+                    background: referralCopied ? 'linear-gradient(135deg, #2ED991, #1F9463)' : 'linear-gradient(135deg, #FFC94A, #AD8932)',
+                    border: 'none',
+                    boxShadow: referralCopied ? '0 0 14px rgba(46,217,145,0.5)' : '0 0 14px rgba(255,201,74,0.5)',
+                    color: '#0B0E1A',
                     transition: 'all 0.2s',
                   }}
                 >
@@ -570,7 +581,7 @@ export default function Dashboard() {
           <div style={{ marginBottom: isAdmin ? 48 : 0 }}>
             <p style={{
               fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase',
-              color: '#9ca3af', marginBottom: 20,
+              color: '#8891AC', marginBottom: 20,
               opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.4s',
             }}>
               Navigate
@@ -588,12 +599,12 @@ export default function Dashboard() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
                 <p style={{
                   fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase',
-                  color: '#FDE74C', margin: 0,
+                  color: '#FFC94A', margin: 0,
                   opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.5s',
                 }}>
                   Admin
                 </p>
-                <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(253,231,76,0.25), transparent)', opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.6s' }} />
+                <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(255,201,74,0.25), transparent)', opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.6s' }} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
                 {adminCards.map((c, i) => (

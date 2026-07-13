@@ -19,6 +19,25 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* ── Battle-pass token system — one job per color ─────────────── */
+  --pw-ink: #10121F;
+  --pw-ink-2: #141828;
+  --pw-surface: #131829;
+  --pw-surface-hi: #1C2340;
+  --pw-line: rgba(178,75,243, 0.16);
+  --pw-line-hi: rgba(178,75,243, 0.34);
+  --pw-gold: #FFC94A;      /* earned / XP / claimed / premium */
+  --pw-gold-dim: #AD8932;
+  --pw-violet: #B24BF3;    /* rare / next-up / identity */
+  --pw-violet-dim: #7933A5;
+  --pw-teal: #3D7FFF;      /* primary action / info */
+  --pw-success: #2ED991;   /* solved — the one green */
+  --pw-ember: #FF3B5C;     /* failed / danger */
+  --pw-locked: #454E68;
+  --pw-text: #EEF1FA;
+  --pw-text-dim: #8891AC;
+  --pw-text-faint: #5B6483;
 }
 
 @theme inline {
@@ -146,7 +165,11 @@
 }
 
 body {
-  background: #020202;
+  background:
+    radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243, 0.20), transparent 62%),
+    radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74, 0.12), transparent 58%),
+    radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145, 0.09), transparent 60%),
+    var(--pw-ink);
   color: var(--foreground);
   font-family: var(--font-geist-sans, Arial, sans-serif);
   overflow-x: hidden;
@@ -161,9 +184,9 @@ body {
 /* ── Custom scrollbar ─────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: #080808; }
-::-webkit-scrollbar-thumb { background: #3891A6; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #4aafc0; }
-* { scrollbar-width: thin; scrollbar-color: #3891A6 #080808; }
+::-webkit-scrollbar-thumb { background: var(--pw-teal); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #77A5FF; }
+* { scrollbar-width: thin; scrollbar-color: var(--pw-teal) #080808; }
 
 /* ── Utility: hide scrollbar but keep scrollability ──────────── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -249,19 +272,9 @@ body {
   color: #4A5F61 !important;
 }
 
-/* Global overrides to remove purple/pink palette and replace with teal/yellow equivalents */
-.bg-purple-600 { background-color: #3891A6 !important; }
-.hover\:bg-purple-700:hover { background-color: #2a7f8f !important; }
-.focus\:ring-purple-500:focus { --tw-ring-color: #3891A6 !important; box-shadow: 0 0 0 2px rgba(56,145,166,0.35) !important; }
-.from-purple-500 { --tw-gradient-from: #3891A6 !important; }
-.to-pink-500 { --tw-gradient-to: #FDE74C !important; }
-.hover\:from-purple-600:hover { --tw-gradient-from: #2a7f8f !important; }
-.hover\:to-pink-600:hover { --tw-gradient-to: #FDE74C !important; }
-.text-purple-400 { color: #3891A6 !important; }
-.text-purple-200 { color: #9BD1D6 !important; }
-.text-purple-500 { color: #3891A6 !important; }
-.border-purple-500 { border-color: #3891A6 !important; }
-.focus\:border-purple-500:focus { border-color: #3891A6 !important; }
+/* Note: an earlier pass forced all purple/pink utility classes to teal/yellow to avoid an
+   off-brand accent. The battle-pass direction reinstates violet as a deliberate, first-class
+   accent (rare / next-up / identity — see --pw-violet), so that override has been removed. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Escape-room pickup / collect animations
@@ -437,6 +450,241 @@ body {
   box-shadow: 0 0 0 1px rgba(253,231,76,0.4), 0 6px 36px rgba(253,231,76,0.1);
   transform: translateY(-3px);
   border-color: rgba(253,231,76,0.55) !important;
+}
+
+/* ── Battle-pass elevation kit — reusable across cards, tracks, progression UI ── */
+.pw-surface {
+  background: linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 60%);
+  border: 1px solid var(--pw-line);
+}
+.pw-bevel {
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+}
+.pw-glow-gold {
+  box-shadow: 0 0 22px rgba(255,201,74, 0.45);
+}
+.pw-glow-violet {
+  box-shadow: 0 0 0 4px rgba(178,75,243, 0.14), 0 0 20px rgba(178,75,243, 0.5);
+}
+.pw-pulse-violet {
+  animation: pw-pulse-ring 2.2s ease-in-out infinite;
+}
+@keyframes pw-pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(178,75,243, 0.14), 0 0 16px rgba(178,75,243, 0.4); }
+  50%      { box-shadow: 0 0 0 8px rgba(178,75,243, 0.07), 0 0 28px rgba(178,75,243, 0.65); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-pulse-violet { animation: none; }
+}
+.pw-bead-h {
+  position: absolute;
+  top: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 12px 4px rgba(255,201,74, 0.9);
+  animation: pw-bead-travel 2.6s linear infinite;
+}
+@keyframes pw-bead-travel {
+  from { left: -6px; }
+  to   { left: calc(100% - 6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-bead-h { animation: none; left: calc(100% - 6px); }
+}
+
+/* ── "Arcade Cabinet" puzzle card kit — icon-tile card used on /puzzles ──
+   Grid variant: .pw-arcade-card (+ .pw-arcade-card-inert for non-clickable states)
+   List variant: .pw-arcade-row (+ .pw-arcade-row-inert)
+   Both take a per-card `--accent` custom property (difficulty/status color) via inline style. */
+.pw-arcade-card {
+  position: relative;
+  background: linear-gradient(165deg, var(--pw-surface-hi), var(--pw-surface) 65%);
+  border-radius: 22px;
+  border: 1px solid var(--pw-line);
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.pw-arcade-card:hover {
+  transform: translateY(-4px) scale(1.015);
+  box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent, #3D7FFF) 55%, transparent);
+}
+.pw-arcade-card-inert { cursor: not-allowed; opacity: .65; }
+.pw-arcade-card-inert:hover { transform: none; box-shadow: none; }
+
+.pw-arcade-level {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #0B0E1A;
+  background: #FFC94A;
+  padding: 4px 9px;
+  border-radius: 7px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  z-index: 1;
+}
+.pw-arcade-level-inline {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #0B0E1A;
+  background: #FFC94A;
+  padding: 3px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pw-arcade-icon {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  border-radius: 24px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  flex-shrink: 0;
+  background: radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--accent, #3D7FFF) 55%, var(--pw-surface-hi)), var(--pw-surface-hi));
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent, #3D7FFF) 70%, transparent), inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.pw-arcade-card-inert .pw-arcade-icon, .pw-arcade-row-inert .pw-arcade-icon { filter: grayscale(0.7); }
+
+.pw-arcade-flag {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 800;
+  color: #0B0E1A;
+  padding: 3px 7px;
+  border-radius: 7px;
+  letter-spacing: .05em;
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  white-space: nowrap;
+  z-index: 2;
+}
+.pw-arcade-boss {
+  position: absolute;
+  bottom: -6px;
+  left: -8px;
+  font-size: 16px;
+  z-index: 2;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.5));
+}
+
+.pw-arcade-title {
+  font-size: 17px;
+  font-weight: 800;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+  color: var(--pw-text);
+}
+.pw-arcade-type {
+  font-size: 12px;
+  color: var(--pw-text-dim);
+  margin: 0 0 16px;
+}
+.pw-arcade-locked-msg {
+  font-size: 12px;
+  color: var(--pw-text-faint);
+  margin: 0 0 16px;
+}
+.pw-arcade-failed-msg {
+  font-size: 11.5px;
+  color: #FFB4B4;
+  margin: -10px 0 12px;
+}
+.pw-arcade-loot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 30px;
+}
+.pw-arcade-chip {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--pw-line);
+  color: var(--pw-text);
+  white-space: nowrap;
+}
+.pw-arcade-chip-gold { color: #FFC94A; }
+.pw-arcade-chip-em { color: #2ED991; }
+
+.pw-arcade-perf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--pw-line);
+}
+.pw-arcade-perf > div { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pw-arcade-perf b {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--pw-text);
+}
+.pw-arcade-perf small {
+  font-size: 9.5px;
+  color: var(--pw-text-faint);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  text-align: center;
+}
+
+/* List (row) variant — same visual language, horizontal layout */
+.pw-arcade-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(165deg, var(--pw-surface-hi), var(--pw-surface) 65%);
+  border-radius: 18px;
+  border: 1px solid var(--pw-line);
+  padding: 14px 18px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.pw-arcade-row:hover {
+  transform: translateX(3px);
+  box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--accent, #3D7FFF) 55%, transparent);
+}
+.pw-arcade-row-inert { cursor: not-allowed; opacity: .65; }
+.pw-arcade-row-inert:hover { transform: none; box-shadow: none; }
+.pw-arcade-row .pw-arcade-icon { width: 54px; height: 54px; border-radius: 18px; font-size: 24px; margin: 0; }
+.pw-arcade-row .pw-arcade-flag { font-size: 7.5px; padding: 2px 5px; top: -6px; right: -8px; }
+.pw-arcade-row .pw-arcade-boss { font-size: 12px; bottom: -4px; left: -6px; }
+.pw-arcade-row-body { flex: 1; min-width: 0; }
+.pw-arcade-row-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pw-arcade-row .pw-arcade-title { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-arcade-row .pw-arcade-type { margin: 2px 0 0; }
+.pw-arcade-row .pw-arcade-locked-msg, .pw-arcade-row .pw-arcade-failed-msg { margin: 2px 0 0; }
+.pw-arcade-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+.pw-arcade-row .pw-arcade-loot { justify-content: flex-end; min-height: 0; }
+.pw-arcade-row .pw-arcade-perf { margin-top: 0; padding-top: 0; border-top: none; gap: 14px; }
+.pw-arcade-row .pw-arcade-perf > div { align-items: flex-end; }
+@media (max-width: 640px) {
+  .pw-arcade-row { flex-wrap: wrap; }
+  .pw-arcade-row-side { flex-direction: row; width: 100%; justify-content: space-between; align-items: center; }
 }
 
 /* Profile action button layout shared by profile pages */

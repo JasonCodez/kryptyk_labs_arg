@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import FilterBar from "@/components/puzzle/FilterBar";
-import { StarRating } from "@/components/puzzle/StarRating";
 import { detectWebGLSupport } from "@/lib/webglSupport";
 import LoadingSpinner from "@/components/LoadingSpinner";
-import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
+import { getPuzzleTypeLabel, getPuzzleTypeIcon } from "@/lib/puzzleTypeLabels";
+import CampaignPath from "@/components/puzzle/CampaignPath";
+import SolvedIconOverlay from "@/components/puzzle/SolvedIconOverlay";
 
 interface Puzzle {
   id: string;
@@ -64,8 +66,8 @@ interface Category {
 const DIFFICULTY_COLORS: Record<string, string> = {
   easy: "#10B981",
   medium: "#F59E0B",
-  hard: "#EF4444",
-  extreme: "#3891A6",
+  hard: "#FF3B5C",
+  extreme: "#3D7FFF",
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -121,12 +123,6 @@ function getDisplayTitle(puzzle: Puzzle & { name?: unknown; summary?: unknown; c
   return title || 'Untitled Puzzle';
 }
 
-function getDisplayDescription(puzzle: Puzzle & { name?: unknown; summary?: unknown; content?: unknown }): string {
-  const raw = (puzzle && (puzzle.description ?? puzzle.summary ?? puzzle.content ?? puzzle?.escapeRoom?.roomDescription)) as unknown;
-  const desc = typeof raw === 'string' ? raw.trim() : '';
-  return desc;
-}
-
 function formatFailedReason(reason: string | null | undefined) {
   if (!reason) return null;
   if (reason === 'time_limit') return 'Time limit reached';
@@ -140,585 +136,165 @@ function formatFailedReason(reason: string | null | undefined) {
 interface PuzzleCardProps {
   puzzle: Puzzle;
   totalUsers: number;
-  onDescriptionExpand: (p: Puzzle) => void;
   onCardClick: (p: Puzzle) => void;
+  justCompletedId?: string | null;
 }
 
-function GridPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }: PuzzleCardProps) {
+type CardStatus = "solved" | "locked" | "failed" | "playable";
+
+function getCardStatus(puzzle: Puzzle): CardStatus {
   const progress = puzzle.userProgress?.[0];
-  const status = progress?.solved
-    ? "solved"
-    : puzzle.locked
-    ? "locked"
-    : puzzle.failed
-    ? "failed"
-    : progress?.attempts
-    ? "in-progress"
-    : "unsolved";
-  const statusConfig: Record<string, { color: string; label: string }> = {
-    solved: { color: "#38D399", label: "✓ Solved" },
-    "in-progress": { color: "#FDE74C", label: "~ In Progress" },
-    locked: { color: "#8b8b95", label: "🔒 Locked" },
-    failed: { color: "#EF4444", label: "✗ Failed" },
-    unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
-  };
+  if (progress?.solved) return "solved";
+  if (puzzle.locked) return "locked";
+  if (puzzle.failed) return "failed";
+  return "playable";
+}
 
-  if (status === 'solved') {
-    return (
-      <Link
-        id={`puzzle-${puzzle.id}`}
-        href={`/puzzles/${puzzle.id}`}
-        className="group rounded-lg border p-6 transition-all duration-300"
-        style={{
-          backgroundColor: 'rgba(56, 145, 166, 0.08)',
-          borderColor: '#3891A6',
-          borderWidth: '1px',
-          opacity: 0.6,
-          cursor: 'not-allowed'
-        }}
-      >
-        <div className="mb-4">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-                {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-              </span>
-              <div className="flex gap-2 flex-col items-end">
-              {puzzle.order && puzzle.order > 0 ? (
-                <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                  #{puzzle.order}
-                </span>
-              ) : null}
-              </div>
-            </div>
-          </div>
-          <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✓ Puzzle Complete</p>
-        </div>
-        {getDisplayDescription(puzzle) && (<div className="mb-3">
-          <p className="text-sm line-clamp-3" style={{ color: '#DDDBF1' }}>{getDisplayDescription(puzzle)}</p>
-          {getDisplayDescription(puzzle).length > 120 && (
-            <button type="button" onClick={(e) => { e.stopPropagation(); onDescriptionExpand(puzzle); }} className="text-xs mt-1 font-medium hover:underline" style={{ color: '#3891A6' }}>Read more →</button>
-          )}
-        </div>)}
-        <div className="flex gap-2 flex-wrap mb-2">
-          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-            {puzzle.category?.name || 'General'}
-          </span>
-          <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-            {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-          </span>
-          <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-            {statusConfig[status].label}
-          </span>
-        </div>
-        <div className="mb-2">
-          <StarRating
-            rating={puzzle.averageRating ?? 0}
-            size="sm"
-            ratingCount={puzzle.ratingCount}
-            showText={(puzzle.averageRating ?? 0) > 0}
-          />
-          {(!puzzle.averageRating || puzzle.averageRating === 0) && (
-            <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
-          )}
-        </div>
-          {puzzle.pointsReward && (
-          <div style={{ color: '#FDE74C' }} className="text-xs font-semibold mb-2">
-            ⭐ {puzzle.pointsReward} points
-          </div>
-        )}
-        {(puzzle.userProgress?.[0]?.totalTimeSpent ?? 0) > 0 && (
-          <div className="text-xs mt-2" style={{ color: '#AB9F9D' }}>
-            Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor((puzzle.userProgress![0].totalTimeSpent!)/60).toString().padStart(2,'0')}:{((puzzle.userProgress![0].totalTimeSpent!)%60).toString().padStart(2,'0')}</span>
-          </div>
-        )}
-      </Link>
-    );
-  }
+function getStatusAccent(status: CardStatus, difficultyColor: string): string {
+  if (status === "solved") return "#FFC94A";
+  if (status === "locked") return "#5B6483";
+  if (status === "failed") return "#FF3B5C";
+  return difficultyColor;
+}
 
-  if (status === 'locked') {
+function GridPuzzleCard({ puzzle, totalUsers, onCardClick, justCompletedId }: PuzzleCardProps) {
+  const status = getCardStatus(puzzle);
+  const diffColor = DIFFICULTY_COLORS[puzzle.difficulty] || '#8891AC';
+  const accent = getStatusAccent(status, diffColor);
+  const icon = getPuzzleTypeIcon(puzzle.puzzleType || 'general');
+  const attemptedPct = totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0;
+  const completedPct = (puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0;
+  const clickable = status === 'solved' || status === 'playable';
+  const flagText = status === 'solved' ? 'COMPLETED' : status === 'locked' ? '🔒' : status === 'failed' ? 'FAILED' : puzzle.difficulty.toUpperCase();
+
+  const body = (
+    <>
+      {puzzle.order && puzzle.order > 0 ? <span className="pw-arcade-level">LVL {puzzle.order}</span> : null}
+      <div className="pw-arcade-icon" style={{ '--accent': accent } as CSSProperties}>
+        <span aria-hidden>{status === 'locked' ? '🔒' : icon}</span>
+        <span className="pw-arcade-flag" style={{ background: accent }}>{flagText}</span>
+        {puzzle.isBossPuzzle && <span className="pw-arcade-boss" aria-hidden title="Boss Puzzle">👑</span>}
+        {status === 'solved' && <SolvedIconOverlay animateIn={puzzle.id === justCompletedId} />}
+      </div>
+      <h3 className="pw-arcade-title">{getDisplayTitle(puzzle)}</h3>
+      <p className="pw-arcade-type">{getPuzzleTypeLabel(puzzle.puzzleType || 'general')} · {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}</p>
+      {status === 'locked' ? (
+        <p className="pw-arcade-locked-msg">
+          {puzzle.unlocksAfterTitle ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</> : 'Complete the previous puzzle first'}
+        </p>
+      ) : (
+        <>
+          {status === 'failed' && puzzle.failedReason && (
+            <p className="pw-arcade-failed-msg">{formatFailedReason(puzzle.failedReason)}</p>
+          )}
+          <div className="pw-arcade-loot">
+            {puzzle.xpReward ? <span className="pw-arcade-chip pw-arcade-chip-gold">✦ {puzzle.xpReward} XP</span> : null}
+            {puzzle.pointsReward ? <span className="pw-arcade-chip pw-arcade-chip-em">⭐ {puzzle.pointsReward}</span> : null}
+          </div>
+        </>
+      )}
+      <div className="pw-arcade-perf">
+        <div><b>{status === 'locked' ? '—' : `${attemptedPct}%`}</b><small>Players attempted</small></div>
+        <div><b>{status === 'locked' ? '—' : `${completedPct}%`}</b><small>Players completed</small></div>
+      </div>
+    </>
+  );
+
+  if (clickable) {
     return (
       <div
         id={`puzzle-${puzzle.id}`}
-        className="group rounded-xl border p-4 sm:p-6 transition-all duration-300"
-        style={{
-          backgroundColor: 'rgba(139, 139, 149, 0.05)',
-          borderColor: 'rgba(139,139,149,0.3)',
-          borderWidth: '1px',
-          opacity: 0.55,
-          cursor: 'not-allowed'
-        }}
+        role="button"
+        tabIndex={0}
+        onClick={() => onCardClick(puzzle)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCardClick(puzzle); } }}
+        className="pw-arcade-card"
+        style={{ '--accent': accent } as CSSProperties}
       >
-        <div className="mb-4">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">
-              <span aria-hidden>🔒</span>
-              {getDisplayTitle(puzzle)}
-              {puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}
-            </h3>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-                {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-              </span>
-              <div className="flex gap-2 flex-col items-end">
-                {puzzle.order && puzzle.order > 0 ? (
-                  <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                    #{puzzle.order}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>
-            {puzzle.unlocksAfterTitle
-              ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</>
-              : 'Complete the previous puzzle first'}
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <div id={`puzzle-${puzzle.id}`} className="pw-arcade-card pw-arcade-card-inert" style={{ '--accent': accent } as CSSProperties}>
+      {body}
+    </div>
+  );
+}
+
+function ListPuzzleCard({ puzzle, totalUsers, onCardClick, justCompletedId }: PuzzleCardProps) {
+  const status = getCardStatus(puzzle);
+  const diffColor = DIFFICULTY_COLORS[puzzle.difficulty] || '#8891AC';
+  const accent = getStatusAccent(status, diffColor);
+  const icon = getPuzzleTypeIcon(puzzle.puzzleType || 'general');
+  const attemptedPct = totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0;
+  const completedPct = (puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0;
+  const clickable = status === 'solved' || status === 'playable';
+  const flagText = status === 'solved' ? 'COMPLETED' : status === 'locked' ? '🔒' : status === 'failed' ? 'FAILED' : puzzle.difficulty.toUpperCase();
+
+  const body = (
+    <>
+      <div className="pw-arcade-icon" style={{ '--accent': accent } as CSSProperties}>
+        <span aria-hidden>{status === 'locked' ? '🔒' : icon}</span>
+        <span className="pw-arcade-flag" style={{ background: accent }}>{flagText}</span>
+        {puzzle.isBossPuzzle && <span className="pw-arcade-boss" aria-hidden title="Boss Puzzle">👑</span>}
+        {status === 'solved' && <SolvedIconOverlay animateIn={puzzle.id === justCompletedId} size={18} />}
+      </div>
+      <div className="pw-arcade-row-body">
+        <div className="pw-arcade-row-title-line">
+          {puzzle.order && puzzle.order > 0 ? <span className="pw-arcade-level-inline">LVL {puzzle.order}</span> : null}
+          <h3 className="pw-arcade-title">{getDisplayTitle(puzzle)}</h3>
+        </div>
+        <p className="pw-arcade-type">{getPuzzleTypeLabel(puzzle.puzzleType || 'general')} · {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}</p>
+        {status === 'locked' && (
+          <p className="pw-arcade-locked-msg">
+            {puzzle.unlocksAfterTitle ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</> : 'Complete the previous puzzle first'}
           </p>
-        </div>
-        <div className="flex gap-2 flex-wrap mb-2">
-          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-            {puzzle.category?.name || 'General'}
-          </span>
-          <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-            {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-          </span>
-          <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-            {statusConfig[status].label}
-          </span>
+        )}
+        {status === 'failed' && puzzle.failedReason && (
+          <p className="pw-arcade-failed-msg">{formatFailedReason(puzzle.failedReason)}</p>
+        )}
+      </div>
+      <div className="pw-arcade-row-side">
+        {status !== 'locked' && (
+          <div className="pw-arcade-loot">
+            {puzzle.xpReward ? <span className="pw-arcade-chip pw-arcade-chip-gold">✦ {puzzle.xpReward} XP</span> : null}
+            {puzzle.pointsReward ? <span className="pw-arcade-chip pw-arcade-chip-em">⭐ {puzzle.pointsReward}</span> : null}
+          </div>
+        )}
+        <div className="pw-arcade-perf">
+          <div><b>{status === 'locked' ? '—' : `${attemptedPct}%`}</b><small>Players attempted</small></div>
+          <div><b>{status === 'locked' ? '—' : `${completedPct}%`}</b><small>Players completed</small></div>
         </div>
       </div>
-    );
-  }
+    </>
+  );
 
-  if (status === 'failed') {
+  if (clickable) {
     return (
       <div
         id={`puzzle-${puzzle.id}`}
-        className="group rounded-xl border p-4 sm:p-6 transition-all duration-300"
-        style={{
-          backgroundColor: 'rgba(239, 68, 68, 0.05)',
-          borderColor: 'rgba(239,68,68,0.35)',
-          borderWidth: '1px',
-          opacity: 0.65,
-          cursor: 'not-allowed'
-        }}
+        role="button"
+        tabIndex={0}
+        onClick={() => onCardClick(puzzle)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCardClick(puzzle); } }}
+        className="pw-arcade-row"
+        style={{ '--accent': accent } as CSSProperties}
       >
-        <div className="mb-4">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-                {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-              </span>
-              <div className="flex gap-2 flex-col items-end">
-                {puzzle.order && puzzle.order > 0 ? (
-                  <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                    #{puzzle.order}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>✗ Puzzle Failed</p>
-          {puzzle.failedReason && (
-            <p className="text-sm mt-1" style={{ color: '#FFB4B4' }}>
-              Reason: {formatFailedReason(puzzle.failedReason) || 'Failed'}
-            </p>
-          )}
-        </div>
-        {getDisplayDescription(puzzle) && (<div className="mb-3">
-          <p className="text-sm line-clamp-3" style={{ color: '#DDDBF1' }}>{getDisplayDescription(puzzle)}</p>
-          {getDisplayDescription(puzzle).length > 120 && (
-            <button type="button" onClick={(e) => { e.stopPropagation(); onDescriptionExpand(puzzle); }} className="text-xs mt-1 font-medium hover:underline" style={{ color: '#3891A6' }}>Read more →</button>
-          )}
-        </div>)}
-        <div className="flex gap-2 flex-wrap mb-2">
-          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-            {puzzle.category?.name || 'General'}
-          </span>
-          <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-            {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-          </span>
-          <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-            {statusConfig[status].label}
-          </span>
-        </div>
-        {(puzzle.xpReward || puzzle.pointsReward) && (
-          <div className="flex items-center gap-3 text-xs font-semibold mb-2">
-            {puzzle.xpReward ? <span style={{ color: '#FDE74C' }}>✦ {puzzle.xpReward} XP</span> : null}
-            {puzzle.pointsReward ? <span style={{ color: '#38D399' }}>⭐ {puzzle.pointsReward} pts</span> : null}
-          </div>
-        )}
+        {body}
       </div>
     );
   }
 
   return (
-    <div
-      id={`puzzle-${puzzle.id}`}
-      role="button"
-      onClick={() => onCardClick(puzzle)}
-      className="group rounded-xl border p-4 sm:p-6 transition-all duration-300 hover:scale-[1.02] hover:shadow-lg"
-      style={{
-        backgroundColor: 'rgba(56, 145, 166, 0.06)',
-        borderColor: 'rgba(56,145,166,0.28)',
-        borderWidth: '1px',
-        cursor: 'pointer',
-        boxShadow: '0 0 0 0 transparent',
-        transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
-      }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#3891A6'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 24px rgba(56,145,166,0.15)'; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(56,145,166,0.28)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 0 0 0 transparent'; }}
-    >
-      <div className="mb-4">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="text-xl font-bold text-white flex-1 flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-              {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-            </span>
-            <div className="flex gap-2 flex-col items-end">
-              {puzzle.order && puzzle.order > 0 ? (
-                <span className="text-xs font-semibold px-2 py-1 rounded" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                  #{puzzle.order}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        {getDisplayDescription(puzzle) && (<div className="mb-3">
-          <p className="text-sm line-clamp-3" style={{ color: '#DDDBF1' }}>{getDisplayDescription(puzzle)}</p>
-          {getDisplayDescription(puzzle).length > 120 && (
-            <button type="button" onClick={(e) => { e.stopPropagation(); onDescriptionExpand(puzzle); }} className="text-xs mt-1 font-medium hover:underline" style={{ color: '#3891A6' }}>Read more →</button>
-          )}
-        </div>)}
-        <div className="flex gap-2 flex-wrap mb-2">
-          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-            {puzzle.category?.name || 'General'}
-          </span>
-          <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-            {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-          </span>
-          <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-            {statusConfig[status].label}
-          </span>
-        </div>
-        <div className="mb-2">
-          <StarRating
-            rating={puzzle.averageRating ?? 0}
-            size="sm"
-            ratingCount={puzzle.ratingCount}
-            showText={(puzzle.averageRating ?? 0) > 0}
-          />
-          {(!puzzle.averageRating || puzzle.averageRating === 0) && (
-            <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
-          )}
-        </div>
-        {(puzzle.xpReward || puzzle.pointsReward) && (
-          <div className="flex items-center gap-3 text-xs font-semibold mb-2">
-            {puzzle.xpReward ? <span style={{ color: '#FDE74C' }}>✦ {puzzle.xpReward} XP</span> : null}
-            {puzzle.pointsReward ? <span style={{ color: '#38D399' }}>⭐ {puzzle.pointsReward} pts</span> : null}
-          </div>
-        )}
-      </div>
-      <div className="mt-4 pt-4 space-y-2" style={{ borderTopColor: 'rgba(56, 145, 166, 0.2)', borderTopWidth: '1px' }}>
-        <span className="text-sm font-semibold transition-all block" style={{ color: '#3891A6' }}>
-          Solve Now →
-        </span>
-        <div className="space-y-1 text-xs">
-          <div style={{ color: '#DDDBF1' }}>
-            <span className="font-semibold" style={{ color: '#FDE74C' }}>
-              {totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0}%
-            </span>
-            {' of players attempted'}
-          </div>
-          <div style={{ color: '#DDDBF1' }}>
-            <span className="font-semibold" style={{ color: '#38D399' }}>
-              {(puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0}%
-            </span>
-            {' of players completed'}
-          </div>
-        </div>
-      </div>
+    <div id={`puzzle-${puzzle.id}`} className="pw-arcade-row pw-arcade-row-inert" style={{ '--accent': accent } as CSSProperties}>
+      {body}
     </div>
   );
 }
 
-function ListPuzzleCard({ puzzle, totalUsers, onDescriptionExpand, onCardClick }: PuzzleCardProps) {
-  const progress = puzzle.userProgress?.[0];
-  const status = progress?.solved ? "solved" : puzzle.locked ? "locked" : puzzle.failed ? "failed" : progress?.attempts ? "in-progress" : "unsolved";
-  const statusConfig: Record<string, { color: string; label: string }> = {
-    solved: { color: "#38D399", label: "✓ Solved" },
-    "in-progress": { color: "#FDE74C", label: "~ In Progress" },
-    locked: { color: "#8b8b95", label: "🔒 Locked" },
-    failed: { color: "#EF4444", label: "✗ Failed" },
-    unsolved: { color: "#AB9F9D", label: "○ Unsolved" },
-  };
-
-  if (status === 'locked') {
-    return (
-      <div
-        id={`puzzle-${puzzle.id}`}
-        className="group rounded-xl border p-4 transition-all duration-300 block"
-        style={{
-          backgroundColor: 'rgba(139, 139, 149, 0.05)',
-          borderColor: 'rgba(139,139,149,0.3)',
-          borderWidth: '1px',
-          opacity: 0.55,
-          cursor: 'not-allowed'
-        }}
-      >
-        <div className="flex items-center gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">
-                <span aria-hidden>🔒</span>
-                {getDisplayTitle(puzzle)}
-                {puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}
-              </h3>
-            </div>
-            <p className="text-xs font-semibold" style={{ color: '#AB9F9D' }}>
-              {puzzle.unlocksAfterTitle
-                ? <>Complete &quot;{puzzle.unlocksAfterTitle}&quot; first</>
-                : 'Complete the previous puzzle first'}
-            </p>
-            <div className="flex gap-2 flex-wrap mt-2">
-              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-                {puzzle.category?.name || 'General'}
-              </span>
-              <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-                {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-              </span>
-              <span className="text-xs px-2 py-1 rounded font-medium" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-                {statusConfig[status].label}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === 'failed') {
-    return (
-      <div
-        id={`puzzle-${puzzle.id}`}
-        className="group rounded-xl border p-4 transition-all duration-300 block"
-        style={{
-          backgroundColor: 'rgba(239, 68, 68, 0.05)',
-          borderColor: 'rgba(239,68,68,0.35)',
-          borderWidth: '1px',
-          opacity: 0.7,
-          cursor: 'not-allowed'
-        }}
-      >
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              {puzzle.order && puzzle.order > 0 ? (
-                <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                  #{puzzle.order}
-                </span>
-              ) : null}
-              <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
-              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-                {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-              </span>
-              <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#EF4444' }}>
-                ✗ Failed
-              </span>
-            </div>
-            {getDisplayDescription(puzzle) && (<div className="mb-2">
-              <p className="text-sm line-clamp-2" style={{ color: '#DDDBF1' }}>{getDisplayDescription(puzzle)}</p>
-              {getDisplayDescription(puzzle).length > 120 && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); onDescriptionExpand(puzzle); }} className="text-xs mt-1 font-medium hover:underline" style={{ color: '#3891A6' }}>Read more →</button>
-              )}
-            </div>)}
-            {puzzle.failedReason && (
-                <p className="text-sm mt-1" style={{ color: '#FFB4B4' }}>
-                  Reason: {formatFailedReason(puzzle.failedReason) || 'Failed'}
-                </p>
-              )}
-          </div>
-          <div style={{ color: '#AB9F9D' }} className="text-lg font-semibold flex-shrink-0">
-            -
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === 'solved') {
-    return (
-      <div
-        id={`puzzle-${puzzle.id}`}
-        className="group rounded-xl border p-4 transition-all duration-300 block"
-        style={{
-          backgroundColor: 'rgba(56, 145, 166, 0.05)',
-          borderColor: 'rgba(56,145,166,0.25)',
-          borderWidth: '1px',
-          opacity: 0.62,
-          cursor: 'not-allowed'
-        }}
-      >
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              {puzzle.order && puzzle.order > 0 ? (
-                <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                  #{puzzle.order}
-                </span>
-              ) : null}
-              <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
-              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-                {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-              </span>
-              <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(56, 201, 153, 0.2)', color: '#38D399' }}>
-                ✓ Complete
-              </span>
-            </div>
-            {getDisplayDescription(puzzle) && (<div className="mb-2">
-              <p className="text-sm line-clamp-2" style={{ color: '#DDDBF1' }}>{getDisplayDescription(puzzle)}</p>
-              {getDisplayDescription(puzzle).length > 120 && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); onDescriptionExpand(puzzle); }} className="text-xs mt-1 font-medium hover:underline" style={{ color: '#3891A6' }}>Read more →</button>
-              )}
-            </div>)}
-            <div className="flex flex-wrap gap-2 mb-2">
-              <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-                {puzzle.category?.name || 'General'}
-              </span>
-              <span className="text-xs px-2 py-1 rounded capitalize font-medium whitespace-nowrap" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-                {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-              </span>
-              <span className="text-xs px-2 py-1 rounded font-medium whitespace-nowrap" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-                {statusConfig[status].label}
-              </span>
-              {puzzle.xpReward ? (
-                <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(253,231,76,0.12)', color: '#FDE74C', border: '1px solid rgba(253,231,76,0.25)' }}>
-                  ✦ {puzzle.xpReward} XP
-                </span>
-              ) : null}
-              {puzzle.pointsReward ? (
-                <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(56,201,153,0.12)', color: '#38D399', border: '1px solid rgba(56,201,153,0.25)' }}>
-                  ⭐ {puzzle.pointsReward} pts
-                </span>
-              ) : null}
-            </div>
-            <div className="mb-2">
-              <StarRating
-                rating={puzzle.averageRating ?? 0}
-                size="sm"
-                ratingCount={puzzle.ratingCount}
-                showText={(puzzle.averageRating ?? 0) > 0}
-              />
-              {(!puzzle.averageRating || puzzle.averageRating === 0) && (
-                <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
-              )}
-            </div>
-            <div className="text-xs mt-2 space-y-1" style={{ color: '#DDDBF1' }}>
-              <div>
-                <span className="font-semibold" style={{ color: '#FDE74C' }}>
-                  {totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0}%
-                </span>
-                {' of players attempted'}
-              </div>
-              <div>
-                <span className="font-semibold" style={{ color: '#38D399' }}>
-                  {(puzzle.attemptCount || 0) > 0 ? Math.round((puzzle.completionCount || 0) / (puzzle.attemptCount || 1) * 100) : 0}%
-                </span>
-                {' of players completed'}
-              </div>
-            </div>
-            {(puzzle.userProgress?.[0]?.totalTimeSpent ?? 0) > 0 && (
-              <div className="text-xs mt-2" style={{ color: '#AB9F9D' }}>
-                Completed in <span style={{ color: '#FDE74C', fontWeight: 700 }}>{Math.floor((puzzle.userProgress![0].totalTimeSpent!)/60).toString().padStart(2,'0')}:{((puzzle.userProgress![0].totalTimeSpent!)%60).toString().padStart(2,'0')}</span>
-              </div>
-            )}
-          </div>
-          <div style={{ color: '#AB9F9D' }} className="text-lg font-semibold flex-shrink-0">
-            -
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      id={`puzzle-${puzzle.id}`}
-      role="button"
-      onClick={() => onCardClick(puzzle)}
-      className="group rounded-xl border p-4 transition-all duration-300 hover:translate-x-1 block"
-      style={{
-        backgroundColor: 'rgba(56, 145, 166, 0.06)',
-        borderColor: 'rgba(56,145,166,0.28)',
-        borderWidth: '1px',
-        cursor: 'pointer'
-      }}
-    >
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            {puzzle.order && puzzle.order > 0 ? (
-              <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: '#FDE74C', color: '#020202' }}>
-                #{puzzle.order}
-              </span>
-            ) : null}
-            <h3 className="text-lg font-bold text-white truncate flex items-center gap-2">{getDisplayTitle(puzzle)}{puzzle.isBossPuzzle && <span title="Boss Puzzle" aria-hidden>👑</span>}</h3>
-            <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: puzzle.isTeamPuzzle ? 'rgba(124,58,237,0.12)' : 'rgba(56,201,153,0.12)', color: puzzle.isTeamPuzzle ? '#7C3AED' : '#38D399' }}>
-              {puzzle.isTeamPuzzle ? 'Team' : 'Solo'}
-            </span>
-          </div>
-          {getDisplayDescription(puzzle) && (<div className="mb-2">
-            <p className="text-sm line-clamp-2" style={{ color: '#DDDBF1' }}>{getDisplayDescription(puzzle)}</p>
-            {getDisplayDescription(puzzle).length > 120 && (
-              <button type="button" onClick={(e) => { e.stopPropagation(); onDescriptionExpand(puzzle); }} className="text-xs mt-1 font-medium hover:underline" style={{ color: '#3891A6' }}>Read more →</button>
-            )}
-          </div>)}
-          <div className="flex flex-wrap gap-2 mb-2">
-            <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-              {puzzle.category?.name || 'General'}
-            </span>
-            <span className="text-xs px-2 py-1 rounded capitalize font-medium whitespace-nowrap" style={{ backgroundColor: `${DIFFICULTY_COLORS[puzzle.difficulty]}20`, color: DIFFICULTY_COLORS[puzzle.difficulty] }}>
-              {puzzle.difficulty.charAt(0) + puzzle.difficulty.slice(1).toLowerCase()}
-            </span>
-            <span className="text-xs px-2 py-1 rounded font-medium whitespace-nowrap" style={{ backgroundColor: `${statusConfig[status].color}20`, color: statusConfig[status].color }}>
-              {statusConfig[status].label}
-            </span>
-            {puzzle.pointsReward && (
-              <span className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-                ⭐ {puzzle.pointsReward} points
-              </span>
-            )}
-          </div>
-          <div className="mb-2">
-            <StarRating
-              rating={puzzle.averageRating ?? 0}
-              size="sm"
-              ratingCount={puzzle.ratingCount}
-              showText={(puzzle.averageRating ?? 0) > 0}
-            />
-            {(!puzzle.averageRating || puzzle.averageRating === 0) && (
-              <p style={{ color: '#AB9F9D' }} className="text-xs mt-1">No ratings yet</p>
-            )}
-          </div>
-          <div className="text-xs mt-2" style={{ color: '#DDDBF1' }}>
-            <span className="font-semibold" style={{ color: '#FDE74C' }}>
-              {totalUsers > 0 ? Math.round((puzzle.completionCount || 0) / totalUsers * 100) : 0}%
-            </span>
-            {' of users have completed'}
-          </div>
-        </div>
-        <div style={{ color: '#3891A6' }} className="text-lg font-semibold flex-shrink-0">
-          →
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function PuzzlesList({ initialCategory = "all" }: { initialCategory?: string }) {
+export default function PuzzlesList({ initialCategory = "all", puzzleType }: { initialCategory?: string; puzzleType?: string }) {
   const { status } = useSession();
   const router = useRouter();
   const [puzzles, setPuzzles] = useState<Puzzle[]>([]);
@@ -726,7 +302,6 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
   const [filteredPuzzles, setFilteredPuzzles] = useState<Puzzle[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
-  const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("order");
@@ -741,7 +316,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
   const [teamModalConfirmText, setTeamModalConfirmText] = useState<string>("OK");
   const [teamModalCancelText, setTeamModalCancelText] = useState<string | null>(null);
   const [teamModalConfirmAction, setTeamModalConfirmAction] = useState<(() => void) | null>(null);
-  const [descriptionModal, setDescriptionModal] = useState<Puzzle | null>(null);
+  const [justCompletedId, setJustCompletedId] = useState<string | null>(null);
 
   useEffect(function() {
     if (status === "unauthenticated") {
@@ -752,7 +327,34 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
     if (status === "authenticated") {
       fetchData();
     }
-  }, [status, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, router, puzzleType]);
+
+  // When arriving back from a puzzle the player just finished, play the checkmark pop-in
+  // animation on that specific card's icon and scroll it into view. Read once then clear
+  // the flag so a refresh/revisit doesn't replay it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const id = window.sessionStorage.getItem("pw:justCompletedPuzzleId");
+      if (id) {
+        window.sessionStorage.removeItem("pw:justCompletedPuzzleId");
+        setJustCompletedId(id);
+        setTimeout(() => {
+          const el = document.getElementById(`puzzle-${id}`);
+          if (el) {
+            try {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+            } catch {
+              // ignore
+            }
+          }
+        }, 300);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // When arriving via hash (#puzzle-<id>), focus that puzzle card
   useEffect(() => {
@@ -823,7 +425,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
     // applyFilters is a plain function redefined every render, but every value it reads is
     // already listed below — adding the function itself would just re-run this on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [puzzles, selectedCategory, selectedDifficulty, selectedStatus, searchQuery, sortBy, sortOrder]);
+  }, [puzzles, selectedCategory, selectedDifficulty, selectedStatus, sortBy, sortOrder]);
 
   // Which puzzles to display: either focus a single puzzle (via hash) or the filtered list
   const displayed = focusedPuzzleId ? puzzles.filter((p) => p.id === focusedPuzzleId) : filteredPuzzles;
@@ -849,8 +451,11 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
           const failedReason: string | null = baseFailedReason;
           return { ...p, failed: failedFlag, failedReason };
         });
-        setPuzzles(annotated);
-        
+        // Hard-scope to this campaign's puzzle type when set — puzzles of other types never
+        // enter state here, so there's no path for them to leak into this page's filters/search.
+        const scoped = puzzleType ? annotated.filter((p: Puzzle) => p.puzzleType === puzzleType) : annotated;
+        setPuzzles(scoped);
+
         // Ratings are now included in the puzzle list response — no separate fetch needed
       }
 
@@ -920,6 +525,17 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
   }
 
   async function handlePuzzleClick(puzzle: Puzzle, opts?: { skipWebGLCheck?: boolean }) {
+    const alreadySolved = !!(puzzle.userProgress && puzzle.userProgress.length > 0 && puzzle.userProgress[0].solved);
+    if (alreadySolved) {
+      setTeamModalTitle('Already Completed');
+      setTeamModalConfirmText('OK');
+      setTeamModalCancelText(null);
+      setTeamModalConfirmAction(null);
+      setTeamModalMessage("You've already completed and claimed the rewards for this puzzle.");
+      setShowTeamModal(true);
+      return;
+    }
+
     const isEscapeRoom = puzzle?.puzzleType === 'escape_room' || !!puzzle?.escapeRoom;
 
     if (isEscapeRoom && !opts?.skipWebGLCheck) {
@@ -1025,16 +641,6 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
       }
     }
 
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (p) =>
-          p.title.toLowerCase().includes(query) ||
-          p.description.toLowerCase().includes(query)
-      );
-    }
-
     // Apply sorting
     if (sortBy === "points" && sortOrder === "desc") {
       filtered.sort((a, b) => (b.pointsReward || 0) - (a.pointsReward || 0));
@@ -1064,82 +670,107 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
     return <LoadingSpinner label="Loading puzzles…" size={180} />;
   }
 
+  const visibleCategoryIds = new Set(puzzles.map((p) => p.category?.id).filter(Boolean));
+  const visibleCategories = categories.filter((c) => visibleCategoryIds.has(c.id));
+
   return (
-    <div style={{ backgroundColor: '#020202' }} className="min-h-screen">
+    <div
+      style={{
+        background:
+          'radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F',
+      }}
+      className="min-h-screen"
+    >
       {/* Header */}
       <div className="pt-24 pb-8 md:pb-16 px-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">Puzzles</h1>
-          <p style={{ color: '#DDDBF1' }}>Tackle challenges at your own pace. Win points solo or team up for collaborative solving</p>
+          {puzzleType && (
+            <Link href="/puzzles" className="inline-block text-sm font-semibold mb-3 hover:underline" style={{ color: '#B24BF3' }}>
+              ← All Campaigns
+            </Link>
+          )}
+          <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">
+            {puzzleType ? `${getPuzzleTypeLabel(puzzleType)} Master` : 'Puzzles'}
+          </h1>
+          {!puzzleType && (
+            <p style={{ color: '#EEF1FA' }}>
+              Tackle challenges at your own pace. Win points solo or team up for collaborative solving
+            </p>
+          )}
         </div>
       </div>
 
       {/* Content */}
       <div className="px-4 py-6 md:py-12 max-w-7xl mx-auto overflow-x-hidden">
-        {/* Search and Filters */}
-        <div className="mb-6 md:mb-12">
-          {/* FilterBar Component */}
-          <div>
-            <FilterBar
-              onSearch={setSearchQuery}
-              onDifficultyChange={setSelectedDifficulty}
-              onStatusChange={setSelectedStatus}
-              onSortChange={(by, order) => {
-                setSortBy(by);
-                setSortOrder(order);
-              }}
-              currentSearch={searchQuery}
-              currentDifficulty={selectedDifficulty}
-              currentStatus={selectedStatus}
-              currentSort={{ by: sortBy, order: sortOrder }}
-            />
-          </div>
+        {puzzleType && <CampaignPath puzzles={puzzles} />}
 
-          {/* Category Filters */}
-          <div className="mt-6 mb-8">
-            <h3 className="text-xs font-bold tracking-widest mb-3 uppercase" style={{ color: '#6baabb' }}>Categories</h3>
-            <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
-              <div className="flex gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-x-visible sm:pb-0 no-scrollbar">
-              <button
-                onClick={() => setSelectedCategory("all")}
-                className={`flex-none px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm sm:text-base font-medium transition-all ${
-                  selectedCategory === "all"
-                    ? "scale-105"
-                    : "opacity-70 hover:opacity-100"
-                }`}
-                style={{
-                  backgroundColor: selectedCategory === "all" ? "#3891A6" : "rgba(56, 145, 166, 0.2)",
-                  color: selectedCategory === "all" ? "#020202" : "#DDDBF1",
+        {/* Filters — the campaign pages (puzzleType set) intentionally skip these: the trail
+            above already orders things, so a category/difficulty/status filter would just let
+            you scramble a campaign's own sequence. Only the legacy flat/category browsing view
+            still needs them. */}
+        <div className="mb-6 md:mb-12">
+          {!puzzleType && (
+            <div>
+              <FilterBar
+                onDifficultyChange={setSelectedDifficulty}
+                onStatusChange={setSelectedStatus}
+                onSortChange={(by, order) => {
+                  setSortBy(by);
+                  setSortOrder(order);
                 }}
-              >
-                All
-              </button>
-              {categories.map((cat) => (
+                currentDifficulty={selectedDifficulty}
+                currentStatus={selectedStatus}
+                currentSort={{ by: sortBy, order: sortOrder }}
+              />
+            </div>
+          )}
+
+          {!puzzleType && (
+            <div className="mt-6 mb-8">
+              <h3 className="text-xs font-bold tracking-widest mb-3 uppercase" style={{ color: '#6baabb' }}>Categories</h3>
+              <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+                <div className="flex gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-x-visible sm:pb-0 no-scrollbar">
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
+                  onClick={() => setSelectedCategory("all")}
                   className={`flex-none px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm sm:text-base font-medium transition-all ${
-                    selectedCategory === cat.id
+                    selectedCategory === "all"
                       ? "scale-105"
                       : "opacity-70 hover:opacity-100"
                   }`}
                   style={{
-                    backgroundColor: selectedCategory === cat.id ? (cat.color || "#3891A6") : "rgba(56, 145, 166, 0.2)",
-                    color: selectedCategory === cat.id ? "#020202" : "#DDDBF1",
-                    whiteSpace: "nowrap",
+                    backgroundColor: selectedCategory === "all" ? "#3D7FFF" : "rgba(61,127,255, 0.2)",
+                    color: selectedCategory === "all" ? "#0B0E1A" : "#EEF1FA",
                   }}
                 >
-                  <span className="mr-1.5">{cat.icon || CATEGORY_ICONS[cat.name.toLowerCase()] || '🧩'}</span>
-                  {formatCategoryName(cat.name)}
+                  All
                 </button>
-              ))}
+                {visibleCategories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`flex-none px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm sm:text-base font-medium transition-all ${
+                      selectedCategory === cat.id
+                        ? "scale-105"
+                        : "opacity-70 hover:opacity-100"
+                    }`}
+                    style={{
+                      backgroundColor: selectedCategory === cat.id ? (cat.color || "#3D7FFF") : "rgba(61,127,255, 0.2)",
+                      color: selectedCategory === cat.id ? "#0B0E1A" : "#EEF1FA",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span className="mr-1.5">{cat.icon || CATEGORY_ICONS[cat.name.toLowerCase()] || '🧩'}</span>
+                    {formatCategoryName(cat.name)}
+                  </button>
+                ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* View Mode Toggle and Results Count */}
           <div className="flex items-center justify-between mb-4">
-            <p style={{ color: '#AB9F9D' }} className="text-sm">
+            <p style={{ color: '#8891AC' }} className="text-sm">
               {filteredPuzzles.length} puzzle{filteredPuzzles.length !== 1 ? "s" : ""} found
             </p>
             <div className="flex gap-2">
@@ -1147,9 +778,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                 onClick={() => setViewMode("grid")}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-all`}
                 style={{
-                  backgroundColor: viewMode === "grid" ? "#3891A6" : "rgba(56, 145, 166, 0.2)",
-                  color: viewMode === "grid" ? "#020202" : "#DDDBF1",
-                  boxShadow: viewMode === "grid" ? "0 0 0 2px #FDE74C" : "none",
+                  backgroundColor: viewMode === "grid" ? "#3D7FFF" : "rgba(61,127,255, 0.2)",
+                  color: viewMode === "grid" ? "#0B0E1A" : "#EEF1FA",
+                  boxShadow: viewMode === "grid" ? "0 0 0 2px #FFC94A" : "none",
                   opacity: viewMode === "grid" ? 1 : 0.6,
                 }}
               >
@@ -1159,9 +790,9 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                 onClick={() => setViewMode("list")}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-all`}
                 style={{
-                  backgroundColor: viewMode === "list" ? "#3891A6" : "rgba(56, 145, 166, 0.2)",
-                  color: viewMode === "list" ? "#020202" : "#DDDBF1",
-                  boxShadow: viewMode === "list" ? "0 0 0 2px #FDE74C" : "none",
+                  backgroundColor: viewMode === "list" ? "#3D7FFF" : "rgba(61,127,255, 0.2)",
+                  color: viewMode === "list" ? "#0B0E1A" : "#EEF1FA",
+                  boxShadow: viewMode === "list" ? "0 0 0 2px #FFC94A" : "none",
                   opacity: viewMode === "list" ? 1 : 0.6,
                 }}
               >
@@ -1188,69 +819,29 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
         )}
         {displayed.length === 0 ? (
           <div className="text-center py-20">
-            <p style={{ color: '#DDDBF1' }} className="text-lg mb-2">No puzzles match your filters</p>
-            <p style={{ color: '#AB9F9D' }} className="text-sm">Try adjusting your search or filters</p>
+            <p style={{ color: '#EEF1FA' }} className="text-lg mb-2">No puzzles match your filters</p>
+            <p style={{ color: '#8891AC' }} className="text-sm">Try adjusting your search or filters</p>
           </div>
           ) : viewMode === "grid" ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {displayed.map((puzzle) => (
-              <GridPuzzleCard key={puzzle.id} puzzle={puzzle} totalUsers={totalUsers} onDescriptionExpand={setDescriptionModal} onCardClick={handlePuzzleClick} />
+              <GridPuzzleCard key={puzzle.id} puzzle={puzzle} totalUsers={totalUsers} onCardClick={handlePuzzleClick} justCompletedId={justCompletedId} />
             ))}
           </div>
         ) : (
           <div className="space-y-3">
             {displayed.map((puzzle) => (
-              <ListPuzzleCard key={puzzle.id} puzzle={puzzle} totalUsers={totalUsers} onDescriptionExpand={setDescriptionModal} onCardClick={handlePuzzleClick} />
+              <ListPuzzleCard key={puzzle.id} puzzle={puzzle} totalUsers={totalUsers} onCardClick={handlePuzzleClick} justCompletedId={justCompletedId} />
             ))}
           </div>
         )}
       </div>
-      {/* Description Modal */}
-      {descriptionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black opacity-60" onClick={() => setDescriptionModal(null)}></div>
-          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-lg mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ border: '1px solid rgba(56, 145, 166, 0.3)' }}>
-            <h3 className="text-xl font-bold text-white mb-3">{getDisplayTitle(descriptionModal)}</h3>
-            <div className="flex flex-wrap gap-2 mb-4">
-              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}>
-                {descriptionModal.category?.name || 'General'}
-              </span>
-              <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: `${DIFFICULTY_COLORS[descriptionModal.difficulty]}20`, color: DIFFICULTY_COLORS[descriptionModal.difficulty] }}>
-                {descriptionModal.difficulty.charAt(0) + descriptionModal.difficulty.slice(1).toLowerCase()}
-              </span>
-              <span className="text-xs px-2 py-1 rounded capitalize font-medium" style={{ backgroundColor: 'rgba(56,145,166,0.15)', color: '#3891A6' }}>
-                {descriptionModal.puzzleType ? getPuzzleTypeLabel(descriptionModal.puzzleType) : 'Puzzle'}
-              </span>
-            </div>
-            {getDisplayDescription(descriptionModal) ? (
-              <p className="text-sm whitespace-pre-wrap mb-6" style={{ color: '#DDDBF1' }}>{getDisplayDescription(descriptionModal)}</p>
-            ) : (
-              <p className="text-sm italic mb-6" style={{ color: '#64748b' }}>No description provided.</p>
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setDescriptionModal(null)}
-                className="px-4 py-2 rounded bg-transparent text-white font-semibold"
-                style={{ border: '1px solid rgba(221, 219, 241, 0.25)' }}
-              >
-                Close
-              </button>
-              <button
-                onClick={() => { setDescriptionModal(null); handlePuzzleClick(descriptionModal); }}
-                className="px-4 py-2 rounded bg-[#3891A6] text-black font-semibold"
-              >
-                Start Puzzle →
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {showTeamModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black opacity-60" onClick={closeTeamModal}></div>
-          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ border: '1px solid rgba(253, 231, 76, 0.15)' }}>
+          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ border: '1px solid rgba(255,201,74, 0.15)' }}>
             <h3 className="text-lg font-bold text-white mb-2">{teamModalTitle}</h3>
-            <p style={{ color: '#DDDBF1' }} className="mb-4">{teamModalMessage}</p>
+            <p style={{ color: '#EEF1FA' }} className="mb-4">{teamModalMessage}</p>
             <div className="flex justify-end gap-2">
               {teamModalCancelText && (
                 <button
@@ -1261,7 +852,7 @@ export default function PuzzlesList({ initialCategory = "all" }: { initialCatego
                   {teamModalCancelText}
                 </button>
               )}
-              <button onClick={onTeamModalConfirm} className="px-4 py-2 rounded bg-[#3891A6] text-black font-semibold">{teamModalConfirmText}</button>
+              <button onClick={onTeamModalConfirm} className="px-4 py-2 rounded bg-[#3D7FFF] text-black font-semibold">{teamModalConfirmText}</button>
             </div>
           </div>
         </div>

@@ -63,6 +63,12 @@ export async function handleAttemptSuccess(
 ): Promise<NextResponse | null> {
   const alreadySolved = !!progress.solved;
 
+  // Already solved — this is the authoritative guard against re-solving a puzzle. Bail
+  // out before any validation or mutation (matches the no-op pattern already used by
+  // startSudokuTimer/recordGameLoss below) rather than re-validating the grid and
+  // re-incrementing attempts/successfulAttempts for a puzzle that's already done.
+  if (alreadySolved) return null;
+
   // Enforce Sudoku time limit server-side
   if (puzzleRecord.puzzleType === "sudoku") {
     const now = new Date();
@@ -146,7 +152,7 @@ export async function handleAttemptSuccess(
       lastAttemptAt: new Date(),
       averageTimePerAttempt: newAvgTime,
       solved: true,
-      ...(alreadySolved ? {} : { solvedAt: new Date() }),
+      solvedAt: new Date(),
     },
   });
 
@@ -163,22 +169,20 @@ export async function handleAttemptSuccess(
     });
   }
 
-  if (!alreadySolved) {
-    // Check Triple-or-Nothing token (3× rewards on first attempt)
-    let tripleActive = false;
-    try {
-      const tripleUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { tripleOrNothingActive: true },
-      });
-      tripleActive = !!(tripleUser?.tripleOrNothingActive && progress.attempts === 0);
-      if (tripleActive) {
-        await prisma.user.update({ where: { id: userId }, data: { tripleOrNothingActive: false } });
-      }
-    } catch { /* non-critical */ }
+  // Check Triple-or-Nothing token (3× rewards on first attempt)
+  let tripleActive = false;
+  try {
+    const tripleUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { tripleOrNothingActive: true },
+    });
+    tripleActive = !!(tripleUser?.tripleOrNothingActive && progress.attempts === 0);
+    if (tripleActive) {
+      await prisma.user.update({ where: { id: userId }, data: { tripleOrNothingActive: false } });
+    }
+  } catch { /* non-critical */ }
 
-    await awardSolveRewards(userId, progress.id, puzzleRecord, tripleActive);
-  }
+  await awardSolveRewards(userId, progress.id, puzzleRecord, tripleActive);
 
   return null;
 }

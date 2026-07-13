@@ -1,25 +1,21 @@
 "use client";
 
 import React, { useState } from "react";
-import { Search, ChevronDown, X } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 interface FilterBarProps {
-  onSearch: (query: string) => void;
   onDifficultyChange: (difficulty: string) => void;
   onStatusChange: (status: string) => void;
   onSortChange: (sortBy: string, sortOrder: string) => void;
-  currentSearch: string;
   currentDifficulty: string;
   currentStatus: string;
   currentSort: { by: string; order: string };
 }
 
 export default function FilterBar({
-  onSearch,
   onDifficultyChange,
   onStatusChange,
   onSortChange,
-  currentSearch,
   currentDifficulty,
   currentStatus,
   currentSort,
@@ -49,59 +45,20 @@ export default function FilterBar({
     { value: "releaseDate", label: "Release Date" },
   ];
 
-  const hasActiveFilters = currentSearch || currentDifficulty !== "all" || currentStatus !== "all";
+  const hasActiveFilters = currentDifficulty !== "all" || currentStatus !== "all";
 
   return (
     <div className="space-y-4">
-      {/* Search Bar */}
-      <div className="relative">
-        <Search
-          size={18}
-          className="absolute left-3 top-1/2 transform -translate-y-1/2"
-          style={{ color: "#3891A6" }}
-        />
-        <input
-          type="text"
-          placeholder="Search puzzles by title..."
-          value={currentSearch}
-          onChange={(e) => onSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 rounded-lg border transition-all focus:outline-none"
-          style={{
-            backgroundColor: "rgba(56, 145, 166, 0.1)",
-            borderColor: "#3891A6",
-            borderWidth: "1px",
-            color: "#DDDBF1",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "#FDE74C";
-            e.currentTarget.style.backgroundColor = "rgba(56, 145, 166, 0.15)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "#3891A6";
-            e.currentTarget.style.backgroundColor = "rgba(56, 145, 166, 0.1)";
-          }}
-        />
-        {currentSearch && (
-          <button
-            onClick={() => onSearch("")}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 hover:opacity-80"
-            style={{ color: "#AB9F9D" }}
-          >
-            <X size={18} />
-          </button>
-        )}
-      </div>
-
       {/* Toggle Advanced Filters */}
       <button
         onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
         className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all"
         style={{
           backgroundColor: isAdvancedOpen
-            ? "rgba(253, 231, 76, 0.2)"
-            : "rgba(56, 145, 166, 0.1)",
-          color: isAdvancedOpen ? "#FDE74C" : "#3891A6",
-          border: `1px solid ${isAdvancedOpen ? "#FDE74C" : "#3891A6"}`,
+            ? "rgba(255,201,74, 0.2)"
+            : "rgba(61,127,255, 0.1)",
+          color: isAdvancedOpen ? "#FFC94A" : "#3D7FFF",
+          border: `1px solid ${isAdvancedOpen ? "#FFC94A" : "#3D7FFF"}`,
         }}
       >
         <span className="text-sm font-medium">
@@ -117,9 +74,9 @@ export default function FilterBar({
         {hasActiveFilters && (
           <span
             className="ml-2 px-2 py-0.5 rounded text-xs font-semibold"
-            style={{ backgroundColor: "#FA7E59", color: "#020202" }}
+            style={{ backgroundColor: "#FA7E59", color: "#0B0E1A" }}
           >
-            {[currentSearch ? 1 : 0, currentDifficulty !== "all" ? 1 : 0, currentStatus !== "all" ? 1 : 0].reduce((a, b) => a + b, 0)}
+            {[currentDifficulty !== "all" ? 1 : 0, currentStatus !== "all" ? 1 : 0].reduce((a, b) => a + b, 0)}
           </span>
         )}
       </button>
@@ -129,13 +86,13 @@ export default function FilterBar({
         <div
           className="p-4 rounded-lg border space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
           style={{
-            backgroundColor: "rgba(56, 145, 166, 0.08)",
-            borderColor: "#3891A6",
+            backgroundColor: "rgba(61,127,255, 0.08)",
+            borderColor: "#3D7FFF",
           }}
         >
           {/* Difficulty Filter */}
           <div>
-            <label className="block text-xs font-semibold mb-2" style={{ color: "#FDE74C" }}>
+            <label className="block text-xs font-semibold mb-2" style={{ color: "#FFC94A" }}>
               DIFFICULTY
             </label>
             <div className="flex flex-wrap gap-2">
@@ -152,15 +109,15 @@ export default function FilterBar({
                           : diff.value === "MEDIUM"
                             ? "#F59E0B"
                             : diff.value === "HARD"
-                              ? "#EF4444"
+                              ? "#FF3B5C"
                               : diff.value === "EXPERT"
-                                ? "#3891A6"
-                                : "#3891A6"
-                        : "rgba(171, 159, 157, 0.2)",
-                    color: currentDifficulty === diff.value ? "#020202" : "#DDDBF1",
+                                ? "#3D7FFF"
+                                : "#3D7FFF"
+                        : "rgba(150, 145, 171, 0.15)",
+                    color: currentDifficulty === diff.value ? "#0B0E1A" : "#EEF1FA",
                     boxShadow:
                       currentDifficulty === diff.value
-                        ? "0 0 0 2px rgba(253, 231, 76, 0.5)"
+                        ? "0 0 0 2px rgba(255,201,74, 0.5)"
                         : "none",
                     transform: currentDifficulty === diff.value ? "scale(1.05)" : "scale(1)",
                   }}
@@ -173,7 +130,7 @@ export default function FilterBar({
 
           {/* Status Filter */}
           <div>
-            <label className="block text-xs font-semibold mb-2" style={{ color: "#FDE74C" }}>
+            <label className="block text-xs font-semibold mb-2" style={{ color: "#FFC94A" }}>
               STATUS
             </label>
             <div className="flex flex-wrap gap-2">
@@ -186,19 +143,19 @@ export default function FilterBar({
                     backgroundColor:
                       currentStatus === s.value
                         ? s.value === "solved"
-                          ? "rgba(56, 211, 153, 0.8)"
+                          ? "rgba(46,217,145, 0.8)"
                           : s.value === "in-progress"
-                            ? "rgba(253, 231, 76, 0.8)"
+                            ? "rgba(255,201,74, 0.8)"
                             : s.value === "unsolved"
                               ? "rgba(250, 126, 89, 0.8)"
                               : s.value === "failed"
                                 ? "rgba(239, 68, 68, 0.8)"
-                                : "#3891A6"
-                        : "rgba(171, 159, 157, 0.2)",
-                    color: currentStatus === s.value ? "#020202" : "#DDDBF1",
+                                : "#3D7FFF"
+                        : "rgba(150, 145, 171, 0.15)",
+                    color: currentStatus === s.value ? "#0B0E1A" : "#EEF1FA",
                     boxShadow:
                       currentStatus === s.value
-                        ? "0 0 0 2px rgba(253, 231, 76, 0.5)"
+                        ? "0 0 0 2px rgba(255,201,74, 0.5)"
                         : "none",
                     transform: currentStatus === s.value ? "scale(1.05)" : "scale(1)",
                   }}
@@ -211,7 +168,7 @@ export default function FilterBar({
 
           {/* Sort Options */}
           <div>
-            <label className="block text-xs font-semibold mb-2" style={{ color: "#FDE74C" }}>
+            <label className="block text-xs font-semibold mb-2" style={{ color: "#FFC94A" }}>
               SORT BY
             </label>
             <div className="flex flex-wrap gap-2">
@@ -230,13 +187,13 @@ export default function FilterBar({
                   style={{
                     backgroundColor:
                       currentSort.by === option.value
-                        ? "#3891A6"
-                        : "rgba(171, 159, 157, 0.2)",
+                        ? "#3D7FFF"
+                        : "rgba(150, 145, 171, 0.15)",
                     color:
-                      currentSort.by === option.value ? "#020202" : "#DDDBF1",
+                      currentSort.by === option.value ? "#0B0E1A" : "#EEF1FA",
                     boxShadow:
                       currentSort.by === option.value
-                        ? "0 0 0 2px rgba(253, 231, 76, 0.5)"
+                        ? "0 0 0 2px rgba(255,201,74, 0.5)"
                         : "none",
                     transform: currentSort.by === option.value ? "scale(1.05)" : "scale(1)",
                   }}
@@ -256,7 +213,6 @@ export default function FilterBar({
           {hasActiveFilters && (
             <button
               onClick={() => {
-                onSearch("");
                 onDifficultyChange("all");
                 onStatusChange("all");
                 onSortChange("order", "asc");

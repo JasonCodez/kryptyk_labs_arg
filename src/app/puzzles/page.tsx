@@ -4,14 +4,14 @@ import PuzzlesWrapper from "./puzzles-wrapper";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 export const metadata: Metadata = {
-  title: "All Puzzles",
+  title: "Campaigns",
   description:
-    "Browse hundreds of ARG-style logic puzzles, cryptic challenges, escape rooms, and team puzzles. Filter by difficulty, category, and status to find your next challenge.",
+    "Pick a puzzle campaign — Sudoku, escape rooms, cryptic challenges, and more — and work through it start to finish.",
   alternates: { canonical: "https://puzzlewarz.com/puzzles" },
   openGraph: {
-    title: "All Puzzles | Puzzle Warz",
+    title: "Campaigns | Puzzle Warz",
     description:
-      "Browse hundreds of ARG-style logic puzzles, cryptic challenges, escape rooms, and team puzzles.",
+      "Pick a puzzle campaign and work through it start to finish.",
     url: "https://puzzlewarz.com/puzzles",
     type: "website",
   },

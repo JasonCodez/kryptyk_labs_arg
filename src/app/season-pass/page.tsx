@@ -127,7 +127,7 @@ function ClaimBurst({ celebration, onDone }: { celebration: ClaimCelebration; on
           </motion.div>
           <motion.div
             className="mt-1 px-3 py-1 rounded-full text-sm font-black"
-            style={{ background: "linear-gradient(135deg, #FDE74C, #f59e0b)", color: "#000" }}
+            style={{ background: "linear-gradient(135deg, #FFC94A, #AD8932)", color: "#000" }}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
@@ -144,7 +144,7 @@ function ClaimBurst({ celebration, onDone }: { celebration: ClaimCelebration; on
             style={{
               left: celebration.x,
               top: celebration.y,
-              background: i % 3 === 0 ? "#FDE74C" : i % 3 === 1 ? "#a855f7" : "#38d399",
+              background: i % 3 === 0 ? "#FFC94A" : i % 3 === 1 ? "#B24BF3" : "#38d399",
             }}
             initial={{ x: 0, y: 0, scale: 1, opacity: 1 }}
             animate={{ x: p.x, y: p.y, scale: 0, opacity: 0 }}
@@ -195,9 +195,23 @@ function CompactRewardCard({
   const isPrem = track === "premium";
   const isPreviewable = type === "cosmetic" && !!rewardKey && !!COSMETIC_PREVIEW_META[rewardKey];
 
+  // Tracks the moment `locked` flips true -> false (premium just purchased) so the unlock
+  // burst can play once, rather than on every render where the card happens to be unlocked.
+  const [justUnlocked, setJustUnlocked] = useState(false);
+  const prevLockedRef = useRef(locked);
+  useEffect(() => {
+    const wasLocked = prevLockedRef.current;
+    prevLockedRef.current = locked;
+    if (wasLocked && !locked) {
+      setJustUnlocked(true);
+      const t = setTimeout(() => setJustUnlocked(false), 900);
+      return () => clearTimeout(t);
+    }
+  }, [locked]);
+
   if (!type) {
     return (
-      <div className="min-h-[96px] rounded-xl border border-white/[0.03] flex items-center justify-center">
+      <div className="min-h-[112px] rounded-xl border border-white/[0.03] flex items-center justify-center">
         <span className="text-white/10 text-xs">—</span>
       </div>
     );
@@ -211,48 +225,59 @@ function CompactRewardCard({
   let bgStyle: React.CSSProperties;
   let topBeamColor: string;
   let iconGlowColor: string;
+  let restGlow: string;
+  let medallionRing: string;
   if (claimed) {
-    borderColor = "rgba(52,211,153,0.45)";
+    borderColor = "rgba(46,217,145,0.45)";
     bgStyle = {
-      background: "linear-gradient(160deg, rgba(52,211,153,0.1) 0%, rgba(52,211,153,0.04) 100%)",
-      boxShadow: "inset 0 1px 0 rgba(52,211,153,0.55), 0 4px 16px rgba(52,211,153,0.06)",
+      background: "linear-gradient(160deg, rgba(46,217,145,0.12) 0%, var(--pw-surface) 100%)",
+      boxShadow: "inset 0 1px 0 rgba(46,217,145,0.55), 0 4px 16px rgba(46,217,145,0.06)",
     };
-    topBeamColor = "rgba(52,211,153,0.7)";
-    iconGlowColor = "rgba(52,211,153,0.3)";
+    topBeamColor = "rgba(46,217,145,0.7)";
+    iconGlowColor = "rgba(46,217,145,0.35)";
+    restGlow = "0 0 16px -8px rgba(46,217,145,0.5)";
+    medallionRing = "rgba(46,217,145,0.55)";
   } else if (isClaimable) {
-    borderColor = isPrem ? "rgba(192,132,252,0.6)" : "rgba(253,231,76,0.6)";
+    borderColor = isPrem ? "rgba(184,148,240,0.6)" : "rgba(255,201,74,0.6)";
     bgStyle = {
       background: isPrem
-        ? "linear-gradient(160deg, rgba(168,85,247,0.14) 0%, rgba(88,28,135,0.06) 100%)"
-        : "linear-gradient(160deg, rgba(253,231,76,0.12) 0%, rgba(245,158,11,0.04) 100%)",
+        ? "linear-gradient(160deg, rgba(178,75,243,0.18) 0%, var(--pw-surface) 100%)"
+        : "linear-gradient(160deg, rgba(255,201,74,0.16) 0%, var(--pw-surface) 100%)",
       boxShadow: isPrem
-        ? "inset 0 1px 0 rgba(192,132,252,0.8), 0 4px 20px rgba(168,85,247,0.1)"
-        : "inset 0 1px 0 rgba(253,231,76,0.85), 0 4px 20px rgba(253,231,76,0.1)",
+        ? "inset 0 1px 0 rgba(184,148,240,0.8), 0 4px 20px rgba(178,75,243,0.12)"
+        : "inset 0 1px 0 rgba(255,201,74,0.85), 0 4px 20px rgba(255,201,74,0.12)",
     };
-    topBeamColor = isPrem ? "rgba(192,132,252,0.9)" : "rgba(253,231,76,0.9)";
-    iconGlowColor = isPrem ? "rgba(168,85,247,0.35)" : "rgba(253,231,76,0.35)";
+    topBeamColor = isPrem ? "rgba(184,148,240,0.9)" : "rgba(255,201,74,0.9)";
+    iconGlowColor = isPrem ? "rgba(178,75,243,0.4)" : "rgba(255,201,74,0.4)";
+    restGlow = isPrem ? "0 0 22px -8px rgba(178,75,243,0.6)" : "0 0 22px -8px rgba(255,201,74,0.6)";
+    medallionRing = isPrem ? "#B24BF3" : "#FFC94A";
   } else if (locked) {
-    borderColor = "rgba(168,85,247,0.3)";
+    borderColor = "rgba(178,75,243,0.3)";
     bgStyle = {
-      background: "linear-gradient(160deg, rgba(88,28,135,0.16) 0%, rgba(168,85,247,0.06) 100%)",
-      boxShadow: "inset 0 1px 0 rgba(168,85,247,0.25)",
+      background: "linear-gradient(160deg, rgba(121,51,165,0.18) 0%, var(--pw-surface) 100%)",
+      boxShadow: "inset 0 1px 0 rgba(178,75,243,0.25)",
     };
-    topBeamColor = "rgba(168,85,247,0.35)";
-    iconGlowColor = "rgba(168,85,247,0.2)";
+    topBeamColor = "rgba(178,75,243,0.35)";
+    iconGlowColor = "rgba(178,75,243,0.22)";
+    restGlow = "0 0 14px -8px rgba(178,75,243,0.4)";
+    medallionRing = "rgba(178,75,243,0.45)";
   } else {
-    borderColor = "rgba(56,145,166,0.35)";
+    borderColor = "rgba(61,127,255,0.35)";
     bgStyle = {
-      background: "linear-gradient(160deg, rgba(56,145,166,0.12) 0%, rgba(56,145,166,0.03) 100%)",
-      boxShadow: "inset 0 1px 0 rgba(56,145,166,0.3)",
+      background: "linear-gradient(160deg, rgba(61,127,255,0.14) 0%, var(--pw-surface) 100%)",
+      boxShadow: "inset 0 1px 0 rgba(61,127,255,0.3)",
     };
-    topBeamColor = "rgba(56,145,166,0.4)";
-    iconGlowColor = "rgba(56,145,166,0.2)";
+    topBeamColor = "rgba(61,127,255,0.4)";
+    iconGlowColor = "rgba(61,127,255,0.22)";
+    restGlow = "0 0 14px -8px rgba(61,127,255,0.4)";
+    medallionRing = "rgba(61,127,255,0.4)";
   }
 
   return (
-    <div
-      className="relative min-h-[96px] rounded-xl flex flex-col items-center justify-between gap-1.5 p-3 transition-all duration-300 overflow-hidden"
-      style={{ border: `1px solid ${borderColor}`, ...bgStyle }}
+    <motion.div
+      whileHover={{ y: -3 }}
+      className="pw-bevel relative min-h-[112px] flex flex-col items-center justify-between gap-2 p-3.5 transition-shadow duration-300 overflow-hidden"
+      style={{ border: `1px solid ${borderColor}`, boxShadow: restGlow, ...bgStyle }}
     >
       {/* Top edge light beam */}
       <div
@@ -262,58 +287,120 @@ function CompactRewardCard({
 
       {/* Shimmer sweep on claimable */}
       {isClaimable && (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl">
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div
             className="absolute inset-0 animate-shimmer"
             style={{
-              background: `linear-gradient(105deg, transparent 30%, ${isPrem ? "rgba(168,85,247,0.15)" : "rgba(253,231,76,0.15)"} 50%, transparent 70%)`,
+              background: `linear-gradient(105deg, transparent 30%, ${isPrem ? "rgba(178,75,243,0.18)" : "rgba(255,201,74,0.18)"} 50%, transparent 70%)`,
               backgroundSize: "250% 100%",
             }}
           />
         </div>
       )}
 
-      {/* Lock badge overlay (top-right) */}
-      {isLocked && !claimed && (
-        <div className="absolute top-1.5 right-1.5 text-[11px] leading-none opacity-60">
-          {locked ? "✨" : "🔒"}
-        </div>
+      {/* XP-gate indicator (top-right) — tier not reached yet; separate from the premium
+          purchase lock below, which covers the whole card instead of just a corner badge. */}
+      {!unlocked && !locked && !claimed && (
+        <div className="absolute top-1.5 right-1.5 text-[11px] leading-none opacity-60 z-10">🔒</div>
       )}
 
-      {/* Preview button (top-left) — lets players see the cosmetic before earning it */}
+      {/* Preview button (top-left) — lets players see the cosmetic before earning it, even
+          while the premium lock is up, since a preview is what sells the upgrade. */}
       {isPreviewable && (
         <button
           onClick={(e) => { e.stopPropagation(); onPreview(rewardKey as string); }}
           title="Preview"
-          className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] leading-none transition-transform hover:scale-110 active:scale-95"
+          className="absolute top-1.5 left-1.5 z-30 w-5 h-5 rounded-full flex items-center justify-center text-[10px] leading-none transition-transform hover:scale-110 active:scale-95"
           style={{ background: "rgba(255,255,255,0.1)", color: "#e2e8f0" }}
         >
           👁
         </button>
       )}
 
-      {/* Icon with radial glow spot + float on claimable */}
+      {/* Premium purchase lock — covers the card until the season pass is bought. The
+          instant `locked` flips false (purchase verified), this unmounts and its exit
+          animation plays: the lock pops, spins open, and fades away to reveal the reward. */}
+      <AnimatePresence>
+        {locked && !claimed && (
+          <motion.div
+            key="premium-lock"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.35, delay: 0.15 } }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5"
+            style={{ background: "rgba(11,14,26,0.8)", backdropFilter: "blur(1.5px)" }}
+          >
+            <motion.span
+              className="text-2xl leading-none"
+              initial={{ scale: 0.7, rotate: 0 }}
+              animate={{ scale: 1, rotate: 0 }}
+              exit={{ scale: 1.7, rotate: -35, opacity: 0 }}
+              transition={{ duration: 0.45, ease: "backOut" }}
+            >
+              🔒
+            </motion.span>
+            <motion.span
+              exit={{ opacity: 0 }}
+              className="text-[9px] font-black tracking-widest uppercase"
+              style={{ color: "#B24BF3" }}
+            >
+              Premium
+            </motion.span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Unlock burst — a brief ring + sparkle flash the moment the lock releases */}
+      <AnimatePresence>
+        {!locked && justUnlocked && (
+          <motion.div
+            key="unlock-burst"
+            className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 0.9 }}
+          >
+            <motion.div
+              className="rounded-full"
+              style={{ border: "2px solid #B24BF3" }}
+              initial={{ width: 0, height: 0, opacity: 0.9 }}
+              animate={{ width: 90, height: 90, opacity: 0 }}
+              transition={{ duration: 0.7, ease: "easeOut" }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Icon medallion — a real coin/badge rather than a soft blur */}
       <div className="relative flex items-center justify-center mt-0.5">
-        {/* Radial glow spot behind icon */}
         <div
           className="absolute rounded-full pointer-events-none"
           style={{
-            width: 40, height: 40,
-            background: `radial-gradient(circle, ${iconGlowColor} 0%, transparent 70%)`,
+            width: 46, height: 46,
+            background: `radial-gradient(circle, ${iconGlowColor} 0%, transparent 72%)`,
             left: "50%", top: "50%", transform: "translate(-50%, -50%)",
           }}
         />
-        <motion.span
-          className="relative text-2xl leading-none"
-          animate={isClaimable ? { y: [0, -4, 0] } : {}}
-          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        <div
+          className="relative w-10 h-10 rounded-full flex items-center justify-center"
+          style={{
+            background: "linear-gradient(160deg, var(--pw-surface-hi), var(--pw-ink-2))",
+            border: `1.5px solid ${medallionRing}`,
+          }}
         >
-          {icon}
-        </motion.span>
+          <motion.span
+            className="relative text-xl leading-none"
+            animate={isClaimable ? { y: [0, -3, 0] } : {}}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          >
+            {icon}
+          </motion.span>
+        </div>
       </div>
 
       {/* Name */}
-      <p className={`text-[10px] font-bold text-center leading-tight w-full px-0.5 ${
+      <p className={`text-[11px] font-bold text-center leading-tight w-full px-0.5 ${
         claimed
           ? "text-emerald-300"
           : isClaimable
@@ -331,7 +418,7 @@ function CompactRewardCard({
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           className="w-6 h-6 rounded-full flex items-center justify-center text-emerald-400 text-xs font-bold"
-          style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.45)" }}
+          style={{ background: "rgba(46,217,145,0.15)", border: "1px solid rgba(46,217,145,0.45)" }}
         >
           ✓
         </motion.div>
@@ -339,17 +426,17 @@ function CompactRewardCard({
         <motion.button
           onClick={onClaim}
           disabled={claiming}
-          whileHover={{ scale: 1.04, brightness: 1.1 } as any}
+          whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.95 }}
-          className={`w-full py-1 text-[10px] font-black rounded-lg transition-all disabled:opacity-40 ${
-            isPrem
-              ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
-              : "bg-gradient-to-r from-yellow-400 to-amber-500 text-black"
-          }`}
+          className="w-full py-1.5 text-[10px] font-black rounded-lg transition-all disabled:opacity-40"
           style={{
+            background: isPrem
+              ? "linear-gradient(135deg, #B24BF3, #7933A5)"
+              : "linear-gradient(135deg, #FFC94A, #AD8932)",
+            color: isPrem ? "#fff" : "#0B0E1A",
             boxShadow: isPrem
-              ? "0 2px 12px rgba(168,85,247,0.45)"
-              : "0 2px 12px rgba(253,231,76,0.4)",
+              ? "0 2px 14px rgba(178,75,243,0.5)"
+              : "0 2px 14px rgba(255,201,74,0.45)",
           }}
         >
           {claiming ? "···" : "CLAIM"}
@@ -359,12 +446,12 @@ function CompactRewardCard({
       ) : (
         <div
           className="h-[22px] w-full rounded-lg flex items-center justify-center"
-          style={{ background: "rgba(56,145,166,0.08)", border: "1px solid rgba(56,145,166,0.2)" }}
+          style={{ background: "rgba(61,127,255,0.08)", border: "1px solid rgba(61,127,255,0.2)" }}
         >
-          <span className="text-[9px] font-black tracking-widest" style={{ color: "rgba(56,145,166,0.75)" }}>EARN XP</span>
+          <span className="text-[9px] font-black tracking-widest" style={{ color: "rgba(61,127,255,0.75)" }}>EARN XP</span>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -428,8 +515,8 @@ function TierRow({
           transition={{ duration: 0.5, ease: "easeOut" }}
           className="relative mx-2 mb-2 rounded-lg overflow-hidden"
           style={{
-            background: "linear-gradient(90deg, rgba(168,85,247,0.06) 0%, rgba(168,85,247,0.15) 50%, rgba(168,85,247,0.06) 100%)",
-            border: "1px solid rgba(168,85,247,0.25)",
+            background: "linear-gradient(90deg, rgba(178,75,243,0.06) 0%, rgba(178,75,243,0.15) 50%, rgba(178,75,243,0.06) 100%)",
+            border: "1px solid rgba(178,75,243,0.25)",
           }}
         >
           {/* Sweep shimmer — translateX avoids background-position loop stutter */}
@@ -437,7 +524,7 @@ function TierRow({
             className="absolute inset-y-0 pointer-events-none"
             style={{
               width: "40%",
-              background: "linear-gradient(90deg, transparent 0%, rgba(192,132,252,0.18) 50%, transparent 100%)",
+              background: "linear-gradient(90deg, transparent 0%, rgba(184,148,240,0.18) 50%, transparent 100%)",
             }}
             animate={{ x: ["-100%", "350%"] }}
             transition={{ duration: 2.2, repeat: Infinity, ease: "linear", repeatDelay: 1.2 }}
@@ -476,7 +563,7 @@ function TierRow({
           {(() => {
             const nodeRadius = unlocked ? (isMilestone ? 24 : 18) : isNext ? 18 : 16;
             const nodeCenterY = 22 + nodeRadius;
-            const gold = "#f59e0b";
+            const gold = "#AD8932";
             const dim = "rgba(255,255,255,0.07)";
             const isFirst = index === 0;
             return (
@@ -506,7 +593,7 @@ function TierRow({
                 {isNext && (
                   <motion.div
                     className="absolute left-1/2 rounded-full pointer-events-none"
-                    style={{ width: 10, height: 10, marginLeft: -5, top: 0, background: "#FDE74C", boxShadow: "0 0 10px rgba(253,231,76,1), 0 0 22px rgba(253,231,76,0.5)", zIndex: 20 }}
+                    style={{ width: 10, height: 10, marginLeft: -5, top: 0, background: "#FFC94A", boxShadow: "0 0 10px rgba(255,201,74,1), 0 0 22px rgba(255,201,74,0.5)", zIndex: 20 }}
                     animate={{ scale: [1, 1.55, 1], opacity: [0.8, 1, 0.8] }}
                     transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
                   />
@@ -536,8 +623,8 @@ function TierRow({
                 style={{
                   inset: isMilestone ? -14 : -10,
                   background: isMilestone
-                    ? "radial-gradient(circle, rgba(168,85,247,0.4) 0%, transparent 70%)"
-                    : "radial-gradient(circle, rgba(253,231,76,0.3) 0%, transparent 70%)",
+                    ? "radial-gradient(circle, rgba(178,75,243,0.4) 0%, transparent 70%)"
+                    : "radial-gradient(circle, rgba(255,201,74,0.3) 0%, transparent 70%)",
                 }}
                 animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.1, 0.9] }}
                 transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
@@ -550,7 +637,7 @@ function TierRow({
                 className="absolute rounded-full pointer-events-none"
                 style={{
                   inset: -6,
-                  border: "1.5px solid rgba(253,231,76,0.5)",
+                  border: "1.5px solid rgba(255,201,74,0.5)",
                 }}
                 animate={{ opacity: [0.3, 0.9, 0.3], scale: [1, 1.18, 1] }}
                 transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
@@ -571,22 +658,22 @@ function TierRow({
               style={{
                 background: unlocked
                   ? isMilestone
-                    ? "linear-gradient(135deg, #a855f7, #ec4899)"
-                    : "linear-gradient(135deg, #FDE74C, #f59e0b)"
+                    ? "linear-gradient(135deg, #B24BF3, #ec4899)"
+                    : "linear-gradient(135deg, #FFC94A, #AD8932)"
                   : isNext
-                  ? "rgba(253,231,76,0.07)"
+                  ? "rgba(255,201,74,0.07)"
                   : "rgba(255,255,255,0.04)",
                 border: unlocked
                   ? isMilestone
-                    ? "2px solid rgba(192,132,252,0.6)"
+                    ? "2px solid rgba(184,148,240,0.6)"
                     : "none"
                   : isNext
-                  ? "1.5px solid rgba(253,231,76,0.3)"
+                  ? "1.5px solid rgba(255,201,74,0.3)"
                   : "1.5px solid rgba(255,255,255,0.06)",
                 boxShadow: unlocked
                   ? isMilestone
-                    ? "0 0 22px rgba(168,85,247,0.55), 0 0 8px rgba(168,85,247,0.8)"
-                    : "0 0 14px rgba(253,231,76,0.5), 0 0 5px rgba(253,231,76,0.8)"
+                    ? "0 0 22px rgba(178,75,243,0.55), 0 0 8px rgba(178,75,243,0.8)"
+                    : "0 0 14px rgba(255,201,74,0.5), 0 0 5px rgba(255,201,74,0.8)"
                   : "none",
               }}
             >
@@ -674,7 +761,7 @@ function FireworksCanvas() {
 
     const rockets: FWParticle[] = [];
     const sparks: Spark[] = [];
-    const palette = ["#a855f7","#ec4899","#FDE74C","#c084fc","#f472b6","#3891A6","#60a5fa","#ffffff","#fb7185"];
+    const palette = ["#B24BF3","#ec4899","#FFC94A","#c084fc","#f472b6","#3891A6","#60a5fa","#ffffff","#fb7185"];
 
     function spawnRocket() {
       const x = c.width * (0.08 + Math.random() * 0.84);
@@ -794,7 +881,7 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
   const particles = Array.from({ length: 30 }, (_, i) => {
     const angle = (i / 30) * Math.PI * 2;
     const dist = 80 + Math.random() * 120;
-    const colors = ["#a855f7", "#ec4899", "#FDE74C", "#c084fc", "#f472b6", "#e879f9"];
+    const colors = ["#B24BF3", "#ec4899", "#FFC94A", "#c084fc", "#f472b6", "#e879f9"];
     return {
       x: Math.cos(angle) * dist * (0.8 + Math.random() * 0.4),
       y: Math.sin(angle) * dist * (0.8 + Math.random() * 0.4),
@@ -840,7 +927,7 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
       {/* Modal card */}
       <motion.div
         className="relative w-full max-w-md mx-4 rounded-3xl overflow-hidden"
-        style={{ border: "1px solid rgba(168,85,247,0.4)", background: "linear-gradient(160deg, #0e0a1a 0%, #120820 50%, #0a0a14 100%)" }}
+        style={{ border: "1px solid rgba(178,75,243,0.4)", background: "linear-gradient(160deg, #0e0a1a 0%, #120820 50%, #0a0a14 100%)" }}
         initial={{ scale: 0.7, opacity: 0, y: 40 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.85, opacity: 0, y: 20 }}
@@ -849,13 +936,13 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
       >
         {/* Glow backdrop */}
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(168,85,247,0.25) 0%, transparent 70%)",
+          background: "radial-gradient(ellipse 70% 50% at 50% 0%, rgba(178,75,243,0.25) 0%, transparent 70%)",
         }} />
 
         {/* Animated top border shine */}
         <motion.div
           className="absolute top-0 left-0 right-0 h-[2px] rounded-t-3xl"
-          style={{ background: "linear-gradient(90deg, transparent, #a855f7, #ec4899, #a855f7, transparent)" }}
+          style={{ background: "linear-gradient(90deg, transparent, #B24BF3, #ec4899, #B24BF3, transparent)" }}
           animate={{ opacity: [0.4, 1, 0.4] }}
           transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
         />
@@ -869,7 +956,7 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
             className="relative mb-4"
           >
             <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl"
-              style={{ background: "linear-gradient(135deg, rgba(168,85,247,0.25), rgba(236,72,153,0.2))", border: "1.5px solid rgba(168,85,247,0.35)" }}>
+              style={{ background: "linear-gradient(135deg, rgba(178,75,243,0.25), rgba(236,72,153,0.2))", border: "1.5px solid rgba(178,75,243,0.35)" }}>
               👑
             </div>
             <motion.div
@@ -894,7 +981,7 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45 }}
             className="text-sm font-medium mb-6"
-            style={{ color: "rgba(192,132,252,0.8)" }}
+            style={{ color: "rgba(184,148,240,0.8)" }}
           >
             {seasonName}
           </motion.p>
@@ -913,7 +1000,7 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.6 + i * 0.08 }}
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-left"
-                style={{ background: "rgba(168,85,247,0.08)", border: "1px solid rgba(168,85,247,0.15)" }}
+                style={{ background: "rgba(178,75,243,0.08)", border: "1px solid rgba(178,75,243,0.15)" }}
               >
                 <span className="text-xl flex-shrink-0">{perk.icon}</span>
                 <span className="text-sm text-white/80 font-medium">{perk.label}</span>
@@ -931,7 +1018,7 @@ function PremiumUnlockModal({ seasonName, onDone }: { seasonName: string; onDone
             whileTap={{ scale: 0.97 }}
             onClick={onDone}
             className="w-full py-3.5 rounded-xl font-black text-base text-white tracking-wide"
-            style={{ background: "linear-gradient(135deg, #a855f7, #ec4899)", boxShadow: "0 0 30px rgba(168,85,247,0.4)" }}
+            style={{ background: "linear-gradient(135deg, #B24BF3, #ec4899)", boxShadow: "0 0 30px rgba(178,75,243,0.4)" }}
           >
             Start Claiming Rewards 🎁
           </motion.button>
@@ -1095,7 +1182,9 @@ export default function SeasonPassPage() {
 
   if (!season) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ backgroundColor: "#020202" }}>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{
+        background: "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F",
+      }}>
         <span className="text-6xl">🏅</span>
         <h1 className="text-2xl font-bold text-white">No Active Season</h1>
         <p className="text-white/50 text-sm">Check back soon for the next season!</p>
@@ -1138,7 +1227,9 @@ export default function SeasonPassPage() {
   }, 0);
 
   return (
-    <div className="min-h-screen pb-20 pt-20" style={{ backgroundColor: "#020202" }}>
+    <div className="min-h-screen pb-20 pt-20" style={{
+      background: "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F",
+    }}>
       {/* Claim celebration overlay */}
       {celebration && (
         <ClaimBurst celebration={celebration} onDone={() => setCelebration(null)} />
@@ -1165,9 +1256,9 @@ export default function SeasonPassPage() {
           <div
             className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm"
             style={{
-              background: "linear-gradient(135deg, rgba(253,231,76,0.14), rgba(245,158,11,0.08))",
-              border: "1px solid rgba(253,231,76,0.35)",
-              boxShadow: "0 0 20px rgba(253,231,76,0.08)",
+              background: "linear-gradient(135deg, rgba(255,201,74,0.14), rgba(173,137,50,0.08))",
+              border: "1px solid rgba(255,201,74,0.35)",
+              boxShadow: "0 0 20px rgba(255,201,74,0.08)",
             }}
           >
             <span className="text-xl flex-shrink-0">🎁</span>
@@ -1192,13 +1283,13 @@ export default function SeasonPassPage() {
         <div
           className="px-4 py-8 md:px-8"
           style={{
-            background: "linear-gradient(180deg, rgba(253,231,76,0.06) 0%, rgba(168,85,247,0.03) 40%, rgba(2,2,2,1) 100%)",
+            background: "linear-gradient(180deg, rgba(255,201,74,0.06) 0%, rgba(178,75,243,0.03) 40%, rgba(2,2,2,1) 100%)",
           }}
         >
           <div className="max-w-6xl mx-auto">
             {/* Title row */}
             <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(253,231,76,0.2), rgba(245,158,11,0.2))" }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(255,201,74,0.2), rgba(173,137,50,0.2))" }}>
                 <span className="text-xl">🏅</span>
               </div>
               <div>
@@ -1208,7 +1299,10 @@ export default function SeasonPassPage() {
                 )}
               </div>
               {isPremium && (
-                <span className="px-2.5 py-1 text-[10px] font-black rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white tracking-wider ml-auto">
+                <span
+                  className="px-2.5 py-1 text-[10px] font-black rounded-full text-white tracking-wider ml-auto"
+                  style={{ background: "linear-gradient(135deg, #B24BF3, #ec4899)", boxShadow: "0 0 14px rgba(178,75,243,0.5)" }}
+                >
                   PREMIUM
                 </span>
               )}
@@ -1216,18 +1310,24 @@ export default function SeasonPassPage() {
 
             {/* Stats row */}
             <div className="mt-6 grid grid-cols-3 gap-3 max-w-md">
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-center">
-                <div className="text-lg font-black text-yellow-400">{currentTier}</div>
-                <div className="text-[10px] text-white/40 font-medium">TIER</div>
-              </div>
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-center">
-                <div className="text-lg font-black text-white">{xp.toLocaleString()}</div>
-                <div className="text-[10px] text-white/40 font-medium">SEASON XP</div>
-              </div>
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-center">
-                <div className="text-lg font-black text-white/60">{formatTimeLeft(season.endDate)}</div>
-                <div className="text-[10px] text-white/40 font-medium">REMAINING</div>
-              </div>
+              {[
+                { value: currentTier, label: "TIER", color: "#FFC94A" },
+                { value: xp.toLocaleString(), label: "SEASON XP", color: "#3D7FFF" },
+                { value: formatTimeLeft(season.endDate), label: "REMAINING", color: "#B24BF3" },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className="pw-bevel p-3 text-center"
+                  style={{
+                    border: `1px solid ${s.color}40`,
+                    background: `linear-gradient(160deg, ${s.color}1f, var(--pw-surface) 75%)`,
+                    boxShadow: `0 0 16px -8px ${s.color}99`,
+                  }}
+                >
+                  <div className="text-lg font-black" style={{ color: s.color }}>{s.value}</div>
+                  <div className="text-[10px] text-white/45 font-medium">{s.label}</div>
+                </div>
+              ))}
             </div>
 
             {/* XP progress bar */}
@@ -1246,7 +1346,7 @@ export default function SeasonPassPage() {
                   animate={{ width: `${progressPct}%` }}
                   transition={{ duration: 1, ease: "easeOut" }}
                   className="h-full rounded-full relative"
-                  style={{ background: "linear-gradient(90deg, #FDE74C, #f59e0b)" }}
+                  style={{ background: "linear-gradient(90deg, #FFC94A, #AD8932)" }}
                 >
                   <div className="absolute inset-0 rounded-full" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 100%)" }} />
                 </motion.div>
@@ -1259,12 +1359,19 @@ export default function SeasonPassPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 rounded-xl border border-purple-500/20"
-                style={{ background: "linear-gradient(135deg, rgba(168,85,247,0.06), rgba(236,72,153,0.04))" }}
+                className="pw-bevel mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4"
+                style={{
+                  border: "1px solid rgba(178,75,243,0.3)",
+                  background: "radial-gradient(300px 140px at 0% 0%, rgba(178,75,243,0.14), transparent 65%), linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",
+                  boxShadow: "0 0 20px -10px rgba(178,75,243,0.5)",
+                }}
               >
                 <div className="flex-1">
                   <p className="text-white font-bold text-sm flex items-center gap-2">
-                    <span className="inline-block w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 text-center text-xs leading-6">✨</span>
+                    <span
+                      className="inline-block w-6 h-6 rounded-md text-center text-xs leading-6"
+                      style={{ background: "linear-gradient(135deg, #B24BF3, #ec4899)" }}
+                    >✨</span>
                     Unlock the Premium Track
                   </p>
                   <p className="text-white/40 text-xs mt-0.5 ml-8">
@@ -1275,7 +1382,7 @@ export default function SeasonPassPage() {
                   onClick={handlePurchasePremium}
                   disabled={purchasing}
                   className="px-5 py-2.5 rounded-lg font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  style={{ background: "linear-gradient(135deg, #a855f7, #ec4899)", color: "white" }}
+                  style={{ background: "linear-gradient(135deg, #B24BF3, #ec4899)", color: "white" }}
                 >
                   {purchasing ? "Redirecting…" : "Upgrade — $4.99"}
                 </button>
@@ -1317,15 +1424,23 @@ export default function SeasonPassPage() {
         <h2 className="text-sm font-bold text-white/60 tracking-wider uppercase mb-4">How It Works</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
-            { icon: "🧩", title: "Solve Puzzles", desc: "Earn XP by completing any puzzle type", color: "#3891A6" },
-            { icon: "📈", title: "Climb Tiers", desc: "Your XP unlocks new rewards each tier", color: "#FDE74C" },
-            { icon: "🎁", title: "Claim Rewards", desc: "Collect tokens, points, and exclusive cosmetics", color: "#a855f7" },
+            { icon: "🧩", title: "Solve Puzzles", desc: "Earn XP by completing any puzzle type", color: "#3D7FFF" },
+            { icon: "📈", title: "Climb Tiers", desc: "Your XP unlocks new rewards each tier", color: "#FFC94A" },
+            { icon: "🎁", title: "Claim Rewards", desc: "Collect tokens, points, and exclusive cosmetics", color: "#B24BF3" },
           ].map((item) => (
             <div
               key={item.title}
-              className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.015] hover:bg-white/[0.03] transition-colors"
+              className="pw-bevel p-4 transition-shadow duration-300 hover:shadow-lg"
+              style={{
+                border: `1px solid ${item.color}40`,
+                background: `linear-gradient(160deg, ${item.color}1a, var(--pw-surface) 75%)`,
+                boxShadow: `0 0 16px -9px ${item.color}99`,
+              }}
             >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2" style={{ background: `${item.color}15` }}>
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center mb-2"
+                style={{ background: `${item.color}22`, border: `1px solid ${item.color}55`, boxShadow: `0 0 12px -4px ${item.color}` }}
+              >
                 <span className="text-lg">{item.icon}</span>
               </div>
               <h3 className="text-white font-bold text-sm">{item.title}</h3>
@@ -1374,14 +1489,14 @@ export default function SeasonPassPage() {
             className="absolute inset-y-0 right-0 pointer-events-none z-0"
             style={{
               width: "calc(50% - 26px)",
-              background: "linear-gradient(180deg, rgba(88,28,135,0.0) 0%, rgba(88,28,135,0.07) 20%, rgba(88,28,135,0.07) 80%, rgba(88,28,135,0.0) 100%)",
+              background: "linear-gradient(180deg, rgba(121,51,165,0.0) 0%, rgba(121,51,165,0.07) 20%, rgba(121,51,165,0.07) 80%, rgba(121,51,165,0.0) 100%)",
             }}
           />
           {/* Right edge soft glow line */}
           <div
             className="absolute inset-y-0 right-0 w-[2px] pointer-events-none z-0"
             style={{
-              background: "linear-gradient(180deg, transparent, rgba(168,85,247,0.18) 20%, rgba(168,85,247,0.18) 80%, transparent)",
+              background: "linear-gradient(180deg, transparent, rgba(178,75,243,0.18) 20%, rgba(178,75,243,0.18) 80%, transparent)",
             }}
           />
           {tiers.map((tier, i) => {

@@ -17,11 +17,11 @@ import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
 import type { Socket } from "socket.io-client";
 import CodeMasterIDE from "@/components/puzzle/CodeMasterIDE";
 import { getSkinTokens } from "@/lib/puzzleSkins";
-import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
 import { PuzzlePageOverlays } from "@/components/puzzle/PuzzlePageOverlays";
 import { PuzzleTypeRenderer } from "@/components/puzzle/PuzzleTypeRenderer";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection";
+import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
 
 interface XpModalData {
   xpGained: number;
@@ -183,13 +183,6 @@ interface LobbySocketPayload {
   userId?: string;
   reason?: string;
 }
-
-const DIFFICULTY_BADGE_STYLE: Record<string, React.CSSProperties> = {
-  EASY:   { backgroundColor: "rgba(16,185,129,0.12)", color: "#4ade80",  border: "1px solid rgba(16,185,129,0.35)" },
-  MEDIUM: { backgroundColor: "rgba(253,231,76,0.12)",  color: "#FDE74C", border: "1px solid rgba(253,231,76,0.35)" },
-  HARD:   { backgroundColor: "rgba(239,68,68,0.12)",   color: "#f87171", border: "1px solid rgba(239,68,68,0.35)" },
-  EXPERT: { backgroundColor: "rgba(56,145,166,0.15)",  color: "#3891A6", border: "1px solid rgba(56,145,166,0.45)" },
-};
 
 export default function PuzzleDetailPage() {
   // Modal state for Sudoku start overlay
@@ -831,6 +824,10 @@ export default function PuzzleDetailPage() {
   };
 
   const handlePuzzleSolved = async (xpOverride?: number) => {
+    try {
+      window.sessionStorage.setItem("pw:justCompletedPuzzleId", puzzleId);
+    } catch { /* ignore */ }
+
     const xp = xpOverride ?? (puzzle?.xpReward ?? 50);
     const before = calcLevel(userTotalXp);
     const after = calcLevel(userTotalXp + xp);
@@ -1343,112 +1340,21 @@ export default function PuzzleDetailPage() {
       />
 
 
-      <div className="flex-1 w-full px-3 sm:px-8 py-6 sm:py-8 pt-24 sm:pt-28">
+      <div className="flex-1 w-full px-0 sm:px-8 py-3 sm:py-8 pt-20 sm:pt-28">
         <div className="w-full max-w-5xl mx-auto">
 
           {/* ── Back navigation ─────────────────────────────────── */}
-          <div className="flex items-center gap-2 mb-5">
-            <Link
-              href="/puzzles"
-              className="flex items-center gap-1.5 text-sm transition-opacity hover:opacity-80"
-              style={{ color: "#AB9F9D" }}
-            >
-              <span style={{ fontSize: 16, lineHeight: 1 }}>←</span> Puzzles
-            </Link>
-            <span style={{ color: "#AB9F9D", opacity: 0.35 }}>/</span>
-            <span className="text-sm truncate max-w-[200px] sm:max-w-xs" style={{ color: "#DDDBF1" }}>
-              {(() => {
-                const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
-                const puzzleTitle = (puzzle?.title || '').toString().trim();
-                if ((puzzle?.puzzleType === 'escape_room' || puzzle?.puzzleType === 'jim_wyze_case') && escapeTitle) return escapeTitle;
-                if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
-                return puzzleTitle || escapeTitle || 'Untitled Puzzle';
-              })()}
-            </span>
-          </div>
-
-          {/* ── Main puzzle card ─────────────────────────────────── */}
-          <div
-            className="rounded-2xl mb-6 sm:mb-8 overflow-hidden"
-            style={{
-              backgroundColor: "rgba(10,12,18,0.98)",
-              border: "1px solid rgba(56,145,166,0.28)",
-              boxShadow: "0 4px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(56,145,166,0.06) inset",
-            }}
-          >
-            {/* ── Card header ─────────────────────────────────────── */}
-            <div
-              style={{
-                padding: "24px 28px 20px",
-                background: "linear-gradient(180deg, rgba(56,145,166,0.1) 0%, transparent 100%)",
-                borderBottom: "1px solid rgba(56,145,166,0.18)",
-              }}
-            >
-              {/* Badge row */}
-              <div className="flex flex-wrap items-center gap-2 mb-3">
-                {/* Difficulty */}
-                <span
-                  className="text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full whitespace-nowrap"
-                  style={{
-                    ...(DIFFICULTY_BADGE_STYLE[puzzle.difficulty] ?? {
-                      backgroundColor: "rgba(100,100,120,0.15)",
-                      color: "#DDDBF1",
-                      border: "1px solid rgba(100,100,120,0.35)",
-                    }),
-                  }}
-                >
-                  {puzzle.difficulty}
-                </span>
-                {/* Puzzle type */}
-                {puzzle.puzzleType && (
-                  <span
-                    className="text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap"
-                    style={{
-                      backgroundColor: "rgba(56,145,166,0.12)",
-                      color: "#3891A6",
-                      border: "1px solid rgba(56,145,166,0.35)",
-                    }}
-                  >
-                    {getPuzzleTypeLabel(puzzle.puzzleType)}
-                  </span>
-                )}
-                {/* XP reward */}
-                {puzzle.xpReward != null && puzzle.xpReward > 0 && (
-                  <span
-                    className="text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap"
-                    style={{
-                      backgroundColor: "rgba(253,231,76,0.1)",
-                      color: "#FDE74C",
-                      border: "1px solid rgba(253,231,76,0.28)",
-                    }}
-                  >
-                    ✦ {puzzle.xpReward} XP
-                  </span>
-                )}
-                {/* Solved indicator */}
-                {progress?.solved && (
-                  <span
-                    className="text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap"
-                    style={{
-                      backgroundColor: "rgba(16,185,129,0.12)",
-                      color: "#4ade80",
-                      border: "1px solid rgba(16,185,129,0.35)",
-                    }}
-                  >
-                    ✓ Solved
-                  </span>
-                )}
-              </div>
-
-              {/* Title */}
-              <h1
-                className="font-extrabold leading-tight mb-2"
-                style={{
-                  color: "#fff",
-                  fontSize: "clamp(22px, 4vw, 34px)",
-                  letterSpacing: "-0.025em",
-                }}
+          <div className="flex items-center justify-between gap-2 mb-2 sm:mb-5 px-3 sm:px-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Link
+                href="/puzzles"
+                className="flex items-center gap-1.5 text-sm transition-opacity hover:opacity-80 shrink-0"
+                style={{ color: "#AB9F9D" }}
               >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>←</span> Puzzles
+              </Link>
+              <span style={{ color: "#AB9F9D", opacity: 0.35 }}>/</span>
+              <span className="text-sm truncate max-w-[200px] sm:max-w-xs" style={{ color: "#DDDBF1" }}>
                 {(() => {
                   const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
                   const puzzleTitle = (puzzle?.title || '').toString().trim();
@@ -1456,19 +1362,33 @@ export default function PuzzleDetailPage() {
                   if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
                   return puzzleTitle || escapeTitle || 'Untitled Puzzle';
                 })()}
-              </h1>
-
-              {/* Category */}
-              {puzzle.puzzleType !== 'riddle' && (
-                <div className="flex items-center gap-1.5 text-sm" style={{ color: "#3891A6" }}>
-                  <span>◈</span>
-                  <span>{puzzle.category.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
-                </div>
-              )}
+              </span>
             </div>
+            <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />
+          </div>
 
+          {/* ── Main puzzle card ─────────────────────────────────── */}
+          <div
+            className="rounded-none sm:rounded-2xl mb-3 sm:mb-8 overflow-hidden border-0 sm:border shadow-none sm:shadow-[0_4px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(56,145,166,0.06)_inset]"
+            style={{
+              backgroundColor: "rgba(10,12,18,0.98)",
+              borderColor: "rgba(56,145,166,0.28)",
+            }}
+          >
             {/* ── Card body ───────────────────────────────────────── */}
-            <div className="p-4 sm:p-8">
+            {/* Visually-hidden h1 — the player already saw title/difficulty/XP on the puzzle
+                card before clicking in, so none of that is repeated here, but the page still
+                needs one real heading for accessibility/SEO. */}
+            <h1 className="sr-only">
+              {(() => {
+                const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
+                const puzzleTitle = (puzzle?.title || '').toString().trim();
+                if ((puzzle?.puzzleType === 'escape_room' || puzzle?.puzzleType === 'jim_wyze_case') && escapeTitle) return escapeTitle;
+                if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
+                return puzzleTitle || escapeTitle || 'Untitled Puzzle';
+              })()}
+            </h1>
+            <div className="px-0 py-3 sm:p-8">
 
             {/* Math Problem Configuration (if present) */}
             {puzzle.puzzleType === 'math' && puzzle.math && (
@@ -1805,9 +1725,9 @@ export default function PuzzleDetailPage() {
                     {/* Render the interactive Sudoku board after the user starts */}
                     {sudokuStarted && (
                       <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"}>
-                        <div className="mb-6">
-                          <div className="mb-1 flex flex-col items-center gap-1 px-2 py-1 rounded bg-[#071016] text-sm">
-                            <div className="text-2xl sm:text-3xl" style={{ color: '#FDE74C', fontWeight: 800, lineHeight: 1 }}>
+                        <div className="mb-2 sm:mb-6">
+                          <div className="mb-1 flex flex-col items-center gap-1 px-2 py-1 rounded bg-[#071016] text-sm mx-3 sm:mx-0">
+                            <div className="text-xl sm:text-3xl" style={{ color: '#FDE74C', fontWeight: 800, lineHeight: 1 }}>
                               {(() => {
                                 const limit = puzzle?.sudoku?.timeLimitSeconds ?? 15 * 60;
                                 const rem = Math.max(0, limit - sudokuElapsed);

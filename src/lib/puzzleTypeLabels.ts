@@ -35,3 +35,38 @@ export function getPuzzleTypeLabel(puzzleType: string): string {
     puzzleType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   );
 }
+
+/**
+ * Single source of truth for the puzzle type glyph shown on the icon-tile card design.
+ */
+export const PUZZLE_TYPE_ICONS: Record<string, string> = {
+  general:         "🎯",
+  riddle:          "❓",
+  math:            "➗",
+  jigsaw:          "🧩",
+  sudoku:          "🔢",
+  word_search:     "🔍",
+  word_crack:      "💬",
+  anagram_blitz:   "🔀",
+  crack_safe:      "🔒",
+  vault:           "🗝️",
+  escape_room:     "🚪",
+  jim_wyze_case:   "🕵️",
+  detective_case:  "🕵️‍♂️",
+  crime_rpg:       "🚔",
+  parasite_code:   "🧬",
+  gridlock_file:   "🔐",
+  blackout:        "🕶️",
+  code_master:     "💻",
+  arg:             "🌐",
+  logic_grid:      "🧠",
+  crossword:       "✏️",
+  cipher_clash:    "🔑",
+};
+
+/**
+ * Returns the icon glyph for a puzzle type. Falls back to a generic puzzle-piece.
+ */
+export function getPuzzleTypeIcon(puzzleType: string): string {
+  return PUZZLE_TYPE_ICONS[puzzleType] ?? "🧩";
+}

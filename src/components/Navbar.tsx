@@ -48,9 +48,9 @@ const ALL_NAV_LINKS = [
   { href: "/dashboard",   label: "Dashboard", emoji: null },
   { href: "/puzzles",     label: "Puzzles",   emoji: null },
   { href: "/daily",       label: "Daily",     emoji: "🟩" },
-  { href: "/warz",        label: "Warz",      emoji: "⚔️", accent: "#FDE74C" },
-  { href: "/season-pass", label: "Season",    emoji: "🏅",  enabled: FEATURE_SEASONS_ENABLED, tourId: "tour-season" },
-  { href: "/store",       label: "Store",     emoji: "🛍️", accent: "#a78bfa", enabled: FEATURE_STORE_ENABLED },
+  { href: "/warz",        label: "Warz",      emoji: "⚔️", accent: "#FFC94A" },
+  { href: "/season-pass", label: "Season",    emoji: "🏅", accent: "#FFC94A", enabled: FEATURE_SEASONS_ENABLED, tourId: "tour-season" },
+  { href: "/store",       label: "Store",     emoji: "🛍️", accent: "#B24BF3", enabled: FEATURE_STORE_ENABLED },
   { href: "/leaderboards",label: "Ranks",     emoji: null },
 ];
 const NAV_LINKS = ALL_NAV_LINKS.filter(l => !('enabled' in l) || l.enabled);
@@ -170,7 +170,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
           backgroundColor: "rgba(6, 8, 14, 0.88)",
           backdropFilter: "blur(16px) saturate(1.4)",
           WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-          border: "1px solid rgba(56, 145, 166, 0.25)",
+          border: "1px solid rgba(61,127,255, 0.25)",
         }}
       >
         <span
@@ -188,10 +188,11 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
       id="global-nav"
       className={`fixed w-full top-0 z-50${mobileOpen ? ' nav-mobile-open' : ''}`}
       style={{
-        backgroundColor: "rgba(6, 8, 14, 0.88)",
+        background: "linear-gradient(180deg, rgba(19,24,41,0.94), rgba(11,14,26,0.94))",
         backdropFilter: "blur(16px) saturate(1.4)",
         WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-        borderBottom: "1px solid rgba(56, 145, 166, 0.15)",
+        borderBottom: "1px solid rgba(178,75,243,0.4)",
+        boxShadow: "0 1px 0 rgba(255,201,74,0.3), 0 10px 30px -12px rgba(178,75,243,0.55)",
       }}
     >
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -199,14 +200,20 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
         {session ? (
           <div className="flex items-center gap-2.5 select-none shrink-0" aria-disabled="true" role="img" tabIndex={-1}>
             <img src="/images/puzzle_warz_logo.png" alt="Puzzle Warz Logo" className="h-8 w-auto" />
-            <span className="text-xs font-bold tracking-widest uppercase hidden sm:block" style={{ color: "#FDE74C" }}>
+            <span
+              className="text-sm font-black tracking-widest uppercase hidden sm:block"
+              style={{ color: "#FFC94A", textShadow: "0 0 16px rgba(255,201,74,0.45)" }}
+            >
               Puzzle Warz
             </span>
           </div>
         ) : (
           <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition shrink-0">
             <img src="/images/puzzle_warz_logo.png" alt="Puzzle Warz Logo" className="h-8 w-auto" />
-            <span className="text-xs font-bold tracking-widest uppercase hidden sm:block" style={{ color: "#FDE74C" }}>
+            <span
+              className="text-sm font-black tracking-widest uppercase hidden sm:block"
+              style={{ color: "#FFC94A", textShadow: "0 0 16px rgba(255,201,74,0.45)" }}
+            >
               Puzzle Warz
             </span>
           </Link>
@@ -230,7 +237,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                     color: active
                       ? (link.accent ?? "#fff")
                       : (link.accent ? `${link.accent}bb` : "#9ca3af"),
-                    backgroundColor: active ? "rgba(56,145,166,0.12)" : "transparent",
+                    backgroundColor: active ? "rgba(61,127,255,0.12)" : "transparent",
                   }}
                   onMouseEnter={(e) => {
                     if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
@@ -242,17 +249,17 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                   {link.emoji && <span className="text-sm">{link.emoji}</span>}
                   {link.label}
                   {link.href === "/season-pass" && (userInfo?.unclaimedSeasonRewards ?? 0) > 0 && (
-                    <span className="ml-0.5 w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" title={`${userInfo!.unclaimedSeasonRewards} unclaimed reward${userInfo!.unclaimedSeasonRewards !== 1 ? 's' : ''}`} />
+                    <span className="ml-0.5 w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ background: "#FFC94A", boxShadow: "0 0 6px rgba(255,201,74,0.8)" }} title={`${userInfo!.unclaimedSeasonRewards} unclaimed reward${userInfo!.unclaimedSeasonRewards !== 1 ? 's' : ''}`} />
                   )}
                   {/* Active indicator bar */}
                   {active && (
                     <span
-                      className="absolute -bottom-[9px] left-3 right-3 h-[2px] rounded-full"
+                      className="absolute -bottom-[9px] left-3 right-3 h-[3px] rounded-full"
                       style={{
                         background: link.accent
                           ? `linear-gradient(90deg, ${link.accent}, ${link.accent}66)`
-                          : "linear-gradient(90deg, #3891A6, #3891A666)",
-                        boxShadow: `0 0 8px ${link.accent ?? "#3891A6"}55`,
+                          : "linear-gradient(90deg, #3D7FFF, #3D7FFF66)",
+                        boxShadow: `0 0 14px ${link.accent ?? "#3D7FFF"}`,
                       }}
                     />
                   )}
@@ -266,7 +273,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1"
                 style={{
                   color: MORE_LINKS.some(l => isActive(pathname, l.href)) ? "#fff" : "#9ca3af",
-                  backgroundColor: MORE_LINKS.some(l => isActive(pathname, l.href)) ? "rgba(56,145,166,0.12)" : "transparent",
+                  backgroundColor: MORE_LINKS.some(l => isActive(pathname, l.href)) ? "rgba(61,127,255,0.12)" : "transparent",
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
                 onMouseLeave={(e) => {
@@ -281,14 +288,14 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 {MORE_LINKS.some(l => isActive(pathname, l.href)) && (
                   <span
                     className="absolute -bottom-[9px] left-3 right-3 h-[2px] rounded-full"
-                    style={{ background: "linear-gradient(90deg, #3891A6, #3891A666)", boxShadow: "0 0 8px #3891A655" }}
+                    style={{ background: "linear-gradient(90deg, #3D7FFF, #3D7FFF66)", boxShadow: "0 0 8px #3D7FFF55" }}
                   />
                 )}
               </button>
               {moreOpen && (
                 <div
                   className="absolute top-full left-1/2 -translate-x-1/2 mt-3 rounded-xl py-1.5 z-50 min-w-[160px] overflow-hidden"
-                  style={{ backgroundColor: 'rgba(12,16,22,0.98)', border: '1px solid rgba(56,145,166,0.2)', boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.3)', backdropFilter: "blur(12px)" }}
+                  style={{ backgroundColor: 'rgba(12,16,22,0.98)', border: '1px solid rgba(61,127,255,0.2)', boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.3)', backdropFilter: "blur(12px)" }}
                 >
                   {MORE_LINKS.map((link) => {
                     const active = isActive(pathname, link.href);
@@ -297,7 +304,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                         key={link.href}
                         href={link.href}
                         className="block px-4 py-2 text-sm transition-colors"
-                        style={{ color: active ? "#3891A6" : "#9ca3af", backgroundColor: active ? "rgba(56,145,166,0.08)" : "transparent" }}
+                        style={{ color: active ? "#3D7FFF" : "#9ca3af", backgroundColor: active ? "rgba(61,127,255,0.08)" : "transparent" }}
                         onClick={() => setMoreOpen(false)}
                         onMouseEnter={(e) => { if (!active) { e.currentTarget.style.color = "#fff"; e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}}
                         onMouseLeave={(e) => { if (!active) { e.currentTarget.style.color = "#9ca3af"; e.currentTarget.style.backgroundColor = "transparent"; }}}
@@ -321,7 +328,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                   href="/search"
                   aria-label="Search puzzles"
                   className="w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 text-zinc-400 hover:text-white"
-                  style={{ backgroundColor: isActive(pathname, "/search") ? "rgba(56,145,166,0.15)" : "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                  style={{ backgroundColor: isActive(pathname, "/search") ? "rgba(61,127,255,0.15)" : "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -336,8 +343,8 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                     onClick={() => setProfileOpen(o => !o)}
                     className="flex items-center gap-2 pl-2 pr-1.5 py-1 rounded-full transition-all duration-200"
                     style={{
-                      backgroundColor: profileOpen ? "rgba(56,145,166,0.15)" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${profileOpen ? "rgba(56,145,166,0.4)" : "rgba(255,255,255,0.08)"}`,
+                      backgroundColor: profileOpen ? "rgba(61,127,255,0.15)" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${profileOpen ? "rgba(61,127,255,0.4)" : "rgba(255,255,255,0.08)"}`,
                     }}
                     onMouseEnter={(e) => { if (!profileOpen) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"; }}
                     onMouseLeave={(e) => { if (!profileOpen) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
@@ -348,7 +355,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                     <img
                       src={avatarSrc}
                       alt="Avatar"
-                      className="h-7 w-7 rounded-full object-cover ring-1 ring-white/10"
+                      className="h-7 w-7 rounded-full object-cover ring-1 ring-[#B24BF3]/40"
                       onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }}
                     />
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className={`text-zinc-500 transition-transform duration-200 ${profileOpen ? "rotate-180" : ""}`}>
@@ -359,7 +366,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                   {profileOpen && (
                     <div
                       className="absolute top-full right-0 mt-2 w-64 rounded-xl overflow-hidden z-50"
-                      style={{ backgroundColor: 'rgba(12,16,22,0.98)', border: '1px solid rgba(56,145,166,0.2)', boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.3)', backdropFilter: "blur(12px)" }}
+                      style={{ backgroundColor: 'rgba(12,16,22,0.98)', border: '1px solid rgba(61,127,255,0.2)', boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.3)', backdropFilter: "blur(12px)" }}
                     >
                       {/* User info header */}
                       <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -368,7 +375,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                             src={avatarSrc}
                             alt="Avatar"
                             className="h-10 w-10 rounded-full object-cover border-2"
-                            style={{ borderColor: "#3891A6" }}
+                            style={{ borderColor: "#B24BF3", boxShadow: "0 0 10px rgba(178,75,243,0.45)" }}
                             onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }}
                           />
                           <div className="flex-1 min-w-0">
@@ -377,9 +384,9 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                               {userInfo?.activeFlair ? <span style={{ display: 'inline-block', transform: 'translateY(-1px)' }}> {userInfo.activeFlair}</span> : ""}
                             </p>
                             {userInfo?.level !== undefined ? (
-                              <p className="text-xs" style={{ color: "#818cf8" }}>Lv.{userInfo.level} · {userInfo.title}{userInfo.activeTitle === 'founder' ? ' · ⚜️ Founder' : ''}</p>
+                              <p className="text-xs" style={{ color: "#B24BF3" }}>Lv.{userInfo.level} · {userInfo.title}{userInfo.activeTitle === 'founder' ? ' · ⚜️ Founder' : ''}</p>
                             ) : (
-                              <p className="text-xs" style={{ color: "#3891A6" }}>Player</p>
+                              <p className="text-xs" style={{ color: "#3D7FFF" }}>Player</p>
                             )}
                           </div>
                         </div>
@@ -388,10 +395,10 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                           <div className="mt-2.5">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-xs" style={{ color: "#6b7280" }}>{userInfo.currentXp} / {userInfo.nextLevelXp} XP</span>
-                              <span className="text-xs font-medium" style={{ color: "#818cf8" }}>{userInfo.progress ?? 0}%</span>
+                              <span className="text-xs font-medium" style={{ color: "#B24BF3" }}>{userInfo.progress ?? 0}%</span>
                             </div>
-                            <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(129,140,248,0.12)" }}>
-                              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${userInfo.progress ?? 0}%`, background: "linear-gradient(90deg, #818cf8, #c084fc)" }} />
+                            <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(178,75,243,0.12)" }}>
+                              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${userInfo.progress ?? 0}%`, background: "linear-gradient(90deg, #B24BF3, #FFC94A)" }} />
                             </div>
                           </div>
                         )}
@@ -422,7 +429,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                           <Link
                             href="/admin"
                             className="flex items-center gap-2.5 px-4 py-2 text-sm transition-colors"
-                            style={{ color: "#FDE74C" }}
+                            style={{ color: "#FFC94A" }}
                             onClick={() => setProfileOpen(false)}
                             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(253,231,76,0.06)"}
                             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
@@ -454,8 +461,12 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 </Link>
                 <Link
                   href="/auth/register"
-                  className="px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all hover:brightness-110"
-                  style={{ backgroundColor: "#3891A6", color: "#020202" }}
+                  className="px-3.5 py-1.5 rounded-lg text-sm font-bold transition-all hover:brightness-110 hover:-translate-y-px"
+                  style={{
+                    background: "linear-gradient(135deg, #3D7FFF, #2956AD)",
+                    color: "#0B0E1A",
+                    boxShadow: "0 0 18px rgba(61,127,255,0.5), 0 2px 0 rgba(255,255,255,0.15) inset",
+                  }}
                 >
                   Join Now
                 </Link>
@@ -479,7 +490,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
     {/* Mobile Menu Drawer */}
     <div
       className={`fixed top-0 right-0 h-full w-full sm:w-80 max-w-full z-[260] shadow-2xl transform transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : 'translate-x-full'}`}
-      style={{ backgroundColor: '#0a0e14', borderLeft: '1px solid rgba(56,145,166,0.15)', isolation: 'isolate' }}
+      style={{ background: 'linear-gradient(160deg, #131829, #0B0E1A)', borderLeft: '1px solid rgba(178,75,243,0.4)', boxShadow: '-10px 0 30px -12px rgba(178,75,243,0.4)', isolation: 'isolate' }}
       role="dialog"
       aria-modal="true"
       aria-label="Mobile navigation menu"
@@ -489,7 +500,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div className="flex items-center gap-2">
             <img src="/images/puzzle_warz_logo.png" alt="Puzzle Warz Logo" className="h-9 w-auto" />
-            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#FDE74C' }}>Puzzle Warz</span>
+            <span className="text-sm font-black tracking-widest uppercase" style={{ color: '#FFC94A', textShadow: '0 0 16px rgba(255,201,74,0.45)' }}>Puzzle Warz</span>
           </div>
           <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors" style={{ backgroundColor: "rgba(255,255,255,0.05)" }}>
             ✕
@@ -504,7 +515,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 src={avatarSrc}
                 alt="Avatar"
                 className="h-10 w-10 rounded-full object-cover border-2"
-                style={{ borderColor: "#3891A6" }}
+                style={{ borderColor: "#B24BF3", boxShadow: "0 0 10px rgba(178,75,243,0.45)" }}
                 onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }}
               />
               <div className="flex-1 min-w-0">
@@ -514,14 +525,14 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 </p>
                 {userInfo?.level !== undefined ? (
                   <>
-                    <p className="text-xs" style={{ color: "#818cf8" }}>Lv.{userInfo.level} · {userInfo.title}</p>
-                    <div className="mt-1.5 h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(129,140,248,0.12)" }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${userInfo.progress ?? 0}%`, background: "linear-gradient(90deg, #818cf8, #c084fc)" }} />
+                    <p className="text-xs" style={{ color: "#B24BF3" }}>Lv.{userInfo.level} · {userInfo.title}</p>
+                    <div className="mt-1.5 h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(178,75,243,0.12)" }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${userInfo.progress ?? 0}%`, background: "linear-gradient(90deg, #B24BF3, #FFC94A)" }} />
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: "#475569" }}>{userInfo.currentXp} / {userInfo.nextLevelXp} XP</p>
                   </>
                 ) : (
-                  <p className="text-xs" style={{ color: "#3891A6" }}>Player</p>
+                  <p className="text-xs" style={{ color: "#3D7FFF" }}>Player</p>
                 )}
               </div>
             </div>
@@ -547,15 +558,15 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                     className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-base font-medium transition-all duration-200"
                     style={{
                       color: active ? (accent ?? "#fff") : (accent ? `${accent}bb` : "#9ca3af"),
-                      backgroundColor: active ? "rgba(56,145,166,0.1)" : "transparent",
-                      borderLeft: active ? `2px solid ${accent ?? "#3891A6"}` : "2px solid transparent",
+                      backgroundColor: active ? "rgba(61,127,255,0.1)" : "transparent",
+                      borderLeft: active ? `2px solid ${accent ?? "#3D7FFF"}` : "2px solid transparent",
                     }}
                     onClick={() => setMobileOpen(false)}
                   >
                     {emoji && <span>{emoji}</span>}
                     {link.label}
                     {link.href === "/season-pass" && (userInfo?.unclaimedSeasonRewards ?? 0) > 0 && (
-                      <span className="ml-auto w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
+                      <span className="ml-auto w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ background: "#FFC94A", boxShadow: "0 0 6px rgba(255,201,74,0.8)" }} />
                     )}
                   </Link>
                 );
@@ -564,9 +575,9 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 href="/search"
                 className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-base font-medium transition-all duration-200"
                 style={{
-                  color: isActive(pathname, "/search") ? "#3891A6" : "#9ca3af",
-                  backgroundColor: isActive(pathname, "/search") ? "rgba(56,145,166,0.1)" : "transparent",
-                  borderLeft: isActive(pathname, "/search") ? "2px solid #3891A6" : "2px solid transparent",
+                  color: isActive(pathname, "/search") ? "#3D7FFF" : "#9ca3af",
+                  backgroundColor: isActive(pathname, "/search") ? "rgba(61,127,255,0.1)" : "transparent",
+                  borderLeft: isActive(pathname, "/search") ? "2px solid #3D7FFF" : "2px solid transparent",
                 }}
                 onClick={() => setMobileOpen(false)}
               >
@@ -577,9 +588,9 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 href="/profile"
                 className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-base font-medium transition-all duration-200"
                 style={{
-                  color: isActive(pathname, "/profile") ? "#3891A6" : "#9ca3af",
-                  backgroundColor: isActive(pathname, "/profile") ? "rgba(56,145,166,0.1)" : "transparent",
-                  borderLeft: isActive(pathname, "/profile") ? "2px solid #3891A6" : "2px solid transparent",
+                  color: isActive(pathname, "/profile") ? "#3D7FFF" : "#9ca3af",
+                  backgroundColor: isActive(pathname, "/profile") ? "rgba(61,127,255,0.1)" : "transparent",
+                  borderLeft: isActive(pathname, "/profile") ? "2px solid #3D7FFF" : "2px solid transparent",
                 }}
                 onClick={() => setMobileOpen(false)}
               >
@@ -590,9 +601,9 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 href="/settings"
                 className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-base font-medium transition-all duration-200"
                 style={{
-                  color: isActive(pathname, "/settings") ? "#3891A6" : "#9ca3af",
-                  backgroundColor: isActive(pathname, "/settings") ? "rgba(56,145,166,0.1)" : "transparent",
-                  borderLeft: isActive(pathname, "/settings") ? "2px solid #3891A6" : "2px solid transparent",
+                  color: isActive(pathname, "/settings") ? "#3D7FFF" : "#9ca3af",
+                  backgroundColor: isActive(pathname, "/settings") ? "rgba(61,127,255,0.1)" : "transparent",
+                  borderLeft: isActive(pathname, "/settings") ? "2px solid #3D7FFF" : "2px solid transparent",
                 }}
                 onClick={() => setMobileOpen(false)}
               >
@@ -603,7 +614,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 <Link
                   href="/admin"
                   className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-base font-medium transition-all duration-200"
-                  style={{ color: "#FDE74C" }}
+                  style={{ color: "#FFC94A" }}
                   onClick={() => setMobileOpen(false)}
                 >
                   🛡️ Admin Panel
@@ -613,7 +624,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
           ) : (
             <div className="flex flex-col gap-0.5">
               <Link href="/auth/signin" className="px-4 py-2.5 rounded-lg text-base font-medium text-zinc-300 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>Sign In</Link>
-              <Link href="/auth/register" className="px-4 py-2.5 rounded-lg text-base font-semibold transition-all hover:brightness-110" style={{ backgroundColor: '#3891A6', color: '#020202' }} onClick={() => setMobileOpen(false)}>Join Now</Link>
+              <Link href="/auth/register" className="px-4 py-2.5 rounded-lg text-base font-bold transition-all hover:brightness-110" style={{ background: 'linear-gradient(135deg, #3D7FFF, #2956AD)', color: '#0B0E1A', boxShadow: '0 0 18px rgba(61,127,255,0.5)' }} onClick={() => setMobileOpen(false)}>Join Now</Link>
             </div>
           )}
         </nav>

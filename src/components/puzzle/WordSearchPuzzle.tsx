@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { motion, useAnimationControls } from "framer-motion";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import { findWordInGrid, normalizeWordList } from "@/lib/wordSearchCore";
 import WordDefinitionModal, { type WordDefinitionData } from "@/components/puzzle/WordDefinitionModal";
@@ -233,6 +234,12 @@ export default function WordSearchPuzzle({
   const [isUltraNarrow, setIsUltraNarrow] = useState(false);
   const [showRestoreNotice, setShowRestoreNotice] = useState(false);
 
+  // ── Juice: trail line + shake + pop feedback (purely presentational — none of this
+  // touches the drag/selection math above or below it) ──────────────────────────────
+  const [trailPoints, setTrailPoints] = useState<{ x: number; y: number }[]>([]);
+  const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set());
+  const gridShakeControls = useAnimationControls();
+
   const gridRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<CellCoord | null>(null);
   const isDraggingRef = useRef(false);
@@ -412,6 +419,27 @@ export default function WordSearchPuzzle({
     setSelectedCells(cells);
   }
 
+  // Recompute the connecting trail line's pixel points whenever the selection changes.
+  // Cell size is a responsive clamp() rather than a fixed px value, so the centers are
+  // measured from the actual rendered cells (same data-ws-row/col hook cellFromPoint uses)
+  // instead of derived from CSS math.
+  useLayoutEffect(() => {
+    const gridEl = gridRef.current;
+    if (!gridEl || selectedCells.length < 2) {
+      setTrailPoints([]);
+      return;
+    }
+    const gridRect = gridEl.getBoundingClientRect();
+    const points = selectedCells.map(({ row, col }) => {
+      const cellEl = gridEl.querySelector<HTMLElement>(`[data-ws-row="${row}"][data-ws-col="${col}"]`);
+      if (!cellEl) return null;
+      const r = cellEl.getBoundingClientRect();
+      return { x: r.left - gridRect.left + r.width / 2, y: r.top - gridRect.top + r.height / 2 };
+    });
+    if (points.some((p) => p === null)) return;
+    setTrailPoints(points as { x: number; y: number }[]);
+  }, [selectedCells]);
+
   function triggerHaptic(pattern: number | number[]) {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       navigator.vibrate(pattern);
@@ -513,7 +541,14 @@ export default function WordSearchPuzzle({
         (w) => (w === selWord || w === revWord) && !foundWords.includes(w)
       ) ?? null;
 
-    if (!matched) return;
+    if (!matched) {
+      triggerHaptic(30);
+      gridShakeControls.start({
+        x: [0, -7, 7, -5, 5, -2, 2, 0],
+        transition: { duration: 0.4, ease: "easeOut" },
+      });
+      return;
+    }
 
     setSubmitting(true);
     const newFoundWords = [...foundWords, matched];
@@ -539,6 +574,15 @@ export default function WordSearchPuzzle({
         triggerHaptic([12, 30, 12]);
         setFlashWord(matched);
         setTimeout(() => setFlashWord(null), 1200);
+        const poppedKeys = canonicalCells.map(serializeCoord);
+        setPoppingCells((prev) => new Set([...prev, ...poppedKeys]));
+        setTimeout(() => {
+          setPoppingCells((prev) => {
+            const next = new Set(prev);
+            poppedKeys.forEach((k) => next.delete(k));
+            return next;
+          });
+        }, 450);
         revealDefinition(matched, words.indexOf(matched) % WORD_COLORS.length);
         if (data.allFound) {
           setGameStatus("won");
@@ -754,10 +798,12 @@ export default function WordSearchPuzzle({
         {/* Grid + word list */}
         <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 items-start w-full max-w-2xl px-1 sm:px-2">
           {/* Letter grid */}
-          <div
+          <motion.div
             ref={gridRef}
+            animate={gridShakeControls}
             className="flex-shrink-0 mx-auto sm:mx-0"
             style={{
+              position: "relative",
               display: "flex",
               flexDirection: "column",
               gap: 3,
@@ -775,6 +821,27 @@ export default function WordSearchPuzzle({
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerCancel}
           >
+            {/* Connecting trail line — a smooth stroke through the letters you're
+                currently dragging across, redrawn every time the selection changes. */}
+            {trailPoints.length > 1 && (
+              <svg
+                className="pointer-events-none"
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", zIndex: 1 }}
+              >
+                <motion.polyline
+                  points={trailPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill="none"
+                  stroke={skin.boardBorder}
+                  strokeWidth={5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ filter: `drop-shadow(0 0 6px ${skin.boardBorder})` }}
+                  initial={false}
+                  animate={{ opacity: 0.85 }}
+                />
+              </svg>
+            )}
+
             {grid.map((row, ri) => (
               <div key={ri} style={{ display: "flex", gap: 3 }}>
                 {row.map((letter, ci) => {
@@ -782,15 +849,27 @@ export default function WordSearchPuzzle({
                   const colorIdx = cellColorMap.get(key);
                   const isSelected = selectedSet.has(key);
                   const isFound = colorIdx !== undefined;
+                  const isPopping = poppingCells.has(key);
                   const color = isFound ? WORD_COLORS[colorIdx] : null;
 
                   return (
-                    <div
+                    <motion.div
                       key={ci}
                       data-ws-row={ri}
                       data-ws-col={ci}
-                      className="flex items-center justify-center font-black rounded transition-colors duration-75"
+                      className="flex items-center justify-center font-black rounded"
+                      animate={{
+                        scale: isPopping ? [1, 1.35, 1] : isSelected ? 1.14 : 1,
+                        y: isSelected ? -3 : 0,
+                      }}
+                      transition={
+                        isPopping
+                          ? { duration: 0.45, ease: "easeOut", times: [0, 0.4, 1] }
+                          : { type: "spring", stiffness: 500, damping: 22 }
+                      }
                       style={{
+                        position: "relative",
+                        zIndex: 2,
                         width: cellSz,
                         height: cellSz,
                         fontSize: `clamp(0.45rem, 2.4vw, 0.875rem)`,
@@ -810,18 +889,22 @@ export default function WordSearchPuzzle({
                           : isFound
                           ? color!.text
                           : skin.tileText,
-                        boxShadow: isFound ? `0 0 6px ${color!.border}40` : "none",
+                        boxShadow: isSelected
+                          ? `0 4px 14px -2px ${skin.boardBorder}, 0 0 0 3px ${skin.boardBorder}40`
+                          : isFound
+                          ? `0 0 6px ${color!.border}40`
+                          : "none",
                         userSelect: "none",
                         WebkitUserSelect: "none",
                       }}
                     >
                       {letter}
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
             ))}
-          </div>
+          </motion.div>
 
           {/* Word list */}
           <div className="w-full sm:w-auto flex-1 flex flex-col gap-1.5 sm:gap-2 sm:min-w-[100px]">
@@ -841,9 +924,11 @@ export default function WordSearchPuzzle({
                 const isFlashing = flashWord === word;
 
                 return (
-                  <div
+                  <motion.div
                     key={word}
-                    className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-sm font-semibold leading-tight transition-all duration-200"
+                    className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-sm font-semibold leading-tight"
+                    animate={{ scale: isFlashing ? [1, 1.22, 1.06] : 1 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 14 }}
                     style={{
                       width: compactWordGrid ? "100%" : undefined,
                       textAlign: compactWordGrid ? "center" : "left",
@@ -851,13 +936,12 @@ export default function WordSearchPuzzle({
                       border: `1px solid ${found ? color!.border : "rgba(148,163,184,0.4)"}`,
                       color: found ? color!.text : "#cbd5e1",
                       textDecoration: found ? "line-through" : "none",
-                      transform: isFlashing ? "scale(1.1)" : "scale(1)",
                       boxShadow: isFlashing ? `0 0 14px ${color!.border}` : "none",
                       whiteSpace: "nowrap",
                     }}
                   >
                     {word}
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>

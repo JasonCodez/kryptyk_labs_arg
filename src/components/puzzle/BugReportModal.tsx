@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 
 interface BugReportModalProps {
@@ -61,7 +62,9 @@ export default function BugReportModal({ puzzleId, puzzleTitle, onClose }: BugRe
     }
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ zIndex: 20000, background: "rgba(0,0,0,0.8)" }}
@@ -164,6 +167,7 @@ export default function BugReportModal({ puzzleId, puzzleTitle, onClose }: BugRe
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

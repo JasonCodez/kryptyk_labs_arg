@@ -111,11 +111,6 @@ const jsonLd = {
       name: "Puzzle Warz",
       url: siteUrl,
       description: "Daily Hidden Word, Gridlock files, crosswords, and competitive puzzle battles. Compete for the top spot on Puzzle Warz.",
-      potentialAction: {
-        "@type": "SearchAction",
-        target: { "@type": "EntryPoint", urlTemplate: `${siteUrl}/puzzles?q={search_term_string}` },
-        "query-input": "required name=search_term_string",
-      },
     },
     {
       "@type": "Organization",

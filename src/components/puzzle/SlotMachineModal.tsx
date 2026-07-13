@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
 import { rarityColors } from "@/lib/rarity";
@@ -31,11 +31,10 @@ const TIER_ICON: Record<SlotTierId, string> = {
   legendary: "💎",
 };
 
-const REEL_CYCLES = 4;
-const ITEM_HEIGHT = 88;
-const FIRST_SPIN_MS = 1800;
-const MIN_SPIN_MS = 500;
-const SPEEDUP_STEP_MS = 350;
+const REEL_CYCLES = 7;
+const FIRST_SPIN_MS = 3400;
+const MIN_SPIN_MS = 1100;
+const SPEEDUP_STEP_MS = 550;
 
 function prizeLabel(spin: SlotSpinResultLike): string {
   const parts: string[] = [];
@@ -63,18 +62,31 @@ function OddsTable({ onClose }: { onClose: () => void }) {
           ✕
         </button>
       </div>
-      <div className="flex flex-col gap-1.5">
-        {SLOT_TIERS.map((tier) => {
+      <div className="flex flex-col">
+        {SLOT_TIERS.map((tier, i) => {
           const colors = rarityColors[tier.colorKey];
           return (
-            <div key={tier.id} className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5" style={{ color: colors.text }}>
-                {TIER_ICON[tier.id]} {tier.label}
-              </span>
-              <span style={{ color: "#9ca3af" }}>{tier.rewardDescription}</span>
-              <span className="font-bold tabular-nums" style={{ color: colors.text }}>
-                {tier.oddsPercent}%
-              </span>
+            <div
+              key={tier.id}
+              className="py-2"
+              style={i < SLOT_TIERS.length - 1 ? { borderBottom: "1px solid rgba(255,255,255,0.06)" } : undefined}
+            >
+              {/* Label + percent share a row (2 items, always aligns to the edges regardless
+                  of label length); the description gets its own full-width line below instead
+                  of fighting for a middle column — that's what was causing the misalignment
+                  once a longer description (e.g. legendary's) wrapped to two lines. */}
+              <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                <span className="flex items-center gap-1.5" style={{ color: colors.text }}>
+                  <span aria-hidden>{TIER_ICON[tier.id]}</span>
+                  {tier.label}
+                </span>
+                <span className="tabular-nums shrink-0" style={{ color: colors.text }}>
+                  {tier.oddsPercent}%
+                </span>
+              </div>
+              <p className="text-[11px] mt-0.5 leading-snug" style={{ color: "#9ca3af" }}>
+                {tier.rewardDescription}
+              </p>
             </div>
           );
         })}
@@ -83,16 +95,33 @@ function OddsTable({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Screen cutout in slot-machine-cabinet-trimmed.png, measured against the trimmed source art
+// (as % of the cabinet image's own box, so this stays correct at any render size).
+const SCREEN_LEFT_PCT = 17.107;
+const SCREEN_TOP_PCT = 22.6;
+const SCREEN_WIDTH_PCT = 65.535;
+const SCREEN_HEIGHT_PCT = 20.827;
+
+// slot-machine-cabinet-trimmed.png's own aspect ratio (height / width) — the trimmed art is no
+// longer square, so anything sized off the cabinet needs this to convert a measured width into
+// the cabinet's actual rendered height.
+const CABINET_ASPECT = 1354 / 795;
+
+
+type SpinPhase = "idle" | "spinning" | "landed";
+
 function Reel({
   tier,
   spinMs,
-  spinning,
+  phase,
   onLanded,
+  itemHeight,
 }: {
   tier: SlotTierId;
   spinMs: number;
-  spinning: boolean;
+  phase: SpinPhase;
   onLanded: () => void;
+  itemHeight: number;
 }) {
   const strip = useMemo(() => {
     const ids = SLOT_TIERS.map((t) => t.id);
@@ -102,31 +131,129 @@ function Reel({
     return items;
   }, [tier]);
 
-  const targetOffset = -(strip.length - 1) * ITEM_HEIGHT;
+  const targetOffset = -(strip.length - 1) * itemHeight;
+  // "landed" must keep targeting targetOffset, same as "spinning" — only "idle" rests at 0.
+  // Collapsing landed into the same bucket as idle (both just "not spinning") would snap the
+  // strip back to the first item the instant it finishes, hiding whatever tier was actually won.
+  const y = phase === "idle" ? 0 : targetOffset;
 
   return (
-    <div
-      className="relative mx-auto overflow-hidden rounded-2xl border-2"
-      style={{ width: 180, height: ITEM_HEIGHT, borderColor: "#FDE74C", backgroundColor: "rgba(0,0,0,0.4)" }}
-    >
+    <div className="relative w-full h-full">
       <motion.div
         initial={{ y: 0 }}
-        animate={{ y: spinning ? targetOffset : 0 }}
-        transition={spinning ? { duration: spinMs / 1000, ease: [0.1, 0.8, 0.25, 1] } : { duration: 0 }}
+        animate={{ y }}
+        transition={phase === "spinning" ? { duration: spinMs / 1000, ease: [0.1, 0.8, 0.25, 1] } : { duration: 0 }}
         onAnimationComplete={() => {
-          if (spinning) onLanded();
+          if (phase === "spinning") onLanded();
         }}
       >
         {strip.map((id, i) => (
-          <div key={i} className="flex items-center justify-center" style={{ height: ITEM_HEIGHT, fontSize: 40 }}>
+          <div
+            key={i}
+            className="flex items-center justify-center"
+            style={{ height: itemHeight, fontSize: Math.max(16, itemHeight * 0.62) }}
+          >
             {TIER_ICON[id]}
           </div>
         ))}
       </motion.div>
+      {/* Fades to white at top/bottom edges of the window — the cabinet's screen is white,
+          not the old dark bezel, so the vignette flips light instead of dark. */}
       <div
         className="pointer-events-none absolute inset-0"
-        style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.5) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.5) 100%)" }}
+        style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.65) 0%, transparent 25%, transparent 75%, rgba(255,255,255,0.65) 100%)" }}
       />
+    </div>
+  );
+}
+
+/**
+ * "SPIN" trigger — docked at the bottom of the modal card, below the cabinet, instead of
+ * overlaid on the artwork. A real gold pill button (not bare text) with a flashing glow/scale
+ * pulse to draw the eye, matching the card's other CTA buttons (Continue / Next spin).
+ */
+function SpinButton({ disabled, onSpin }: { disabled: boolean; onSpin: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onSpin}
+      disabled={disabled}
+      animate={disabled ? { scale: 1 } : { scale: [1, 1.035, 1] }}
+      transition={disabled ? { duration: 0.2 } : { duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+      whileTap={disabled ? undefined : { scale: 0.95 }}
+      className="mt-6 mb-1 w-full py-3.5 rounded-xl font-black text-base tracking-[0.18em] disabled:cursor-not-allowed"
+      style={{
+        background: disabled ? "linear-gradient(135deg, #8a7a3f, #7a6538)" : "linear-gradient(135deg, #FDE74C, #FFB86B)",
+        color: "#020202",
+        boxShadow: disabled ? "none" : "0 0 28px rgba(253,231,76,0.45)",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      SPIN
+    </motion.button>
+  );
+}
+
+/**
+ * The cabinet artwork (slot-machine-cabinet-trimmed.png) is a static image — the reel remains
+ * fully code-driven, positioned/sized against the cabinet's own measured render size (via
+ * ResizeObserver) rather than hardcoded pixels, so it scales correctly at any width.
+ */
+function SlotCabinet({
+  resetKey,
+  tier,
+  spinMs,
+  phase,
+  onLanded,
+}: {
+  resetKey: number;
+  tier: SlotTierId;
+  spinMs: number;
+  phase: SpinPhase;
+  onLanded: () => void;
+}) {
+  const cabinetRef = useRef<HTMLDivElement>(null);
+  const [cabinetWidth, setCabinetWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = cabinetRef.current;
+    if (!el) return;
+    // offsetWidth (layout box), not getBoundingClientRect (visual/post-transform box) — the
+    // modal card plays a scale(0.6 → 1) spring entrance, and a rect-based read taken while
+    // that's still animating would bake in whatever scale was mid-flight at that instant, with
+    // nothing to correct it afterward since the transform never actually changes the element's
+    // real layout size (so ResizeObserver has nothing to fire on once the spring settles).
+    const measure = () => setCabinetWidth(el.offsetWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const cabinetHeight = cabinetWidth * CABINET_ASPECT;
+  const windowHeight = cabinetHeight * (SCREEN_HEIGHT_PCT / 100);
+
+  return (
+    <div ref={cabinetRef} className="relative mx-auto w-[240px] sm:w-[300px]">
+      <img
+        src="/images/slot-machine-cabinet-trimmed.png"
+        alt=""
+        draggable={false}
+        className="block w-full h-auto select-none"
+      />
+      {cabinetWidth > 0 && (
+        <div
+          className="absolute overflow-hidden"
+          style={{
+            left: `${SCREEN_LEFT_PCT}%`,
+            top: `${SCREEN_TOP_PCT}%`,
+            width: `${SCREEN_WIDTH_PCT}%`,
+            height: `${SCREEN_HEIGHT_PCT}%`,
+          }}
+        >
+          <Reel key={resetKey} tier={tier} spinMs={spinMs} phase={phase} onLanded={onLanded} itemHeight={windowHeight} />
+        </div>
+      )}
     </div>
   );
 }
@@ -136,8 +263,6 @@ function Reel({
  * decided (POST /api/user/claim-level-reward via resolveLevelUpSpins). The animation
  * never re-rolls or second-guesses that result, it only reveals it.
  */
-type SpinPhase = "idle" | "spinning" | "landed";
-
 export default function SlotMachineModal({ spins, onDismiss }: SlotMachineModalProps) {
   useRegisterModal("slot-machine-modal");
   const [index, setIndex] = useState(0);
@@ -235,35 +360,22 @@ export default function SlotMachineModal({ spins, onDismiss }: SlotMachineModalP
           }}
         >
           <div
-            className="inline-block mb-3 px-5 py-1.5 rounded-full text-xs font-black tracking-[0.2em] uppercase"
+            className="inline-block mb-4 px-5 py-1.5 rounded-full text-xs font-black tracking-[0.2em] uppercase"
             style={{ background: "linear-gradient(90deg, #FDE74C, #FFB86B)", color: "#020202" }}
           >
             🎰 Level {spin.level} Spin{spins.length > 1 ? ` (${index + 1}/${spins.length})` : ""}
           </div>
 
-          <Reel
-            key={index}
+          <SlotCabinet
+            resetKey={index}
             tier={spin.tier}
             spinMs={spinMs}
-            spinning={phase === "spinning"}
+            phase={phase}
             onLanded={() => setPhase("landed")}
           />
 
-          {phase === "idle" && (
-            <motion.button
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setPhase("spinning")}
-              className="mt-5 w-full py-3 rounded-xl font-black text-sm tracking-wide"
-              style={{
-                background: "linear-gradient(135deg, #FDE74C, #FFB86B)",
-                color: "#020202",
-                boxShadow: "0 0 24px rgba(253,231,76,0.35)",
-              }}
-            >
-              🎰 Pull to Spin
-            </motion.button>
+          {phase !== "landed" && (
+            <SpinButton disabled={phase !== "idle"} onSpin={() => setPhase("spinning")} />
           )}
 
           <AnimatePresence>

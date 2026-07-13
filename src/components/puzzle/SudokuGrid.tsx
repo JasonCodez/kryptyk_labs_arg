@@ -268,10 +268,10 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
         }}
       />
 
-    <div className="flex flex-col gap-4 items-center justify-center py-10 px-4 sm:py-14 sm:px-10" style={{ position: "relative", zIndex: 1 }}>
+    <div className="flex flex-col gap-2 sm:gap-4 items-center justify-center py-3 px-1.5 sm:py-14 sm:px-10" style={{ position: "relative", zIndex: 1 }}>
       {/* Title */}
       <h2
-        className="text-2xl sm:text-3xl font-black tracking-[0.2em] mb-1 text-center"
+        className="text-lg sm:text-3xl font-black tracking-[0.2em] mb-0.5 sm:mb-1 text-center"
         style={{
           backgroundImage: "linear-gradient(135deg, #FDE74C, #FFB86B, #3891A6)",
           backgroundClip: "text",
@@ -288,14 +288,14 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
       </p>
 
       <motion.div
-          className="w-full border-4 p-3 rounded"
+          className="w-full border-2 sm:border-4 p-1.5 sm:p-3 rounded"
           style={{
             background: skin.boardBg,
             borderColor: skin.boardBorder,
             boxShadow: skin.boardShadow !== "none" ? skin.boardShadow : undefined,
             borderRadius: skin.boardRadius,
             width: '100%',
-            maxWidth: 'min(90vw,720px)',
+            maxWidth: 'min(100%, 720px)',
             aspectRatio: '1 / 1',
             display: 'flex',
             flexDirection: 'column',

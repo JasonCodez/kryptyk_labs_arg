@@ -87,7 +87,7 @@ function NormalModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] overflow-y-auto bg-black/65 backdrop-blur-sm"
+      className="fixed inset-0 z-[75] overflow-y-auto bg-black/65 backdrop-blur-sm"
     >
       {normalizedAnimation === "fireworks" && <ModalFireworksOverlay />}
       <div className="flex min-h-[100dvh] items-center justify-center px-4 py-4">
@@ -229,7 +229,7 @@ function LevelUpModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] overflow-y-auto backdrop-blur-sm"
+      className="fixed inset-0 z-[75] overflow-y-auto backdrop-blur-sm"
       style={{ background: "radial-gradient(ellipse at center, rgba(30,20,0,0.92) 0%, rgba(2,2,2,0.97) 100%)" }}
     >
       {normalizedAnimation === "fireworks" && <ModalFireworksOverlay />}

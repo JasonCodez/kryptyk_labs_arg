@@ -57,6 +57,7 @@ function SearchPageInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [searched, setSearched] = useState(false);
+  const [showSolvedModal, setShowSolvedModal] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/auth/signin");
@@ -214,18 +215,16 @@ function SearchPageInner() {
             <div className="space-y-3">
               {puzzles.map((puzzle) => {
                 const dStyle = DIFF_STYLE[puzzle.difficulty] ?? { bg: "rgba(255,255,255,0.05)", color: "#9ca3af" };
-                return (
-                  <Link
-                    key={puzzle.id}
-                    href={`/puzzles/${puzzle.id}`}
-                    className="flex items-start justify-between p-4 rounded-xl transition-all hover:scale-[1.01]"
-                    style={{
-                      background: "rgba(255,255,255,0.03)",
-                      border: puzzle.solved
-                        ? "1px solid rgba(56,211,153,0.3)"
-                        : "1px solid rgba(255,255,255,0.08)",
-                    }}
-                  >
+                const cardClassName = "flex items-start justify-between p-4 rounded-xl transition-all hover:scale-[1.01]";
+                const cardStyle = {
+                  background: "rgba(255,255,255,0.03)",
+                  cursor: puzzle.solved ? "pointer" : undefined,
+                  border: puzzle.solved
+                    ? "1px solid rgba(56,211,153,0.3)"
+                    : "1px solid rgba(255,255,255,0.08)",
+                } as const;
+                const cardBody = (
+                  <>
                     <div className="flex-1 min-w-0 mr-4">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span className="font-bold text-white truncate">{puzzle.title}</span>
@@ -260,11 +259,57 @@ function SearchPageInner() {
                         {puzzle.solveCount} solves
                       </div>
                     </div>
+                  </>
+                );
+
+                if (puzzle.solved) {
+                  return (
+                    <div
+                      key={puzzle.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setShowSolvedModal(true)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowSolvedModal(true); } }}
+                      className={cardClassName}
+                      style={cardStyle}
+                    >
+                      {cardBody}
+                    </div>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={puzzle.id}
+                    href={`/puzzles/${puzzle.id}`}
+                    className={cardClassName}
+                    style={cardStyle}
+                  >
+                    {cardBody}
                   </Link>
                 );
               })}
             </div>
           </>
+        )}
+
+        {showSolvedModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black opacity-60" onClick={() => setShowSolvedModal(false)}></div>
+            <div className="relative p-6 rounded-xl max-w-sm w-full" style={{ background: "#0a0e14", border: "1px solid rgba(56,211,153,0.3)" }}>
+              <h3 className="text-lg font-bold text-white mb-2">Already Completed</h3>
+              <p style={{ color: "#9ca3af" }} className="mb-4">
+                You&apos;ve already completed and claimed the rewards for this puzzle.
+              </p>
+              <button
+                onClick={() => setShowSolvedModal(false)}
+                className="px-4 py-2 rounded font-semibold"
+                style={{ backgroundColor: "#38D399", color: "#020202" }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
