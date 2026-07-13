@@ -6,7 +6,7 @@ import { motion, useAnimationControls } from "framer-motion";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import { findWordInGrid, normalizeWordList } from "@/lib/wordSearchCore";
 import WordDefinitionModal, { type WordDefinitionData } from "@/components/puzzle/WordDefinitionModal";
-import { playSound, isHapticsEnabled } from "@/lib/juice";
+import { isHapticsEnabled } from "@/lib/juice";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -466,7 +466,6 @@ export default function WordSearchPuzzle({
       foundWordCells: new Map(prev.foundWordCells).set(word, cells),
     }));
     triggerHaptic(12);
-    playSound("unlock"); // hint revealed a word
     setFlashWord(word);
     setTimeout(() => setFlashWord(null), 1200);
     setWsHintCount((c) => c + 1);
@@ -546,7 +545,6 @@ export default function WordSearchPuzzle({
 
     if (!matched) {
       triggerHaptic(30);
-      playSound("error");
       gridShakeControls.start({
         x: [0, -7, 7, -5, 5, -2, 2, 0],
         transition: { duration: 0.4, ease: "easeOut" },
@@ -576,7 +574,6 @@ export default function WordSearchPuzzle({
           foundWordCells: new Map(prev.foundWordCells).set(matched, canonicalCells),
         }));
         triggerHaptic([12, 30, 12]);
-        playSound(data.allFound ? "success" : "pop");
         setFlashWord(matched);
         setTimeout(() => setFlashWord(null), 1200);
         const poppedKeys = canonicalCells.map(serializeCoord);

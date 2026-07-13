@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
-import { juice, playSound } from "@/lib/juice";
+import { juice } from "@/lib/juice";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -69,7 +69,6 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
       return n;
     })();
     setGrid(next);
-    if (num !== 0) playSound("tick"); // placing a digit, not clearing one
     if (typeof onChange === 'function') onChange(next.map((r) => [...r]));
   };
 

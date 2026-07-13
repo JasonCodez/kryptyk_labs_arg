@@ -6,7 +6,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 import ActionModal from "@/components/ActionModal";
 import { AlertTriangle, CheckCircle2, Crown, LogOut, Mail, MessageSquareText, Play, Power, RefreshCw, Send, Shield, Sparkles, UserPlus, Users } from "lucide-react";
 import type { Socket } from "socket.io-client";
-import { juice, playSound } from "@/lib/juice";
+import { juice } from "@/lib/juice";
 
 interface TeamMemberUser {
   id?: string;
@@ -472,7 +472,6 @@ export default function TeamLobbyPage() {
 
         socket.on('chatMessage', (msg: Record<string, unknown>) => {
           if (!mounted) return;
-          if ((msg.userId as string | undefined) !== currentUserId) playSound("pop"); // incoming message only
           setChatMessages((prev) => (prev || []).concat(msg));
         });
 
@@ -501,7 +500,6 @@ export default function TeamLobbyPage() {
 
         socket.on('puzzleStarting', ({ teamId: t, puzzleId: p }) => {
           if (!mounted) return;
-          playSound("whoosh"); // lifting off into the puzzle
           skipLeaveOnUnmountRef.current = true;
           const effectiveTeamId = t || teamId;
           const effectivePuzzleId = p || puzzleId;

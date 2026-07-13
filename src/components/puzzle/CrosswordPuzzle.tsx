@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { TegakiRenderer, type TegakiBundle } from "tegaki";
 import caveat from "../../../node_modules/tegaki/dist/fonts/caveat/bundle.mjs";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
-import { juice, playSound } from "@/lib/juice";
+import { juice } from "@/lib/juice";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -1078,7 +1078,6 @@ export default function CrosswordPuzzle({
     const staggerTailMs = solvedClue ? Math.max(0, solvedClue.length - 1) * WORD_SOLVED_STAGGER_MS : 0;
     const cleanupDelayMs = WORD_SOLVED_ANIMATION_MS + staggerTailMs + 120;
 
-    playSound("pop"); // word turned green
     setJustSolvedClues((prev) => {
       const next = new Set(prev);
       next.add(key);

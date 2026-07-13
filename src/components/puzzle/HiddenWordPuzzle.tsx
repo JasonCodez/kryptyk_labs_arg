@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
-import { playSound, isHapticsEnabled } from "@/lib/juice";
+import { isHapticsEnabled } from "@/lib/juice";
 import {
   getHiddenWordGrade,
   isSolvedHiddenWordResult,
@@ -424,7 +424,6 @@ export default function HiddenWordPuzzle({
       setError(`Need ${wordLength} letters!`);
       setShakingRow(true);
       triggerHaptic([12, 30, 12]);
-      playSound("error");
       setTimeout(() => { setShakingRow(false); setError(""); }, 700);
       return;
     }
@@ -443,7 +442,6 @@ export default function HiddenWordPuzzle({
           setError(data.error);
           setShakingRow(true);
           triggerHaptic([12, 30, 12]);
-          playSound("error");
           setTimeout(() => { setShakingRow(false); setError(""); setCurrentInput(""); }, 700);
           setSubmitting(false);
           return;
@@ -467,7 +465,6 @@ export default function HiddenWordPuzzle({
           setError(data.error ?? "Something went wrong");
           setShakingRow(true);
           triggerHaptic([12, 30, 12]);
-          playSound("error");
           setTimeout(() => { setShakingRow(false); setError(""); setCurrentInput(""); }, 700);
           setSubmitting(false);
           return;
@@ -485,7 +482,6 @@ export default function HiddenWordPuzzle({
       setCurrentInput("");
 
       // Stagger-reveal tiles
-      playSound("whoosh"); // tiles flipping over
       setRevealingRow(rowIndex);
       const revealTotal = wordLength * revealStepMs + revealBaseMs;
       setTimeout(() => {
@@ -498,7 +494,6 @@ export default function HiddenWordPuzzle({
           setGameStatus("won");
           setConfetti(makeConfetti(prefersReducedMotion ? 0 : isCompactMobile ? 28 : 60));
           triggerHaptic([15, 45, 15]);
-          playSound("success");
           setBounceWin(true);
           onRoundComplete?.({
             status: "won",
@@ -515,7 +510,6 @@ export default function HiddenWordPuzzle({
         setTimeout(() => {
           setGameStatus("lost");
           triggerHaptic(25);
-          playSound("error");
           onRoundComplete?.({ status: "lost", guesses: newGuesses.length, results: newGuesses });
           if (warzMode) {
             onFailed?.();

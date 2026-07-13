@@ -5,13 +5,7 @@ import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import NotificationSettings from "@/components/NotificationSettings";
-import {
-  juice,
-  isSoundEnabled,
-  isHapticsEnabled,
-  setSoundEnabled,
-  setHapticsEnabled,
-} from "@/lib/juice";
+import { juice, isHapticsEnabled, setHapticsEnabled } from "@/lib/juice";
 
 export default function SettingsPage() {
   const { status } = useSession();
@@ -20,21 +14,12 @@ export default function SettingsPage() {
   const [marketingLoading, setMarketingLoading] = useState(true);
   const [marketingSaving, setMarketingSaving] = useState(false);
 
-  // Sound & haptics live in localStorage via the juice system — applied
-  // instantly, no save round trip. Read after mount to stay SSR-safe.
-  const [soundOn, setSoundOn] = useState(true);
+  // Haptics live in localStorage via the juice system — applied instantly,
+  // no save round trip. Read after mount to stay SSR-safe.
   const [hapticsOn, setHapticsOn] = useState(true);
   useEffect(() => {
-    setSoundOn(isSoundEnabled());
     setHapticsOn(isHapticsEnabled());
   }, []);
-
-  function toggleSound() {
-    const next = !soundOn;
-    setSoundOn(next);
-    setSoundEnabled(next);
-    if (next) juice.pop(); // audible confirmation the moment sound comes back on
-  }
 
   function toggleHaptics() {
     const next = !hapticsOn;
@@ -214,7 +199,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Sound & Haptics — saved instantly, no server round trip */}
+          {/* Haptic Feedback — saved instantly, no server round trip */}
           <div
             className="mt-8 p-6 rounded-lg border"
             style={{
@@ -223,27 +208,6 @@ export default function SettingsPage() {
             }}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🔊</span>
-                <div>
-                  <h3 className="font-semibold text-white">Sound Effects</h3>
-                  <p style={{ color: "#AB9F9D" }} className="text-sm">
-                    Soft clicks, chimes, and celebration sounds on interactions
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={toggleSound}
-                className="shrink-0 px-4 py-2 rounded-lg font-medium transition-all"
-                style={{
-                  backgroundColor: soundOn ? "#38D399" : "#AB9F9D",
-                  color: "#020202",
-                }}
-              >
-                {soundOn ? "On" : "Off"}
-              </button>
-            </div>
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">📳</span>
                 <div>

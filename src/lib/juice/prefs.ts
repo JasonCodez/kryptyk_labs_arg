@@ -1,8 +1,7 @@
-// Client-side feedback preferences for the juice system (sound + haptics).
+// Client-side feedback preferences for the juice system (haptics).
 // Stored in localStorage so they apply instantly with no network round trip,
 // and broadcast via a custom event so open components react to toggles live.
 
-const SOUND_KEY = "pw-juice-sound";
 const HAPTICS_KEY = "pw-juice-haptics";
 export const JUICE_PREFS_EVENT = "pw-juice-prefs-changed";
 
@@ -26,16 +25,8 @@ function writeFlag(key: string, enabled: boolean) {
   window.dispatchEvent(new CustomEvent(JUICE_PREFS_EVENT));
 }
 
-export function isSoundEnabled(): boolean {
-  return readFlag(SOUND_KEY);
-}
-
 export function isHapticsEnabled(): boolean {
   return readFlag(HAPTICS_KEY);
-}
-
-export function setSoundEnabled(enabled: boolean) {
-  writeFlag(SOUND_KEY, enabled);
 }
 
 export function setHapticsEnabled(enabled: boolean) {

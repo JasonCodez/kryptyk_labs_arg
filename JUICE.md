@@ -7,7 +7,7 @@ in `src/app/puzzles/[id]/page.tsx`.
 
 ## Philosophy
 
-- Every tap is acknowledged (motion + sound + haptic) within one frame.
+- Every tap is acknowledged (motion + haptic) within one frame.
 - Success creates anticipation for the next action; failure is soft, never punishing.
 - Big-win effects (`celebrationEffects.tsx` fireworks/confetti) are the crescendo —
   micro-effects must stay modest so the crescendo still lands.
@@ -34,23 +34,27 @@ Ease curves:
 
 ### Feedback combos — `import { juice } from "@/lib/juice"`
 
-One call fires the matched sound + haptic pair. Never call `playSound`/`haptic`
-separately in product code; the combos keep the feedback language consistent.
+One call fires the matched haptic pattern. Never call `haptic` directly in
+product code; the combos keep the feedback language consistent, and give us
+a single place to reintroduce sound later if we want to.
 
-| Call | Sound | Haptic | Use for |
-|---|---|---|---|
-| `juice.tap()` | soft click | 8 ms | any button/tile press |
-| `juice.tick()` | wooden tick | 8 ms | toggles, steppers, dial detents |
-| `juice.pop()` | satisfying pop | 8 ms | card flip, chip select, item added |
-| `juice.whoosh()` | paper shuffle | — | menus, drawers, page transitions |
-| `juice.success()` | sparkle triad | double pulse | correct answer, clue solved |
-| `juice.error()` | soft low thud | firm buzz | incorrect answer, invalid action |
-| `juice.unlock()` | lock opening | double pulse | new chapter/evidence unlocked |
-| `juice.reward()` | chime fanfare | celebration | XP, coins, level complete, daily reward |
+| Call | Haptic | Use for |
+|---|---|---|
+| `juice.tap()` | 8 ms | any button/tile press |
+| `juice.tick()` | 8 ms | toggles, steppers, dial detents |
+| `juice.pop()` | 8 ms | card flip, chip select, item added |
+| `juice.whoosh()` | — (motion carries it) | menus, drawers, page transitions |
+| `juice.success()` | double pulse | correct answer, clue solved |
+| `juice.error()` | firm buzz | incorrect answer, invalid action |
+| `juice.unlock()` | double pulse | new chapter/evidence unlocked |
+| `juice.reward()` | celebration pattern | XP, coins, level complete, daily reward |
 
-Sounds are synthesized with Web Audio (no assets, no latency). To swap a cue for a
-recorded asset later, replace its builder in `src/lib/juice/sound.ts`.
-User toggles live in Settings → Feedback (localStorage: `pw-juice-sound`, `pw-juice-haptics`).
+There is no sound layer — an earlier synthesized-audio pass (Web Audio, no
+assets) shipped and was pulled because it read as generic/annoying. The
+`juice` API and its call sites are unchanged on purpose, so real sound
+design (recorded assets) can slot back in behind `juice.*` later without
+touching any of the ~15 files that call it.
+User toggle lives in Settings → Haptic Feedback (localStorage: `pw-juice-haptics`).
 
 ### `<Pressable>` — `@/components/juice/Pressable`
 
@@ -95,7 +99,7 @@ All are disabled automatically under reduced motion.
 ## Site-wide coverage
 
 `JuiceClickLayer` (mounted in the root layout) gives **every button and link on
-every page** a tap sound + haptic via event delegation — no per-call-site wiring.
+every page** a tap haptic via event delegation — no per-call-site wiring.
 Opt out with `data-nojuice`; `<Pressable>` opts out automatically (`data-juiced`).
 Press *visuals* stay per-element: `.pw-press` on link-cards, `<Pressable>` on buttons.
 
@@ -108,7 +112,7 @@ Press *visuals* stay per-element: `.pw-press` on link-cards, `<Pressable>` on bu
 5. ~~Achievements~~ ✅ (`juice.reward()` with the confetti entrance)
 6. ~~Navigation~~ ✅ (bottom-nav `.pw-press`, navbar menu `juice.whoosh()`)
 7. ~~Cards~~ ✅ (daily hub, campaign hub `.pw-press`; arcade card/row `:active` squash)
-8. ~~Toasts / modals~~ ✅ (spring pop toasts; `ActionModal` variant-matched sound + pop-in; `ConfirmModal` pop-in)
+8. ~~Toasts / modals~~ ✅ (spring pop toasts; `ActionModal` variant-matched haptic + pop-in; `ConfirmModal` pop-in)
 9. ~~Team lobby~~ ✅ (`juice.pop()` on member join + incoming chat, `whoosh` on puzzle start)
 10. ~~Game boards~~ ✅ (word search pop/thud/unlock; sudoku tick/error/success; hidden word
     reveal whoosh + win/lose cues; crossword word-pop + board-celebration success —
@@ -116,5 +120,4 @@ Press *visuals* stay per-element: `.pw-press` on link-cards, `<Pressable>` on bu
 11. `.pw-glow-pulse` on one featured CTA per screen (dashboard daily card)
 
 Rules of thumb while rolling out: one glow-pulse per screen, one confetti source per
-event, sounds under 500 ms except `reward`, and never gate input on an animation —
-the interface must never feel slow.
+event, and never gate input on an animation — the interface must never feel slow.
