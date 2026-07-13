@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Kalam } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/providers";
 import CookieBanner from "@/components/CookieBanner";
+import JuiceClickLayer from "@/components/juice/JuiceClickLayer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -143,6 +144,7 @@ export default function RootLayout({
       >
         <Providers>{children}</Providers>
         <CookieBanner />
+        <JuiceClickLayer />
       </body>
     </html>
   );

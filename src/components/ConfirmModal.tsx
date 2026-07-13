@@ -37,7 +37,7 @@ export default function ConfirmModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
 
-        <div className="relative w-full" style={{ maxWidth: "min(92vw, 560px)" }}>
+        <div className="relative w-full pw-pop-in" style={{ maxWidth: "min(92vw, 560px)" }}>
           <div className="rounded-3xl bg-gradient-to-r from-cyan-500/60 via-sky-500/60 to-teal-500/60 p-[1px] shadow-[0_26px_70px_rgba(0,0,0,0.55)]">
             <div className="rounded-[calc(1.5rem-1px)] border border-slate-800 bg-slate-950/95 p-6 sm:p-7">
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200/80">Confirm Action</div>
@@ -69,7 +69,7 @@ export default function ConfirmModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
 
-      <div className="relative w-full sm:max-w-md rounded-lg shadow-lg overflow-hidden bg-slate-900 border border-slate-700">
+      <div className="relative w-full sm:max-w-md rounded-lg shadow-lg overflow-hidden bg-slate-900 border border-slate-700 pw-pop-in">
         <div className="px-6 py-4 bg-slate-800">
           <h3 className="text-white text-lg font-semibold">{title || 'Confirm'}</h3>
         </div>

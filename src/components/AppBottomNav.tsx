@@ -114,6 +114,7 @@ export default function AppBottomNav() {
           <Link
             key={href}
             href={resolvedHref}
+            className="pw-press"
             style={{
               flex: 1,
               display: "flex",

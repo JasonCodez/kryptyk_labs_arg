@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
+import { juice, playSound } from "@/lib/juice";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -68,6 +69,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
       return n;
     })();
     setGrid(next);
+    if (num !== 0) playSound("tick"); // placing a digit, not clearing one
     if (typeof onChange === 'function') onChange(next.map((r) => [...r]));
   };
 
@@ -131,6 +133,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
         // show inline message below submit button (page-level handler will perform lock logic)
         if (isLocked) setSubmitMessage({ message: `Maximum attempts reached. Puzzle locked.`, type: 'error' });
         else setSubmitMessage({ message: `Incorrect. Attempts: ${nextAttempts}/${maxAttempts}`, type: 'error' });
+        juice.error();
         setAnimating('error');
         await sleep(800);
         setAnimating('idle');
@@ -139,6 +142,7 @@ export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disable
 
       // success animation
       setIncorrectMap(Array(9).fill(null).map(() => Array(9).fill(false)));
+      juice.success();
       setAnimating('success');
 
       // confetti if allowed

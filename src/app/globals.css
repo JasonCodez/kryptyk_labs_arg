@@ -512,6 +512,9 @@ body {
   transform: translateY(-4px) scale(1.015);
   box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent, #3D7FFF) 55%, transparent);
 }
+.pw-arcade-card:active:not(.pw-arcade-card-inert) {
+  transform: translateY(-1px) scale(0.985);
+}
 .pw-arcade-card-inert { cursor: not-allowed; opacity: .65; }
 .pw-arcade-card-inert:hover { transform: none; box-shadow: none; }
 
@@ -668,6 +671,9 @@ body {
   transform: translateX(3px);
   box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--accent, #3D7FFF) 55%, transparent);
 }
+.pw-arcade-row:active:not(.pw-arcade-row-inert) {
+  transform: translateX(3px) scale(0.99);
+}
 .pw-arcade-row-inert { cursor: not-allowed; opacity: .65; }
 .pw-arcade-row-inert:hover { transform: none; box-shadow: none; }
 .pw-arcade-row .pw-arcade-icon { width: 54px; height: 54px; border-radius: 18px; font-size: 24px; margin: 0; }
@@ -710,3 +716,59 @@ body {
     justify-content: flex-end;
   }
 }
+
+/* ── Juice motion utilities ─────────────────────────────────────────────
+   Shared micro-interaction animations. Timing language:
+     micro 80–180ms · standard 250–450ms · celebration 600–1200ms
+   Signature ease (overshoot settle): cubic-bezier(0.34, 1.56, 0.64, 1)
+   Soft decel ease:                   cubic-bezier(0.22, 1, 0.36, 1)
+   Retrigger by remounting the element (change its key) or toggling the class. */
+
+@keyframes pw-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-9px) rotate(-0.5deg); }
+  30% { transform: translateX(8px) rotate(0.5deg); }
+  45% { transform: translateX(-6px); }
+  60% { transform: translateX(5px); }
+  75% { transform: translateX(-3px); }
+  90% { transform: translateX(2px); }
+}
+.pw-shake { animation: pw-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+@keyframes pw-pop-in {
+  0% { opacity: 0; transform: scale(0.9) translateY(6px); }
+  70% { opacity: 1; transform: scale(1.02) translateY(-1px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.pw-pop-in { animation: pw-pop-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes pw-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 201, 74, 0); }
+  50% { box-shadow: 0 0 18px 2px rgba(255, 201, 74, 0.35); }
+}
+.pw-glow-pulse { animation: pw-glow-pulse 2.2s ease-in-out infinite; }
+
+@keyframes pw-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.pw-float { animation: pw-float 3.2s ease-in-out infinite; }
+
+/* Press squash for link-cards and nav items. Composable: it only claims the
+   :active state, so existing hover transforms (hover:scale-*, hover:-translate-y-*)
+   keep working; being un-layered it wins over Tailwind's layered utilities while
+   the element is pressed. */
+.pw-press { transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pw-press:active { transform: scale(0.97); }
+
+/* Reduced motion (OS setting or the app's accessibility toggle) kills the
+   decorative motion but keeps end states visible. */
+@media (prefers-reduced-motion: reduce) {
+  .pw-shake, .pw-pop-in, .pw-glow-pulse, .pw-float { animation: none; }
+  .pw-press:active { transform: none; }
+}
+[data-reduce-animations="true"] .pw-shake,
+[data-reduce-animations="true"] .pw-pop-in,
+[data-reduce-animations="true"] .pw-glow-pulse,
+[data-reduce-animations="true"] .pw-float { animation: none; }
+[data-reduce-animations="true"] .pw-press:active { transform: none; }

@@ -22,6 +22,9 @@ import { PuzzleTypeRenderer } from "@/components/puzzle/PuzzleTypeRenderer";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection";
 import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
+import { juice } from "@/lib/juice";
+import Pressable from "@/components/juice/Pressable";
+import { confettiBurstAt } from "@/components/juice/particles";
 
 interface XpModalData {
   xpGained: number;
@@ -228,6 +231,9 @@ export default function PuzzleDetailPage() {
   const [showGiveUpConfirm, setShowGiveUpConfirm] = useState(false);
   const [userTotalXp, setUserTotalXp] = useState<number>(0);
   const [showXpModal, setShowXpModal] = useState(false);
+  // Bumped on each wrong answer to retrigger the shake animation + error pop-in
+  const [shakeKey, setShakeKey] = useState(0);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
   const [xpModalData, setXpModalData] = useState<XpModalData | null>(null);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [comparisonStats, setComparisonStats] = useState<ComparisonStats | null>(null);
@@ -840,6 +846,7 @@ export default function PuzzleDetailPage() {
       oldProgress: before.progress,
       newProgress: after.progress,
     });
+    juice.reward();
     setShowXpModal(true);
     // Notify the Navbar (and any other listener) that XP has changed
     window.dispatchEvent(new CustomEvent('puzzlewarz:xp-updated'));
@@ -1141,6 +1148,8 @@ export default function PuzzleDetailPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        juice.error();
+        setShakeKey((k) => k + 1);
         if (data.locked) {
           if (data.attemptsUsed !== undefined) {
             setProgress((prev) => prev ? { ...prev, failedAttempts: data.attemptsUsed } : prev);
@@ -1153,6 +1162,8 @@ export default function PuzzleDetailPage() {
       }
 
       if (data.correct) {
+        juice.success();
+        confettiBurstAt(submitButtonRef.current);
         setSuccess(true);
         setAnswer("");
 
@@ -1201,6 +1212,8 @@ export default function PuzzleDetailPage() {
         // Show XP modal then rating modal
         handlePuzzleSolved();
       } else {
+        juice.error();
+        setShakeKey((k) => k + 1);
         // Update attempt count in progress state
         if (data.attemptsUsed !== undefined) {
           setProgress((prev) => prev ? { ...prev, failedAttempts: data.attemptsUsed } : prev);
@@ -1507,7 +1520,8 @@ export default function PuzzleDetailPage() {
 
             {error && (
               <div
-                className="mb-6 p-4 rounded-lg border"
+                key={`err-${shakeKey}`}
+                className="mb-6 p-4 rounded-lg border pw-pop-in"
                 style={{ backgroundColor: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.45)", color: "#fca5a5" }}
               >
                 {error}
@@ -1517,7 +1531,7 @@ export default function PuzzleDetailPage() {
 
             {showSolvedMessage && (
               <div
-                className="mb-6 p-4 rounded-lg border text-white text-center text-lg font-semibold"
+                className="mb-6 p-4 rounded-lg border text-white text-center text-lg font-semibold pw-pop-in"
                 style={{ backgroundColor: "rgba(56, 211, 153, 0.15)", borderColor: "#38D399" }}
               >
                 🎉 Puzzle Solved! Excellent work!
@@ -1842,42 +1856,58 @@ export default function PuzzleDetailPage() {
                         onCodeChange={(combined) => setAnswer(combined)}
                       />
                     </div>
-                    <button
+                    <Pressable
                       type="submit"
+                      ref={submitButtonRef}
                       disabled={submitting || success || !answer.trim() || progress?.solved}
-                      className={`mt-5 w-full py-3.5 rounded-xl text-white font-bold text-sm tracking-wide transition-all disabled:opacity-50 shadow-lg ${
+                      className={`mt-5 w-full py-3.5 rounded-xl text-white font-bold text-sm tracking-wide transition-colors disabled:opacity-50 shadow-lg ${
                         progress?.solved
                           ? 'bg-emerald-700 cursor-not-allowed'
-                          : 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] shadow-indigo-900/50'
+                          : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/50'
                       }`}
                     >
                       {submitting ? 'Submitting…' : progress?.solved ? '✓ Puzzle Solved' : 'Submit Fix →'}
-                    </button>
+                    </Pressable>
                   </PuzzleFullscreenFrame>
                 )}
 
                 {/* Text answer area — standard puzzles */}
                 {puzzle?.puzzleType !== 'sudoku' && puzzle?.puzzleType !== 'code_master' && (
                   <>
-                    <textarea
-                      value={answer}
-                      onChange={(e) => setAnswer(e.target.value)}
-                      disabled={submitting || success || progress?.solved}
-                      placeholder={progress?.solved ? "This puzzle has been solved." : "Enter your answer here..."}
-                      className="w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none disabled:opacity-50"
-                      style={{ backgroundColor: "#111820", borderWidth: "2px", borderColor: "rgba(56,145,166,0.35)" }}
-                      onFocus={(e) => (e.currentTarget.style.borderColor = "#3891A6")}
-                      onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(56,145,166,0.35)")}
-                      rows={4}
-                    />
-                    <button
+                    {/* key retriggers the shake on every wrong answer */}
+                    <div key={shakeKey} className={shakeKey > 0 ? "pw-shake" : undefined}>
+                      <textarea
+                        value={answer}
+                        onChange={(e) => setAnswer(e.target.value)}
+                        disabled={submitting || success || progress?.solved}
+                        placeholder={progress?.solved ? "This puzzle has been solved." : "Enter your answer here..."}
+                        className="w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none disabled:opacity-50 transition-[border-color,box-shadow] duration-200"
+                        style={{
+                          backgroundColor: "#111820",
+                          borderWidth: "2px",
+                          borderColor: error && shakeKey > 0 ? "rgba(255,59,92,0.6)" : "rgba(56,145,166,0.35)",
+                        }}
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = "#3891A6";
+                          e.currentTarget.style.boxShadow = "0 0 14px rgba(56,145,166,0.35)";
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = "rgba(56,145,166,0.35)";
+                          e.currentTarget.style.boxShadow = "none";
+                        }}
+                        rows={4}
+                      />
+                    </div>
+                    <Pressable
                       type="submit"
+                      ref={submitButtonRef}
+                      ripple="dark"
                       disabled={submitting || success || !answer.trim() || progress?.solved}
-                      className="mt-4 px-6 py-2.5 rounded-lg font-bold tracking-wide transition-all hover:opacity-90 disabled:opacity-50"
+                      className="mt-4 px-6 py-2.5 rounded-lg font-bold tracking-wide disabled:opacity-50"
                       style={{ backgroundColor: "#3891A6", color: "#020202" }}
                     >
                       {submitting ? "Submitting..." : progress?.solved ? "Puzzle Solved ✓" : "Submit Answer"}
-                    </button>
+                    </Pressable>
                   </>
                 )}
               </form>

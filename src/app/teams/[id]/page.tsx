@@ -31,6 +31,26 @@ interface Team {
   createdAt: string;
 }
 
+// Semantic UI colors that stay fixed regardless of the team's equipped cosmetic theme (role
+// badges, status pills, approve/deny actions) — the jewel-tone palette used site-wide, kept
+// separate from the theme-driven `t.*` colors which style the team's customizable chrome.
+const ROLE_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  admin: { bg: "rgba(255,201,74,0.15)", text: "#FFC94A", label: "👑 Admin" },
+  moderator: { bg: "rgba(178,75,243,0.15)", text: "#B24BF3", label: "🛡️ Mod" },
+};
+const DIFFICULTY_STYLE: Record<string, { bg: string; text: string }> = {
+  easy: { bg: "rgba(46,217,145,0.15)", text: "#2ED991" },
+  medium: { bg: "rgba(255,201,74,0.15)", text: "#FFC94A" },
+  hard: { bg: "rgba(255,59,92,0.15)", text: "#FF3B5C" },
+};
+const PODIUM_STYLE: Record<number, { color: string; glow: string; ring: string }> = {
+  0: { color: "#FFC94A", glow: "rgba(255,201,74,0.5)", ring: "#FFC94A" },
+  1: { color: "#EEF1FA", glow: "rgba(236,232,247,0.35)", ring: "#8891AC" },
+  2: { color: "#E8934A", glow: "rgba(232,147,74,0.45)", ring: "#E8934A" },
+};
+const PAGE_BG =
+  "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F";
+
 function formatTimeAgo(date: Date): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -247,20 +267,20 @@ export default function TeamDetailPage() {
 
   if (status === "loading" || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#020202' }}>
-        <div style={{ color: '#FDE74C' }} className="text-lg">Loading team...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: PAGE_BG }}>
+        <div style={{ color: '#FFC94A' }} className="text-lg">Loading team...</div>
       </div>
     );
   }
 
   if (error === "private") {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#020202' }}>
-        <div className="text-center">
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: PAGE_BG }}>
+        <div className="text-center pw-surface pw-bevel p-8 max-w-sm">
           <div className="text-5xl mb-4">🔒</div>
           <h2 className="text-2xl font-bold text-white mb-2">Private Team</h2>
-          <p className="mb-6" style={{ color: '#AB9F9D' }}>This team is private. You must be a member to view it.</p>
-          <Link href="/leaderboards/teams" className="px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors" style={{ backgroundColor: 'rgba(253,231,76,0.15)', color: '#FDE74C', border: '1px solid rgba(253,231,76,0.3)' }}>
+          <p className="mb-6" style={{ color: '#8891AC' }}>This team is private. You must be a member to view it.</p>
+          <Link href="/leaderboards/teams" className="inline-block px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors" style={{ backgroundColor: 'rgba(255,201,74,0.15)', color: '#FFC94A', border: '1px solid rgba(255,201,74,0.3)' }}>
             ← Back to Leaderboards
           </Link>
         </div>
@@ -270,12 +290,12 @@ export default function TeamDetailPage() {
 
   if (!team) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#020202' }}>
-        <div className="text-center">
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: PAGE_BG }}>
+        <div className="text-center pw-surface pw-bevel p-8 max-w-sm">
           <div className="text-5xl mb-4">🏚️</div>
           <h2 className="text-2xl font-bold text-white mb-2">Team Not Found</h2>
-          <p className="mb-6" style={{ color: '#AB9F9D' }}>This team may have been disbanded or the link is no longer valid.</p>
-          <Link href="/teams" className="px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors" style={{ backgroundColor: 'rgba(253,231,76,0.15)', color: '#FDE74C', border: '1px solid rgba(253,231,76,0.3)' }}>
+          <p className="mb-6" style={{ color: '#8891AC' }}>This team may have been disbanded or the link is no longer valid.</p>
+          <Link href="/teams" className="inline-block px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors" style={{ backgroundColor: 'rgba(255,201,74,0.15)', color: '#FFC94A', border: '1px solid rgba(255,201,74,0.3)' }}>
             ← Back to Teams
           </Link>
         </div>
@@ -283,7 +303,9 @@ export default function TeamDetailPage() {
     );
   }
 
-  // Resolve team theme
+  // Resolve team theme — page background, header gradient, and any element styled from `t.*`
+  // stays fully driven by the team's equipped cosmetic theme; everything else (badges, buttons
+  // for fixed-purpose actions, row chrome) uses the fixed jewel-tone palette below.
   const t = getThemeConfig(team.activeTheme);
 
   const handleSetTheme = async (theme: string) => {
@@ -309,20 +331,20 @@ export default function TeamDetailPage() {
 
   return (
     <div style={{ backgroundColor: t.pageBg, backgroundImage: t.headerGradient }} className="min-h-screen">
-      <div className="px-4 py-6 sm:p-8 pt-24 sm:pt-28">
+      <div className="px-3 sm:px-8 py-6 sm:py-8 pt-24 sm:pt-28">
       <div className="max-w-5xl mx-auto">
 
         {error && (
-          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: 'rgba(171, 159, 157, 0.2)', borderColor: '#AB9F9D' }}>
+          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: 'rgba(91,100,131,0.15)', borderColor: '#5B6483' }}>
             {error}
           </div>
         )}
 
         {/* ── Team Header ── */}
-        <div className="rounded-xl p-6 sm:p-8 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+        <div className="pw-bevel p-5 sm:p-8 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
           <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-6">
             <div className="min-w-0">
-              <h1 className="text-3xl sm:text-4xl font-bold text-white mb-1 truncate">
+              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-1 truncate">
                 {team.name}
               </h1>
               {team.description && (
@@ -331,11 +353,11 @@ export default function TeamDetailPage() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {team.isPublic ? (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-300 border border-green-500/30">
+                <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "rgba(46,217,145,0.15)", color: "#2ED991", border: "1px solid rgba(46,217,145,0.35)" }}>
                   Public
                 </span>
               ) : (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "rgba(91,100,131,0.2)", color: "#8891AC", border: "1px solid rgba(91,100,131,0.4)" }}>
                   Private
                 </span>
               )}
@@ -374,7 +396,7 @@ export default function TeamDetailPage() {
               <button
                 onClick={() => setConfirmLeaveOpen(true)}
                 className="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-                style={{ backgroundColor: 'rgba(185,28,28,0.25)', color: '#fca5a5', border: '1px solid rgba(185,28,28,0.5)' }}
+                style={{ backgroundColor: 'rgba(255,59,92,0.15)', color: '#FF3B5C', border: '1px solid rgba(255,59,92,0.35)' }}
               >
                 Leave Team
               </button>
@@ -382,7 +404,7 @@ export default function TeamDetailPage() {
             {!userRole && team.isPublic && (
               session?.user?.email ? (
                 inviteStatus === 'pending' ? (
-                  <button disabled className="px-4 py-2 rounded-lg bg-yellow-500 text-black font-semibold text-sm opacity-70 cursor-not-allowed">
+                  <button disabled className="px-4 py-2 rounded-lg font-semibold text-sm opacity-70 cursor-not-allowed" style={{ background: t.btnPrimary, color: t.btnPrimaryText }}>
                     Application Submitted
                   </button>
                 ) : (
@@ -418,7 +440,8 @@ export default function TeamDetailPage() {
                         setModalOpen(true);
                       }
                     }}
-                    className="px-4 py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-black font-semibold text-sm transition-colors"
+                    className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
+                    style={{ background: t.btnPrimary, color: t.btnPrimaryText }}
                   >
                     Apply to Join
                   </button>
@@ -426,7 +449,8 @@ export default function TeamDetailPage() {
               ) : (
                 <Link
                   href="/auth/signin"
-                  className="px-4 py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-black font-semibold text-sm transition-colors"
+                  className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
+                  style={{ background: t.btnPrimary, color: t.btnPrimaryText }}
                 >
                   Sign in to Join
                 </Link>
@@ -437,10 +461,10 @@ export default function TeamDetailPage() {
 
         {/* ── Theme Picker (admin only) ── */}
         {showThemePicker && userRole === 'admin' && (
-          <div className="rounded-xl p-5 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-5 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-white font-bold text-sm">Choose Team Theme</h3>
-              <button onClick={() => setShowThemePicker(false)} className="text-slate-400 hover:text-white text-sm">✕</button>
+              <button onClick={() => setShowThemePicker(false)} className="hover:text-white text-sm transition-colors" style={{ color: "#8891AC" }}>✕</button>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
               {['default', ...Object.keys(THEME_CONFIGS).filter(k => k !== 'default' && (ownedTeamThemes.includes(k)))].map((key) => {
@@ -475,48 +499,48 @@ export default function TeamDetailPage() {
 
         {/* ── Stats Overview ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
-          <div className="rounded-xl p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
             <div className="flex items-center gap-2 mb-2">
               <Trophy className="w-4 h-4" style={{ color: t.accentText }} />
               <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Rank</p>
             </div>
             {statsLoading ? (
-              <div className="h-7 bg-slate-700/50 rounded animate-pulse" />
+              <div className="h-7 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
             ) : (
               <p className="text-2xl font-bold text-white">
                 {stats?.rank ? `#${stats.rank}` : '—'}
-                {stats?.totalTeams ? <span className="text-xs text-slate-500 font-normal ml-1">/ {stats.totalTeams}</span> : null}
+                {stats?.totalTeams ? <span className="text-xs font-normal ml-1" style={{ color: "#5B6483" }}>/ {stats.totalTeams}</span> : null}
               </p>
             )}
           </div>
-          <div className="rounded-xl p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
             <div className="flex items-center gap-2 mb-2">
               <Star className="w-4 h-4" style={{ color: t.primary }} />
               <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Points</p>
             </div>
             {statsLoading ? (
-              <div className="h-7 bg-slate-700/50 rounded animate-pulse" />
+              <div className="h-7 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
             ) : (
               <p className="text-2xl font-bold text-white">
                 {stats?.totalEarnedPoints?.toLocaleString() ?? '0'}
               </p>
             )}
           </div>
-          <div className="rounded-xl p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
             <div className="flex items-center gap-2 mb-2">
               <Target className="w-4 h-4" style={{ color: t.primary }} />
               <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Solved</p>
             </div>
             {statsLoading ? (
-              <div className="h-7 bg-slate-700/50 rounded animate-pulse" />
+              <div className="h-7 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
             ) : (
               <p className="text-2xl font-bold text-white">
                 {stats?.totalPuzzlesSolved?.toLocaleString() ?? '0'}
-                <span className="text-xs text-slate-500 font-normal ml-1">puzzles</span>
+                <span className="text-xs font-normal ml-1" style={{ color: "#5B6483" }}>puzzles</span>
               </p>
             )}
           </div>
-          <div className="rounded-xl p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-4 h-4" style={{ color: t.primary }} />
               <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Members</p>
@@ -527,17 +551,17 @@ export default function TeamDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
 
           {/* ── Top Contributors ── */}
-          <div className="lg:col-span-2 rounded-xl p-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="lg:col-span-2 pw-bevel p-5 sm:p-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="w-5 h-5" style={{ color: t.accentText }} />
               <h2 className="text-lg font-bold text-white">Top Contributors</h2>
             </div>
             {statsLoading ? (
               <div className="space-y-3">
-                {[1,2,3].map(i => <div key={i} className="h-12 bg-slate-700/30 rounded-lg animate-pulse" />)}
+                {[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}
               </div>
             ) : stats?.topContributors?.length > 0 ? (
               <div className="space-y-2">
@@ -545,22 +569,35 @@ export default function TeamDetailPage() {
                   const maxPts = stats.topContributors[0]?.earnedPoints || 1;
                   const pct = Math.max(5, Math.round((c.earnedPoints / maxPts) * 100));
                   const medals = ['🥇', '🥈', '🥉'];
+                  const podium = PODIUM_STYLE[i];
                   return (
                     <div key={c.userId} className="relative">
                       <div
-                        className="absolute inset-0 rounded-lg opacity-20"
+                        className="absolute inset-0 rounded-lg opacity-10"
                         style={{
                           width: `${pct}%`,
-                          backgroundColor: i === 0 ? '#FDE74C' : i === 1 ? '#C0C0C0' : i === 2 ? '#CD7F32' : '#3891A6',
+                          backgroundColor: podium ? podium.color : "#5B6483",
                         }}
                       />
                       <div className="relative flex items-center justify-between p-3 rounded-lg">
                         <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-lg w-7 h-7 flex items-center justify-center leading-none flex-shrink-0">{medals[i] ?? `${i + 1}.`}</span>
+                          <div
+                            className="shrink-0 flex items-center justify-center font-mono font-bold text-xs rounded-full"
+                            style={{
+                              width: 26,
+                              height: 26,
+                              color: podium ? podium.color : "#8891AC",
+                              background: podium ? "rgba(255,255,255,0.06)" : "transparent",
+                              boxShadow: podium ? `0 0 10px ${podium.glow}` : undefined,
+                              fontSize: medals[i] ? 14 : 11,
+                            }}
+                          >
+                            {medals[i] ?? i + 1}
+                          </div>
                           {c.image ? (
-                            <img src={c.image} alt="" className="w-8 h-8 rounded-full object-cover object-center flex-shrink-0" />
+                            <img src={c.image} alt="" className="w-8 h-8 rounded-full object-cover object-center flex-shrink-0" style={{ border: podium ? `2px solid ${podium.ring}` : "1px solid rgba(255,255,255,0.1)" }} />
                           ) : (
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ backgroundColor: t.primaryMuted, color: t.primary }}>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: podium ? `2px solid ${podium.ring}` : "1px solid rgba(255,255,255,0.1)" }}>
                               👤
                             </div>
                           )}
@@ -570,8 +607,8 @@ export default function TeamDetailPage() {
                         </div>
                         <div className="text-right flex-shrink-0 ml-2">
                           <span className="text-white font-bold">{c.earnedPoints.toLocaleString()}</span>
-                          <span className="text-slate-400 text-xs ml-1">pts</span>
-                          <span className="text-slate-500 text-xs ml-2">{c.puzzlesSolved} solved</span>
+                          <span className="text-xs ml-1" style={{ color: "#8891AC" }}>pts</span>
+                          <span className="text-xs ml-2" style={{ color: "#5B6483" }}>{c.puzzlesSolved} solved</span>
                         </div>
                       </div>
                     </div>
@@ -579,12 +616,12 @@ export default function TeamDetailPage() {
                 })}
               </div>
             ) : (
-              <p className="text-slate-400 text-sm">No activity yet. Solve puzzles to climb the ranks!</p>
+              <p className="text-sm" style={{ color: "#8891AC" }}>No activity yet. Solve puzzles to climb the ranks!</p>
             )}
           </div>
 
           {/* ── Team Info Sidebar ── */}
-          <div className="rounded-xl p-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-5 sm:p-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
             <h2 className="text-lg font-bold text-white mb-4">Team Info</h2>
             <div className="space-y-4">
               <div>
@@ -594,7 +631,7 @@ export default function TeamDetailPage() {
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: t.subtleText }}>Avg Points / Member</p>
                 {statsLoading ? (
-                  <div className="h-5 w-16 bg-slate-700/50 rounded animate-pulse" />
+                  <div className="h-5 w-16 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
                 ) : (
                   <p className="text-white text-sm font-semibold">{stats?.avgPointsPerMember?.toLocaleString() ?? '0'}</p>
                 )}
@@ -616,19 +653,21 @@ export default function TeamDetailPage() {
         </div>
 
         {/* ── Recent Activity ── */}
-        <div className="rounded-xl p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+        <div className="pw-bevel p-5 sm:p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
           <div className="flex items-center gap-2 mb-4">
             <Activity className="w-5 h-5" style={{ color: t.primary }} />
             <h2 className="text-lg font-bold text-white">Recent Activity</h2>
           </div>
           {statsLoading ? (
             <div className="space-y-3">
-              {[1,2,3,4].map(i => <div key={i} className="h-10 bg-slate-700/30 rounded-lg animate-pulse" />)}
+              {[1,2,3,4].map(i => <div key={i} className="h-10 rounded-lg animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}
             </div>
           ) : stats?.recentActivity?.length > 0 ? (
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {stats.recentActivity.map((a: any, i: number) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-slate-900/30 border border-slate-700/30">
+              {stats.recentActivity.map((a: any, i: number) => {
+                const diff = DIFFICULTY_STYLE[a.difficulty as string];
+                return (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}>
                   {a.userImage ? (
                     <img src={a.userImage} alt="" className="w-7 h-7 rounded-full object-cover object-center flex-shrink-0" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
                   ) : (
@@ -642,14 +681,9 @@ export default function TeamDetailPage() {
                       {' solved '}
                       <span style={{ color: t.primary }}>{a.puzzleTitle || 'a puzzle'}</span>
                     </p>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <div className="flex items-center gap-2 text-xs" style={{ color: "#8891AC" }}>
                       {a.difficulty && (
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                          a.difficulty === 'easy' ? 'bg-green-500/20 text-green-300' :
-                          a.difficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
-                          a.difficulty === 'hard' ? 'bg-red-500/20 text-red-300' :
-                          'bg-slate-500/20 text-slate-300'
-                        }`}>
+                        <span className="px-1.5 py-0.5 rounded text-xs font-medium" style={diff ? { backgroundColor: diff.bg, color: diff.text } : { backgroundColor: "rgba(91,100,131,0.2)", color: "#8891AC" }}>
                           {a.difficulty}
                         </span>
                       )}
@@ -663,19 +697,20 @@ export default function TeamDetailPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <p className="text-slate-400 text-sm">No puzzles solved yet. Get started!</p>
+            <p className="text-sm" style={{ color: "#8891AC" }}>No puzzles solved yet. Get started!</p>
           )}
         </div>
 
         {/* ── Members ── */}
-        <div className="rounded-xl p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+        <div className="pw-bevel p-5 sm:p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-5 h-5" style={{ color: t.primary }} />
             <h2 className="text-lg font-bold text-white">Members</h2>
-            <span className="text-slate-400 text-sm">({team.members.length})</span>
+            <span className="text-sm" style={{ color: "#8891AC" }}>({team.members.length})</span>
           </div>
           <div className="space-y-2">
             {(stats?.topContributors || team.members).map((member: any) => {
@@ -683,10 +718,13 @@ export default function TeamDetailPage() {
                 ? member
                 : { userId: member.user.id, name: member.user.name, image: member.user.image, role: member.role, joinedAt: null, earnedPoints: 0, puzzlesSolved: 0 };
               const teamMember = team.members.find((tm) => tm.user.id === m.userId);
+              const role = (m.role || teamMember?.role) as string;
+              const roleStyle = ROLE_STYLE[role];
               return (
                 <div
                   key={m.userId}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 rounded-lg bg-slate-900/30 border border-slate-700/30"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 rounded-lg"
+                  style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {m.image ? (
@@ -702,7 +740,7 @@ export default function TeamDetailPage() {
                           {m.name || "Member"}
                         </Link>
                       </p>
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <div className="flex items-center gap-2 text-xs" style={{ color: "#8891AC" }}>
                         {m.joinedAt && (
                           <span>Joined {new Date(m.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                         )}
@@ -713,15 +751,10 @@ export default function TeamDetailPage() {
 
                   <div className="mt-2 sm:mt-0 flex items-center gap-2">
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        (m.role || teamMember?.role) === "admin"
-                          ? "bg-yellow-500/20 text-yellow-300"
-                          : (m.role || teamMember?.role) === "moderator"
-                          ? "bg-purple-500/20 text-purple-300"
-                          : "bg-slate-600/20 text-slate-300"
-                      }`}
+                      className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                      style={roleStyle ? { backgroundColor: roleStyle.bg, color: roleStyle.text } : { backgroundColor: "rgba(91,100,131,0.2)", color: "#8891AC" }}
                     >
-                      {(m.role || teamMember?.role) === "admin" ? "👑 Admin" : (m.role || teamMember?.role) === "moderator" ? "🛡️ Mod" : "Member"}
+                      {roleStyle ? roleStyle.label : "Member"}
                     </span>
 
                     {userRole && ["admin", "moderator"].includes(userRole) && session?.user?.email !== teamMember?.user?.email && teamMember && (
@@ -730,7 +763,8 @@ export default function TeamDetailPage() {
                           setConfirmMember(teamMember);
                           setConfirmOpen(true);
                         }}
-                        className="px-2.5 py-0.5 rounded bg-red-600/80 hover:bg-red-600 text-white text-xs transition-colors"
+                        className="px-2.5 py-0.5 rounded text-xs font-semibold transition-colors hover:opacity-80"
+                        style={{ backgroundColor: "rgba(255,59,92,0.18)", color: "#FF3B5C" }}
                       >
                         Remove
                       </button>
@@ -744,23 +778,23 @@ export default function TeamDetailPage() {
 
         {/* ── Pending Applications (admin/mod only) ── */}
         {userRole && ["admin", "moderator"].includes(userRole) && (
-          <div className="rounded-xl p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
+          <div className="pw-bevel p-5 sm:p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
             <h2 className="text-lg font-bold text-white mb-4">Pending Applications</h2>
             {applications.length === 0 ? (
-              <p className="text-sm text-slate-400">No pending applications.</p>
+              <p className="text-sm" style={{ color: "#8891AC" }}>No pending applications.</p>
             ) : (
               <div className="space-y-2">
                 {applications.map((app) => (
-                  <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg bg-slate-900/30 border border-slate-700/30">
+                  <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}>
                     <div className="flex items-center gap-3">
                       {app.user?.image ? (
                         <img src={app.user.image} alt="" className="w-10 h-10 rounded-full object-cover object-center" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-300">👤</div>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: t.primaryMuted, color: t.primary }}>👤</div>
                       )}
                       <div>
                         <p className="text-white font-semibold">{app.user?.name || app.user?.email || 'Applicant'}</p>
-                        <p className="text-xs text-slate-400">Applied {new Date(app.createdAt).toLocaleString()}</p>
+                        <p className="text-xs" style={{ color: "#8891AC" }}>Applied {new Date(app.createdAt).toLocaleString()}</p>
                       </div>
                     </div>
                     <div className="mt-3 sm:mt-0 flex gap-2">
@@ -791,7 +825,8 @@ export default function TeamDetailPage() {
                             setModalOpen(true);
                           }
                         }}
-                        className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition-colors"
+                        className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: "#2ED991", color: "#0B0E1A" }}
                       >
                         Approve
                       </button>
@@ -820,7 +855,8 @@ export default function TeamDetailPage() {
                             setModalOpen(true);
                           }
                         }}
-                        className="px-3 py-1 rounded bg-red-600/80 hover:bg-red-600 text-white font-semibold text-sm transition-colors"
+                        className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: "rgba(255,59,92,0.85)", color: "#fff" }}
                       >
                         Deny
                       </button>

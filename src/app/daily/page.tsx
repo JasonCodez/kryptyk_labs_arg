@@ -139,7 +139,7 @@ export default function DailyHubPage() {
                 <Link
                   key={key}
                   href={`/daily/${slug}`}
-                  className="pw-bevel rounded-2xl p-5 flex flex-col gap-3 transition-transform hover:-translate-y-0.5"
+                  className="pw-bevel pw-press rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5"
                   style={cardShellStyle(accent, locked || notReady)}
                 >
                   <div className="flex items-center justify-between">
@@ -174,7 +174,7 @@ export default function DailyHubPage() {
                 than through CARDS. Violet to match its "featured/special" treatment on the dashboard. */}
             <Link
               href="/debrief"
-              className="pw-bevel rounded-2xl p-5 flex flex-col gap-3 transition-transform hover:-translate-y-0.5"
+              className="pw-bevel pw-press rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5"
               style={cardShellStyle("violet", !isAuthenticated)}
             >
               <div className="flex items-center justify-between">

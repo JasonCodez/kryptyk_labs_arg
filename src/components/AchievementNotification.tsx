@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, type Variants } from "framer-motion";
+import { juice } from "@/lib/juice";
 
 interface AchievementNotificationProps {
   achievement: {
@@ -78,6 +79,7 @@ export default function AchievementNotification({
   const [sparkles, setSparkles] = useState<Sparkle[]>([]);
 
   useEffect(() => {
+    juice.reward(); // fanfare lands with the confetti entrance
     setSparkles(
       Array.from({ length: 14 }, (_, i) => ({
         id: i,

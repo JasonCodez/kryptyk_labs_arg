@@ -7,13 +7,15 @@ import { useEffect, useState, useRef } from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import MessagesBell from "@/components/notifications/MessagesBell";
 import { FEATURE_STORE_ENABLED, FEATURE_SEASONS_ENABLED } from "@/lib/featureFlags";
+import { juice } from "@/lib/juice";
 
 function Hamburger({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   return (
     <button
       className="hamburger-button flex nav:hidden flex-col justify-center items-center w-10 h-10 focus:outline-none"
       aria-label={open ? 'Close menu' : 'Open menu'}
-      onClick={() => setOpen(!open)}
+      data-juiced // whoosh below replaces the global tap for this control
+      onClick={() => { if (!open) juice.whoosh(); setOpen(!open); }}
     >
       <span
         className={`block h-0.5 w-6 rounded bg-white transition-all duration-300 ${open ? 'rotate-45 translate-y-2' : ''}`}

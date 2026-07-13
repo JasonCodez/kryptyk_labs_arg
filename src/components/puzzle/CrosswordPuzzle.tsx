@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { TegakiRenderer, type TegakiBundle } from "tegaki";
 import caveat from "../../../node_modules/tegaki/dist/fonts/caveat/bundle.mjs";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
+import { juice, playSound } from "@/lib/juice";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -1077,6 +1078,7 @@ export default function CrosswordPuzzle({
     const staggerTailMs = solvedClue ? Math.max(0, solvedClue.length - 1) * WORD_SOLVED_STAGGER_MS : 0;
     const cleanupDelayMs = WORD_SOLVED_ANIMATION_MS + staggerTailMs + 120;
 
+    playSound("pop"); // word turned green
     setJustSolvedClues((prev) => {
       const next = new Set(prev);
       next.add(key);
@@ -1109,6 +1111,7 @@ export default function CrosswordPuzzle({
     // Phase 1: let the whole board celebrate (visible, nothing covers it) before
     // the "Crossword Complete" card appears — see checkWord's allSolved branch
     // for the delay that lets the last word's own solve animation finish first.
+    juice.success();
     setBoardCelebrating(true);
 
     const waveTailMs = Math.max(0, (rows - 1) + (cols - 1)) * BOARD_WAVE_STAGGER_MS;

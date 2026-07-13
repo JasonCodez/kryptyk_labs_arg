@@ -120,7 +120,7 @@ export default function PuzzlesHub() {
                 <Link
                   key={s.puzzleType}
                   href={`/puzzles/type/${s.puzzleType}`}
-                  className="group pw-surface pw-bevel p-5 transition-all duration-300 hover:scale-[1.02] block"
+                  className="group pw-surface pw-bevel pw-press p-5 transition-all duration-300 hover:scale-[1.02] block"
                   style={{
                     borderColor: complete ? "rgba(255,201,74,0.4)" : "rgba(178,75,243,0.3)",
                     borderWidth: "1px",

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Tooltip from "@/components/Tooltip";
 import CosmeticPreviewModal from "@/components/CosmeticPreviewModal";
 import { FEATURE_STORE_ENABLED } from "@/lib/featureFlags";
+import { juice } from "@/lib/juice";
 
 /** Smoothly counts from one number to another over `duration` ms */
 function useAnimatedCounter(target: number, duration = 1200) {
@@ -342,6 +343,7 @@ function StorePageInner() {
       starter_pack: 500, value_pack: 1700, pro_pack: 4000, elite_pack: 9000,
     };
     if (purchase === "success") {
+      juice.reward();
       setPurchaseSuccess({ points: BUNDLE_POINTS[bundle ?? ""] ?? 0, bundleKey: bundle ?? "" });
       router.replace("/store");
       // Verify + credit points idempotently (fallback if webhook fires late or not at all)
@@ -392,9 +394,11 @@ function StorePageInner() {
       });
       const data = await res.json();
       if (!res.ok) {
+        juice.error();
         showToast(data.error ?? "Purchase failed", "error");
         return;
       }
+      juice.reward();
       showToast(`${item.iconEmoji} ${getStoreItemDisplayName(item)} purchased!`);
       fetchStore();
     } finally {

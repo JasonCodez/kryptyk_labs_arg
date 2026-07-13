@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Lock, Eye, EyeOff } from "lucide-react";
+import { juice } from "@/lib/juice";
 
 interface HintWithStats {
   id: string;
@@ -52,6 +53,7 @@ export default function HintCard({
 
   const handleReveal = async () => {
     await onReveal(hint.id);
+    juice.unlock(); // hint revealed — the "evidence unlocked" beat
   };
 
   const handleRate = (helpful: boolean) => {

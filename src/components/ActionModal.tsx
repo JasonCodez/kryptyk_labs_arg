@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { juice } from "@/lib/juice";
 
 type Variant = "success" | "error" | "info";
 type Theme = "default" | "escapeRoom" | "escapeRoomSpeakeasy" | "teamLobby";
@@ -35,6 +36,14 @@ export default function ActionModal({
     // Reset per-open/per-image so a previous failure doesn't stick.
     if (isOpen) setForceProxyImage(false);
   }, [isOpen, imageUrl]);
+
+  // Sound matches the news being delivered
+  useEffect(() => {
+    if (!isOpen) return;
+    if (variant === "success") juice.success();
+    else if (variant === "error") juice.error();
+    else juice.whoosh();
+  }, [isOpen, variant]);
 
   const resolvedImageSrc = useMemo(() => {
     const raw = (imageUrl || "").trim();
@@ -78,7 +87,7 @@ export default function ActionModal({
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-        <div className="relative w-full" style={{ maxWidth: "min(94vw, 760px)", maxHeight: "min(92dvh, 920px)" }}>
+        <div className="relative w-full pw-pop-in" style={{ maxWidth: "min(94vw, 760px)", maxHeight: "min(92dvh, 920px)" }}>
           <div className="rounded-2xl bg-gradient-to-r from-amber-900 via-amber-700 to-amber-950 p-[3px] shadow-2xl">
             <div className="overflow-hidden rounded-[14px] bg-neutral-950/95 ring-1 ring-amber-500/30" style={{ maxHeight: "min(92dvh, 920px)" }}>
               <div className="flex items-stretch gap-0 bg-gradient-to-r from-neutral-950 via-neutral-950 to-amber-950/70">
@@ -168,7 +177,7 @@ export default function ActionModal({
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-        <div className="relative w-full" style={{ maxWidth: "min(94vw, 760px)", maxHeight: "min(92dvh, 920px)" }}>
+        <div className="relative w-full pw-pop-in" style={{ maxWidth: "min(94vw, 760px)", maxHeight: "min(92dvh, 920px)" }}>
           <div className="rounded-2xl bg-gradient-to-r from-amber-900 via-amber-700 to-amber-950 p-[3px] shadow-2xl">
             <div className="overflow-hidden rounded-[14px] bg-neutral-950/95 ring-1 ring-amber-500/25" style={{ maxHeight: "min(92dvh, 920px)" }}>
               <div className="flex items-stretch gap-0 bg-gradient-to-r from-neutral-950 via-neutral-950 to-amber-950/70">
@@ -274,7 +283,7 @@ export default function ActionModal({
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-        <div className="relative w-full" style={{ maxWidth: "min(92vw, 620px)", maxHeight: "min(92dvh, 840px)" }}>
+        <div className="relative w-full pw-pop-in" style={{ maxWidth: "min(92vw, 620px)", maxHeight: "min(92dvh, 840px)" }}>
           <div className="rounded-3xl bg-gradient-to-r from-cyan-500/60 via-sky-500/60 to-teal-500/60 p-[1px] shadow-[0_26px_70px_rgba(0,0,0,0.55)]">
             <div className="rounded-[calc(1.5rem-1px)] border border-slate-800 bg-slate-950/95 p-6 sm:p-7 overflow-y-auto" style={{ maxHeight: "min(92dvh, 840px)" }}>
               <div className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${badgeClass}`}>
@@ -321,7 +330,7 @@ export default function ActionModal({
     <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-      <div className="relative w-full rounded-lg shadow-lg overflow-hidden" style={{ maxWidth: "min(94vw, 760px)", maxHeight: "min(92dvh, 920px)" }}>
+      <div className="relative w-full rounded-lg shadow-lg overflow-hidden pw-pop-in" style={{ maxWidth: "min(94vw, 760px)", maxHeight: "min(92dvh, 920px)" }}>
         <div className={`${headerBgDefault} px-6 py-4`}> 
           <h3 className="text-white text-lg font-semibold">{resolvedTitle}</h3>
         </div>
