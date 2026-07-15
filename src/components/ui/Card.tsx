@@ -3,11 +3,14 @@ import type { CSSProperties, ReactNode } from "react";
 export type CardAccent = "gold" | "violet" | "teal" | "success" | "none";
 export type CardPadding = "sm" | "md" | "lg";
 
-const ACCENT_VARS: Record<Exclude<CardAccent, "none">, string> = {
-  gold: "var(--pw-gold)",
-  violet: "var(--pw-violet)",
-  teal: "var(--pw-teal)",
-  success: "var(--pw-success)",
+// RGB channels of the jewel-tone tokens (globals.css), so the accent border and
+// glow can use valid rgba() with alpha. Appending hex alpha to a var() —
+// `var(--pw-gold)55` — produces an invalid color the browser silently drops.
+const ACCENT_RGB: Record<Exclude<CardAccent, "none">, string> = {
+  gold: "255, 201, 74", // #FFC94A
+  violet: "178, 75, 243", // #B24BF3
+  teal: "61, 127, 255", // #3D7FFF
+  success: "46, 217, 145", // #2ED991
 };
 
 const PADDING: Record<CardPadding, number> = {
@@ -37,7 +40,7 @@ export default function Card({
   className,
   style,
 }: CardProps) {
-  const accentColor = accent !== "none" ? ACCENT_VARS[accent] : null;
+  const accentRgb = accent !== "none" ? ACCENT_RGB[accent] : null;
 
   return (
     <div
@@ -48,8 +51,8 @@ export default function Card({
         clipPath: bevel
           ? "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))"
           : undefined,
-        borderColor: accentColor ? `${accentColor}55` : undefined,
-        boxShadow: accentColor ? `0 0 24px -8px ${accentColor}66` : undefined,
+        borderColor: accentRgb ? `rgba(${accentRgb}, 0.33)` : undefined,
+        boxShadow: accentRgb ? `0 0 24px -8px rgba(${accentRgb}, 0.4)` : undefined,
         ...style,
       }}
     >

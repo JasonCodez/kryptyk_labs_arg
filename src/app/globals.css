@@ -44,6 +44,113 @@
   }
 }
 
+/* ── App shell: full-screen puzzle play mode ──────────────────────────────
+   In play mode (see getAppMode / AppChrome) a puzzle takes over the mobile
+   viewport. AppChrome clears the browse chrome and the page renders its own
+   PuzzlePlayShell + PuzzleHeader. These rules make that shell own 100dvh on
+   mobile and flow under the preserved global navbar on desktop. */
+
+/* Hide the global navbar wrapper below the desktop breakpoint during play. */
+@media (max-width: 1031px) {
+  .pw-chrome-hide-mobile {
+    display: none;
+  }
+}
+
+/* In play mode there is no bottom nav, so drop the body padding reserved for it
+   (the shell manages its own safe-area insets) and hide the cookie banner so it
+   can't float over the puzzle. */
+@media (max-width: 1031px) {
+  html[data-app-mode="play"] body {
+    padding-bottom: 0;
+  }
+  html[data-app-mode="play"] .pw-cookie-banner {
+    display: none;
+  }
+}
+
+.pw-play-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: #020202;
+}
+.pw-play-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Desktop keeps the global navbar, so the shell flows beneath it instead of
+   taking over the screen. */
+@media (min-width: 1032px) {
+  .pw-play-shell {
+    height: auto;
+    min-height: 100vh;
+    padding-top: 56px;
+  }
+  .pw-play-content {
+    overflow: visible;
+  }
+}
+
+/* Compact puzzle header — replaces the navbar during mobile gameplay. */
+.pw-play-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: 8px;
+  padding-right: 8px;
+  min-height: calc(56px + env(safe-area-inset-top, 0px));
+  background: rgba(2, 2, 2, 0.96);
+  border-bottom: 1px solid rgba(178, 75, 243, 0.18);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.pw-play-header-back {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #eef1fa;
+  text-decoration: none;
+}
+.pw-play-header-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+}
+.pw-play-header-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #eef1fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pw-play-header-subtitle {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8891ac;
+}
+.pw-play-header-progress,
+.pw-play-header-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

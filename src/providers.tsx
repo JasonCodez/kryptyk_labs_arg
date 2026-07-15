@@ -3,7 +3,6 @@
 import { SessionProvider } from "next-auth/react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
 import AchievementNotification from "@/components/AchievementNotification";
 import SlotMachineModal from "@/components/puzzle/SlotMachineModal";
 import { rarityColors } from "@/lib/rarity";
@@ -13,11 +12,8 @@ import { useModalQueueStore } from "@/lib/modal-queue-store";
 import { useSlotModalStore } from "@/lib/slot-modal-store";
 import TeamLobbyInviteModalProvider from "@/components/teams/TeamLobbyInviteModalProvider";
 
-const Navbar = dynamic(() => import("@/components/Navbar"), { ssr: false });
 const AppSplashScreen = dynamic(() => import("@/components/AppSplashScreen"), { ssr: false });
-const AppBottomNav = dynamic(() => import("@/components/AppBottomNav"), { ssr: false });
-const IOSInstallBanner = dynamic(() => import("@/components/IOSInstallBanner"), { ssr: false });
-const EarlyAccessBanner = dynamic(() => import("@/components/EarlyAccessBanner"), { ssr: false });
+const AppChrome = dynamic(() => import("@/components/app-shell/AppChrome"), { ssr: false });
 
 let globalSocket: any = null;
 
@@ -285,17 +281,6 @@ function AuthenticatedEffects() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [isStandalone, setIsStandalone] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(display-mode: standalone)");
-    setIsStandalone(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsStandalone(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
   // Ensure next-auth client always fetches from the current origin.
   // This avoids CLIENT_FETCH_ERROR when NEXTAUTH_URL is set to a different host
   // (e.g. production) or when accessing dev via a LAN IP.
@@ -310,13 +295,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <PwaRegistration />
       <AppSplashScreen />
-      {pathname !== '/coming-soon' && <Navbar isStandalone={isStandalone} />}
-      <AppBottomNav />
+      <AppChrome />
       <GlobalAchievementModal />
       <GlobalSlotMachineModal />
       <AuthenticatedEffects />
-      {!isStandalone && <IOSInstallBanner />}
-      {!isStandalone && <EarlyAccessBanner />}
       {children}
     </SessionProvider>
   );
