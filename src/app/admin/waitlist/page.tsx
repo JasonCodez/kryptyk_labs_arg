@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 interface WaitlistEntry {
   id: string;
@@ -73,8 +72,7 @@ export default function AdminWaitlistPage() {
 
   return (
     <>
-      <Navbar />
-      <main className="min-h-screen pt-20 pb-16 px-4 max-w-4xl mx-auto" style={{ backgroundColor: "#020202" }}>
+      <main className="min-h-screen pb-16 px-4 max-w-4xl mx-auto" style={{ backgroundColor: "#020202" }}>
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <Link href="/admin/analytics" className="text-white/30 hover:text-white/60 text-sm transition-colors">

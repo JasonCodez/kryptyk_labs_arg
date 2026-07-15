@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import ForumRulesModal from "@/components/ForumRulesModal";
 import { useForumRulesGate } from "@/hooks/useForumRulesGate";
@@ -90,7 +89,6 @@ export default function CreateForumPostPage() {
 
   return (
     <>
-      <Navbar />
       <ForumRulesModal
         open={rulesGate.modalOpen}
         accepting={rulesGate.accepting}

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import NotificationSettings from "@/components/NotificationSettings";
 import { juice, isHapticsEnabled, setHapticsEnabled } from "@/lib/juice";
 
@@ -158,7 +157,6 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Navbar />
       <main className="min-h-screen pt-24 pb-20 px-4" style={{ backgroundColor: "#020202" }}>
         <div className="max-w-2xl mx-auto">
           <h1 className="text-2xl font-bold text-white mb-2">Settings</h1>

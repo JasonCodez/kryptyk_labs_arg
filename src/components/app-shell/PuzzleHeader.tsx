@@ -37,6 +37,7 @@ export default function PuzzleHeader({
         onClick={onBack}
         aria-label="Back"
         className="pw-play-header-back pw-press"
+        data-testid="puzzle-header-back"
       >
         <svg
           width="24"
@@ -54,14 +55,22 @@ export default function PuzzleHeader({
       </Link>
 
       <div className="pw-play-header-titles">
-        <span className="pw-play-header-title">{title}</span>
+        <span className="pw-play-header-title" data-testid="puzzle-header-title">{title}</span>
         {subtitle != null && subtitle !== "" && (
-          <span className="pw-play-header-subtitle">{subtitle}</span>
+          <span className="pw-play-header-subtitle" data-testid="puzzle-header-subtitle">{subtitle}</span>
         )}
       </div>
 
-      {progress && <div className="pw-play-header-progress">{progress}</div>}
-      {actions && <div className="pw-play-header-actions">{actions}</div>}
+      {progress && (
+        <div className="pw-play-header-progress" data-testid="puzzle-header-progress">
+          {progress}
+        </div>
+      )}
+      {actions && (
+        <div className="pw-play-header-actions" data-testid="puzzle-header-actions">
+          {actions}
+        </div>
+      )}
     </header>
   );
 }

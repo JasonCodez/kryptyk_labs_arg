@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { Flag, CheckCircle, XCircle, Clock } from "lucide-react";
 
@@ -76,8 +75,7 @@ export default function AdminReportsPage() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#020202" }}>
-      <Navbar />
-      <main className="max-w-5xl mx-auto px-4 pt-24 pb-10">
+      <main className="max-w-5xl mx-auto px-4 pb-10">
         <div className="flex items-center gap-3 mb-8">
           <Flag className="w-6 h-6 text-amber-400" />
           <h1 className="text-2xl font-extrabold text-white">Abuse Reports</h1>

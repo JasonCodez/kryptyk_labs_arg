@@ -14,10 +14,14 @@ const EarlyAccessBanner = dynamic(() => import("@/components/EarlyAccessBanner")
  * The single owner of global navigation chrome (top Navbar, AppBottomNav) and
  * promotional banners — nothing else should render these.
  *
- * Route-aware via getAppMode: in "play" mode on mobile (< 1032px) it clears the
- * browse chrome so a puzzle can take the full screen, while the desktop navbar
- * (>= 1032px) is preserved. Pages in play mode supply their own top bar through
- * PuzzlePlayShell / PuzzleHeader.
+ * Route-aware via getAppMode, one rule per mode:
+ *   browse — standard Navbar, mobile AppBottomNav, eligible promo banners.
+ *   play   — Navbar hidden on mobile (< 1032px), preserved on desktop; no
+ *            AppBottomNav or banners. Pages supply their own top bar via
+ *            PuzzlePlayShell / PuzzleHeader.
+ *   auth   — no Navbar, no AppBottomNav, no banners.
+ *   admin  — no Navbar, no AppBottomNav, no banners; the admin section owns
+ *            its own in-page navigation (back-links, etc.) instead.
  */
 export default function AppChrome() {
   const pathname = usePathname();
@@ -33,6 +37,8 @@ export default function AppChrome() {
 
   const mode = getAppMode(pathname);
   const isPlay = mode === "play";
+  const showNavbar = pathname !== "/coming-soon" && (mode === "browse" || mode === "play");
+  const showBrowseChrome = mode === "browse";
 
   // Expose the mode to CSS so global rules (e.g. body bottom padding reserved for
   // the now-hidden bottom nav, and the cookie banner) can respond without prop
@@ -43,16 +49,17 @@ export default function AppChrome() {
 
   return (
     <>
-      {pathname !== "/coming-soon" && (
+      {showNavbar && (
         // In play mode the top navbar is hidden below 1032px (CSS) but preserved
-        // on desktop — the wrapper is what the media query targets.
+        // on desktop — the wrapper is what the media query targets. In browse
+        // mode the wrapper is a no-op (always visible).
         <div className={isPlay ? "pw-chrome-hide-mobile" : undefined}>
           <Navbar isStandalone={isStandalone} />
         </div>
       )}
-      {!isPlay && <AppBottomNav />}
-      {!isPlay && !isStandalone && <IOSInstallBanner />}
-      {!isPlay && !isStandalone && <EarlyAccessBanner />}
+      {showBrowseChrome && <AppBottomNav />}
+      {showBrowseChrome && !isStandalone && <IOSInstallBanner />}
+      {showBrowseChrome && !isStandalone && <EarlyAccessBanner />}
     </>
   );
 }

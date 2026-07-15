@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 export const metadata = {
   title: "Privacy Policy | PuzzleWarz",
@@ -63,7 +62,6 @@ const SECTIONS = [
 export default function PrivacyPage() {
   return (
     <>
-      <Navbar />
       <main className="min-h-screen pt-24 pb-20 px-4" style={{ backgroundColor: "#020202" }}>
         <div className="max-w-3xl mx-auto">
           <div className="mb-10 pb-8" style={{ borderBottom: "1px solid rgba(56,145,166,0.2)" }}>

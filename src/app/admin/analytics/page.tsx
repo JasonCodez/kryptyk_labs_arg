@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import {
   BarChart3,
   TrendingUp,
@@ -180,9 +179,8 @@ export default function AdminAnalyticsPage() {
 
   return (
     <>
-      <Navbar />
       <main
-        className="min-h-screen pt-24 pb-12"
+        className="min-h-screen pb-12"
         style={{ backgroundColor: "#020202" }}
       >
         <div className="max-w-7xl mx-auto px-4">

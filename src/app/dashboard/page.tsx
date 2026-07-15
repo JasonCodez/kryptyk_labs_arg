@@ -4,7 +4,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Navbar from '@/components/Navbar';
 import WelcomeModal from '@/components/WelcomeModal';
 import DashboardTour from '@/components/DashboardTour';
 
@@ -387,7 +386,6 @@ export default function Dashboard() {
         background: 'radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F',
         minHeight: '100vh',
       }}>
-        <Navbar />
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 48px' }}>
           {/* Header skeleton */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 48 }}>
@@ -461,8 +459,6 @@ export default function Dashboard() {
         background: 'radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F',
         minHeight: '100vh',
       }}>
-        <Navbar />
-
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 64px' }}>
 
           {/* ── Welcome header ─────────────────────────────── */}

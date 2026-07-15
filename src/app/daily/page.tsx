@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 type DailySummaryEntry = {
   dayNumber: number;
@@ -113,8 +112,6 @@ export default function DailyHubPage() {
         minHeight: "100vh",
       }}
     >
-      <Navbar />
-
       <main className="pt-24 pb-16 flex flex-col items-center px-3">
         <div className="w-full max-w-5xl mt-6 mb-6 text-center">
           <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3D7FFF" }}>Daily Puzzles</p>

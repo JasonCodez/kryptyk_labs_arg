@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import dynamic from "next/dynamic";
 
 const PrelaunchRewardModal = dynamic(() => import("@/components/PrelaunchRewardModal"), { ssr: false });
@@ -64,9 +63,8 @@ function VerifyEmailInner() {
 
   return (
     <>
-      <Navbar />
       <main
-        className="min-h-screen flex items-center justify-center px-4 pt-16"
+        className="min-h-screen flex items-center justify-center px-4"
         style={{
           backgroundColor: "#020202",
           backgroundImage: "linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)",

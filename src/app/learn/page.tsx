@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type TrackPuzzle = {
@@ -257,8 +256,6 @@ export default function LearningPathsPage() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#020202" }}>
-      <Navbar />
-
       <main className="max-w-4xl mx-auto px-4 pt-24 pb-12">
         {/* ── Page header ──────────────────────────────────────────── */}
         <div className="mb-10">

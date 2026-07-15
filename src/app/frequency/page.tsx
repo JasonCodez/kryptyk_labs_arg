@@ -2,7 +2,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import FrequencyGame from "@/components/FrequencyGame";
-import Navbar from "@/components/Navbar";
 import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +66,6 @@ export default async function FrequencyPage() {
 
   return (
     <>
-      <Navbar />
       <main className="min-h-screen pt-24 pb-10 px-4" style={{ backgroundColor: "#020202" }}>
       <div className="max-w-lg mx-auto">
         {/* Header */}

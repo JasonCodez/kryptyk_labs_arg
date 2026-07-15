@@ -3,7 +3,6 @@
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import Navbar from "@/components/Navbar";
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 
 export default function NotificationsPage() {
@@ -16,7 +15,6 @@ export default function NotificationsPage() {
 
   return (
     <div style={{ backgroundColor: '#020202' }} className="min-h-screen">
-      <Navbar />
       <main className="pt-24 px-4">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-bold text-white mb-4">Notifications</h1>

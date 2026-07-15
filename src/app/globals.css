@@ -111,7 +111,10 @@
   }
 }
 
-/* Compact puzzle header — replaces the navbar during mobile gameplay. */
+/* Compact puzzle header — replaces the navbar during mobile gameplay.
+   overflow-x:hidden on the row itself is the hard backstop: even if a slot's
+   content refuses to shrink, it clips instead of pushing the page wider than
+   the viewport. */
 .pw-play-header {
   flex: none;
   display: flex;
@@ -125,8 +128,11 @@
   border-bottom: 1px solid rgba(178, 75, 243, 0.18);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  overflow-x: hidden;
+  max-width: 100%;
 }
 .pw-play-header-back {
+  /* Fixed 48px touch target — must never shrink, unlike the other slots. */
   flex: none;
   width: 48px;
   height: 48px;
@@ -137,8 +143,14 @@
   text-decoration: none;
 }
 .pw-play-header-titles {
-  flex: 1;
-  min-width: 0;
+  /* flex-basis:auto (not 0%) — a 0%-basis item gets ZERO share of the shrink
+     pool when squeezed (shrink is weighted by basis × shrink-factor, so a 0
+     basis means 0 weight), which let the wide progress/actions slots below
+     claim their full natural width while the title collapsed to nothing.
+     min-width is a hard floor so the title is never fully invisible even in
+     the worst case (long countdown text + a wide streak pill both present). */
+  flex: 1 1 auto;
+  min-width: 56px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -157,13 +169,55 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #8891ac;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .pw-play-header-progress,
 .pw-play-header-actions {
-  flex: none;
+  /* Capped max-width — the lower-priority optional slots (a countdown string,
+     a streak pill) must never be allowed to claim so much natural width that
+     the title's guaranteed min-width above is the only thing standing between
+     it and disappearing. Progress (secondary/collapsible per design) gets a
+     tighter cap than actions. */
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   min-height: 48px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.pw-play-header-progress {
+  max-width: 96px;
+}
+.pw-play-header-actions {
+  max-width: 148px;
+}
+
+/* Below 380px, tighten spacing and shrink the two optional slots further so
+   the fixed 48px back target and a readable title always win. */
+@media (max-width: 379px) {
+  .pw-play-header {
+    gap: 4px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .pw-play-header-title {
+    font-size: 13px;
+  }
+  .pw-play-header-subtitle {
+    font-size: 10px;
+  }
+  .pw-play-header-progress {
+    max-width: 72px;
+    font-size: 11px;
+  }
+  .pw-play-header-actions {
+    max-width: 118px;
+    transform: scale(0.9);
+    transform-origin: right center;
+  }
 }
 
 :root {

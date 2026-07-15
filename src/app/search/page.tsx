@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
 
 const PUZZLE_TYPES: { value: string; label: string }[] = [
@@ -107,7 +106,6 @@ function SearchPageInner() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#020202" }}>
-      <Navbar />
       <div className="max-w-4xl mx-auto px-4 pt-20 pb-8">
         {/* Header */}
         <div className="mb-8">

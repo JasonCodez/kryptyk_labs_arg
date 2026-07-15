@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail } from "lucide-react";
-import Navbar from "@/components/Navbar";
 import { CreateTeamModal } from "@/components/teams/CreateTeamModal";
 import PendingInvitations from "@/components/teams/PendingInvitations";
 
@@ -98,7 +97,6 @@ export default function TeamsPage() {
 
   return (
     <>
-      <Navbar />
       <div style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }} className="min-h-screen pt-20 sm:pt-24">
         <div className="max-w-6xl mx-auto px-4 py-12">
           <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between">

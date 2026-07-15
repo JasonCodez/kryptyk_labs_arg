@@ -3,7 +3,6 @@
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
@@ -51,8 +50,7 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <>
-        <Navbar />
-        <main className="min-h-screen flex items-center justify-center px-4 pt-16" style={{ backgroundColor: '#020202' }}>
+        <main className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#020202' }}>
           <div className="w-full max-w-md text-center space-y-4">
             <p style={{ color: '#fca5a5' }}>Invalid or missing reset link.</p>
             <Link href="/auth/forgot-password" className="text-sm font-semibold hover:opacity-80 transition-opacity" style={{ color: '#3891A6' }}>
@@ -66,8 +64,7 @@ function ResetPasswordForm() {
 
   return (
     <>
-      <Navbar />
-      <main className="min-h-screen flex items-center justify-center px-4 pt-16" style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }}>
+      <main className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }}>
         <div className="w-full max-w-md">
           <div className="border rounded-lg p-8" style={{ backgroundColor: 'rgba(76, 91, 92, 0.6)', borderColor: '#3891A6' }}>
             <div className="flex justify-center mb-2">

@@ -3,7 +3,6 @@
 import { useState, useEffect, use } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Link from "next/link";
 
@@ -218,7 +217,6 @@ export default function ForumPostPage({ params }: { params: Promise<{ id: string
   if (!post) {
     return (
       <>
-        <Navbar />
         <div style={{ backgroundColor: '#010101', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
             <p style={{ color: '#6B7280', marginBottom: 24, fontSize: 15 }}>Post not found.</p>
@@ -233,7 +231,6 @@ export default function ForumPostPage({ params }: { params: Promise<{ id: string
 
   return (
     <>
-      <Navbar />
       <div style={{ backgroundColor: '#010101', minHeight: '100vh', paddingTop: 80 }}>
         <div style={{ maxWidth: 860, margin: '0 auto', padding: '40px 20px 80px' }}>
 

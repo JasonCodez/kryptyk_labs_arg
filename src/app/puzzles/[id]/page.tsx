@@ -1333,6 +1333,7 @@ export default function PuzzleDetailPage() {
       backHref="/puzzles"
       title={displayTitle}
       actions={<PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
+      contentMode={puzzle.puzzleType === "jigsaw" ? "fixed" : "scroll"}
     >
     <div
       style={{

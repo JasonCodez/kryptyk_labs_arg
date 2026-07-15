@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 export const metadata = {
   title: "Terms of Service | PuzzleWarz",
@@ -71,7 +70,6 @@ const SECTIONS = [
 export default function TermsPage() {
   return (
     <>
-      <Navbar />
       <main className="min-h-screen pt-24 pb-20 px-4" style={{ backgroundColor: "#020202" }}>
         <div className="max-w-3xl mx-auto">
 

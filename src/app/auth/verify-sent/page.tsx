@@ -3,7 +3,6 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 function VerifySentInner() {
   const searchParams = useSearchParams();
@@ -11,9 +10,8 @@ function VerifySentInner() {
 
   return (
     <>
-      <Navbar />
       <main
-        className="min-h-screen flex items-center justify-center px-4 pt-16"
+        className="min-h-screen flex items-center justify-center px-4"
         style={{
           backgroundColor: "#020202",
           backgroundImage: "linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)",

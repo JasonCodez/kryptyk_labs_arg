@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
-import Navbar from "@/components/Navbar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -968,7 +967,6 @@ export default function WitnessPage() {
   if (stage === "loading") {
     return (
       <>
-        <Navbar />
         <main style={{ backgroundColor: BG, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ color: MUTED, fontSize: 14, letterSpacing: "0.1em" }}>DECRYPTING…</div>
         </main>
@@ -1004,8 +1002,6 @@ export default function WitnessPage() {
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
         * { font-family: 'Inter', system-ui, sans-serif; }
       `}</style>
-
-      <Navbar />
 
       <main
         style={{

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -26,8 +25,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <Navbar />
-      <main className="min-h-screen flex items-center justify-center px-4 pt-16" style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }}>
+      <main className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }}>
         <div className="w-full max-w-md">
           <div className="border rounded-lg p-8" style={{ backgroundColor: 'rgba(76, 91, 92, 0.6)', borderColor: '#3891A6' }}>
             <div className="flex justify-center mb-2">

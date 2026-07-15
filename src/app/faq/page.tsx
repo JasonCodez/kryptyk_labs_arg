@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 const CATEGORIES = [
   {
@@ -165,7 +164,6 @@ export default function FAQPage() {
 
   return (
     <>
-      <Navbar />
       <main className="min-h-screen pt-24 pb-20 px-4" style={{ backgroundColor: "#020202" }}>
         <div className="max-w-3xl mx-auto">
 

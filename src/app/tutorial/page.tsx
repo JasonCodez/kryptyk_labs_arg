@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 
 /* ── Section data ──────────────────────────────────────────────────── */
 
@@ -761,7 +760,6 @@ export default function TutorialPage() {
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-      <Navbar />
       <main
         className="min-h-screen pt-24 pb-20 px-4"
         style={{ backgroundColor: "#020202" }}

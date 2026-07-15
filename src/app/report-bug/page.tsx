@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
 
 interface PuzzleOption {
@@ -98,7 +97,6 @@ export default function ReportBugPage() {
 
   return (
     <>
-      <Navbar />
       <main className="min-h-screen pt-24 pb-20 px-4" style={{ backgroundColor: "#020202" }}>
         <div className="max-w-2xl mx-auto">
           {/* Header */}

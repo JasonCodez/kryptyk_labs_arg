@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import Link from "next/link";
 
 interface ForumPost {
@@ -96,7 +95,6 @@ export default function ForumPage() {
 
   return (
     <>
-      <Navbar />
       <div style={{ backgroundColor: '#010101', minHeight: '100vh', paddingTop: 80 }}>
 
         {/* Page header */}
