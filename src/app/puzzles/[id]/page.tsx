@@ -22,6 +22,7 @@ import { PuzzleTypeRenderer } from "@/components/puzzle/PuzzleTypeRenderer";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection";
 import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
+import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
@@ -1236,42 +1237,54 @@ export default function PuzzleDetailPage() {
 
   if (status === "loading" || loading) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: "#020202" }}>
+      <PuzzlePlayShell backHref="/puzzles" title="Loading…">
         <PuzzlePageSkeleton />
-      </div>
+      </PuzzlePlayShell>
     );
   }
 
   if (locked) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center" style={{ backgroundColor: "#020202" }}>
-        <div style={{ fontSize: 40 }}>🔒</div>
-        <div style={{ color: "#F5F5F5" }} className="text-lg font-bold">
-          This puzzle is locked
+      <PuzzlePlayShell backHref="/puzzles" title="Puzzle Locked">
+        <div className="h-full flex flex-col items-center justify-center gap-4 px-4 text-center">
+          <div style={{ fontSize: 40 }}>🔒</div>
+          <div style={{ color: "#F5F5F5" }} className="text-lg font-bold">
+            This puzzle is locked
+          </div>
+          <div style={{ color: "#AB9F9D" }} className="text-sm max-w-sm">
+            {locked.unlocksAfterTitle
+              ? <>Complete <span style={{ color: "#FDE74C" }}>{locked.unlocksAfterTitle}</span> first to unlock this one.</>
+              : "Complete the previous puzzle first to unlock it."}
+          </div>
+          <Link href="/puzzles" style={{ color: "#3891A6" }} className="text-sm font-semibold underline mt-2">
+            Back to Puzzles
+          </Link>
         </div>
-        <div style={{ color: "#AB9F9D" }} className="text-sm max-w-sm">
-          {locked.unlocksAfterTitle
-            ? <>Complete <span style={{ color: "#FDE74C" }}>{locked.unlocksAfterTitle}</span> first to unlock this one.</>
-            : "Complete the previous puzzle first to unlock it."}
-        </div>
-        <Link href="/puzzles" style={{ color: "#3891A6" }} className="text-sm font-semibold underline mt-2">
-          Back to Puzzles
-        </Link>
-      </div>
+      </PuzzlePlayShell>
     );
   }
 
   if (!puzzle) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#020202" }}>
-        <div style={{ color: "#AB9F9D" }} className="text-lg">
-          Puzzle not found
+      <PuzzlePlayShell backHref="/puzzles" title="Puzzle Not Found">
+        <div className="h-full flex items-center justify-center">
+          <div style={{ color: "#AB9F9D" }} className="text-lg">
+            Puzzle not found
+          </div>
         </div>
-      </div>
+      </PuzzlePlayShell>
     );
   }
 
   const skin = getSkinTokens(activeSkin);
+
+  const displayTitle = (() => {
+    const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
+    const puzzleTitle = (puzzle?.title || '').toString().trim();
+    if ((puzzle?.puzzleType === 'escape_room' || puzzle?.puzzleType === 'jim_wyze_case') && escapeTitle) return escapeTitle;
+    if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
+    return puzzleTitle || escapeTitle || 'Untitled Puzzle';
+  })();
 
   // Skip-token control — normally rendered below the puzzle by PuzzleProgressSection, which gets
   // hidden behind the fullscreen overlay. Passed into PuzzleFullscreenFrame so it's still
@@ -1316,6 +1329,11 @@ export default function PuzzleDetailPage() {
   ) : null;
 
   return (
+    <PuzzlePlayShell
+      backHref="/puzzles"
+      title={displayTitle}
+      actions={<PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
+    >
     <div
       style={{
         backgroundColor: skin.boardBg !== "rgba(15,18,25,0.97)" ? skin.boardBg : "#020202",
@@ -1340,7 +1358,7 @@ export default function PuzzleDetailPage() {
         "--ps-btn-text":    skin.btnText,
         "--ps-label":       skin.labelColor,
       } as React.CSSProperties}
-      className="min-h-screen"
+      className="min-h-full"
     >
       <PuzzlePageOverlays
         timeLimitExceeded={timeLimitExceeded}
@@ -1353,32 +1371,8 @@ export default function PuzzleDetailPage() {
       />
 
 
-      <div className="flex-1 w-full px-0 sm:px-8 py-3 sm:py-8 pt-20 sm:pt-28">
+      <div className="flex-1 w-full px-0 sm:px-8 py-3 sm:py-8">
         <div className="w-full max-w-5xl mx-auto">
-
-          {/* ── Back navigation ─────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-2 mb-2 sm:mb-5 px-3 sm:px-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <Link
-                href="/puzzles"
-                className="flex items-center gap-1.5 text-sm transition-opacity hover:opacity-80 shrink-0"
-                style={{ color: "#AB9F9D" }}
-              >
-                <span style={{ fontSize: 16, lineHeight: 1 }}>←</span> Puzzles
-              </Link>
-              <span style={{ color: "#AB9F9D", opacity: 0.35 }}>/</span>
-              <span className="text-sm truncate max-w-[200px] sm:max-w-xs" style={{ color: "#DDDBF1" }}>
-                {(() => {
-                  const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
-                  const puzzleTitle = (puzzle?.title || '').toString().trim();
-                  if ((puzzle?.puzzleType === 'escape_room' || puzzle?.puzzleType === 'jim_wyze_case') && escapeTitle) return escapeTitle;
-                  if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
-                  return puzzleTitle || escapeTitle || 'Untitled Puzzle';
-                })()}
-              </span>
-            </div>
-            <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />
-          </div>
 
           {/* ── Main puzzle card ─────────────────────────────────── */}
           <div
@@ -1389,18 +1383,9 @@ export default function PuzzleDetailPage() {
             }}
           >
             {/* ── Card body ───────────────────────────────────────── */}
-            {/* Visually-hidden h1 — the player already saw title/difficulty/XP on the puzzle
-                card before clicking in, so none of that is repeated here, but the page still
+            {/* Visually-hidden h1 — PuzzleHeader shows the title visually; the page still
                 needs one real heading for accessibility/SEO. */}
-            <h1 className="sr-only">
-              {(() => {
-                const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
-                const puzzleTitle = (puzzle?.title || '').toString().trim();
-                if ((puzzle?.puzzleType === 'escape_room' || puzzle?.puzzleType === 'jim_wyze_case') && escapeTitle) return escapeTitle;
-                if ((puzzleTitle === '' || puzzleTitle === 'Untitled Puzzle') && escapeTitle) return escapeTitle;
-                return puzzleTitle || escapeTitle || 'Untitled Puzzle';
-              })()}
-            </h1>
+            <h1 className="sr-only">{displayTitle}</h1>
             <div className="px-0 py-3 sm:p-8">
 
             {/* Math Problem Configuration (if present) */}
@@ -1930,5 +1915,6 @@ export default function PuzzleDetailPage() {
         </div>
       </div>
     </div>
+    </PuzzlePlayShell>
   );
 }

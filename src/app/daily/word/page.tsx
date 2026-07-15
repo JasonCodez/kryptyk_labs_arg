@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import Navbar from "@/components/Navbar";
+import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import DailyHiddenWordSharePanel from "@/components/daily/DailyHiddenWordSharePanel";
 import GuestRewardModal from "@/components/puzzle/GuestRewardModal";
 import StreakTimer from "@/components/StreakTimer";
@@ -234,24 +234,14 @@ export default function DailyPage() {
   }, [saveState]);
 
   return (
-    <div style={{ backgroundColor: "#020202", minHeight: "100vh" }}>
-      <Navbar />
-
-      <main className="pt-24 pb-16 flex flex-col items-center px-3">
-        <div className="w-full max-w-3xl mt-6 mb-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3891A6" }}>Daily Hidden Word</p>
-            <div className="flex items-center gap-3 flex-wrap mt-1">
-              <span className="text-white text-2xl font-black tracking-[0.18em]">#{dayNum || "---"}</span>
-              <span className="text-xs font-mono" style={{ color: "#FDE74C" }}>Resets in {countdown}</span>
-            </div>
-          </div>
-
-          {dailyStreak > 0 && (
-            <StreakTimer streak={dailyStreak} solvedToday={gameStatus !== "playing"} size="sm" />
-          )}
-        </div>
-
+    <PuzzlePlayShell
+      backHref="/daily"
+      title="Daily Hidden Word"
+      subtitle={`#${dayNum || "---"}`}
+      progress={<span className="text-xs font-mono" style={{ color: "#FDE74C" }}>Resets in {countdown}</span>}
+      actions={dailyStreak > 0 ? <StreakTimer streak={dailyStreak} solvedToday={gameStatus !== "playing"} size="sm" /> : null}
+    >
+      <div className="flex flex-col items-center px-3 pt-4 pb-6">
         {gameStatus === "playing" && nextReward && (
           <div className="w-full max-w-3xl mb-4 rounded-xl border px-4 py-3"
                style={{ background: "rgba(56,145,166,0.08)", borderColor: "rgba(56,145,166,0.25)", color: "#DDDBF1" }}>
@@ -385,7 +375,7 @@ export default function DailyPage() {
             )}
           </>
         )}
-      </main>
+      </div>
 
       {showRewardModal && earnedReward && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center"
@@ -486,6 +476,6 @@ export default function DailyPage() {
           onDismiss={() => setGuestReward(null)}
         />
       )}
-    </div>
+    </PuzzlePlayShell>
   );
 }

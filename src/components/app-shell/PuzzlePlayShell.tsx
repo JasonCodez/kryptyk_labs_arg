@@ -11,8 +11,16 @@ interface PuzzlePlayShellProps {
   actions?: ReactNode;
   onBack?: () => void;
   children: ReactNode;
-  /** Extra class(es) for the scrollable content region. */
+  /** Extra class(es) for the content region. */
   contentClassName?: string;
+  /**
+   * "scroll" (default) — the content region scrolls internally, for puzzles
+   * whose content can exceed the viewport (text, images, forms).
+   * "fixed" — overflow:hidden, children get the full remaining viewport with
+   * no scroll. Use for puzzles that manage their own gestures/canvas and where
+   * page scroll would fight drag interactions (e.g. Jigsaw).
+   */
+  contentMode?: "scroll" | "fixed";
 }
 
 /**
@@ -31,6 +39,7 @@ export default function PuzzlePlayShell({
   onBack,
   children,
   contentClassName,
+  contentMode = "scroll",
 }: PuzzlePlayShellProps) {
   return (
     <div className="pw-play-shell">
@@ -42,7 +51,9 @@ export default function PuzzlePlayShell({
         actions={actions}
         onBack={onBack}
       />
-      <div className={`pw-play-content${contentClassName ? ` ${contentClassName}` : ""}`}>
+      <div
+        className={`pw-play-content pw-play-content--${contentMode}${contentClassName ? ` ${contentClassName}` : ""}`}
+      >
         {children}
       </div>
     </div>

@@ -78,9 +78,21 @@
 .pw-play-content {
   flex: 1;
   min-height: 0;
+}
+.pw-play-content--scroll {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pw-play-content--fixed {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pw-play-content--fixed > * {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Desktop keeps the global navbar, so the shell flows beneath it instead of
@@ -91,8 +103,11 @@
     min-height: 100vh;
     padding-top: 56px;
   }
-  .pw-play-content {
+  .pw-play-content--scroll {
     overflow: visible;
+  }
+  .pw-play-content--fixed {
+    height: calc(100vh - 56px - calc(56px + env(safe-area-inset-top, 0px)));
   }
 }
 

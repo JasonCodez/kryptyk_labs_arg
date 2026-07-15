@@ -11,8 +11,18 @@
 
 export type AppMode = "browse" | "play" | "auth" | "admin";
 
-/** Playable individual-puzzle route: /puzzles/<id> (but not the /puzzles library). */
-const PUZZLE_SOLVE_RE = /^\/puzzles\/[^/]+/;
+// Both regexes are anchored to exactly one path segment after the prefix, so a
+// route only counts as gameplay if it IS /puzzles/<id> or /daily/<puzzle> —
+// deeper nested routes (e.g. /puzzles/type/<type> — a browse listing, or
+// /puzzles/<id>/planning — a team-planning redirect stub, neither of which is
+// the solve screen) fall through to "browse" instead of being swept in by a
+// loose prefix match. Add new segments here explicitly if they're gameplay.
+
+/** Playable individual-puzzle route: /puzzles/<id> only, not /puzzles/type/<type>. */
+const PUZZLE_SOLVE_RE = /^\/puzzles\/(?!type$)[^/]+$/;
+
+/** Playable daily route: /daily/<puzzle>, e.g. /daily/crossword. */
+const DAILY_PLAY_RE = /^\/daily\/[^/]+$/;
 
 export function getAppMode(pathname: string | null | undefined): AppMode {
   if (!pathname) return "browse";
@@ -20,13 +30,14 @@ export function getAppMode(pathname: string | null | undefined): AppMode {
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return "auth";
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return "admin";
 
-  // The daily hub is browse; every individual daily puzzle under it is play
+  // The daily hub is browse; each individual daily puzzle under it is play
   // (/daily/crossword, /daily/sudoku, /daily/word, /daily/word-search,
-  // /daily/jigsaw, and any future daily puzzle route).
+  // /daily/jigsaw, and any future single-segment daily puzzle route).
   if (pathname === "/daily") return "browse";
-  if (pathname.startsWith("/daily/")) return "play";
+  if (DAILY_PLAY_RE.test(pathname)) return "play";
 
-  // Individual puzzle solve pages are play; the /puzzles library is browse.
+  // Individual puzzle solve pages are play; the /puzzles library, and any
+  // nested non-solve route under /puzzles/<id>/*, are browse.
   if (PUZZLE_SOLVE_RE.test(pathname)) return "play";
 
   return "browse";

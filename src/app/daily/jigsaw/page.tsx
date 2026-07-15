@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import StreakTimer from "@/components/StreakTimer";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
+import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
 import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
 
@@ -21,17 +21,14 @@ export default function DailyJigsawPage() {
   const isDone = completedToday || solved;
 
   return (
-    <div style={{ backgroundColor: "#020202", minHeight: "100vh" }}>
-      <Navbar />
-      <main className="pt-24 pb-16 flex flex-col items-center px-3">
-        <div className="w-full max-w-3xl mt-6 mb-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3891A6" }}>Daily Jigsaw</p>
-            <span className="text-white text-2xl font-black tracking-[0.18em]">#{dayNumber || "---"}</span>
-          </div>
-          {streak > 0 && <StreakTimer streak={streak} solvedToday={isDone} size="sm" />}
-        </div>
-
+    <PuzzlePlayShell
+      backHref="/daily"
+      title="Daily Jigsaw"
+      subtitle={`#${dayNumber || "---"}`}
+      actions={streak > 0 ? <StreakTimer streak={streak} solvedToday={isDone} size="sm" /> : null}
+      contentMode="fixed"
+    >
+      <div className="flex flex-col items-center px-3 pt-4 pb-6">
         {!isAuthenticated ? (
           <div className="mt-16 text-center">
             <p className="text-white font-bold mb-3">Sign in to play the daily jigsaw</p>
@@ -82,7 +79,7 @@ export default function DailyJigsawPage() {
             />
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </PuzzlePlayShell>
   );
 }
