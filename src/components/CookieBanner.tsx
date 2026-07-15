@@ -32,7 +32,7 @@ export default function CookieBanner() {
     <div
       role="dialog"
       aria-label="Cookie notice"
-      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-4 bg-gray-900/95 backdrop-blur border-t border-gray-700 px-4 py-3 sm:px-6"
+      className="pw-cookie-banner fixed left-0 right-0 z-50 flex items-center justify-between gap-4 bg-gray-900/95 backdrop-blur border-t border-gray-700 px-4 py-3 sm:px-6"
     >
       <p className="text-sm text-gray-300 leading-snug">
         🍪 We use cookies to keep you logged in, save your streak, and remember

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 
 const HIDDEN_PREFIXES = ["/auth", "/admin", "/coming-soon"];
@@ -69,31 +68,24 @@ const TABS = [
 ];
 
 export default function AppBottomNav() {
-  const [isStandalone, setIsStandalone] = useState(false);
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  useEffect(() => {
-    const mq = window.matchMedia("(display-mode: standalone)");
-    setIsStandalone(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsStandalone(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
-  if (!isStandalone) return null;
   if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
 
   return (
     <nav
+      // Primary nav below the "nav:" breakpoint (1032px, see .pw-bottom-nav in
+      // globals.css) — the same width Navbar switches from its mobile layout to
+      // the full desktop link row — so the two nav systems hand off with no gap
+      // or overlap. Desktop keeps the top nav only.
+      className="pw-bottom-nav"
       style={{
         position: "fixed",
         bottom: 0,
         left: 0,
         right: 0,
         zIndex: 200,
-        display: "flex",
-        alignItems: "stretch",
         background: "rgba(8,8,8,0.97)",
         borderTop: "1px solid rgba(56,145,166,0.18)",
         backdropFilter: "blur(16px)",

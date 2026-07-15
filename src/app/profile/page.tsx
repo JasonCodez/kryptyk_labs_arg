@@ -9,6 +9,9 @@ import { THEME_CONFIGS, FRAME_CONFIGS, type ThemeConfig } from '@/lib/profileThe
 import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import FollowListModal from '@/components/FollowListModal';
+import PressableCard from '@/components/ui/PressableCard';
+import Pressable from '@/components/juice/Pressable';
+import { FEATURE_SEASONS_ENABLED } from '@/lib/featureFlags';
 
 const MAX_BIO_LENGTH = 280;
 
@@ -156,6 +159,19 @@ function DrawerItemPreview({ item }: { item: DrawerItem }) {
   }
   return null;
 }
+
+// Overflow destinations that used to live in the hamburger drawer. The bottom
+// nav only covers 5 fixed tabs (Home, Daily, Puzzles, Leaders, Profile), so
+// everything else surfaces here instead.
+const MORE_ITEMS: Array<{ href: string; icon: string; title: string; desc: string; accent: 'gold' | 'violet' | 'teal' | 'none' }> = [
+  { href: '/warz', icon: '⚔️', title: 'Warz Battles', desc: 'Head-to-head puzzle battles', accent: 'gold' },
+  ...(FEATURE_SEASONS_ENABLED ? [{ href: '/season-pass', icon: '🏅', title: 'Season Pass', desc: 'Track tiers & claim rewards', accent: 'gold' as const }] : []),
+  { href: '/teams', icon: '🛡️', title: 'Teams', desc: 'Squad up with other players', accent: 'teal' },
+  { href: '/achievements', icon: '🏆', title: 'Achievements', desc: 'Badges and milestones', accent: 'violet' },
+  { href: '/debrief', icon: '🔍', title: 'The Debrief', desc: 'Ongoing ARG storyline', accent: 'violet' },
+  { href: '/frequency', icon: '📡', title: 'Frequency', desc: 'Live signal & broadcasts', accent: 'teal' },
+  { href: '/settings', icon: '⚙️', title: 'Settings', desc: 'Account & preferences', accent: 'none' },
+];
 
 export default function ProfilePage() {
   const { data: session, status } = useSession();
@@ -773,7 +789,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
           <Link
             href="/dashboard"
             className="border rounded-xl p-6 transition hover:scale-[1.02]"
@@ -790,6 +806,32 @@ export default function ProfilePage() {
             <h3 className="text-lg font-bold text-white mb-1">🛒 Point Store</h3>
             <p style={{ color: t.subtleText }}>Change your active theme, frame & flair</p>
           </Link>
+        </div>
+
+        {/* More — everything the bottom nav's 5 fixed tabs don't cover */}
+        <div>
+          <h2 className="text-lg font-bold text-white mb-4">More</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+            {MORE_ITEMS.map((item) => (
+              <PressableCard key={item.href} href={item.href} accent={item.accent} padding="sm">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl leading-none">{item.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold" style={{ color: 'var(--pw-text)' }}>{item.title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--pw-text-dim)' }}>{item.desc}</p>
+                  </div>
+                </div>
+              </PressableCard>
+            ))}
+          </div>
+          <Pressable
+            cue="tap"
+            onClick={() => signOut({ callbackUrl: '/auth/signin?logout=true' })}
+            className="flex items-center gap-2.5 w-full px-4 py-3 rounded-xl text-sm font-semibold transition-colors"
+            style={{ color: '#fca5a5', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)' }}
+          >
+            <span className="text-base w-5 text-center">🚪</span> Sign Out
+          </Pressable>
         </div>
       </div>
 

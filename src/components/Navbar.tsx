@@ -7,28 +7,6 @@ import { useEffect, useState, useRef } from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import MessagesBell from "@/components/notifications/MessagesBell";
 import { FEATURE_STORE_ENABLED, FEATURE_SEASONS_ENABLED } from "@/lib/featureFlags";
-import { juice } from "@/lib/juice";
-
-function Hamburger({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
-  return (
-    <button
-      className="hamburger-button flex nav:hidden flex-col justify-center items-center w-10 h-10 focus:outline-none"
-      aria-label={open ? 'Close menu' : 'Open menu'}
-      data-juiced // whoosh below replaces the global tap for this control
-      onClick={() => { if (!open) juice.whoosh(); setOpen(!open); }}
-    >
-      <span
-        className={`block h-0.5 w-6 rounded bg-white transition-all duration-300 ${open ? 'rotate-45 translate-y-2' : ''}`}
-      ></span>
-      <span
-        className={`block h-0.5 w-6 rounded bg-white my-1 transition-all duration-300 ${open ? 'opacity-0' : ''}`}
-      ></span>
-      <span
-        className={`block h-0.5 w-6 rounded bg-white transition-all duration-300 ${open ? '-rotate-45 -translate-y-2' : ''}`}
-      ></span>
-    </button>
-  );
-}
 
 interface UserInfo {
   id: string;
@@ -221,8 +199,46 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
           </Link>
         )}
 
-        {/* Hamburger for mobile */}
-        <Hamburger open={mobileOpen} setOpen={setMobileOpen} />
+        {/* Mobile utility strip — replaces the old hamburger trigger. Primary nav now
+            lives in AppBottomNav below the "nav:" breakpoint; overflow (Store, Warz,
+            Season Pass, Teams, Achievements, Settings, Sign out, etc.) lives on /profile. */}
+        {!mobileOpen && (
+          <div className="mobile-nav-utility flex items-center gap-1.5">
+            {session && !loading ? (
+              <>
+                <Link
+                  href="/search"
+                  aria-label="Search puzzles"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg transition-all duration-200 text-zinc-400 hover:text-white"
+                  style={{ backgroundColor: isActive(pathname, "/search") ? "rgba(61,127,255,0.15)" : "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                  </svg>
+                </Link>
+                <NotificationBell />
+                <MessagesBell />
+              </>
+            ) : !loading ? (
+              <>
+                <Link href="/auth/signin" className="px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-300 transition-all hover:text-white hover:bg-white/5">
+                  Sign In
+                </Link>
+                <Link
+                  href="/auth/register"
+                  className="px-3 py-1.5 rounded-lg text-sm font-bold transition-all hover:brightness-110"
+                  style={{
+                    background: "linear-gradient(135deg, #3D7FFF, #2956AD)",
+                    color: "#0B0E1A",
+                    boxShadow: "0 0 12px rgba(61,127,255,0.5)",
+                  }}
+                >
+                  Join
+                </Link>
+              </>
+            ) : null}
+          </div>
+        )}
 
         {/* Center nav links (desktop) */}
         {session && !mobileOpen && (

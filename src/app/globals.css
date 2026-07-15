@@ -1,16 +1,44 @@
 @import "tailwindcss";
 
-/* Push page content above the bottom nav when running as an installed app */
-@media (display-mode: standalone) {
+/* AppBottomNav — the primary mobile nav bar. Visible below the "nav:" breakpoint
+   (1032px), the same width Navbar switches from its mobile layout to the full
+   desktop link row, so the hand-off between the two nav systems has no gap or
+   overlap. display:flex lives here (not inline on the component) so this
+   min-width override can actually win — an inline style would out-specificity it. */
+.pw-bottom-nav {
+  display: flex;
+  align-items: stretch;
+}
+@media (min-width: 1032px) {
+  .pw-bottom-nav {
+    display: none;
+  }
+}
+
+/* Cookie banner sits at the very bottom too — lift it above AppBottomNav
+   (z-index 200) on mobile web so its "Got it" button stays clickable and
+   isn't covered by the tab bar. */
+.pw-cookie-banner {
+  bottom: 0;
+}
+@media (max-width: 1031px) {
+  .pw-cookie-banner {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Push page content above the bottom nav — shown on mobile web now, not just
+   when running as an installed app. */
+@media (max-width: 1031px) {
   body {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 }
 
-/* Outside the installed app there's no bottom nav bar to clear, but notched/gesture-bar
-   phones still need the home-indicator area kept clear of page content (e.g. bottom-anchored
-   puzzle UI like the jigsaw tray). Zero on devices without a safe-area inset. */
-@media not (display-mode: standalone) {
+/* Desktop: no bottom nav bar to clear, but notched/gesture-bar phones still need the
+   home-indicator area kept clear of page content (e.g. bottom-anchored puzzle UI like
+   the jigsaw tray). Zero on devices without a safe-area inset. */
+@media (min-width: 1032px) {
   body {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -414,15 +442,20 @@ body {
 
 /* ── End pickup animations ───────────────────────────────── */
 
-/* Explicit navbar breakpoint overrides (debugging fallback) */
+/* Explicit navbar breakpoint overrides — the custom "nav" screen (1032px) in
+   tailwind.config.ts isn't wired into Tailwind v4's compiler (no @config
+   directive), so `nav:*` utility classes silently no-op. Plain media queries
+   with !important do the actual mobile/desktop hand-off instead. */
 @media (min-width: 1032px) {
   .hamburger-button { display: none !important; }
   .desktop-nav { display: flex !important; }
+  .mobile-nav-utility { display: none !important; }
 }
 
 @media (max-width: 1031px) {
   .hamburger-button { display: flex !important; }
   .desktop-nav { display: none !important; }
+  .mobile-nav-utility { display: flex !important; }
 }
 
 /* ── Hero grid background (subtle blueprint) ─────────────── */
