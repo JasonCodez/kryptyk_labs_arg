@@ -300,7 +300,6 @@ export default function WarzChallengePage() {
         <WarzPlayBoard
           key={`challenge:${id}`}
           puzzle={challenge.puzzle}
-          instanceId={`challenge:${id}`}
           wager={challenge.challengerWager}
           onDone={handlePuzzleDone}
         />

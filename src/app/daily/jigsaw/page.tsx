@@ -31,7 +31,18 @@ export default function DailyJigsawPage() {
       title="Daily Jigsaw"
       subtitle={`#${dayNumber || "---"}${streak > 0 ? ` · ${streak} day streak` : ""}`}
       progress={!isDone && presentation ? `${elapsedLabel} · ${presentation.placedPieces}/${presentation.totalPieces}` : undefined}
-      actions={!isDone && content?.imageUrl ? <PuzzleHeaderActions onHelp={() => puzzleRef.current?.openInstructions()} helpLabel="How to play Jigsaw" /> : undefined}
+      actions={!isDone && content?.imageUrl ? (
+        <PuzzleHeaderActions
+          onHelp={() => puzzleRef.current?.openInstructions()}
+          helpLabel="How to play Jigsaw"
+          overflow={[
+            <button type="button" key="preview" onClick={() => puzzleRef.current?.openPreview()}>Preview Image</button>,
+            <button type="button" key="return" onClick={() => puzzleRef.current?.returnLooseToTray()}>Return Loose Pieces</button>,
+            <button type="button" key="reset" onClick={() => puzzleRef.current?.requestReset()}>Reset Puzzle</button>,
+            <button type="button" key="fullscreen" onClick={() => puzzleRef.current?.enterFullscreen()}>Fullscreen</button>,
+          ]}
+        />
+      ) : undefined}
       contentMode="fixed"
       contentClassName="pw-jigsaw-shell-content"
     >

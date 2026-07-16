@@ -24,13 +24,26 @@ describe("jigsawCore", () => {
     }
   });
 
-  test("daily days and Warz instances produce different arrangements", () => {
+  test("daily days produce different arrangements", () => {
     const dailyOne = jigsawGenerationSeed({ mode: "daily", puzzleId: "p", dailyDayNumber: 1 });
     const dailyTwo = jigsawGenerationSeed({ mode: "daily", puzzleId: "p", dailyDayNumber: 2 });
-    const warzOne = jigsawGenerationSeed({ mode: "warz", puzzleId: "p", puzzleInstanceId: "round-1" });
-    const warzTwo = jigsawGenerationSeed({ mode: "warz", puzzleId: "p", puzzleInstanceId: "round-2" });
     expect(shuffledJigsawIds(6, 8, dailyOne)).not.toEqual(shuffledJigsawIds(6, 8, dailyTwo));
-    expect(shuffledJigsawIds(6, 8, warzOne)).not.toEqual(shuffledJigsawIds(6, 8, warzTwo));
+  });
+
+  test("both players in a Warz challenge derive an identical seeded layout", () => {
+    // Both the challenger and the opponent pass `shared:${puzzle.id}` as puzzleInstanceId
+    // (see WarzPlayBoard.tsx) since the challenger plays before a challenge record/id exists.
+    const challengerSeed = jigsawGenerationSeed({ mode: "warz", puzzleId: "p", puzzleInstanceId: "shared:p" });
+    const opponentSeed = jigsawGenerationSeed({ mode: "warz", puzzleId: "p", puzzleInstanceId: "shared:p" });
+    expect(challengerSeed).toBe(opponentSeed);
+    expect(shuffledJigsawIds(6, 8, challengerSeed)).toEqual(shuffledJigsawIds(6, 8, opponentSeed));
+    expect([...buildJigsawEdges(6, 8, challengerSeed).entries()]).toEqual([...buildJigsawEdges(6, 8, opponentSeed).entries()]);
+  });
+
+  test("Warz challenges for different puzzles still diverge", () => {
+    const seedP = jigsawGenerationSeed({ mode: "warz", puzzleId: "p", puzzleInstanceId: "shared:p" });
+    const seedQ = jigsawGenerationSeed({ mode: "warz", puzzleId: "q", puzzleInstanceId: "shared:q" });
+    expect(shuffledJigsawIds(6, 8, seedP)).not.toEqual(shuffledJigsawIds(6, 8, seedQ));
   });
 
   test("completion and loose-group calculation do not duplicate groups", () => {

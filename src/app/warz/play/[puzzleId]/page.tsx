@@ -437,7 +437,6 @@ export default function WarzPlayPage() {
       <WarzPlayBoard
         key={`play:${puzzleId}`}
         puzzle={puzzle}
-        instanceId={`play:${puzzleId}`}
         wager={wager}
         onDone={handlePuzzleDone}
         submitError={submitError}

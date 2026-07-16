@@ -32,7 +32,6 @@ interface WarzPuzzle {
 
 interface Props {
   puzzle: WarzPuzzle;
-  instanceId: string;
   wager: number;
   onDone: (completionSeconds: number, forfeited?: boolean) => void;
   submitError?: string | null;
@@ -45,7 +44,7 @@ function formatTime(sec: number) {
   return `${m}:${s}`;
 }
 
-export default function WarzPlayBoard({ puzzle, instanceId, wager, onDone, submitError, onRetry }: Props) {
+export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRetry }: Props) {
   const startRef = useRef<number>(0);
   const [elapsed, setElapsed] = useState(0);
   const [solved, setSolved] = useState(false);
@@ -277,7 +276,9 @@ export default function WarzPlayBoard({ puzzle, instanceId, wager, onDone, submi
             boardHeight={jigsawBoardDims.h}
             neighborSnapTolerance={puzzle.jigsaw.snapTolerance}
             puzzleId={puzzle.id}
-            puzzleInstanceId={instanceId}
+            // The challenger solves before a challenge record/id exists. Puzzle identity is
+            // therefore the shared deterministic seed both sides can derive.
+            puzzleInstanceId={`shared:${puzzle.id}`}
             mode="warz"
             persistenceScope="none"
             displayMode="standalone"

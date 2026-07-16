@@ -28,7 +28,6 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
-import PuzzleBugReportButton from "./PuzzleBugReportButton";
 import JigsawControls from "./jigsaw/JigsawControls";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
 import JigsawPreviewDialog from "./jigsaw/JigsawPreviewDialog";
@@ -57,6 +56,34 @@ import "@/styles/jigsaw.css";
 type EdgeMap = JigsawEdgeMap;
 
 interface PiecePos { x: number; y: number }
+
+type DragOrigin = "tray" | "board";
+type DragPhase = "idle" | "pending" | "dragging";
+
+interface DragState {
+  phase: DragPhase;
+  pointerId: number | null;
+  origin: DragOrigin | null;
+  groupId: string | null;
+  anchorId: string | null;
+  anchorOff: PiecePos;
+  starts: Map<string, PiecePos>;
+  dx: number; dy: number;
+  // True whenever the pointer is within the tray strip's vertical band — the dragged group
+  // is hidden from the board canvas and shown instead as a floating DOM ghost over the tray.
+  ghosting: boolean;
+  // tray-origin only: the trayOrder index the group occupied at pickup time, so a cancelled
+  // drag can be restored to the exact same slot rather than appended to the end.
+  originalTrayIndex: number | null;
+  startClientX: number;
+  startClientY: number;
+}
+
+const IDLE_DRAG: Omit<DragState, "starts"> = {
+  phase: "idle", pointerId: null, origin: null, groupId: null, anchorId: null,
+  anchorOff: { x: 0, y: 0 }, dx: 0, dy: 0, ghosting: false,
+  originalTrayIndex: null, startClientX: 0, startClientY: 0,
+};
 
 interface Piece {
   id: string;
@@ -544,7 +571,7 @@ function drawTrayThumbnail(
 
 function TrayPieceThumb({
   groupId, members, pw, ph, pathCache, img, gridW, gridH, rows, cols, cellPx, onPick,
-  registerNode, shiftPx, index, selected, onSelect,
+  onPickMove, onPickEnd, registerNode, shiftPx, index, selected, onSelect,
 }: {
   groupId: string;
   members: Piece[];
@@ -554,7 +581,12 @@ function TrayPieceThumb({
   gridW: number; gridH: number;
   rows: number; cols: number;
   cellPx: number;
+  /** pointerdown — records a pending pickup only; does not yet mutate any drag state. */
   onPick: (groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => void;
+  /** pointermove while pending — decides pickup vs. tray-scroll once past the drag threshold. */
+  onPickMove: (groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => void;
+  /** pointerup/pointercancel/lostpointercapture — clears a still-pending pickup. */
+  onPickEnd: (groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => void;
   /** Registers this tray item's canvas node so the drag-ghost can measure its position
    *  (getBoundingClientRect) to compute where a piece being dragged back in should land. */
   registerNode: (groupId: string, node: HTMLCanvasElement | null) => void;
@@ -599,7 +631,11 @@ function TrayPieceThumb({
         ref={ref}
         aria-hidden="true"
         onPointerDown={(e) => { onSelect(groupId); onPick(groupId, e); }}
-        style={{ display: "block", touchAction: "none", cursor: "grab", flexShrink: 0 }}
+        onPointerMove={(e) => onPickMove(groupId, e)}
+        onPointerUp={(e) => onPickEnd(groupId, e)}
+        onPointerCancel={(e) => onPickEnd(groupId, e)}
+        onLostPointerCapture={(e) => onPickEnd(groupId, e)}
+        style={{ display: "block", touchAction: "pan-x", cursor: "grab", flexShrink: 0 }}
       />
     </button>
   );
@@ -857,16 +893,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   }, []);
 
   // Drag
-  const dragRef = useRef<{
-    active: boolean; pointerId: number | null;
-    groupId: string | null; anchorId: string | null;
-    anchorOff: PiecePos; starts: Map<string, PiecePos>;
-    dx: number; dy: number;
-    // True whenever the pointer is within the tray strip's vertical band — the dragged group
-    // is hidden from the board canvas and shown instead as a floating DOM ghost over the tray.
-    ghosting: boolean;
-  }>({ active: false, pointerId: null, groupId: null, anchorId: null,
-       anchorOff: { x: 0, y: 0 }, starts: new Map(), dx: 0, dy: 0, ghosting: false });
+  const dragRef = useRef<DragState & { starts: Map<string, PiecePos> }>({ ...IDLE_DRAG, starts: new Map() });
 
   // ── Tray drag-ghost ───────────────────────────────────────────────────────
   // A dragged piece hovering the tray is rendered as a small floating DOM element (not on the
@@ -936,6 +963,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const startTimeRef  = useRef(0);
   const storageKeyRef = useRef("");
   const [status, setStatus] = useState<JigsawStatus>("loading");
+  // Set synchronously at every point that decides the puzzle is (or isn't) completion-pending
+  // — NOT derived from the `status` state, which only updates a render later than the
+  // decision itself. The periodic/visibility/pagehide/unmount save effects below read this
+  // directly so they never clobber a just-recorded completion-pending save with `false` before
+  // a render has actually committed that status (this race is real, not just a React Strict
+  // Mode dev-mode artifact: any effect cleanup that fires between the decision and the next
+  // commit — including a genuine fast unmount — could otherwise hit the same window).
+  const completionPendingRef = useRef(false);
   const [completionError, setCompletionError] = useState("");
 
   // Save/resume
@@ -1063,6 +1098,23 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     return next;
   }, [rows, cols]);
 
+  // Shared drop-resolution used by both pointer commit (commitDrag) and keyboard placement
+  // (onKeyboardCommand): board-snap, then neighbor-merge, then a second board-snap (catches a
+  // group enlarged by the merge landing close enough to the board on its own). Keyboard
+  // placement stages a piece at its exact correct position before calling this, so the
+  // board-snap there is always satisfied — the real value for that caller is that
+  // snapMergeNeighbours actually runs, which it never did under the old direct-assignment
+  // keyboard handler.
+  function resolveJigsawDrop(
+    arr: Piece[], gid: string, opts: { boardTol: number; neighborTol: number },
+  ): { pieces: Piece[]; snappedToBoard: boolean } {
+    const s1 = snapToBoardIfClose(arr, gid, opts.boardTol);
+    let next = snapMergeNeighbours(s1.pieces, gid, opts.neighborTol);
+    const s2 = snapToBoardIfClose(next, gid, opts.boardTol);
+    next = s2.pieces;
+    return { pieces: next, snappedToBoard: s1.snapped || s2.snapped };
+  }
+
   // ── Build starter pieces ─────────────────────────────────────────────────
   // Every piece starts tray-resident (no more scatter spawn) — pos is a placeholder until
   // the piece is dragged out of the tray onto the stage.
@@ -1125,6 +1177,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       finalPieces = saved.pieces as Piece[];
       finalTray = saved.progress.tray;
       restoredCompletionPendingRef.current = Boolean(saved.progress.completionPending);
+      completionPendingRef.current = restoredCompletionPendingRef.current;
       userZoomRef.current = saved.progress.zoom;
       setUserZoom(saved.progress.zoom);
       setResumed(true);
@@ -1135,6 +1188,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       finalPieces = initial.pieces;
       finalTray = initial.trayOrder;
       restoredCompletionPendingRef.current = false;
+      completionPendingRef.current = false;
       userZoomRef.current = 1;
       setUserZoom(1);
     }
@@ -1370,11 +1424,49 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     if (completedRef.current || !storageKeyRef.current) return;
     const id = setTimeout(() => {
       if (!completedRef.current) {
-        saveCurrentProgress(false);
+        saveCurrentProgress(completionPendingRef.current);
       }
     }, 800);
     return () => clearTimeout(id);
   }, [pieces, saveCurrentProgress, trayOrder, userZoom]);
+
+  // Kept current via a ref so the effects below (visibilitychange/pagehide/unmount) don't need
+  // saveCurrentProgress in their own dependency arrays — none of them should re-run just
+  // because puzzleSignature (and therefore saveCurrentProgress's identity) changes.
+  const saveCurrentProgressRef = useRef(saveCurrentProgress);
+  saveCurrentProgressRef.current = saveCurrentProgress;
+
+  // A periodic safety-net save independent of the piece/tray/zoom-driven debounce above, for
+  // long idle-but-mounted sessions (e.g. the player is reading/thinking) where nothing has
+  // moved recently but real wall-clock time is still elapsing. Preserves a completion-pending
+  // save (a failed completion awaiting retry) rather than overwriting it with
+  // completionPending: false, via completionPendingRef rather than a hardcoded value.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!completedRef.current) saveCurrentProgressRef.current(completionPendingRef.current);
+    }, 7000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Save when the tab is backgrounded (visibilitychange), when the page is being torn down
+  // (pagehide — fires reliably on mobile Safari backgrounding/tab-close, where beforeunload is
+  // not), and on unmount — so elapsed time and piece positions survive a reload even if the
+  // player never touches another piece after leaving.
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.hidden && !completedRef.current) saveCurrentProgressRef.current(completionPendingRef.current);
+    };
+    const onPageHide = () => {
+      if (!completedRef.current) saveCurrentProgressRef.current(completionPendingRef.current);
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      window.removeEventListener("pagehide", onPageHide);
+      if (!completedRef.current) saveCurrentProgressRef.current(completionPendingRef.current);
+    };
+  }, []);
 
   // ── Solved check ─────────────────────────────────────────────────────────
 
@@ -1515,7 +1607,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       // Sort: z-order, dragging group on top. Cached — the relative order only changes when
       // the pieces array is replaced or the active drag group changes, not every frame.
       const drag = dragRef.current;
-      const ag   = drag.active ? drag.groupId : null;
+      const ag   = drag.phase === "dragging" ? drag.groupId : null;
       const sortCache = sortedCacheRef.current;
       let sorted: Piece[];
       if (sortCache && sortCache.pieces === piecesRef.current && sortCache.ag === ag) {
@@ -1543,7 +1635,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
       for (const p of sorted) {
         if (trayGroupSetRef.current.has(p.groupId)) continue; // rendered in the tray strip instead
-        if (drag.active && drag.ghosting && p.groupId === drag.groupId) continue; // rendered as a floating DOM ghost over the tray instead
+        if (drag.phase === "dragging" && drag.ghosting && p.groupId === drag.groupId) continue; // rendered as a floating DOM ghost over the tray instead
         const path = pathCacheRef.current.get(p.id);
         if (!path) continue;
 
@@ -1817,7 +1909,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     const drag = dragRef.current;
-    const ag   = drag.active ? drag.groupId : null;
+    const ag   = drag.phase === "dragging" ? drag.groupId : null;
     const sorted = [...piecesRef.current].sort((a, b) => {
       const da = ag && a.groupId === ag ? 1 : 0;
       const db = ag && b.groupId === ag ? 1 : 0;
@@ -2011,6 +2103,70 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     wasOverTrayRef.current = false;
   }, [setTrayInsertIndex]);
 
+  // ── Drag lifecycle: cleanup / cancellation ───────────────────────────────
+  // Idempotent, side-effect-only cleanup used to end any in-flight pending/dragging pointer
+  // interaction with no business-logic decisions — releases capture, forgets the pointer, and
+  // clears the ghost. commitDrag calls this after a real drop; every other exit path
+  // (pointercancel, a second pointer, lost capture, unmount, an abandoned pending pickup) goes
+  // through cancelDrag below instead, which restores state first.
+  const resetPointerState = useCallback(() => {
+    const pointerId = dragRef.current.pointerId;
+    // dragRef is reset to idle BEFORE releasing capture below — releasePointerCapture can
+    // dispatch lostpointercapture, which is also wired to cancelDrag/resetPointerState; putting
+    // dragRef into "idle" first means any such re-entrant call sees phase==="idle" and no-ops
+    // immediately, instead of racing this same cleanup a second time.
+    dragRef.current = { ...IDLE_DRAG, starts: new Map() };
+    // Deliberately does NOT delete pointerId from activePointersRef here: when cancelDrag is
+    // invoked because a SECOND pointer just interrupted this drag (pinch start), the first
+    // pointer is still physically down and needs to stay tracked for the pinch/pan gesture
+    // that follows in the same handler. Callers that know the pointer itself is actually
+    // ending (pointercancel, lostpointercapture) remove it from activePointersRef themselves.
+    if (pointerId != null) {
+      try { canvasRef.current?.releasePointerCapture(pointerId); } catch { /* noop */ }
+      if (panGestureRef.current.pointerId === pointerId) panGestureRef.current.active = false;
+    }
+    hideGhost();
+    requestCanvasRenderRef.current();
+  }, [hideGhost]);
+
+  // Restores exactly what was true before the in-flight drag started (original tray index for
+  // tray-origin groups, original positions for board-origin groups), then clears pointer state.
+  // Used for pointercancel, a second pointer interrupting a drag, lost pointer capture, and
+  // unmount. Never snaps, merges, or submits completion — a pending pickup that never crossed
+  // the threshold has nothing to restore, since nothing was mutated yet.
+  const cancelDrag = useCallback(() => {
+    const drag = dragRef.current;
+    if (drag.phase === "idle") return;
+    const { phase, groupId, starts, origin, originalTrayIndex } = drag;
+    resetPointerState();
+    if (phase !== "dragging" || !groupId) return;
+    if (origin === "tray") {
+      setPieces(prev => prev.map(p => (starts.has(p.id) ? { ...p, pos: { ...p.correct } } : p)));
+      setTrayOrder(prev => {
+        if (prev.includes(groupId)) return prev;
+        const idx = clamp(originalTrayIndex ?? prev.length, 0, prev.length);
+        const copy = [...prev];
+        copy.splice(idx, 0, groupId);
+        return copy;
+      });
+      setScreenReaderStatus("Drag cancelled. Piece returned to the tray.");
+    } else if (origin === "board") {
+      setPieces(prev => prev.map(p => {
+        const sp = starts.get(p.id);
+        return sp ? { ...p, pos: { ...sp } } : p;
+      }));
+      setScreenReaderStatus("Drag cancelled. Piece returned to its previous position.");
+    }
+  }, [resetPointerState, setPieces, setTrayOrder]);
+
+  // Wraps cancelDrag for pointercancel/lostpointercapture on the board canvas — these mean the
+  // pointer itself is actually gone, unlike the second-pointer-interrupt call site in
+  // onPointerDown, so it's this call site's job (not cancelDrag's) to forget it.
+  const onBoardDragInterrupted = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    cancelDrag();
+  }, [cancelDrag]);
+
   // Snapshot every tray item's midpoint once, at the moment the ghost enters the tray zone —
   // NOT re-measured on every recompute, because items shift sideways (CSS transform) once a
   // gap preview opens, and getBoundingClientRect() reports that *post-shift* position. Reading
@@ -2040,13 +2196,30 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     return order.length;
   }, []);
 
-  // ── Lift a group out of the tray onto the board ──────────────────────────
-  // Sets up dragRef exactly like onPointerDown does for a freshly-grabbed on-stage piece,
-  // then hands the pointer off to the main canvas via Pointer Capture — every subsequent
-  // pointermove/pointerup for this pointer id fires on the canvas element from here on, so
-  // the existing (unmodified) onPointerMove/onPointerUp handlers take over the drag.
-  const beginDragFromTray = useCallback((groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => {
+  // ── Tray pickup: pending → confirmed drag ────────────────────────────────
+  // Pointerdown on a tray piece never begins a drag immediately — it only records intent
+  // (beginPendingTrayPickup), so a horizontal swipe over the same piece can still scroll the
+  // tray natively. onTrayPiecePointerMove disambiguates once the pointer has moved far enough,
+  // and only a confirmed vertical/other pickup calls confirmTrayDrag, which does the actual
+  // lift-out-of-tray mutation and hands the pointer off to the main canvas via Pointer Capture
+  // — every subsequent pointermove/pointerup for this pointer id fires on the canvas element
+  // from here on, so the existing onPointerMove/commitDrag handlers take over the drag.
+  const DRAG_THRESHOLD_PX = 8;
+
+  const beginPendingTrayPickup = useCallback((groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => {
     if (completedRef.current || isSolvedRef.current) return;
+    dragRef.current = {
+      ...IDLE_DRAG, starts: new Map(),
+      phase: "pending", pointerId: e.pointerId, origin: "tray", groupId,
+      originalTrayIndex: trayOrderRef.current.indexOf(groupId),
+      startClientX: e.clientX, startClientY: e.clientY,
+    };
+  }, []);
+
+  const confirmTrayDrag = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    const groupId = drag.groupId;
+    if (!groupId) return;
     e.preventDefault();
 
     const members = piecesRef.current.filter(p => p.groupId === groupId);
@@ -2062,7 +2235,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     const groupH = (maxRow - minRow + 1) * _ph;
 
     // Deliberately NOT clamped to the stage bounds: the pointer is physically in the tray at
-    // pickup time, well outside the stage, so clamping here would peg the piece's logical
+    // confirm time, well outside the stage, so clamping here would peg the piece's logical
     // starting position to the stage edge instead of "centered under the pointer" — a baseline
     // error that has no visible effect while ghosted (the DOM ghost ignores this value and just
     // follows the raw pointer), but resurfaces the instant the piece hands off to canvas
@@ -2087,8 +2260,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     try { canvasRef.current?.setPointerCapture(e.pointerId); } catch { /* noop */ }
 
     dragRef.current = {
-      active: true, pointerId: e.pointerId,
-      groupId, anchorId: anchor.id,
+      ...drag,
+      phase: "dragging",
+      anchorId: anchor.id,
       anchorOff: { x: lp.x - anchorPos.x, y: lp.y - anchorPos.y },
       starts: positions, dx: 0, dy: 0,
       ghosting: true, // picked up from the tray — it's already sitting there, so it lifts as a ghost from the start
@@ -2103,8 +2277,36 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     wasOverTrayRef.current = true;
     snapshotTrayLayout();
     setTrayInsertIndex(computeTrayInsertIndex(e.clientX));
-    dirtyRef.current = true;
+    requestCanvasRenderRef.current();
   }, [clientToLogical, setPieces, setTrayOrder, showGhostFor, setTrayInsertIndex, snapshotTrayLayout, computeTrayInsertIndex]);
+
+  // Decides, once the pointer has moved far enough from a pending tray pickup, whether this is
+  // a genuine pickup (predominantly vertical/other movement) or a tray-scroll swipe
+  // (predominantly horizontal) — a swipe is left entirely to the browser's own
+  // touch-action: pan-x handling on the tray piece canvas, since nothing has been mutated yet.
+  const onTrayPiecePointerMove = useCallback((groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    if (drag.phase !== "pending" || drag.pointerId !== e.pointerId || drag.groupId !== groupId) return;
+    const ddx = e.clientX - drag.startClientX;
+    const ddy = e.clientY - drag.startClientY;
+    if (Math.hypot(ddx, ddy) < DRAG_THRESHOLD_PX) return;
+    if (Math.abs(ddx) > Math.abs(ddy) * 1.5) {
+      resetPointerState();
+      return;
+    }
+    confirmTrayDrag(e);
+  }, [confirmTrayDrag, resetPointerState]);
+
+  // pointerup/pointercancel/lostpointercapture on the tray piece canvas while still pending
+  // (a tap, or a drag that ended before crossing the threshold) — nothing was mutated, so a
+  // plain reset suffices. Once confirmTrayDrag hands capture off to the board canvas, this
+  // fires too (as a lostpointercapture on the tray element) but is a no-op since phase is no
+  // longer "pending" by then.
+  const onTrayPiecePointerEnd = useCallback((groupId: string, e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    if (drag.phase !== "pending" || drag.pointerId !== e.pointerId || drag.groupId !== groupId) return;
+    resetPointerState();
+  }, [resetPointerState]);
 
   // ── Canvas pointer handlers ──────────────────────────────────────────────
 
@@ -2113,27 +2315,22 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
     // Track all active pointers
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
 
     const ptrs = activePointersRef.current;
 
-    // Two fingers → pinch-zoom + pan; cancel any ongoing piece drag or pan
+    // Two fingers → pinch-zoom + pan; cancel any ongoing piece drag or pan. Routed through
+    // cancelDrag (not a manual field reset) so a piece mid-drag is actually restored to its
+    // original tray slot/position instead of being silently abandoned wherever it was.
     if (ptrs.size >= 2) {
-      if (dragRef.current.active) {
-        dragRef.current.active = false;
-        dragRef.current.pointerId = null;
-        dragRef.current.groupId = null;
-        dragRef.current.dx = 0;
-        dragRef.current.dy = 0;
-        dragRef.current.ghosting = false;
-        hideGhost();
-      }
+      cancelDrag();
       panGestureRef.current.active = false;
       const vals = [...ptrs.values()];
       const midX = (vals[0].x + vals[1].x) / 2;
       const midY = (vals[0].y + vals[1].y) / 2;
       const dist = Math.max(Math.hypot(vals[1].x - vals[0].x, vals[1].y - vals[0].y), 1);
       pinchGestureRef.current = { active: true, prevMidX: midX, prevMidY: midY, prevDist: dist };
+      requestCanvasRenderRef.current();
       return;
     }
 
@@ -2157,14 +2354,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     for (const p of group) starts.set(p.id, { ...p.pos });
 
     dragRef.current = {
-      active: true, pointerId: e.pointerId,
+      ...IDLE_DRAG, starts,
+      phase: "dragging", pointerId: e.pointerId, origin: "board",
       groupId: hit.groupId, anchorId: hit.id,
       anchorOff: { x: lp.x - hit.pos.x, y: lp.y - hit.pos.y },
-      starts, dx: 0, dy: 0,
       ghosting: false, // grabbed from the board — starts in normal on-canvas drag mode
     };
-    dirtyRef.current = true;
-  }, [clientToLogical, hitTest, hideGhost]);
+    requestCanvasRenderRef.current();
+  }, [clientToLogical, hitTest, cancelDrag]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     // Update tracked pointer position
@@ -2197,7 +2394,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       pinch.prevMidX = midX;
       pinch.prevMidY = midY;
       pinch.prevDist = dist;
-      dirtyRef.current = true;
+      requestCanvasRenderRef.current();
       return;
     }
 
@@ -2212,13 +2409,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       clampViewport();
       pan.lastX = e.clientX;
       pan.lastY = e.clientY;
-      dirtyRef.current = true;
+      requestCanvasRenderRef.current();
       return;
     }
 
     // ── Piece drag ───────────────────────────────────────────────────────
     const drag = dragRef.current;
-    if (!drag.active || e.pointerId !== drag.pointerId) return;
+    if (drag.phase !== "dragging" || e.pointerId !== drag.pointerId) return;
     const lp   = clientToLogical(e.clientX, e.clientY);
     const aStart = drag.starts.get(drag.anchorId!);
     if (!aStart) return;
@@ -2305,7 +2502,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       drag.dx = clamp(rawDx, vpLeft - minX,  vpRight  - minX);
       drag.dy = clamp(rawDy, vpTop  - minY,  vpBottom - minY);
     }
-    dirtyRef.current = true;
+    requestCanvasRenderRef.current();
 
     if (shouldGhost) {
       const trayRect = trayStripRef.current?.getBoundingClientRect();
@@ -2334,7 +2531,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     }
   }, [clientToLogical, clampViewport, getBoardBottomClientY, applyGhostScale, showGhostFor, hideGhost, moveGhost, snapshotTrayLayout, setTrayInsertIndex, computeTrayInsertIndex]);
 
-  const onPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+  // Commits a real drop — the pointer was actually released, as opposed to cancelDrag's
+  // pointercancel/interruption path, which always restores instead of committing.
+  const commitDrag = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     activePointersRef.current.delete(e.pointerId);
 
     // End pinch when fewer than 2 pointers remain
@@ -2355,16 +2554,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     }
 
     const drag = dragRef.current;
-    if (!drag.active || e.pointerId !== drag.pointerId) return;
+    if (drag.phase !== "dragging" || e.pointerId !== drag.pointerId) return;
 
     const { groupId, starts, dx, dy } = drag;
-    // Captured before hideGhost() below, which clears trayInsertIndexRef as part of resetting
-    // the ghost visuals — reading it after that point would always see null and silently fall
-    // back to "append at the end", regardless of where the gap preview actually showed.
+    // Captured before resetPointerState() below, which clears trayInsertIndexRef as part of
+    // resetting the ghost visuals — reading it after that point would always see null and
+    // silently fall back to "append at the end", regardless of where the gap preview showed.
     const insertAt = trayInsertIndexRef.current;
-    drag.active = false; drag.pointerId = null; drag.groupId = null;
-    drag.dx = 0; drag.dy = 0; drag.ghosting = false;
-    hideGhost();
+    resetPointerState();
     if (!groupId) return;
 
     // Commit drag positions + bring group to front (z-bump deferred from pointerDown)
@@ -2381,26 +2578,20 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     const preSnapPositions = new Map(next.map(p => [p.id, { x: p.pos.x, y: p.pos.y }]));
 
     // When this drag would resolve the very last unsolved piece/group, there's no ambiguity
-    // left about where it belongs — so it's safe to be much more forgiving about snap
-    // distance for it specifically. (Occasional reports of "the last piece just won't
-    // snap, had to refresh" are most consistent with a transient mobile viewport/scale
-    // hiccup throwing off the normal tolerance — being generous here for the one case
-    // where correctness can never be in question sidesteps that regardless of cause.)
+    // left about where it belongs — so it's safe to be a little more forgiving about snap
+    // distance for it specifically, capped to a small multiple of the STANDARD tolerance
+    // rather than the piece's own size (a full 1.5 piece-widths let the last piece snap in
+    // from an obviously wrong area of the board).
     const totalUnsolved = next.filter(p => !p.snapped).length;
     const isFinalPiece = totalUnsolved === starts.size;
-    const adjBoard    = isFinalPiece
-      ? Math.max(pwRef.current, phRef.current) * 1.5
-      : boardSnapTolerance / scaleRef.current;
+    const FINAL_PIECE_TOLERANCE_MULTIPLIER = 1.5;
+    const standardBoardTol = boardSnapTolerance / scaleRef.current;
+    const adjBoard    = isFinalPiece ? standardBoardTol * FINAL_PIECE_TOLERANCE_MULTIPLIER : standardBoardTol;
     const adjNeighbor = neighborSnapTolerance / scaleRef.current;
 
-    const s1 = snapToBoardIfClose(next, groupId, adjBoard);
-    next = s1.pieces;
-    next = snapMergeNeighbours(next, groupId, adjNeighbor);
-
-    const s2 = snapToBoardIfClose(next, groupId, adjBoard);
-    next = s2.pieces;
-
-    const endedSnapped = next.some(p => p.groupId === groupId && p.snapped);
+    const result = resolveJigsawDrop(next, groupId, { boardTol: adjBoard, neighborTol: adjNeighbor });
+    next = result.pieces;
+    const endedSnapped = result.snappedToBoard;
 
     // Dropped back over the tray strip and didn't end up snapped to the board — the group
     // (possibly enlarged by the neighbor-merge above, if it picked up an already-loose piece
@@ -2424,14 +2615,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       }
     }
 
-    if (s1.snapped || s2.snapped) {
+    if (result.snappedToBoard) {
       playPieceConnectSfx();
       const placed = next.filter((piece) => piece.snapped).length;
       setScreenReaderStatus(`Piece snapped. ${placed} of ${next.length} pieces placed.`);
     }
 
     // Snap-to-board → pop + gold glow + particle burst (single piece only — not a multi-piece group)
-    if ((s1.snapped || s2.snapped) && starts.size === 1) {
+    if (result.snappedToBoard && starts.size === 1) {
       const pieceId = [...starts.keys()][0];
       snapPopRef.current.set(pieceId, { t0: performance.now(), dur: 380 });
       snapGlowRef.current.set(pieceId, { t0: performance.now(), dur: 700 });
@@ -2449,9 +2640,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     }
 
     // Build the glide from whatever actually moved during resolution above — this covers
-    // both the dragged group snapping onto the board (s1/s2) AND any stationary neighbor
-    // group that snapMergeNeighbours pulled into alignment, which previously jumped
-    // instantly with no animation at all since only the board-snap delta was tracked.
+    // both the dragged group snapping onto the board AND any stationary neighbor group that
+    // snapMergeNeighbours pulled into alignment, which previously jumped instantly with no
+    // animation at all since only the board-snap delta was tracked.
     const offsets = new Map<string, SnapOffset>();
     for (const p of next) {
       const before = preSnapPositions.get(p.id);
@@ -2472,12 +2663,12 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     }
 
     setPieces(next);
-  // snapToBoardIfClose reads only refs and the current array supplied above.
+  // resolveJigsawDrop reads only refs and the current array supplied above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSnapTolerance, neighborSnapTolerance, snapMergeNeighbours, setPieces, setTrayOrder, hideGhost, playPieceConnectSfx]);
+  }, [boardSnapTolerance, neighborSnapTolerance, resetPointerState, setPieces, setTrayOrder, playPieceConnectSfx]);
 
   const onPointerLeave = useCallback(() => {
-    dirtyRef.current = true;
+    requestCanvasRenderRef.current();
   }, []);
 
   const finishConfirmedCompletion = useCallback(() => {
@@ -2498,18 +2689,21 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     try {
       const result = onComplete ? await onComplete(completionElapsedRef.current) : { success: true };
       if (!result.success) {
+        completionPendingRef.current = true;
         setStatus("completion-pending");
         setCompletionError(result.error || "Completion could not be saved.");
         setScreenReaderStatus("Puzzle complete. Completion save failed; retry is available.");
         saveCurrentProgress(true);
         return;
       }
+      completionPendingRef.current = false;
       completionConfirmedRef.current = true;
       completionResultRef.current = result;
       setAwardedPoints(result.pointsAwarded ?? null);
       clearCurrentProgress();
       finishConfirmedCompletion();
     } catch (cause) {
+      completionPendingRef.current = true;
       setStatus("completion-pending");
       setCompletionError(cause instanceof Error ? cause.message : "Completion could not be saved.");
       setScreenReaderStatus("Puzzle complete. Completion save failed; retry is available.");
@@ -2527,6 +2721,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     const elapsed = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
     completionElapsedRef.current = elapsed;
     setElapsedSeconds(elapsed);
+    completionPendingRef.current = true;
     saveCurrentProgress(true);
     setScreenReaderStatus("Puzzle complete. Saving completion.");
     if (restoredCompletionPendingRef.current) {
@@ -2663,22 +2858,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setPortalReady(true);
     setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window);
   }, []);
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
-    const requestRender = () => requestCanvasRenderRef.current();
-    wrapper.addEventListener("pointerdown", requestRender);
-    wrapper.addEventListener("pointermove", requestRender);
-    wrapper.addEventListener("pointerup", requestRender);
-    wrapper.addEventListener("pointercancel", requestRender);
-    return () => {
-      wrapper.removeEventListener("pointerdown", requestRender);
-      wrapper.removeEventListener("pointermove", requestRender);
-      wrapper.removeEventListener("pointerup", requestRender);
-      wrapper.removeEventListener("pointercancel", requestRender);
-    };
-  }, []);
-  // Cleanup on unmount
+  // Every interaction that mutates drag/pan/pinch/ghost state now calls
+  // requestCanvasRenderRef.current() directly at its own call site (pointer handlers, drag
+  // lifecycle functions, keyboard placement) — a blanket native listener re-triggering a
+  // render on every raw pointer event is no longer needed.
+  // Cancel any in-flight drag on unmount so a component removed mid-drag (e.g. navigating away)
+  // never leaves stale pointer capture or an abandoned piece behind.
+  useEffect(() => () => cancelDrag(), [cancelDrag]);
   useEffect(() => {
     if (!isFullscreen) return;
     const fn = (e: KeyboardEvent) => e.key === "Escape" && setIsFullscreen(false);
@@ -2702,6 +2888,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     const fresh = buildInitial(edgesMapRef.current);
     completedRef.current = false;
     restoredCompletionPendingRef.current = false;
+    completionPendingRef.current = false;
     completionRequestInFlightRef.current = false;
     completionConfirmedRef.current = false;
     celebrationCompleteRef.current = false;
@@ -2781,12 +2968,31 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     }
     if (key === "enter" || key === " ") {
       event.preventDefault();
-      const snappedGroup = piecesRef.current.find((piece) => piece.snapped)?.groupId ?? selectedGroupId;
-      const next = piecesRef.current.map((piece) => piece.groupId === selectedGroupId
-        ? { ...piece, groupId: snappedGroup, snapped: true, pos: { ...piece.correct } }
-        : piece);
-      setTrayOrder((order) => order.filter((groupId) => groupId !== selectedGroupId));
-      setPieces(next);
+      // A group still resident in the tray has no meaningful board position to test — its
+      // pos is an inert placeholder equal to its own correct slot, which would trivially pass
+      // any tolerance check. Require it to be moved onto the board (via arrow keys) first, so
+      // two blind Enters can never place — let alone solve — a piece.
+      if (trayGroupSetRef.current.has(selectedGroupId)) {
+        setScreenReaderStatus("Move the selected group onto the board with the arrow keys before placing it.");
+        return;
+      }
+      // Attempts placement at the group's CURRENT position (wherever arrow keys have left it)
+      // through the same board-snap/neighbor-merge pipeline pointer drops use
+      // (resolveJigsawDrop). Never forces pos to correct/snapped directly, and never
+      // reassigns groupId except via a real adjacency merge inside that shared pipeline.
+      const memberIds = piecesRef.current
+        .filter((piece) => piece.groupId === selectedGroupId)
+        .map((piece) => piece.id);
+      const result = resolveJigsawDrop(piecesRef.current, selectedGroupId, {
+        boardTol: boardSnapTolerance / scaleRef.current,
+        neighborTol: neighborSnapTolerance / scaleRef.current,
+      });
+      const placed = result.pieces.some((piece) => memberIds.includes(piece.id) && piece.snapped);
+      if (!placed) {
+        setScreenReaderStatus("Not close enough to snap. Move closer with the arrow keys, then press Enter again.");
+        return;
+      }
+      setPieces(result.pieces);
       setSelectedGroupId(null);
       setScreenReaderStatus("Selected group placed on the board.");
       return;
@@ -2810,7 +3016,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       : piece));
     setScreenReaderStatus("Selected group moved on the board.");
     queueMicrotask(() => canvasRef.current?.focus());
-  }, [applyZoom, resetZoom, selectedGroupId, setPieces, setTrayOrder]);
+  // resolveJigsawDrop reads only refs and the staged array supplied above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyZoom, resetZoom, boardSnapTolerance, neighborSnapTolerance, selectedGroupId, setPieces, setTrayOrder]);
 
   // ── JSX ──────────────────────────────────────────────────────────────────
 
@@ -2822,6 +3030,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       data-mode={mode}
       data-status={status}
       data-fullscreen={isFullscreen}
+      data-placed-pieces={pieces.filter((piece) => piece.snapped).length}
+      data-tray-groups={trayOrder.length}
+      data-total-groups={groupCount}
+      data-selected-group={selectedGroupId ?? ""}
+      // Reflects dragRef's phase as of the last render (refs don't trigger re-renders on
+      // their own) — acceptable for test observability since every phase transition
+      // co-occurs with a pieces/trayOrder state change that already causes a re-render.
+      data-drag-state={dragRef.current.phase}
       onKeyDown={onKeyboardCommand}
       style={{
         position: isFullscreen ? "fixed" : "relative",
@@ -2851,8 +3067,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          onPointerUp={commitDrag}
+          onPointerCancel={onBoardDragInterrupted}
+          onLostPointerCapture={onBoardDragInterrupted}
           onPointerLeave={onPointerLeave}
         />
 
@@ -3060,36 +3277,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </div>
         )}
 
-        {/* Fullscreen-only controls — the page's own toolbar (Fullscreen / Return Loose
-            Pieces) lives outside this component and is unreachable once fullscreen portals
-            everything into document.body, so it needs its own entry point here too. */}
-        {false && isFullscreen && (
-          <div style={{ position: "absolute", right: 12, top: 12, zIndex: 13000,
-                        display: "flex", gap: 8 }}>
-            {!isSolved && (
-              <button type="button" onClick={sendLooseToTray}
-                      style={{ padding: "6px 10px", borderRadius: 8, background: "#facc15",
-                               color: "#000", border: "1px solid #eab308",
-                               cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-                Return Loose Pieces
-              </button>
-            )}
-            {puzzleId && (
-              <PuzzleBugReportButton
-                puzzleId={puzzleId}
-                puzzleTitle={puzzleTitle || "This puzzle"}
-                style={{ padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,0.5)",
-                         color: "white", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer",
-                         fontSize: 13, fontWeight: 600 }}
-              />
-            )}
-            <button type="button" onClick={() => setIsFullscreen(false)}
-                    style={{ padding: "6px 8px", borderRadius: 8, background: "rgba(0,0,0,0.5)",
-                             color: "white", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
-              Exit Fullscreen
-            </button>
-          </div>
-        )}
 
         {/* Stats — hidden once solved: there's nothing left to track, and on a small mobile
             screen this corner is exactly where the post-completion modal (rating/XP, rendered
@@ -3175,7 +3362,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
               gridW={gridW} gridH={gridH}
               rows={rows} cols={cols}
               cellPx={trayCellPx}
-              onPick={beginDragFromTray}
+              onPick={beginPendingTrayPickup}
+              onPickMove={onTrayPiecePointerMove}
+              onPickEnd={onTrayPiecePointerEnd}
               registerNode={registerTrayNode}
               shiftPx={trayInsertIndex !== null && i >= trayInsertIndex ? ghostTraySizeRef.current.w + 10 : 0}
               index={i}

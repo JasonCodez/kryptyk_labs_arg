@@ -93,12 +93,41 @@ async function openDaily(page: Page) {
   await expect(page.locator("html")).toHaveAttribute("data-app-mode", "play");
 }
 
-async function completeWithKeyboard(page: Page) {
-  for (let index = 0; index < 4; index += 1) {
-    const piece = page.locator(".jigsaw-tray-piece").first();
-    await piece.focus();
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Enter");
+// Genuine pointer drag from the tray onto the board, landing at the CENTER of the piece's own
+// correct cell — derived purely from the grid's row/col (exposed via the tray piece's
+// aria-label) and the square-stage layout math JigsawPuzzleCanvas itself uses (a fixed
+// STAGE_MARGIN of 0.6x the cell size around a boardWidth === boardHeight stage), not from any
+// solution data the app exposes. Only valid for a square grid (rows === cols), which is what
+// every fixture below uses.
+async function dragEachTrayPieceToItsSlot(page: Page, gridRows: number, gridCols: number) {
+  if (gridRows !== gridCols) throw new Error("dragEachTrayPieceToItsSlot only supports square grids");
+  const board = page.locator(".jigsaw-board-canvas");
+  const maxDim = Math.max(gridRows, gridCols);
+  const offFrac = 0.6 / (maxDim + 1.2);
+  const cellFrac = 1 / (maxDim + 1.2);
+  let pointerId = 5000;
+  for (let index = 0; index < gridRows * gridCols; index += 1) {
+    const trayPiece = page.locator(".jigsaw-tray-piece").first();
+    const label = await trayPiece.getAttribute("aria-label");
+    const match = label?.match(/row (\d+) column (\d+)/i);
+    if (!match) throw new Error(`Could not parse row/column from tray piece aria-label: ${label}`);
+    const row = Number(match[1]) - 1;
+    const col = Number(match[2]) - 1;
+    const from = await trayPiece.locator("canvas").boundingBox();
+    const boardBox = await board.boundingBox();
+    if (!from || !boardBox) throw new Error("Missing bounding box for drag");
+    const targetX = boardBox.x + (offFrac + (col + 0.5) * cellFrac) * boardBox.width;
+    const targetY = boardBox.y + (offFrac + (row + 0.5) * cellFrac) * boardBox.height;
+    const id = pointerId++;
+    const trayCanvas = trayPiece.locator("canvas");
+    const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
+    await trayCanvas.dispatchEvent("pointerdown", { pointerId: id, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+    // Predominantly vertical movement past the pickup threshold, still dispatched on the tray
+    // canvas — confirms the pickup (see onTrayPiecePointerMove) before capture transfers to the
+    // board canvas for the rest of the drag.
+    await trayCanvas.dispatchEvent("pointermove", { pointerId: id, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+    await board.dispatchEvent("pointermove", { pointerId: id, pointerType: "mouse", button: 0, buttons: 1, clientX: targetX, clientY: targetY });
+    await board.dispatchEvent("pointerup", { pointerId: id, pointerType: "mouse", button: 0, buttons: 0, clientX: targetX, clientY: targetY });
   }
 }
 
@@ -159,7 +188,7 @@ test("Daily completion is recorded once after the celebration", async ({ page })
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await installDailyFixture(page);
   await openDaily(page);
-  await completeWithKeyboard(page);
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
   await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 15_000 });
   expect(fixture.requests()).toBe(1);
   expect(fixture.successfulRecords()).toBe(1);
@@ -169,7 +198,7 @@ test("failed Daily completion survives reload and retries only completion", asyn
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await installDailyFixture(page, 1);
   await openDaily(page);
-  await completeWithKeyboard(page);
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
   await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 10_000 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 });
@@ -185,7 +214,7 @@ test("Catalog sends attempt_success once and delays its result UI until celebrat
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-mode", "catalog", { timeout: 15_000 });
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing");
-  await completeWithKeyboard(page);
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "won", { timeout: 15_000 });
   expect(fixture.attempts()).toBe(1);
   await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toBeVisible({ timeout: 10_000 });
@@ -200,7 +229,11 @@ test("Catalog supports tray drag, return, zoom, and header controls", async ({ p
   const from = await trayCanvas.boundingBox(); const to = await board.boundingBox();
   expect(from).not.toBeNull(); expect(to).not.toBeNull();
   const pointerId = 7;
-  await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: from!.x + from!.width / 2, clientY: from!.y + from!.height / 2 });
+  const startX = from!.x + from!.width / 2; const startY = from!.y + from!.height / 2;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  // First move stays on the tray canvas and is predominantly vertical, past the pickup
+  // threshold — confirms the pickup before capture transfers to the board.
+  await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
   await board.dispatchEvent("pointermove", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: to!.x + to!.width / 2, clientY: to!.y + to!.height / 2 });
   await board.dispatchEvent("pointerup", { pointerId, pointerType: "mouse", button: 0, buttons: 0, clientX: to!.x + to!.width / 2, clientY: to!.y + to!.height / 2 });
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
@@ -211,6 +244,169 @@ test("Catalog supports tray drag, return, zoom, and header controls", async ({ p
   await expect(page.getByRole("button", { name: "Reset zoom" })).toHaveText("125%");
   await page.getByRole("button", { name: "Reset zoom" }).click();
   await expect(page.getByRole("button", { name: "Reset zoom" })).toHaveText("100%");
+});
+
+test("A cancelled tray drag returns the piece to its original tray slot, not the board", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  // Drag the SECOND piece (not the first) so a bug that appends/prepends instead of restoring
+  // to the exact original index would be caught by the aria-label check below.
+  const originalSecondLabel = await page.locator(".jigsaw-tray-piece").nth(1).getAttribute("aria-label");
+  const trayCanvas = page.locator(".jigsaw-tray-piece").nth(1).locator("canvas");
+  const board = page.locator(".jigsaw-board-canvas");
+  const from = await trayCanvas.boundingBox(); const to = await board.boundingBox();
+  const pointerId = 101;
+  const startX = from!.x + from!.width / 2; const startY = from!.y + from!.height / 2;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: to!.x + 15, clientY: to!.y + 15 });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "dragging");
+  await board.dispatchEvent("pointercancel", { pointerId, pointerType: "mouse" });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "idle");
+  await expect(page.locator(".jigsaw-tray-piece").nth(1)).toHaveAttribute("aria-label", originalSecondLabel ?? "");
+});
+
+test("A cancelled board-piece drag restores it without snapping or losing it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  const board = page.locator(".jigsaw-board-canvas");
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+  const from = await trayCanvas.boundingBox(); const boardBox = await board.boundingBox();
+  // Drop deliberately off-target (top-left corner) so it lands loose on the board, not snapped.
+  const looseX = boardBox!.x + boardBox!.width * 0.08;
+  const looseY = boardBox!.y + boardBox!.height * 0.08;
+  const dropId = 102;
+  const dropStartX = from!.x + from!.width / 2; const dropStartY = from!.y + from!.height / 2;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: dropStartX, clientY: dropStartY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: dropStartX, clientY: dropStartY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: looseX, clientY: looseY });
+  await board.dispatchEvent("pointerup", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 0, clientX: looseX, clientY: looseY });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+
+  // Now pick that loose board piece back up and interrupt the drag with pointercancel.
+  const pickId = 103;
+  await board.dispatchEvent("pointerdown", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: looseX, clientY: looseY });
+  await board.dispatchEvent("pointermove", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: looseX + 60, clientY: looseY + 60 });
+  await board.dispatchEvent("pointercancel", { pointerId: pickId, pointerType: "mouse" });
+
+  // Restored to its pre-drag (loose, off-target) position — still not snapped, still not back
+  // in the tray, and not lost.
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
+});
+
+test("A second pointer interrupts and restores an in-flight tray drag", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+  const board = page.locator(".jigsaw-board-canvas");
+  const from = await trayCanvas.boundingBox(); const to = await board.boundingBox();
+  const firstPointerId = 201;
+  const startX = from!.x + from!.width / 2; const startY = from!.y + from!.height / 2;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: firstPointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: firstPointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: firstPointerId, pointerType: "touch", buttons: 1, clientX: to!.x + to!.width / 2, clientY: to!.y + to!.height / 2 });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "dragging");
+  // A second finger touching down (pinch start) must cancel the in-flight drag, restoring the
+  // piece to the tray rather than abandoning it wherever the first pointer left it.
+  await board.dispatchEvent("pointerdown", { pointerId: 202, pointerType: "touch", buttons: 1, clientX: to!.x + 20, clientY: to!.y + 20 });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "idle");
+});
+
+test("A predominantly horizontal swipe over a tray piece does not pick it up", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installDailyFixture(page, 0, { rows: 3, cols: 6 });
+  await openDaily(page);
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(18);
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").nth(1);
+  const box = await trayCanvas.boundingBox();
+  const pointerId = 301;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "touch", buttons: 1, clientX: box!.x + box!.width / 2, clientY: box!.y + box!.height / 2 });
+  // Far more horizontal than vertical movement, past the pickup threshold — this is a scroll
+  // gesture, not a pickup.
+  await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: box!.x - 60, clientY: box!.y + box!.height / 2 + 2 });
+  await trayCanvas.dispatchEvent("pointerup", { pointerId, pointerType: "touch" });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(18);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "idle");
+});
+
+test("Enter can no longer solve a piece without moving it onto the board first", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installDailyFixture(page);
+  await openDaily(page);
+  // The old bug: focus + Enter (select) + Enter (auto-place at the correct position,
+  // regardless of proximity) solved every piece in two keypresses. Now the second Enter while
+  // still tray-resident must be a no-op — placement requires the group already be on the
+  // board (moved there via arrow keys), per resolveJigsawDrop's real tolerance check.
+  for (let index = 0; index < 4; index += 1) {
+    const piece = page.locator(".jigsaw-tray-piece").first();
+    await piece.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+  }
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing");
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+});
+
+test("Keyboard placement snaps only within tolerance and merges via the real neighbor-merge path", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installDailyFixture(page);
+  await openDaily(page);
+  const piece = page.locator(".jigsaw-tray-piece").first();
+  const groupLabel = await piece.getAttribute("aria-label");
+  await piece.focus();
+  await page.keyboard.press("Enter"); // select
+  await expect(page.locator(".jigsaw-root")).not.toHaveAttribute("data-selected-group", "");
+  await page.keyboard.press("ArrowUp"); // moves it onto the board (leaves the tray), far from its slot
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
+  await page.keyboard.press("Enter"); // attempt placement — far away, must not snap
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3); // not returned to the tray either — stays loose on the board
+  void groupLabel;
+});
+
+test("Fullscreen supports tray drag, pinch-zoom, and preserves state on exit", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  await page.getByRole("button", { name: "More puzzle actions" }).click();
+  await page.getByRole("menuitem", { name: "Fullscreen" }).click();
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-fullscreen", "true");
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+  const from = await trayCanvas.boundingBox(); const to = await board.boundingBox();
+  const dragId = 401;
+  const dragStartX = from!.x + from!.width / 2; const dragStartY = from!.y + from!.height / 2;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 1, clientX: dragStartX, clientY: dragStartY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 1, clientX: dragStartX, clientY: dragStartY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 1, clientX: to!.x + to!.width / 2, clientY: to!.y + to!.height / 2 });
+  await board.dispatchEvent("pointerup", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 0, clientX: to!.x + to!.width / 2, clientY: to!.y + to!.height / 2 });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
+
+  const centerX = to!.x + to!.width / 2; const centerY = to!.y + to!.height / 2;
+  await board.dispatchEvent("pointerdown", { pointerId: 402, pointerType: "touch", buttons: 1, clientX: centerX - 40, clientY: centerY });
+  await board.dispatchEvent("pointerdown", { pointerId: 403, pointerType: "touch", buttons: 1, clientX: centerX + 40, clientY: centerY });
+  await board.dispatchEvent("pointermove", { pointerId: 402, pointerType: "touch", buttons: 1, clientX: centerX - 90, clientY: centerY });
+  await board.dispatchEvent("pointermove", { pointerId: 403, pointerType: "touch", buttons: 1, clientX: centerX + 90, clientY: centerY });
+  await board.dispatchEvent("pointerup", { pointerId: 402, pointerType: "touch" });
+  await board.dispatchEvent("pointerup", { pointerId: 403, pointerType: "touch" });
+  await expect(page.getByRole("button", { name: "Reset zoom" })).not.toHaveText("100%");
+
+  const trayCountBeforeExit = await page.locator(".jigsaw-tray-piece").count();
+  await page.getByRole("button", { name: "Exit fullscreen" }).click();
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-fullscreen", "false");
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(trayCountBeforeExit);
 });
 
 test("Warz mounts without restoring or writing Catalog and Daily progress", async ({ page }) => {
