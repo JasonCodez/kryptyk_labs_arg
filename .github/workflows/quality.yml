@@ -22,8 +22,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint crossword integration
-        run: npm run lint:crossword
+      - name: Lint repository
+        run: npm run lint
 
       - name: Run unit tests
         run: npm run test:unit
@@ -31,7 +31,7 @@ jobs:
       - name: Build application
         run: npm run build
 
-  crossword-browser:
+  puzzle-browser:
     runs-on: ubuntu-latest
     env:
       NEXTAUTH_URL: http://localhost:3000
@@ -55,3 +55,6 @@ jobs:
 
       - name: Run crossword browser tests
         run: npm run test:crossword
+
+      - name: Run Anagram Blitz browser tests
+        run: npm run test:anagram

@@ -1,0 +1,657 @@
+/* Anagram Blitz ------------------------------------------------------------- */
+.anagram-root,
+.anagram-game-surface,
+.anagram-active-game,
+.anagram-renderer-shell {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.anagram-root {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--anagram-board-border, rgba(148, 163, 184, 0.2));
+  border-radius: var(--anagram-board-radius, 16px);
+  background: var(--anagram-board-bg, #0f1219);
+  color: #f8fafc;
+  isolation: isolate;
+}
+
+.anagram-skin-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.anagram-game-surface {
+  position: relative;
+  z-index: 1;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.anagram-game-surface:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(129, 140, 248, 0.8);
+}
+
+.anagram-standalone-header {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.46);
+}
+
+.anagram-standalone-header h2,
+.anagram-standalone-header p {
+  margin: 0;
+}
+
+.anagram-standalone-header h2 {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.anagram-standalone-header p {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.anagram-standalone-header > span {
+  color: #fde74c;
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.anagram-standalone-help,
+.anagram-ready-help {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(253, 231, 76, 0.3);
+  border-radius: 10px;
+  background: rgba(253, 231, 76, 0.09);
+  color: #fde74c;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.anagram-state-card {
+  width: min(100%, 620px);
+  min-height: 360px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px;
+  text-align: center;
+}
+
+.anagram-state-card h2,
+.anagram-state-card p {
+  margin: 0;
+}
+
+.anagram-state-card h2 {
+  font-size: clamp(22px, 5vw, 30px);
+  font-weight: 950;
+}
+
+.anagram-state-card > p {
+  max-width: 460px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.anagram-state-icon {
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(129, 140, 248, 0.42);
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.18);
+  color: #fde74c;
+  font-size: 36px;
+  font-weight: 950;
+}
+
+.anagram-start-button {
+  min-width: 180px;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: 12px;
+  background: var(--anagram-button-bg, #fde74c);
+  color: var(--anagram-button-text, #020202);
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.anagram-hint {
+  padding: 7px 12px;
+  border: 1px solid rgba(253, 231, 76, 0.2);
+  border-radius: 9px;
+  background: rgba(253, 231, 76, 0.07);
+  color: #fde74c !important;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.anagram-missed-list {
+  width: min(100%, 420px);
+  max-height: 180px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.anagram-missed-list li {
+  padding: 6px 9px;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.2);
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.anagram-active-game {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(70px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+}
+
+.anagram-timer-block {
+  width: 100%;
+}
+
+.anagram-timer-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.anagram-timer-labels strong {
+  color: #86efac;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.anagram-timer-block[data-urgent="true"] .anagram-timer-labels strong {
+  color: #fda4af;
+}
+
+.anagram-timer-track {
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.anagram-timer-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4ade80, #86efac);
+  transition: width 100ms linear, background-color 180ms ease;
+}
+
+.anagram-timer-block[data-urgent="true"] .anagram-timer-fill {
+  background: linear-gradient(90deg, #fb7185, #fda4af);
+}
+
+.anagram-word-progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.anagram-progress-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.anagram-progress-dots > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.25);
+}
+
+.anagram-progress-dots > span[data-active="true"] {
+  background: #fde74c;
+  box-shadow: 0 0 9px rgba(253, 231, 76, 0.42);
+}
+
+.anagram-progress-dots > span[data-solved="true"] {
+  background: #4ade80;
+  box-shadow: none;
+}
+
+.anagram-letter-tray,
+.anagram-answer-slots {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 1.4vw, 9px);
+}
+
+.anagram-letter-tray {
+  min-height: 64px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.34);
+}
+
+.anagram-letter-tile,
+.anagram-answer-slot {
+  width: clamp(44px, 11vw, 52px);
+  height: clamp(44px, 11vw, 52px);
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 10px;
+  font-size: clamp(17px, 4.8vw, 23px);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.anagram-letter-tile {
+  border: 2px solid var(--anagram-tile-border, rgba(129, 140, 248, 0.46));
+  background: var(--anagram-tile-bg, #1e293b);
+  color: var(--anagram-tile-text, #f8fafc);
+  box-shadow: 0 4px 0 rgba(2, 6, 23, 0.75);
+}
+
+.anagram-letter-tile[data-used="true"] {
+  opacity: 0.18;
+  transform: scale(0.92);
+}
+
+.anagram-letter-tile[data-recent="true"],
+.anagram-answer-slot[data-recent="true"] {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 2px;
+}
+
+.anagram-answer-slots {
+  min-height: 58px;
+}
+
+.anagram-answer-slot {
+  border: 2px solid var(--anagram-input-border, rgba(148, 163, 184, 0.45));
+  background: var(--anagram-input-bg, rgba(15, 23, 42, 0.8));
+  color: #f8fafc;
+  box-shadow: inset 0 -3px 0 rgba(2, 6, 23, 0.5);
+}
+
+.anagram-answer-slot:not([data-filled="true"]) {
+  border-style: dashed;
+  opacity: 0.62;
+}
+
+.anagram-letter-tray[data-feedback="correct"] .anagram-letter-tile,
+.anagram-answer-slots[data-feedback="correct"] .anagram-answer-slot {
+  border-color: #4ade80;
+  background: rgba(22, 101, 52, 0.82);
+  color: #dcfce7;
+}
+
+.anagram-answer-slots[data-feedback="wrong"] {
+  animation: anagram-wrong-shake 280ms ease-in-out;
+}
+
+.anagram-controls {
+  width: min(100%, 620px);
+  justify-self: center;
+  display: grid;
+  gap: 8px;
+}
+
+.anagram-secondary-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.anagram-control-button,
+.anagram-submit-button {
+  min-height: 46px;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.anagram-control-button {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(30, 41, 59, 0.84);
+  color: #e2e8f0;
+}
+
+.anagram-submit-button {
+  background: var(--anagram-button-bg, #fde74c);
+  color: var(--anagram-button-text, #020202);
+}
+
+.anagram-control-button:disabled,
+.anagram-submit-button:disabled {
+  opacity: 0.36;
+}
+
+.anagram-active-hint {
+  justify-self: center;
+  margin: 0;
+}
+
+.anagram-feedback {
+  min-height: 18px;
+  margin: 0;
+  color: #fda4af;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.anagram-help-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482500;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.78);
+}
+
+.anagram-help-dialog {
+  width: min(100%, 520px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  border-radius: 16px;
+  background: #080c16;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+  color: #f8fafc;
+}
+
+.anagram-help-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.anagram-help-heading h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.anagram-help-close {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.8);
+  color: #f8fafc;
+  font-size: 24px;
+}
+
+.anagram-help-copy {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.anagram-help-copy p {
+  margin: 0;
+}
+
+.anagram-help-confirm {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 11px;
+  background: #fde74c;
+  color: #020202;
+  font-weight: 950;
+}
+
+@keyframes anagram-wrong-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+@media (max-width: 1031px) {
+  .pw-anagram-shell-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pw-anagram-shell-content > *,
+  .pw-anagram-shell-content .puzzle-detail-play-stage,
+  .pw-anagram-shell-content .puzzle-detail-play-inner,
+  .pw-anagram-shell-content .puzzle-detail-play-container,
+  .pw-anagram-shell-content .puzzle-detail-play-card,
+  .pw-anagram-shell-content .puzzle-detail-play-card-body,
+  .pw-anagram-shell-content .anagram-renderer-shell,
+  .pw-anagram-shell-content .anagram-root,
+  .pw-anagram-shell-content .anagram-game-surface {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .pw-anagram-shell-content .puzzle-detail-play-card {
+    overflow: hidden;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .pw-anagram-shell-content .puzzle-detail-play-card-body {
+    overflow: hidden;
+    position: relative;
+  }
+
+  .pw-anagram-shell-content .pw-inline-toasts {
+    position: absolute !important;
+    inset: 8px 8px auto !important;
+    width: auto;
+    margin: 0 !important;
+    pointer-events: none;
+  }
+
+  .pw-anagram-shell-content .pw-inline-toasts > * {
+    pointer-events: auto;
+  }
+
+  .pw-anagram-shell-content .puzzle-detail-progress-section {
+    display: none;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-active-game {
+    height: 100%;
+    grid-template-rows: auto auto minmax(64px, 1fr) auto auto auto;
+    gap: clamp(5px, 1.2dvh, 10px);
+    padding: 7px 8px max(7px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-timer-labels {
+    height: 0;
+    overflow: hidden;
+    margin: 0;
+    opacity: 0;
+  }
+
+  .anagram-letter-tile,
+  .anagram-answer-slot {
+    width: clamp(44px, 11.5vw, 50px);
+    height: clamp(44px, 11.5vw, 50px);
+  }
+
+  .anagram-state-card {
+    height: 100%;
+    min-height: 0;
+    padding: 18px;
+  }
+}
+
+@media (max-width: 380px) {
+  .anagram-root[data-display-mode="app-shell"] .anagram-active-game {
+    gap: 5px;
+    padding-inline: 5px;
+  }
+
+  .anagram-letter-tray,
+  .anagram-answer-slots {
+    gap: 3px;
+  }
+
+  .anagram-letter-tile,
+  .anagram-answer-slot {
+    width: 44px;
+    height: 44px;
+    font-size: 17px;
+  }
+
+  .anagram-control-button,
+  .anagram-submit-button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 1031px) and (orientation: landscape) and (min-width: 700px) and (min-height: 360px) {
+  .anagram-root[data-display-mode="app-shell"] .anagram-active-game {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.85fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-timer-block,
+  .anagram-root[data-display-mode="app-shell"] .anagram-word-progress {
+    grid-column: 1 / -1;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-letter-tray {
+    grid-column: 1;
+    grid-row: 3 / 5;
+    height: 100%;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-answer-slots {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-controls {
+    grid-column: 2;
+    grid-row: 4;
+  }
+
+  .anagram-root[data-display-mode="app-shell"] .anagram-active-hint,
+  .anagram-root[data-display-mode="app-shell"] .anagram-feedback {
+    display: none;
+  }
+}
+
+@media (min-width: 1032px) {
+  .pw-anagram-shell-content.pw-play-content--fixed {
+    height: auto;
+    overflow: visible;
+  }
+
+  .anagram-renderer-shell {
+    max-width: 860px;
+    margin: 0 auto 2rem;
+  }
+
+  .anagram-root {
+    min-height: 570px;
+  }
+
+  .anagram-active-game {
+    padding: 28px 36px;
+  }
+
+  .anagram-letter-tile,
+  .anagram-answer-slot {
+    width: 52px;
+    height: 52px;
+    font-size: 23px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anagram-answer-slots[data-feedback="wrong"] {
+    animation: none !important;
+  }
+
+  .anagram-timer-fill,
+  .anagram-letter-tile,
+  .anagram-answer-slot,
+  .anagram-control-button,
+  .anagram-submit-button,
+  .anagram-help-layer,
+  .anagram-help-dialog {
+    transition: none !important;
+  }
+}
+
+.anagram-root[data-reduced-motion="true"] .anagram-answer-slots[data-feedback="wrong"] {
+  animation: none !important;
+}

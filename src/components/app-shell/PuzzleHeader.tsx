@@ -46,6 +46,13 @@ interface PuzzleHeaderCrosswordActionsProps {
   overflow?: ReactNode;
 }
 
+interface PuzzleHeaderActionsProps {
+  onHelp: () => void;
+  helpLabel: string;
+  beforeHelp?: ReactNode;
+  overflow?: ReactNode;
+}
+
 function HeaderActionIcon({ kind }: { kind: "clues" | "help" | "more" }) {
   if (kind === "help") {
     return <span className="pw-play-header-action-glyph" aria-hidden>?</span>;
@@ -167,24 +174,42 @@ function PuzzleHeaderOverflowMenu({ children }: { children: ReactNode }) {
   );
 }
 
-export function PuzzleHeaderCrosswordActions({
-  onClues,
+export function PuzzleHeaderActions({
   onHelp,
+  helpLabel,
+  beforeHelp,
   overflow,
-}: PuzzleHeaderCrosswordActionsProps) {
+}: PuzzleHeaderActionsProps) {
   const overflowActions = actionableElements(overflow);
   return (
     <div className="pw-play-header-action-group">
-      <Pressable type="button" className="pw-play-header-action pw-play-header-crossword-clues" onClick={onClues} aria-label="Open crossword clues">
-        <HeaderActionIcon kind="clues" />
-        <span className="pw-play-header-action-text">Clues</span>
-      </Pressable>
-      <Pressable type="button" className="pw-play-header-action" onClick={onHelp} aria-label="How to play crossword">
+      {beforeHelp}
+      <Pressable type="button" className="pw-play-header-action" onClick={onHelp} aria-label={helpLabel}>
         <HeaderActionIcon kind="help" />
         <span className="pw-play-header-action-text">Help</span>
       </Pressable>
       {overflowActions.length > 0 && <PuzzleHeaderOverflowMenu>{overflowActions}</PuzzleHeaderOverflowMenu>}
     </div>
+  );
+}
+
+export function PuzzleHeaderCrosswordActions({
+  onClues,
+  onHelp,
+  overflow,
+}: PuzzleHeaderCrosswordActionsProps) {
+  return (
+    <PuzzleHeaderActions
+      onHelp={onHelp}
+      helpLabel="How to play crossword"
+      beforeHelp={
+        <Pressable type="button" className="pw-play-header-action pw-play-header-crossword-clues" onClick={onClues} aria-label="Open crossword clues">
+          <HeaderActionIcon kind="clues" />
+          <span className="pw-play-header-action-text">Clues</span>
+        </Pressable>
+      }
+      overflow={overflow}
+    />
   );
 }
 

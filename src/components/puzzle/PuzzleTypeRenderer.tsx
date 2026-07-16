@@ -17,7 +17,10 @@ import CrosswordPuzzle, {
   type CrosswordPuzzleHandle,
 } from "@/components/puzzle/CrosswordPuzzle";
 import LogicGridPuzzle from "@/components/puzzle/LogicGridPuzzle";
-import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
+import AnagramBlitz, {
+  type AnagramBlitzHandle,
+  type AnagramPresentationState,
+} from "@/components/puzzle/AnagramBlitz";
 import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import VaultPuzzle from "@/components/puzzle/VaultPuzzle";
@@ -77,6 +80,8 @@ interface PuzzleTypeRendererProps {
   onJigsawShowRatingModal: () => void;
   crosswordRef?: RefObject<CrosswordPuzzleHandle | null>;
   onCrosswordPresentationChange?: (state: CrosswordPresentationState) => void;
+  anagramRef?: RefObject<AnagramBlitzHandle | null>;
+  onAnagramPresentationChange?: (state: AnagramPresentationState) => void;
   // Skip-token button — normally rendered below the puzzle by PuzzleProgressSection, which gets
   // hidden behind the fullscreen overlay. Passed through to PuzzleFullscreenFrame so it stays
   // reachable while a puzzle is fullscreen.
@@ -104,6 +109,8 @@ export function PuzzleTypeRenderer({
   onJigsawShowRatingModal,
   crosswordRef,
   onCrosswordPresentationChange,
+  anagramRef,
+  onAnagramPresentationChange,
   skipControl,
 }: PuzzleTypeRendererProps) {
   // Detect the jigsaw image's natural aspect ratio so the play board matches it —
@@ -392,22 +399,17 @@ export function PuzzleTypeRenderer({
 
   if (puzzle.puzzleType === 'anagram_blitz') {
     return (
-      <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
-          {progress?.solved && (
-            <div className="mb-6 p-4 rounded-lg border text-white"
-                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-              🔀 You already unscrambled all the words!
-            </div>
-          )}
-          <AnagramBlitz
-            puzzleId={puzzleId}
-            anagramData={(puzzle.data ?? {}) as Record<string, unknown>}
-            alreadySolved={progress?.solved ?? false}
-            onSolved={() => onSolved()}
-            onFailed={() => {}}
-          />
-        </PuzzleFullscreenFrame>
+      <div className="anagram-renderer-shell">
+        <AnagramBlitz
+          ref={anagramRef}
+          puzzleId={puzzleId}
+          anagramData={(puzzle.data ?? {}) as Record<string, unknown>}
+          alreadySolved={progress?.solved ?? false}
+          displayMode="app-shell"
+          onPresentationChange={onAnagramPresentationChange}
+          onSolved={(elapsedSeconds) => onSolved(elapsedSeconds)}
+          onFailed={() => {}}
+        />
       </div>
     );
   }

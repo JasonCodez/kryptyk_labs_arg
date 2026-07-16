@@ -33,7 +33,7 @@ export default function Toasts({ toasts, onRemove, inline = false }: { toasts: T
   const containerStyle = inline ? containerStyleInline : containerStyleFixed;
 
   return (
-    <div style={containerStyle}>
+    <div className={inline ? "pw-inline-toasts" : "pw-fixed-toasts"} style={containerStyle}>
       <AnimatePresence initial={false}>
         {toasts.map((t) => {
           const needsMore = t.message && t.message.length > SHOW_MORE_THRESHOLD;

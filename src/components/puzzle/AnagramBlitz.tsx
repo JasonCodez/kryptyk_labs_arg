@@ -1,8 +1,26 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
+import { useReducedMotion } from "framer-motion";
+import Pressable from "@/components/juice/Pressable";
+import { confettiBurstAt } from "@/components/juice/particles";
+import { juice, prefersReducedMotion } from "@/lib/juice";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
+import AnagramLetterTray from "@/components/puzzle/anagram/AnagramLetterTray";
+import AnagramAnswerSlots from "@/components/puzzle/anagram/AnagramAnswerSlots";
+import AnagramControls from "@/components/puzzle/anagram/AnagramControls";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -10,490 +28,685 @@ const IceBackground = dynamic(() => import("@/components/IceBackground"), { ssr:
 const NeonBackground = dynamic(() => import("@/components/NeonBackground"), { ssr: false });
 const RetroBackground = dynamic(() => import("@/components/RetroBackground"), { ssr: false });
 
+export type AnagramStatus = "ready" | "playing" | "won" | "lost";
+
+export interface AnagramPresentationState {
+  status: AnagramStatus;
+  timeLeftMs: number;
+  solvedCount: number;
+  totalWords: number;
+  currentWordNumber: number;
+  currentWordLength: number;
+}
+
+export interface AnagramFailureResult {
+  solvedCount: number;
+  totalWords: number;
+  elapsedSeconds: number;
+  missedAnswers: string[];
+}
+
+export interface AnagramBlitzHandle {
+  openInstructions: () => void;
+  resetGame: () => void;
+  focusGame: () => void;
+}
+
+export interface AnagramTile {
+  id: string;
+  letter: string;
+}
+
+export interface AnagramWordEntry {
+  id: string;
+  answer: string;
+  scrambled: AnagramTile[];
+}
+
 interface AnagramBlitzProps {
   puzzleId: string;
   anagramData: Record<string, unknown>;
   alreadySolved?: boolean;
-  onSolved?: () => void;
-  onFailed?: () => void;
+  onSolved?: (elapsedSeconds: number) => void;
+  onFailed?: (result: AnagramFailureResult) => void;
+  onPresentationChange?: (state: AnagramPresentationState) => void;
+  displayMode?: "standalone" | "app-shell";
 }
 
-function scramble(word: string): string {
-  const arr = word.split("");
-  // Fisher-Yates — keep shuffling until result differs from original
-  let result = word;
-  let attempts = 0;
-  while (result === word && attempts < 20) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    result = arr.join("");
-    attempts++;
+function hashSeed(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
-  return result;
+  return hash >>> 0;
 }
 
-function HowToPlayModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4"
-      onClick={onClose}
-    >
+function seededRandom(seed: number) {
+  let value = seed || 1;
+  return () => {
+    value += 0x6d2b79f5;
+    let next = value;
+    next = Math.imul(next ^ (next >>> 15), next | 1);
+    next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function canScrambleDiffer(answer: string): boolean {
+  return new Set(answer).size > 1;
+}
+
+function stableScramble(answer: string, entryId: string): AnagramTile[] {
+  const tiles = answer.split("").map((letter, index) => ({ id: `${entryId}-tile-${index}`, letter }));
+  const random = seededRandom(hashSeed(entryId));
+  const shuffled = [...tiles];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  if (canScrambleDiffer(answer) && shuffled.map((tile) => tile.letter).join("") === answer) {
+    const swapIndex = shuffled.findIndex((tile, index) => index > 0 && tile.letter !== shuffled[0].letter);
+    if (swapIndex > 0) [shuffled[0], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[0]];
+  }
+  return shuffled;
+}
+
+export function buildAnagramWordEntries(puzzleId: string, rawWords: unknown): AnagramWordEntry[] {
+  if (!Array.isArray(rawWords)) return [];
+  return rawWords.flatMap((rawWord, index) => {
+    const answer = String(rawWord).toUpperCase().replace(/[^A-Z]/g, "");
+    if (!answer) return [];
+    const id = `${puzzleId}-word-${index}`;
+    return [{ id, answer, scrambled: stableScramble(answer, id) }];
+  });
+}
+
+function shuffledUnusedOrder(order: string[], usedIds: ReadonlySet<string>): string[] {
+  const availablePositions = order.flatMap((id, index) => usedIds.has(id) ? [] : [index]);
+  if (availablePositions.length < 2) return order;
+  const availableIds = availablePositions.map((index) => order[index]);
+  for (let index = availableIds.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [availableIds[index], availableIds[swapIndex]] = [availableIds[swapIndex], availableIds[index]];
+  }
+  const unchanged = availableIds.every((id, index) => id === order[availablePositions[index]]);
+  if (unchanged) availableIds.push(availableIds.shift()!);
+  const next = [...order];
+  availablePositions.forEach((position, index) => { next[position] = availableIds[index]; });
+  return next;
+}
+
+function formatTime(timeLeftMs: number): string {
+  const safeMs = Math.max(0, timeLeftMs);
+  if (safeMs <= 10_000 && safeMs > 0) return `${(safeMs / 1000).toFixed(1)}s`;
+  const totalSeconds = Math.ceil(safeMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function AnagramHelpDialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], [tabindex]:not([tabindex="-1"])'
+      ) ?? []).filter((element) => !element.hasAttribute("disabled"));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.requestAnimationFrame(() => restoreFocusRef.current?.focus());
+    };
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="anagram-help-layer" onPointerDown={(event) => {
+      if (event.currentTarget === event.target) onClose();
+    }}>
       <div
-        className="max-w-lg w-full rounded-xl p-6 shadow-2xl"
-        style={{ background: "#0f0f1a", border: "1px solid rgba(255,255,255,0.12)" }}
-        onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        className="anagram-help-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="anagram-help-title"
       >
-        <div className="flex items-start justify-between mb-4">
-          <h2 className="text-lg font-extrabold" style={{ color: "#FDE74C" }}>How to Play — Anagram Blitz</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-4">✕</button>
+        <div className="anagram-help-heading">
+          <h2 id="anagram-help-title">How to Play Anagram Blitz</h2>
+          <Pressable ref={closeRef} type="button" className="anagram-help-close" aria-label="Close help" onClick={onClose}>×</Pressable>
         </div>
-        <div className="space-y-3 text-sm text-gray-300">
-          <p>Unscramble a series of words before the timer runs out. Each word is shown as a jumble of letters — figure out what word they spell.</p>
-          <p><strong className="text-white">Answering:</strong> Type the correct word and press Enter (or the ✓ button). If you&apos;re correct, it&apos;s marked off and the next word appears.</p>
-          <p><strong className="text-white">Skipping:</strong> If you&apos;re stuck, use the Skip button to move the current word to the back of the queue. Come back to it if time allows.</p>
-          <p><strong className="text-white">Winning:</strong> Unscramble every word before the clock hits zero to complete the puzzle.</p>
+        <div className="anagram-help-copy">
+          <p>Build each answer by tapping its scrambled letter tiles. Tap an answer tile or press Backspace to return it.</p>
+          <p>Use Shuffle to rearrange unused letters. Pass moves the current word to the back of the queue.</p>
+          <p>A hardware keyboard can enter letters, erase with Backspace or Delete, and submit with Enter.</p>
+          <p><strong>The Blitz timer continues while Help is open.</strong></p>
         </div>
-        <div className="mt-5 text-right">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: "#FDE74C", color: "#000" }}>Got it</button>
-        </div>
+        <Pressable type="button" className="anagram-help-confirm" onClick={onClose}>Got it</Pressable>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
-export default function AnagramBlitz({
+const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function AnagramBlitz({
   puzzleId,
   anagramData,
   alreadySolved = false,
   onSolved,
   onFailed,
-}: AnagramBlitzProps) {
-  const words: string[] = Array.isArray(anagramData.words)
-    ? (anagramData.words as string[]).map((w) => String(w).toUpperCase()).filter(Boolean)
-    : [];
-  const totalTime = Number(anagramData.timeLimit ?? 60);
+  onPresentationChange,
+  displayMode = "standalone",
+}, ref) {
+  const entries = useMemo(() => buildAnagramWordEntries(puzzleId, anagramData.words), [anagramData.words, puzzleId]);
+  const entryMap = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+  const totalTimeMs = Math.max(1, Number(anagramData.timeLimit ?? 60)) * 1000;
   const hint = anagramData.hint ? String(anagramData.hint) : null;
+  const initialTrayOrders = useMemo(() => Object.fromEntries(entries.map((entry) => [entry.id, entry.scrambled.map((tile) => tile.id)])), [entries]);
   const skin = usePuzzleSkin();
+  const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
 
-  // Skin background wrapper used by all return paths
-  const skinWrap = (children: ReactNode) => (
+  const [status, setStatus] = useState<AnagramStatus>(alreadySolved ? "won" : "ready");
+  const [timeLeftMs, setTimeLeftMs] = useState(totalTimeMs);
+  const [queueIds, setQueueIds] = useState<string[]>(alreadySolved ? [] : entries.map((entry) => entry.id));
+  const [solvedEntryIds, setSolvedEntryIds] = useState<string[]>(alreadySolved ? entries.map((entry) => entry.id) : []);
+  const [trayOrders, setTrayOrders] = useState<Record<string, string[]>>(initialTrayOrders);
+  const [placedTileIds, setPlacedTileIds] = useState<string[]>([]);
+  const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
+  const [recentTileId, setRecentTileId] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+
+  const gameSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const completionTargetRef = useRef<HTMLDivElement | null>(null);
+  const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const deadlineRef = useRef<number | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+  const timeoutRefs = useRef<Set<number>>(new Set());
+  const statusRef = useRef(status);
+  const queueRef = useRef(queueIds);
+  const solvedRef = useRef(solvedEntryIds);
+  const placedRef = useRef(placedTileIds);
+  const terminalGuardRef = useRef(alreadySolved);
+  const solvedCallbackGuardRef = useRef(alreadySolved);
+  const failedCallbackGuardRef = useRef(false);
+  const onSolvedRef = useRef(onSolved);
+  const onFailedRef = useRef(onFailed);
+  const onPresentationChangeRef = useRef(onPresentationChange);
+  const presentationSignatureRef = useRef("");
+
+  const currentEntry = entryMap.get(queueIds[0] ?? "") ?? null;
+  const currentTrayOrder = useMemo(
+    () => currentEntry ? (trayOrders[currentEntry.id] ?? currentEntry.scrambled.map((tile) => tile.id)) : [],
+    [currentEntry, trayOrders]
+  );
+  const currentTileMap = useMemo(() => new Map(currentEntry?.scrambled.map((tile) => [tile.id, tile]) ?? []), [currentEntry]);
+  const trayTiles = currentTrayOrder.flatMap((tileId) => {
+    const tile = currentTileMap.get(tileId);
+    return tile ? [tile] : [];
+  });
+  const placedTiles = placedTileIds.flatMap((tileId) => {
+    const tile = currentTileMap.get(tileId);
+    return tile ? [tile] : [];
+  });
+  const placedSet = useMemo(() => new Set(placedTileIds), [placedTileIds]);
+
+  useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { queueRef.current = queueIds; }, [queueIds]);
+  useEffect(() => { solvedRef.current = solvedEntryIds; }, [solvedEntryIds]);
+  useEffect(() => { placedRef.current = placedTileIds; }, [placedTileIds]);
+  useEffect(() => { onSolvedRef.current = onSolved; }, [onSolved]);
+  useEffect(() => { onFailedRef.current = onFailed; }, [onFailed]);
+  useEffect(() => { onPresentationChangeRef.current = onPresentationChange; }, [onPresentationChange]);
+
+  const clearTicker = useCallback(() => {
+    if (tickerRef.current) clearInterval(tickerRef.current);
+    tickerRef.current = null;
+  }, []);
+
+  const clearPendingTimeouts = useCallback(() => {
+    timeoutRefs.current.forEach((timeout) => window.clearTimeout(timeout));
+    timeoutRefs.current.clear();
+  }, []);
+
+  const schedule = useCallback((callback: () => void, delay: number) => {
+    const timeout = window.setTimeout(() => {
+      timeoutRefs.current.delete(timeout);
+      callback();
+    }, delay);
+    timeoutRefs.current.add(timeout);
+  }, []);
+
+  const focusGame = useCallback(() => {
+    gameSurfaceRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const finishLoss = useCallback(() => {
+    if (terminalGuardRef.current || statusRef.current !== "playing") return;
+    terminalGuardRef.current = true;
+    clearTicker();
+    deadlineRef.current = null;
+    statusRef.current = "lost";
+    setStatus("lost");
+    setTimeLeftMs(0);
+    setFeedback(null);
+    const solvedIds = new Set(solvedRef.current);
+    if (!failedCallbackGuardRef.current) {
+      failedCallbackGuardRef.current = true;
+      onFailedRef.current?.({
+        solvedCount: solvedIds.size,
+        totalWords: entries.length,
+        elapsedSeconds: Math.max(0, Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000)),
+        missedAnswers: entries.filter((entry) => !solvedIds.has(entry.id)).map((entry) => entry.answer),
+      });
+    }
+  }, [clearTicker, entries]);
+
+  const syncClock = useCallback(() => {
+    if (statusRef.current !== "playing" || terminalGuardRef.current || deadlineRef.current === null) return;
+    const remaining = Math.max(0, deadlineRef.current - Date.now());
+    setTimeLeftMs(remaining);
+    if (remaining <= 0) finishLoss();
+  }, [finishLoss]);
+
+  useEffect(() => {
+    if (status !== "playing" || terminalGuardRef.current) return;
+    syncClock();
+    tickerRef.current = setInterval(syncClock, 100);
+    return clearTicker;
+  }, [clearTicker, status, syncClock]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") syncClock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [syncClock]);
+
+  useEffect(() => () => {
+    clearTicker();
+    clearPendingTimeouts();
+  }, [clearPendingTimeouts, clearTicker]);
+
+  const resetGame = useCallback(() => {
+    clearTicker();
+    clearPendingTimeouts();
+    deadlineRef.current = null;
+    startedAtRef.current = null;
+    terminalGuardRef.current = alreadySolved;
+    solvedCallbackGuardRef.current = alreadySolved;
+    failedCallbackGuardRef.current = false;
+    const resetStatus: AnagramStatus = alreadySolved ? "won" : "ready";
+    const resetQueue = alreadySolved ? [] : entries.map((entry) => entry.id);
+    const resetSolved = alreadySolved ? entries.map((entry) => entry.id) : [];
+    statusRef.current = resetStatus;
+    queueRef.current = resetQueue;
+    solvedRef.current = resetSolved;
+    placedRef.current = [];
+    setStatus(resetStatus);
+    setTimeLeftMs(totalTimeMs);
+    setQueueIds(resetQueue);
+    setSolvedEntryIds(resetSolved);
+    setTrayOrders(initialTrayOrders);
+    setPlacedTileIds([]);
+    setFeedback(null);
+    setRecentTileId(null);
+    setShowHelp(false);
+  }, [alreadySolved, clearPendingTimeouts, clearTicker, entries, initialTrayOrders, totalTimeMs]);
+
+  useImperativeHandle(ref, () => ({
+    openInstructions: () => setShowHelp(true),
+    resetGame,
+    focusGame,
+  }), [focusGame, resetGame]);
+
+  const presentationState = useMemo<AnagramPresentationState>(() => ({
+    status,
+    timeLeftMs,
+    solvedCount: solvedEntryIds.length,
+    totalWords: entries.length,
+    currentWordNumber: currentEntry ? Math.min(entries.length, solvedEntryIds.length + 1) : 0,
+    currentWordLength: currentEntry?.answer.length ?? 0,
+  }), [currentEntry, entries.length, solvedEntryIds.length, status, timeLeftMs]);
+
+  useEffect(() => {
+    const signature = [
+      presentationState.status,
+      Math.round(presentationState.timeLeftMs),
+      presentationState.solvedCount,
+      presentationState.totalWords,
+      presentationState.currentWordNumber,
+      presentationState.currentWordLength,
+    ].join("|");
+    if (signature === presentationSignatureRef.current) return;
+    presentationSignatureRef.current = signature;
+    onPresentationChangeRef.current?.(presentationState);
+  }, [presentationState]);
+
+  const handleStart = useCallback(() => {
+    if (alreadySolved || entries.length === 0 || statusRef.current !== "ready") return;
+    const now = Date.now();
+    startedAtRef.current = now;
+    deadlineRef.current = now + totalTimeMs;
+    terminalGuardRef.current = false;
+    statusRef.current = "playing";
+    setTimeLeftMs(totalTimeMs);
+    setStatus("playing");
+    window.requestAnimationFrame(focusGame);
+  }, [alreadySolved, entries.length, focusGame, totalTimeMs]);
+
+  const setPlaced = useCallback((next: string[]) => {
+    placedRef.current = next;
+    setPlacedTileIds(next);
+  }, []);
+
+  const selectTile = useCallback((tileId: string) => {
+    if (statusRef.current !== "playing" || feedback === "correct" || !currentEntry) return;
+    const currentPlaced = placedRef.current;
+    if (currentPlaced.includes(tileId) || currentPlaced.length >= currentEntry.answer.length) return;
+    setPlaced([...currentPlaced, tileId]);
+    setRecentTileId(tileId);
+    window.requestAnimationFrame(focusGame);
+  }, [currentEntry, feedback, focusGame, setPlaced]);
+
+  const returnTile = useCallback((slotIndex: number) => {
+    if (statusRef.current !== "playing" || feedback === "correct") return;
+    const tileId = placedRef.current[slotIndex];
+    if (!tileId) return;
+    setPlaced(placedRef.current.filter((_, index) => index !== slotIndex));
+    setRecentTileId(tileId);
+    window.requestAnimationFrame(focusGame);
+  }, [feedback, focusGame, setPlaced]);
+
+  const handleBackspace = useCallback(() => {
+    if (statusRef.current !== "playing" || feedback === "correct") return;
+    const tileId = placedRef.current.at(-1);
+    if (!tileId) return;
+    setPlaced(placedRef.current.slice(0, -1));
+    setRecentTileId(tileId);
+  }, [feedback, setPlaced]);
+
+  const handleShuffle = useCallback(() => {
+    if (!currentEntry || statusRef.current !== "playing" || feedback === "correct") return;
+    const usedIds = new Set(placedRef.current);
+    setTrayOrders((current) => ({
+      ...current,
+      [currentEntry.id]: shuffledUnusedOrder(current[currentEntry.id] ?? currentEntry.scrambled.map((tile) => tile.id), usedIds),
+    }));
+    juice.whoosh();
+    window.requestAnimationFrame(focusGame);
+  }, [currentEntry, feedback, focusGame]);
+
+  const handlePass = useCallback(() => {
+    if (statusRef.current !== "playing" || feedback === "correct" || queueRef.current.length <= 1) return;
+    const nextQueue = [...queueRef.current.slice(1), queueRef.current[0]];
+    queueRef.current = nextQueue;
+    setQueueIds(nextQueue);
+    setPlaced([]);
+    setFeedback(null);
+    setRecentTileId(null);
+    juice.whoosh();
+    window.requestAnimationFrame(focusGame);
+  }, [feedback, focusGame, setPlaced]);
+
+  const finishWinAfterFeedback = useCallback(() => {
+    statusRef.current = "won";
+    setStatus("won");
+    setFeedback(null);
+    setPlaced([]);
+    queueRef.current = [];
+    setQueueIds([]);
+    if (!solvedCallbackGuardRef.current) {
+      solvedCallbackGuardRef.current = true;
+      const elapsedSeconds = Math.max(0, Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000));
+      schedule(() => onSolvedRef.current?.(elapsedSeconds), reduceMotion ? 80 : 240);
+    }
+  }, [reduceMotion, schedule, setPlaced]);
+
+  const handleSubmit = useCallback(() => {
+    if (statusRef.current !== "playing" || feedback === "correct" || !currentEntry) return;
+    if (placedRef.current.length !== currentEntry.answer.length) return;
+    const guess = placedRef.current.map((tileId) => currentTileMap.get(tileId)?.letter ?? "").join("");
+    if (guess !== currentEntry.answer) {
+      setFeedback("wrong");
+      juice.error();
+      schedule(() => setFeedback((current) => current === "wrong" ? null : current), reduceMotion ? 120 : 360);
+      return;
+    }
+
+    setFeedback("correct");
+    juice.success();
+    const nextSolved = [...solvedRef.current, currentEntry.id];
+    solvedRef.current = nextSolved;
+    setSolvedEntryIds(nextSolved);
+    const remainingQueue = queueRef.current.slice(1);
+    const finalWord = remainingQueue.length === 0;
+
+    if (finalWord) {
+      terminalGuardRef.current = true;
+      clearTicker();
+      deadlineRef.current = null;
+      juice.reward();
+      confettiBurstAt(completionTargetRef.current, { particleCount: 42, spread: 78 });
+      schedule(finishWinAfterFeedback, reduceMotion ? 180 : 650);
+      return;
+    }
+
+    schedule(() => {
+      if (terminalGuardRef.current || statusRef.current !== "playing") return;
+      queueRef.current = remainingQueue;
+      setQueueIds(remainingQueue);
+      setPlaced([]);
+      setFeedback(null);
+      setRecentTileId(null);
+      window.requestAnimationFrame(focusGame);
+    }, reduceMotion ? 120 : 460);
+  }, [clearTicker, currentEntry, currentTileMap, feedback, finishWinAfterFeedback, focusGame, reduceMotion, schedule, setPlaced]);
+
+  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") return;
+    if (event.key === "Escape") {
+      if (showHelp) {
+        event.preventDefault();
+        setShowHelp(false);
+      }
+      return;
+    }
+    if (statusRef.current !== "playing" || feedback === "correct" || !currentEntry) return;
+    const target = event.target as HTMLElement;
+    const interactiveTarget = target !== event.currentTarget && Boolean(target.closest("button, a, input, textarea, select"));
+    if (event.key === "Enter") {
+      if (interactiveTarget) return;
+      event.preventDefault();
+      handleSubmit();
+      return;
+    }
+    if (event.key === "Backspace" || event.key === "Delete") {
+      event.preventDefault();
+      handleBackspace();
+      return;
+    }
+    if (!/^[a-zA-Z]$/.test(event.key)) return;
+    event.preventDefault();
+    const letter = event.key.toUpperCase();
+    const usedIds = new Set(placedRef.current);
+    const matchingTile = currentTrayOrder
+      .map((tileId) => currentTileMap.get(tileId))
+      .find((tile) => tile?.letter === letter && !usedIds.has(tile.id));
+    if (matchingTile) selectTile(matchingTile.id);
+  }, [currentEntry, currentTileMap, currentTrayOrder, feedback, handleBackspace, handleSubmit, selectTile, showHelp]);
+
+  const timerPercent = totalTimeMs > 0 ? Math.max(0, Math.min(100, (timeLeftMs / totalTimeMs) * 100)) : 0;
+  const urgent = status === "playing" && timeLeftMs <= 10_000;
+  const missedEntries = entries.filter((entry) => !new Set(solvedEntryIds).has(entry.id));
+  const rootStyle = {
+    "--anagram-board-bg": skin.boardBg,
+    "--anagram-board-border": skin.boardBorder,
+    "--anagram-board-radius": skin.boardRadius,
+    "--anagram-tile-bg": skin.tileBg,
+    "--anagram-tile-border": skin.tileBorder,
+    "--anagram-tile-text": skin.tileText,
+    "--anagram-input-bg": skin.inputBg,
+    "--anagram-input-border": skin.inputBorder,
+    "--anagram-button-bg": skin.btnBg,
+    "--anagram-button-text": skin.btnText,
+  } as CSSProperties;
+
+  return (
     <div
-      data-skin={skin._key ?? "default"}
-      style={{
-        position: "relative",
-        borderRadius: "1rem",
-        overflow: "hidden",
-        width: "100%",
-        maxWidth: "100vw",
-      }}
+      className="anagram-root"
+      data-display-mode={displayMode}
+      data-status={status}
+      data-reduced-motion={reduceMotion ? "true" : undefined}
+      data-testid="anagram-root"
+      style={rootStyle}
     >
       {(skin._key === "lava" || skin._key === "skin_lava") && <LavaBackground />}
       {(skin._key === "galaxy" || skin._key === "skin_galaxy") && <GalaxyBackground />}
       {(skin._key === "ice" || skin._key === "skin_ice" || skin._key === "christmas" || skin._key === "skin_christmas") && <IceBackground />}
       {(skin._key === "neon" || skin._key === "skin_neon") && <NeonBackground />}
       {(skin._key === "retro" || skin._key === "skin_retro") && <RetroBackground />}
+      <div className="anagram-skin-scrim" style={{ background: skin.backdropScrim }} aria-hidden />
+
       <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          background: skin.backdropScrim,
-          zIndex: 0,
-        }}
-      />
-      <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
-    </div>
-  );
-
-  // Guard: no words configured
-  if (words.length === 0) {
-    return skinWrap(
-      <div className="rounded-2xl p-6 text-center" style={{ background: "rgba(15,18,25,0.97)", border: "1px solid rgba(248,113,113,0.3)" }}>
-        <p className="text-red-400 font-semibold">⚠️ This puzzle has no words configured yet.</p>
-      </div>
-    );
-  }
-
-  const [scrambledWords] = useState<string[]>(() => words.map(scramble));
-  const [queue, setQueue] = useState<string[]>(() => [...words]);
-  const [input, setInput] = useState("");
-  const [solvedWords, setSolvedWords] = useState<string[]>([]);
-  const [timeLeft, setTimeLeft] = useState(totalTime);
-  const [started, setStarted] = useState(false);
-  const [finished, setFinished] = useState(false);
-  const [shake, setShake] = useState(false);
-  const [flash, setFlash] = useState<"correct" | "wrong" | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Refs so the timer callback can read latest state without stale closure
-  const queueRef = useRef<string[]>(queue);
-  const solvedWordsRef = useRef<string[]>(solvedWords);
-  useEffect(() => { queueRef.current = queue; }, [queue]);
-  useEffect(() => { solvedWordsRef.current = solvedWords; }, [solvedWords]);
-
-  function handleReset() {
-    setQueue([...words]);
-    setInput("");
-    setSolvedWords([]);
-    setTimeLeft(totalTime);
-    setStarted(false);
-    setFinished(false);
-    setFlash(null);
-    setShake(false);
-  }
-
-  const endGame = useCallback(
-    async (solved: string[]) => {
-      setFinished(true);
-      if (timerRef.current) clearInterval(timerRef.current);
-
-      const allCorrect = solved.length === words.length;
-      if (!allCorrect) {
-        onFailed?.();
-        return;
-      }
-
-      setSubmitting(true);
-      try {
-        await fetch(`/api/puzzles/${puzzleId}/progress`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "attempt_success" }),
-        });
-        onSolved?.();
-      } catch {
-        // silently ignore — onSolved still fires via outer handler
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [puzzleId, words.length, onSolved, onFailed]
-  );
-
-  // Timer
-  useEffect(() => {
-    if (!started || finished) return;
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          clearInterval(timerRef.current!);
-          endGame(solvedWordsRef.current);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current!);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, finished]);
-
-  useEffect(() => {
-    if (started && !finished) inputRef.current?.focus();
-  }, [started, finished, queue]);
-
-  function handleStart() {
-    setStarted(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!started || finished) return;
-    const guess = input.trim().toUpperCase();
-    const currentWord = queue[0];
-
-    if (guess === currentWord) {
-      setFlash("correct");
-      setTimeout(() => setFlash(null), 500);
-      const newSolved = [...solvedWords, currentWord];
-      setSolvedWords(newSolved);
-      const newQueue = queue.slice(1);
-      setQueue(newQueue);
-      setInput("");
-      if (newQueue.length === 0) {
-        endGame(newSolved);
-      }
-    } else {
-      setFlash("wrong");
-      setShake(true);
-      setTimeout(() => {
-        setFlash(null);
-        setShake(false);
-      }, 500);
-    }
-  }
-
-  function handleSkip() {
-    if (!started || finished || queue.length <= 1) return;
-    // Move current word to the back of the queue
-    setQueue(q => [...q.slice(1), q[0]]);
-    setInput("");
-  }
-
-  const timerPct = totalTime > 0 ? (timeLeft / totalTime) * 100 : 0;
-  const timerColor =
-    timerPct > 50 ? "#4ade80" : timerPct > 25 ? "#FDE74C" : "#f87171";
-
-  // ── Already solved banner ──
-  if (alreadySolved) {
-    return skinWrap(
-      <div
-        className="rounded-2xl p-6 text-center"
-        style={{
-          background: "rgba(56,211,153,0.08)",
-          border: "1px solid rgba(56,211,153,0.3)",
-        }}
+        ref={gameSurfaceRef}
+        className="anagram-game-surface"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        aria-label="Anagram Blitz game. Use letter keys to place tiles, Backspace or Delete to remove a tile, and Enter to submit."
+        data-testid="anagram-game-surface"
       >
-        <p className="text-2xl mb-2">🔀✅</p>
-        <p className="text-white font-bold text-lg">You already unscrambled all the words!</p>
-        <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>Come back for more puzzles on the Puzzles page.</p>
-      </div>
-    );
-  }
-
-  // ── Pre-start screen ──
-  if (!started) {
-    return skinWrap(
-      <div
-        className="rounded-2xl p-8 flex flex-col items-center gap-5 text-center"
-        style={{
-          background: skin.boardBg,
-          border: `1px solid ${skin.boardBorder}`,
-          borderRadius: skin.boardRadius,
-        }}
-      >
-        <span className="text-5xl">🔀</span>
-        <h2 className="text-2xl font-extrabold text-white">Anagram Blitz</h2>
-        <p className="text-gray-400 max-w-sm">
-          Unscramble each word before the timer runs out. Type your answer and
-          press Enter — or skip if you're stuck.
-        </p>
-        <div className="flex gap-6 text-sm text-gray-300">
-          <span>📝 {words.length} words</span>
-          <span>⏱️ {totalTime}s</span>
-        </div>
-        {hint && (
-          <p className="text-sm px-4 py-2 rounded-lg" style={{ background: "rgba(253,231,76,0.08)", color: "#FDE74C" }}>
-            💡 {hint}
-          </p>
-        )}
-        <button
-          onClick={handleStart}
-          className="mt-2 px-10 py-3 rounded-xl font-bold text-lg text-black transition-transform hover:scale-105 active:scale-95"
-          style={{ background: skin.btnBg }}
-        >
-          Start!
-        </button>
-      </div>
-    );
-  }
-
-  // ── Finished screen ──
-  if (finished) {
-    const score = solvedWords.length;
-    const total = words.length;
-    const perfect = score === total;
-    return skinWrap(
-      <div
-        className="rounded-2xl p-8 flex flex-col items-center gap-4 text-center"
-        style={{
-          background: perfect ? "rgba(56,211,153,0.08)" : skin.boardBg,
-          border: `1px solid ${perfect ? "rgba(56,211,153,0.4)" : skin.boardBorder}`,
-          borderRadius: skin.boardRadius,
-        }}
-      >
-        <span className="text-5xl">{perfect ? "🎉" : "⏱️"}</span>
-        <h2 className="text-2xl font-extrabold text-white">
-          {perfect ? "Perfect Blitz!" : `${score} / ${total} Solved`}
-        </h2>
-        {perfect ? (
-          <p className="text-green-400 font-semibold">You unscrambled every word in time!</p>
-        ) : (
-          <>
-            <p className="text-gray-400">Better luck next time — keep practicing!</p>
-            <button
-              onClick={handleReset}
-              className="mt-1 px-8 py-3 rounded-xl font-bold text-base text-black transition-transform hover:scale-105 active:scale-95"
-              style={{ background: skin.btnBg }}
-            >
-              🔄 Try Again
-            </button>
-          </>
-        )}
-
-        <div className="mt-2 w-full max-w-xs flex flex-col gap-2">
-          {words.map((word, i) => {
-            const wasSolved = solvedWords.includes(word);
-            return (
-              <div
-                key={i}
-                className="flex items-center justify-between px-4 py-2 rounded-lg text-sm font-mono"
-                style={{
-                  background: wasSolved ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
-                  border: `1px solid ${wasSolved ? "rgba(74,222,128,0.3)" : "rgba(248,113,113,0.2)"}`,
-                }}
-              >
-                <span style={{ color: "#9ca3af" }}>{scrambledWords[i]}</span>
-                <span style={{ color: wasSolved ? "#4ade80" : "#f87171" }}>
-                  {wasSolved ? "✓" : "✗"} {word}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {submitting && (
-          <p className="text-sm text-gray-400 animate-pulse mt-2">Saving result…</p>
-        )}
-      </div>
-    );
-  }
-
-  // ── Active game ──
-  const currentWord = queue[0] ?? words[0];
-  const currentScrambled = scrambledWords[words.indexOf(currentWord)];
-
-  return skinWrap(
-    <div
-      className="rounded-2xl p-6 flex flex-col gap-5"
-      style={{
-        background: skin.boardBg,
-        border: `1px solid ${skin.boardBorder}`,
-        borderRadius: skin.boardRadius,
-      }}
-    >
-      {showHelp && <HowToPlayModal onClose={() => setShowHelp(false)} />}
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>
-          ✓ {solvedWords.length} / {words.length} · {queue.length} left
-        </span>
-        <span
-          className="text-lg font-extrabold tabular-nums"
-          style={{ color: timerColor }}
-        >
-          ⏱️ {timeLeft}s
-        </span>
-        <button
-          onClick={() => setShowHelp(true)}
-          className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
-          style={{ background: "rgba(253,231,76,0.08)", border: "1px solid rgba(253,231,76,0.3)", color: "#FDE74C" }}
-        >
-          ? How to play
-        </button>
-      </div>
-
-      {/* Timer bar */}
-      <div className="w-full h-1.5 rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full transition-all duration-1000"
-          style={{ width: `${timerPct}%`, backgroundColor: timerColor }}
-        />
-      </div>
-
-      {/* Progress dots */}
-      <div className="flex gap-2 flex-wrap">
-        {words.map((w, i) => {
-          const solved = solvedWords.includes(w);
-          const active = !solved && queue[0] === w;
-          return (
-            <div
-              key={i}
-              className="w-3 h-3 rounded-full"
-              style={{
-                background: solved
-                  ? "#4ade80"
-                  : active
-                  ? "#FDE74C"
-                  : "rgba(255,255,255,0.15)",
-              }}
-            />
-          );
-        })}
-      </div>
-
-      {/* Scrambled word */}
-      <div className="text-center">
-        <p className="text-xs uppercase tracking-widest mb-2 font-medium" style={{ color: "#cbd5e1", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>Unscramble this word</p>
-        <div
-          className={`flex justify-center gap-2 flex-wrap transition-all ${shake ? "animate-bounce" : ""}`}
-        >
-          {currentScrambled.split("").map((ch, i) => (
-            <div
-              key={i}
-              className="w-11 h-11 flex items-center justify-center rounded-lg text-xl font-extrabold text-white"
-              style={{
-                background:
-                  flash === "correct"
-                    ? "rgba(74,222,128,0.3)"
-                    : flash === "wrong"
-                    ? "rgba(248,113,113,0.3)"
-                    : skin.tileBg,
-                border: `2px solid ${
-                  flash === "correct"
-                    ? "rgba(74,222,128,0.6)"
-                    : flash === "wrong"
-                    ? "rgba(248,113,113,0.5)"
-                    : skin.tileBorder
-                }`,
-                transition: "background 0.15s, border-color 0.15s",
-              }}
-            >
-              {ch}
+        {displayMode === "standalone" && (
+          <div className="anagram-standalone-header">
+            <div>
+              <h2>Anagram Blitz</h2>
+              <p>{solvedEntryIds.length} / {entries.length} solved</p>
             </div>
-          ))}
-        </div>
-        {hint && (
-          <p className="text-xs mt-3" style={{ color: "#FDE74C" }}>
-            💡 {hint}
-          </p>
+            <span aria-label={`Remaining time ${formatTime(timeLeftMs)}`}>{formatTime(timeLeftMs)}</span>
+            <Pressable type="button" className="anagram-standalone-help" onClick={() => setShowHelp(true)}>Help</Pressable>
+          </div>
         )}
+
+        {entries.length === 0 ? (
+          <div className="anagram-state-card anagram-error-state">
+            <h2>Unable to start</h2>
+            <p>This puzzle has no playable words configured.</p>
+          </div>
+        ) : alreadySolved ? (
+          <div className="anagram-state-card">
+            <span className="anagram-state-icon" aria-hidden>✓</span>
+            <h2>Already solved</h2>
+            <p>You already unscrambled every word in this Blitz.</p>
+          </div>
+        ) : status === "ready" ? (
+          <div className="anagram-state-card anagram-ready-state">
+            <span className="anagram-state-icon" aria-hidden>↻</span>
+            <h2>Ready for the Blitz?</h2>
+            <p>Build {entries.length} answer{entries.length === 1 ? "" : "s"} before {formatTime(totalTimeMs)} runs out.</p>
+            {hint && <p className="anagram-hint">Hint: {hint}</p>}
+            <Pressable type="button" className="anagram-start-button" cue="success" onClick={handleStart}>Start</Pressable>
+            {displayMode === "standalone" && (
+              <Pressable type="button" className="anagram-ready-help" onClick={() => setShowHelp(true)}>How to play</Pressable>
+            )}
+          </div>
+        ) : status === "lost" ? (
+          <div className="anagram-state-card anagram-result-state">
+            <span className="anagram-state-icon" aria-hidden>⌛</span>
+            <h2>{solvedEntryIds.length} / {entries.length} solved</h2>
+            <p>Time ran out. Here are the answers still waiting:</p>
+            <ul className="anagram-missed-list">
+              {missedEntries.map((entry) => <li key={entry.id}>{entry.answer}</li>)}
+            </ul>
+            <Pressable type="button" className="anagram-start-button" onClick={resetGame}>Try Again</Pressable>
+          </div>
+        ) : status === "won" ? (
+          <div className="anagram-state-card anagram-result-state" data-testid="anagram-win-state">
+            <span className="anagram-state-icon" aria-hidden>✓</span>
+            <h2>Perfect Blitz!</h2>
+            <p>Every word unscrambled. Finalizing your result…</p>
+          </div>
+        ) : currentEntry ? (
+          <div className="anagram-active-game" ref={completionTargetRef} data-testid="anagram-current-entry" data-entry-id={currentEntry.id}>
+            <div className="anagram-timer-block" data-urgent={urgent ? "true" : undefined}>
+              <div className="anagram-timer-labels">
+                <span>Time remaining</span>
+                <strong aria-label={`Remaining time ${formatTime(timeLeftMs)}`}>{formatTime(timeLeftMs)}</strong>
+              </div>
+              <div className="anagram-timer-track" role="progressbar" aria-label="Blitz time remaining" aria-valuemin={0} aria-valuemax={totalTimeMs} aria-valuenow={Math.round(timeLeftMs)}>
+                <div className="anagram-timer-fill" style={{ width: `${timerPercent}%` }} />
+              </div>
+            </div>
+
+            <div className="anagram-word-progress">
+              <span>Word {Math.min(entries.length, solvedEntryIds.length + 1)} of {entries.length}</span>
+              <div className="anagram-progress-dots" aria-label={`${solvedEntryIds.length} of ${entries.length} words solved`}>
+                {entries.map((entry) => (
+                  <span
+                    key={entry.id}
+                    data-solved={solvedEntryIds.includes(entry.id) ? "true" : undefined}
+                    data-active={entry.id === currentEntry.id ? "true" : undefined}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <AnagramLetterTray
+              tiles={trayTiles}
+              placedTileIds={placedSet}
+              disabled={feedback === "correct"}
+              feedback={feedback}
+              recentTileId={recentTileId}
+              onSelect={selectTile}
+            />
+            <AnagramAnswerSlots
+              length={currentEntry.answer.length}
+              placedTiles={placedTiles}
+              disabled={feedback === "correct"}
+              feedback={feedback}
+              recentTileId={recentTileId}
+              onReturn={returnTile}
+            />
+            {hint && <p className="anagram-hint anagram-active-hint">Hint: {hint}</p>}
+            <AnagramControls
+              canPass={queueIds.length > 1}
+              canSubmit={placedTileIds.length === currentEntry.answer.length}
+              disabled={feedback === "correct"}
+              onShuffle={handleShuffle}
+              onPass={handlePass}
+              onSubmit={handleSubmit}
+            />
+            <p className="anagram-feedback" aria-live="polite">
+              {feedback === "correct" ? "Correct" : feedback === "wrong" ? "Not quite—try rearranging the tiles." : ""}
+            </p>
+          </div>
+        ) : null}
       </div>
-
-      {/* Input */}
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={(e) =>
-            setInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""))
-          }
-          maxLength={currentWord.length}
-          placeholder={`${currentWord.length} letters…`}
-          className="flex-1 px-4 py-3 rounded-xl bg-white/5 border text-white font-mono text-lg tracking-widest uppercase placeholder-gray-600 outline-none focus:ring-2"
-          style={{
-            borderColor:
-              flash === "correct"
-                ? "rgba(74,222,128,0.7)"
-                : flash === "wrong"
-                ? "rgba(248,113,113,0.6)"
-                : skin.inputBorder,
-          }}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <button
-          type="submit"
-          className="px-5 py-3 rounded-xl font-bold text-black transition-transform hover:scale-105 active:scale-95"
-          style={{ background: skin.btnBg, color: skin.btnText }}
-        >
-          ✓
-        </button>
-      </form>
-
-      {/* Skip */}
-      <button
-        onClick={handleSkip}
-        disabled={queue.length <= 1}
-        className="text-sm text-gray-500 hover:text-gray-300 transition-colors text-center disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        Skip — come back later →
-      </button>
+      {showHelp && <AnagramHelpDialog onClose={() => setShowHelp(false)} />}
     </div>
   );
-}
+});
+
+export default AnagramBlitz;

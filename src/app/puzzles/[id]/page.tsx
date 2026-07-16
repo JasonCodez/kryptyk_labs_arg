@@ -24,11 +24,15 @@ import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection
 import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
 import BugReportModal from "@/components/puzzle/BugReportModal";
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
-import { PuzzleHeaderCrosswordActions } from "@/components/app-shell/PuzzleHeader";
+import { PuzzleHeaderActions, PuzzleHeaderCrosswordActions } from "@/components/app-shell/PuzzleHeader";
 import type {
   CrosswordPresentationState,
   CrosswordPuzzleHandle,
 } from "@/components/puzzle/CrosswordPuzzle";
+import type {
+  AnagramBlitzHandle,
+  AnagramPresentationState,
+} from "@/components/puzzle/AnagramBlitz";
 import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
@@ -50,6 +54,13 @@ function formatCrosswordHeaderTime(elapsedMs: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
     : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatAnagramHeaderTime(timeLeftMs: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(timeLeftMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 interface Puzzle {
@@ -206,8 +217,10 @@ interface LobbySocketPayload {
 
 export default function PuzzleDetailPage() {
   const crosswordRef = useRef<CrosswordPuzzleHandle | null>(null);
+  const anagramRef = useRef<AnagramBlitzHandle | null>(null);
   const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
-  const [showCrosswordBugReport, setShowCrosswordBugReport] = useState(false);
+  const [anagramPresentation, setAnagramPresentation] = useState<AnagramPresentationState | null>(null);
+  const [showHeaderBugReport, setShowHeaderBugReport] = useState(false);
   // Modal state for Sudoku start overlay
   const [showSudokuStartModal, setShowSudokuStartModal] = useState(false);
   // Modal state for Sudoku help/info
@@ -1352,25 +1365,47 @@ export default function PuzzleDetailPage() {
       <PuzzlePlayShell
       backHref="/puzzles"
       title={displayTitle}
+      subtitle={puzzle.puzzleType === "anagram_blitz"
+        ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? (Array.isArray(puzzle.data?.words) ? puzzle.data.words.length : 0)} solved`
+        : undefined}
       progress={puzzle.puzzleType === "crossword"
         ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}`}>
             {formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}
           </span>
-        : undefined}
+        : puzzle.puzzleType === "anagram_blitz"
+          ? <span aria-label={`Remaining time ${formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? Number(puzzle.data?.timeLimit ?? 60) * 1000)}`}>
+              {formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? Number(puzzle.data?.timeLimit ?? 60) * 1000)}
+            </span>
+          : undefined}
       actions={puzzle.puzzleType === "crossword"
         ? <PuzzleHeaderCrosswordActions
             onClues={() => crosswordRef.current?.openClueSheet()}
             onHelp={() => crosswordRef.current?.openInstructions()}
             overflow={[
               skipControl,
-              <button type="button" key="report-bug" onClick={() => setShowCrosswordBugReport(true)}>
+              <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>
                 Report Bug
               </button>,
             ]}
           />
-        : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
-      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" ? "fixed" : "scroll"}
-      contentClassName={puzzle.puzzleType === "crossword" ? "pw-crossword-shell-content" : undefined}
+        : puzzle.puzzleType === "anagram_blitz"
+          ? <PuzzleHeaderActions
+              onHelp={() => anagramRef.current?.openInstructions()}
+              helpLabel="How to play Anagram Blitz"
+              overflow={[
+                skipControl,
+                <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>
+                  Report Bug
+                </button>,
+              ]}
+            />
+          : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
+      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" ? "fixed" : "scroll"}
+      contentClassName={puzzle.puzzleType === "crossword"
+        ? "pw-crossword-shell-content"
+        : puzzle.puzzleType === "anagram_blitz"
+          ? "pw-anagram-shell-content"
+          : undefined}
     >
     <div
       style={{
@@ -1651,6 +1686,8 @@ export default function PuzzleDetailPage() {
               onJigsawShowRatingModal={handlePuzzleSolved}
               crosswordRef={crosswordRef}
               onCrosswordPresentationChange={setCrosswordPresentation}
+              anagramRef={anagramRef}
+              onAnagramPresentationChange={setAnagramPresentation}
               skipControl={skipControl}
             />
 
@@ -1958,11 +1995,11 @@ export default function PuzzleDetailPage() {
       </div>
     </div>
       </PuzzlePlayShell>
-      {showCrosswordBugReport && puzzle.puzzleType === "crossword" && (
+      {showHeaderBugReport && (puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz") && (
         <BugReportModal
           puzzleId={puzzleId}
           puzzleTitle={puzzle.title ?? "This puzzle"}
-          onClose={() => setShowCrosswordBugReport(false)}
+          onClose={() => setShowHeaderBugReport(false)}
         />
       )}
     </>
