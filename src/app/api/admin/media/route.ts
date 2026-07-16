@@ -7,6 +7,7 @@ import { join } from "path";
 import { existsSync } from "fs";
 import { resolveUploadsPath } from "@/lib/uploadStorage";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { readImageDimensions, isSquareAspect } from "@/lib/imageDimensions";
 
 // ---------------------------------------------------------------------------
 // Cloudflare R2 helpers (S3-compatible)
@@ -166,6 +167,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Every jigsaw source image must be square — checked server-side (not just client-side)
+      // by reading pixel dimensions straight out of the file header.
+      if (puzzle?.puzzleType === "jigsaw" && mediaType === "image") {
+        const dims = readImageDimensions(Buffer.from(buffer));
+        if (dims && !isSquareAspect(dims.width, dims.height)) {
+          return NextResponse.json(
+            { error: "Jigsaw images must use a 1:1 square aspect ratio." },
+            { status: 400 }
+          );
+        }
+      }
+
       // Generate a unique filename
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 8);
@@ -232,6 +245,17 @@ export async function POST(request: NextRequest) {
           { error: `File type not allowed: ${mimeType}` },
           { status: 400 }
         );
+      }
+
+      // Every jigsaw source image must be square — checked server-side.
+      if (puzzle?.puzzleType === "jigsaw" && mediaType === "image") {
+        const dims = readImageDimensions(Buffer.from(buffer));
+        if (dims && !isSquareAspect(dims.width, dims.height)) {
+          return NextResponse.json(
+            { error: "Jigsaw images must use a 1:1 square aspect ratio." },
+            { status: 400 }
+          );
+        }
       }
 
       // Attempt to infer filename from URL
@@ -302,7 +326,7 @@ export async function POST(request: NextRequest) {
             data: {
               puzzleId: puzzleId as string,
               imageUrl: media.url,
-              gridRows: 3,
+              gridRows: 4,
               gridCols: 4,
               snapTolerance: 12,
               rotationEnabled: false,

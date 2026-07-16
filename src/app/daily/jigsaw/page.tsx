@@ -7,7 +7,7 @@ import JigsawPuzzle, { type JigsawPresentationState, type JigsawPuzzleHandle } f
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
-import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
+import { useJigsawImageInfo } from "@/hooks/useJigsawImageInfo";
 
 export default function DailyJigsawPage() {
   const { status: sessionStatus } = useSession();
@@ -19,7 +19,7 @@ export default function DailyJigsawPage() {
   const [presentation, setPresentation] = useState<JigsawPresentationState | null>(null);
   const puzzleRef = useRef<JigsawPuzzleHandle>(null);
   const [completionStarted, setCompletionStarted] = useState(false);
-  const boardDims = useJigsawBoardDims(content?.imageUrl);
+  const imageInfo = useJigsawImageInfo(content?.imageUrl);
 
   const isDone = (completedToday && !completionStarted) || solved;
   const elapsed = Math.floor((presentation?.elapsedMs ?? 0) / 1000);
@@ -70,7 +70,7 @@ export default function DailyJigsawPage() {
             )}
             <p className="text-xs mt-3" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
           </div>
-        ) : !boardDims ? (
+        ) : !imageInfo.ready ? (
           <div className="flex items-center gap-2 mt-20" style={{ color: "#3891A6" }}>
             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
           </div>
@@ -87,8 +87,6 @@ export default function DailyJigsawPage() {
               imageUrl={content.imageUrl}
               rows={content.gridRows}
               cols={content.gridCols}
-              boardWidth={boardDims.w}
-              boardHeight={boardDims.h}
               displayMode="app-shell"
               mode="daily"
               persistenceScope="daily"

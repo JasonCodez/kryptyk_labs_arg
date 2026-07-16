@@ -95,16 +95,14 @@ async function openDaily(page: Page) {
 
 // Genuine pointer drag from the tray onto the board, landing at the CENTER of the piece's own
 // correct cell — derived purely from the grid's row/col (exposed via the tray piece's
-// aria-label) and the square-stage layout math JigsawPuzzleCanvas itself uses (a fixed
-// STAGE_MARGIN of 0.6x the cell size around a boardWidth === boardHeight stage), not from any
-// solution data the app exposes. Only valid for a square grid (rows === cols), which is what
-// every fixture below uses.
+// aria-label) and the square-board layout math JigsawPuzzleCanvas itself uses (a fixed
+// BOARD_SIZE logical square with no stage margin, so the rendered board canvas IS the grid),
+// not from any solution data the app exposes. Only valid for a square grid (rows === cols),
+// which is what every fixture below uses.
 async function dragEachTrayPieceToItsSlot(page: Page, gridRows: number, gridCols: number) {
   if (gridRows !== gridCols) throw new Error("dragEachTrayPieceToItsSlot only supports square grids");
   const board = page.locator(".jigsaw-board-canvas");
-  const maxDim = Math.max(gridRows, gridCols);
-  const offFrac = 0.6 / (maxDim + 1.2);
-  const cellFrac = 1 / (maxDim + 1.2);
+  const cellFrac = 1 / gridRows;
   let pointerId = 5000;
   for (let index = 0; index < gridRows * gridCols; index += 1) {
     const trayPiece = page.locator(".jigsaw-tray-piece").first();
@@ -116,8 +114,8 @@ async function dragEachTrayPieceToItsSlot(page: Page, gridRows: number, gridCols
     const from = await trayPiece.locator("canvas").boundingBox();
     const boardBox = await board.boundingBox();
     if (!from || !boardBox) throw new Error("Missing bounding box for drag");
-    const targetX = boardBox.x + (offFrac + (col + 0.5) * cellFrac) * boardBox.width;
-    const targetY = boardBox.y + (offFrac + (row + 0.5) * cellFrac) * boardBox.height;
+    const targetX = boardBox.x + (col + 0.5) * cellFrac * boardBox.width;
+    const targetY = boardBox.y + (row + 0.5) * cellFrac * boardBox.height;
     const id = pointerId++;
     const trayCanvas = trayPiece.locator("canvas");
     const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
@@ -158,10 +156,24 @@ for (const viewport of [
     expect(canvasBox!.y + canvasBox!.height).toBeLessThanOrEqual(rootBox!.y + rootBox!.height + 1);
     const targets = await page.locator(".jigsaw-controls button,.jigsaw-tray-piece").evaluateAll((elements) => elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.width, rect.height]; }));
     for (const [width, height] of targets) { expect(width).toBeGreaterThanOrEqual(44); expect(height).toBeGreaterThanOrEqual(44); }
+
+    // The board is a fixed square (BOARD_SIZE=640 logical, no stage margin) scaled to fit
+    // `.jigsaw-board-area` — the canvas itself must stay square and fill most of that area.
+    const boardAreaBox = await page.locator(".jigsaw-board-area").boundingBox();
+    expect(boardAreaBox).not.toBeNull();
+    expect(Math.abs(canvasBox!.width - canvasBox!.height)).toBeLessThanOrEqual(1);
+    const availableSide = Math.min(boardAreaBox!.width, boardAreaBox!.height);
+    expect(canvasBox!.width).toBeGreaterThanOrEqual(availableSide * 0.94);
+    // Portrait layouts (`align-items:flex-start`) must not leave a large dead gap above the
+    // board; the short-landscape media query re-centers the board area instead, so only assert
+    // "no gap" when the viewport is actually portrait/tall enough to hit the default rule.
+    const isLandscapeLayout = viewport.width > viewport.height && viewport.height <= 520;
+    if (!isLandscapeLayout) expect(canvasBox!.y - boardAreaBox!.y).toBeLessThanOrEqual(20);
+    await expect(page.locator(".jigsaw-tray")).toBeVisible();
   });
 }
 
-for (const grid of [{ rows: 3, cols: 4 }, { rows: 4, cols: 6 }, { rows: 6, cols: 8 }]) {
+for (const grid of [{ rows: 2, cols: 2 }, { rows: 3, cols: 3 }, { rows: 4, cols: 4 }, { rows: 5, cols: 5 }, { rows: 6, cols: 6 }]) {
   test(`${grid.rows}x${grid.cols} board preserves every tray piece`, async ({ page }) => {
     await page.setViewportSize({ width: 430, height: 932 });
     await installDailyFixture(page, 0, grid);
@@ -275,7 +287,7 @@ test("Dragging empty board space does not move the canvas", async ({ page }) => 
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
   const board = page.locator(".jigsaw-board-canvas");
   const before = await board.boundingBox();
-  // A corner of the board, well away from any piece cell, in the STAGE_MARGIN buffer.
+  // A corner of the board where no piece has been placed yet (all pieces start in the tray).
   const startX = before!.x + before!.width * 0.02;
   const startY = before!.y + before!.height * 0.02;
   const pointerId = 501;
@@ -365,9 +377,9 @@ test("A second pointer interrupts and restores an in-flight tray drag", async ({
 
 test("A predominantly horizontal swipe over a tray piece does not pick it up", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await installDailyFixture(page, 0, { rows: 3, cols: 6 });
+  await installDailyFixture(page, 0, { rows: 6, cols: 6 });
   await openDaily(page);
-  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(18);
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(36);
   const trayCanvas = page.locator(".jigsaw-tray-piece canvas").nth(1);
   const box = await trayCanvas.boundingBox();
   const pointerId = 301;
@@ -376,7 +388,7 @@ test("A predominantly horizontal swipe over a tray piece does not pick it up", a
   // gesture, not a pickup.
   await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: box!.x - 60, clientY: box!.y + box!.height / 2 + 2 });
   await trayCanvas.dispatchEvent("pointerup", { pointerId, pointerType: "touch" });
-  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(18);
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(36);
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "idle");
 });
 

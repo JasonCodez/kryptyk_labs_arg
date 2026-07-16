@@ -1358,31 +1358,31 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
     const shoulderStart = Number(puzzleData.pieceShoulderStart ?? 0.050);
     const svgPath = buildJigsawSVGPath(extFrac, rFrac, nHalfFrac, shoulderStart);
 
+    const gridRows = asNumber(puzzleData.gridRows, 4);
+    const gridCols = asNumber(puzzleData.gridCols, 4);
+    const gridMismatch = gridRows !== gridCols;
+
     return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-semibold text-gray-300 mb-2">Grid Rows</label>
-          <input
-            type="number"
-            min={2}
-            max={50}
-            value={asNumber(puzzleData.gridRows, 3)}
-            onChange={(e) => onDataChange('gridRows', parseInt(e.target.value, 10))}
-            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-300 mb-2">Grid Cols</label>
-          <input
-            type="number"
-            min={2}
-            max={50}
-            value={asNumber(puzzleData.gridCols, 4)}
-            onChange={(e) => onDataChange('gridCols', parseInt(e.target.value, 10))}
-            className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
-          />
-        </div>
+      <div>
+        <label className="block text-sm font-semibold text-gray-300 mb-2">Grid Size</label>
+        <select
+          value={gridMismatch ? '' : gridRows}
+          onChange={(e) => {
+            const size = parseInt(e.target.value, 10);
+            onDataChange('gridRows', size);
+            onDataChange('gridCols', size);
+          }}
+          className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white"
+        >
+          {gridMismatch && <option value="" disabled>Choose a size…</option>}
+          {Array.from({ length: 14 }, (_, i) => i + 2).map((size) => (
+            <option key={size} value={size}>{size} × {size}</option>
+          ))}
+        </select>
+        {gridMismatch && (
+          <p className="text-xs text-red-400 mt-2">Jigsaw grids must be square. Choose 2×2 through 15×15.</p>
+        )}
       </div>
 
       <div>

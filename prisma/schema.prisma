@@ -326,7 +326,7 @@ model JigsawPuzzle {
   id              String   @id @default(cuid())
   puzzleId        String   @unique
   imageUrl        String?
-  gridRows        Int      @default(3)
+  gridRows        Int      @default(4)
   gridCols        Int      @default(4)
   snapTolerance   Int      @default(12)
   rotationEnabled Boolean  @default(false)

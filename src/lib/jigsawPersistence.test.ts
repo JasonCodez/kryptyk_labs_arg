@@ -95,4 +95,35 @@ describe("jigsawPersistence", () => {
     const result = validateJigsawSave({ value: save, signature: "sig", basePieces, stageWidth: 300, stageHeight: 300 });
     expect(result?.pieces[0].pos.x).toBe(300);
   });
+
+  test("changing grid size (e.g. legacy 3x4 -> 4x4) invalidates the old save and starts fresh", () => {
+    // Simulate a legacy 3x4 grid's saved pieces (12 pieces).
+    const threeByFourPieces: JigsawPersistablePiece[] = [];
+    for (let r = 0; r < 3; r += 1) {
+      for (let c = 0; c < 4; c += 1) {
+        threeByFourPieces.push({ id: `${r}-${c}`, row: r, col: c, correct: { x: c * 100, y: r * 100 }, pos: { x: c * 100, y: r * 100 }, groupId: `${r}-${c}`, snapped: false, z: 1 });
+      }
+    }
+    const legacySave = serializeJigsawProgress({ signature: "sig-3x4", pieces: threeByFourPieces, tray: threeByFourPieces.map((piece) => piece.id), elapsedMs: 999 });
+    localStorage.setItem(jigsawStorageKey("catalog", "p")!, JSON.stringify(legacySave));
+
+    // The puzzle has since been fixed to a square 4x4 grid (16 pieces) — jigsawPuzzleSignature
+    // includes rows/cols, so the signature is always different once the grid size changes.
+    const fourByFourBase: JigsawPersistablePiece[] = [];
+    for (let r = 0; r < 4; r += 1) {
+      for (let c = 0; c < 4; c += 1) {
+        fourByFourBase.push({ id: `${r}-${c}`, row: r, col: c, correct: { x: c * 80, y: r * 80 }, pos: { x: c * 80, y: r * 80 }, groupId: `${r}-${c}`, snapped: false, z: 1 });
+      }
+    }
+    const result = restoreJigsawProgress({ storage: localStorage, scope: "catalog", puzzleId: "p", signature: "sig-4x4", basePieces: fourByFourBase, stageWidth: 640, stageHeight: 640 });
+    expect(result).toBeNull(); // must never restore 12-piece progress into a 16-piece puzzle
+  });
+
+  test("a square puzzle whose grid size did not change still restores valid progress", () => {
+    const save = serializeJigsawProgress({ signature: "sig", pieces: basePieces, tray: basePieces.map((piece) => piece.id), elapsedMs: 42 });
+    localStorage.setItem(jigsawStorageKey("catalog", "p")!, JSON.stringify(save));
+    const result = restore("catalog");
+    expect(result).not.toBeNull();
+    expect(result?.progress.elapsedMs).toBe(42);
+  });
 });

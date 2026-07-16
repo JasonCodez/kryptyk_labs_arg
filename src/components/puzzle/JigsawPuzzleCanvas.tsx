@@ -247,7 +247,7 @@ function roundedRectPath(x: number, y: number, w: number, h: number, r: number):
 // Props interface  (identical to old SVG component — all call-sites unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type JigsawStatus = "loading" | "playing" | "completing" | "completion-pending" | "won" | "image-error";
+export type JigsawStatus = "loading" | "playing" | "completing" | "completion-pending" | "won" | "image-error" | "config-error";
 
 export interface JigsawPresentationState {
   status: JigsawStatus;
@@ -283,14 +283,11 @@ export interface JigsawPuzzleProps {
   imageUrl: string;
   rows?: number;
   cols?: number;
-  boardWidth?: number;
-  boardHeight?: number;
   /** kept for API compat */
   stagePadding?: number;
-  trayHeight?: number;
+  trayScatter?: number;
   neighborSnapTolerance?: number;
   boardSnapTolerance?: number;
-  trayScatter?: number;
   tabRadius?: number;
   tabDepth?: number;
   neckWidth?: number;
@@ -342,6 +339,12 @@ interface BurstParticle {
   rot0: number;
   rotSpeed: number;
 }
+
+// Every jigsaw board is a fixed 640×640 logical square — rows always equal cols (enforced at
+// creation time), the source image is always square (cropped to square if a legacy source
+// isn't), and there is no scatter-field margin around it anymore (the tray holds unplaced
+// pieces instead). Piece/tab overflow just resolves within the board itself.
+const BOARD_SIZE = 640;
 
 const BURST_COLORS = ["#FFD700", "#FFE873", "#FFF6D8", "#FDBA2A"];
 
@@ -642,9 +645,7 @@ function TrayPieceThumb({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(function JigsawPuzzleCanvas({
-  imageUrl, rows = 4, cols = 6,
-  boardWidth = 640, boardHeight = 480,
-  trayHeight: trayHeightProp = 160,
+  imageUrl, rows = 4, cols = 4,
   neighborSnapTolerance = 24, boardSnapTolerance = 18,
   tabRadius = 0.18, tabDepth = 0.22,
   neckWidth = 0.22, neckDepth = 0.10,
@@ -663,6 +664,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // ── Refs ──────────────────────────────────────────────────────────────────
   const canvasRef       = useRef<HTMLCanvasElement>(null);
   const wrapperRef      = useRef<HTMLDivElement>(null);
+  const boardAreaRef    = useRef<HTMLDivElement>(null);
   const trayStripRef    = useRef<HTMLDivElement>(null);
   const energyWrapperRef = useRef<HTMLDivElement>(null);
   const energyRingRef   = useRef<HTMLDivElement>(null);
@@ -692,48 +694,53 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const playPieceConnectSfx = useSfxBuffer(PIECE_CONNECT_SFX_URL, PIECE_CONNECT_SFX_VOLUME, isJigsawSfxEnabled);
   const playPuzzleCompleteSfx = useSfxBuffer(PUZZLE_COMPLETE_SFX_URL, PUZZLE_COMPLETE_SFX_VOLUME, isJigsawSfxEnabled);
 
-  // Logical dimensions of a piece — always a perfect square, regardless of the grid's row/col
-  // shape, so pieces never look stretched. boardWidth/boardHeight are the outer square
-  // stage's dimensions (always equal); cellSize is sized off the *longer* of rows/cols so the
-  // whole grid (gridW × gridH) fits within that square without overflowing — a grid that
-  // isn't itself square (e.g. 4 cols × 3 rows) ends up centered with a little letterboxing on
-  // two sides rather than stretched to fill it.
-  const cellSize = boardWidth / Math.max(rows, cols);
+  // Logical dimensions of a piece — always a perfect square. The grid is always square too
+  // (rows === cols, enforced at creation time), so the full BOARD_SIZE×BOARD_SIZE board is
+  // exactly filled by the grid with no letterboxing and no scatter-field margin around it —
+  // the tray holds every unplaced piece instead, so the stage doesn't need spare room to
+  // scatter pieces onto.
+  const cellSize = BOARD_SIZE / rows;
   const pw = cellSize;
   const ph = cellSize;
-  const gridW = cellSize * cols;
-  const gridH = cellSize * rows;
+  const gridW = BOARD_SIZE;
+  const gridH = BOARD_SIZE;
   const pwRef = useRef(pw);
   const phRef = useRef(ph);
   pwRef.current = pw; phRef.current = ph;
 
-  // Stage: logical space the canvas covers. boardOffX/Y is the top-left of the piece GRID
-  // within the stage — offset by both the fixed stage margin (room for tab overflow and for
-  // briefly resting a loose piece/cluster just outside the board edge) and, when the grid
-  // isn't itself square, the extra centering needed to place gridW×gridH in the middle of the
-  // square board. This never changes size at runtime, so piece positions never need
+  // Stage: logical space the canvas covers. The grid fills the entire stage exactly (no
+  // margin, no offset) — this never changes size at runtime, so piece positions never need
   // remapping on resize — only the CSS pixel scale (scaleRef) does.
-  // p.pos / p.correct are in stage coords; boardOffX/Y is NOT baked in at render time.
-  const STAGE_MARGIN  = cellSize * 0.6;
-  const boardOffXRef  = useRef(STAGE_MARGIN + (boardWidth  - gridW) / 2);
-  const boardOffYRef  = useRef(STAGE_MARGIN + (boardHeight - gridH) / 2);
-  const stageDimsRef  = useRef({ w: boardWidth + STAGE_MARGIN * 2, h: boardHeight + STAGE_MARGIN * 2 });
+  // p.pos / p.correct are in stage coords.
+  const boardOffXRef  = useRef(0);
+  const boardOffYRef  = useRef(0);
+  const stageDimsRef  = useRef({ w: BOARD_SIZE, h: BOARD_SIZE });
+  // CSS-px offset applied only when the completion frame is being shown (see `showFrame`
+  // below) — the canvas itself grows beyond the board's own size once solved so the frame's
+  // decorative border has real pixels to draw into instead of being clipped at the canvas
+  // edge or squeezed inside the board's own bounds; this ref carries that offset from the
+  // resize effect into the render loop without touching boardOffXRef/stageDimsRef (which stay
+  // untouched so piece positions, persistence, and drag/clamp math are unaffected).
+  const boardInsetPxRef = useRef({ x: 0, y: 0 });
 
   // DPR-aware canvas pixel dimensions
-  const [canvasW, setCanvasW] = useState(boardWidth);
-  const [canvasH, setCanvasH] = useState(boardHeight);
+  const [canvasW, setCanvasW] = useState(BOARD_SIZE);
+  const [canvasH, setCanvasH] = useState(BOARD_SIZE);
   const scaleRef = useRef(1); // stage logical px  →  CSS px (canvas element CSS size)
+  // True once the completion celebration (energy ring / living-photo reveal, which position
+  // themselves against the board's pre-frame rect) has finished and the decorative frame is
+  // about to fade in — only then does the resize effect grow the canvas to make room for the
+  // frame, so it never resizes mid-celebration and desyncs those overlay animations.
+  const [showFrame, setShowFrame] = useState(false);
 
-  // Tray height — sized so a single un-merged piece's full rendered thumbnail (including its
-  // tab/knob protrusion, see THUMB_BLEED_FRAC) fits without being clipped by the tray's own
-  // vertical overflow:hidden. trayCellPx is the *nominal* piece cell size fed into
-  // computeThumbSize, which is deliberately smaller than the tray's own height — the actual
-  // rendered thumbnail comes out (1 + 2×THUMB_BLEED_FRAC)× bigger than that (previously this
-  // used a flat `TRAY_H - 32` here, which was that render size, not the nominal cell size fed
-  // into it — knobs were getting clipped top and bottom as a result).
-  const TRAY_H = Math.max(140, trayHeightProp ?? 200);
-  const TRAY_PAD_Y = 12; // must match the tray strip's own vertical padding in the JSX below
-  const trayCellPx = Math.max(40, (TRAY_H - TRAY_PAD_Y * 2) / (1 + THUMB_BLEED_FRAC * 2));
+  // Tray height is CSS-driven (responsive: shorter on mobile, taller on desktop — see
+  // .jigsaw-tray in jigsaw.css) rather than a JS constant, so trayCellPx — the *nominal* piece
+  // cell size fed into computeThumbSize, deliberately smaller than the tray's own height since
+  // the actual rendered thumbnail comes out (1 + 2×THUMB_BLEED_FRAC)× bigger (including its
+  // tab/knob protrusion, see THUMB_BLEED_FRAC) — is derived from the tray strip's *measured*
+  // rendered height (set by the resize effect below) rather than guessed from a prop.
+  const TRAY_PAD_Y = 6; // must match .jigsaw-tray's own vertical padding in jigsaw.css (mobile)
+  const [trayCellPx, setTrayCellPx] = useState(() => Math.max(40, (108 - TRAY_PAD_Y * 2) / (1 + THUMB_BLEED_FRAC * 2)));
 
   // Path2D cache keyed by piece id (rebuilt whenever rows/cols/opts change)
   const pathCacheRef = useRef<Map<string, Path2D>>(new Map());
@@ -1120,6 +1127,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const edgesMapRef = useRef<Map<string, EdgeMap>>(new Map());
 
   useEffect(() => {
+    // Every jigsaw grid is square (enforced at creation time) — a mismatched rows/cols pair
+    // reaching the player (e.g. a stale Warz challenge, or a record from before validation
+    // existed) must show a clear configuration error rather than building a distorted or
+    // letterboxed board from it.
+    if (rows !== cols) {
+      setStatus("config-error");
+      return;
+    }
     const edgesMap = buildJigsawEdges(rows, cols, generationSeed);
     edgesMapRef.current = edgesMap;
     rebuildCache(edgesMap);
@@ -1171,6 +1186,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     completionResultRef.current = null;
     finalHandoffRef.current = false;
     frameFadeStartRef.current = null;
+    setShowFrame(false);
     piecesRef.current = finalPieces;
     setPiecesState(finalPieces);
     trayOrderRef.current = finalTray;
@@ -1207,17 +1223,18 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     // calls), and omitting it lets R2/CDN images load without requiring CORS headers.
     img.onload = () => {
       if (cancelled) return;
-      // Every piece draw stretches the source image to fill the piece grid (gridW × gridH,
-      // aspect ratio cols:rows) — so for pieces to come out undistorted, the source needs
-      // that same aspect ratio *before* it ever reaches a drawImage call. Source images are
-      // authored 1:1 and grids are often close to square too, but whenever the two don't
-      // already match exactly, center-crop here once, up front, rather than special-casing
-      // every per-piece draw call (which would need to stretch non-uniformly to compensate —
-      // exactly the distortion this avoids).
+      // Every piece draw fills the piece grid (gridW × gridH), which is now always exactly
+      // square (BOARD_SIZE×BOARD_SIZE) — so for pieces to come out undistorted, the source
+      // needs to be square too *before* it ever reaches a drawImage call. Every newly uploaded
+      // jigsaw image is required to be square (validated on upload), but a legacy non-square
+      // source may still exist — center-crop it to square here once, up front, rather than
+      // special-casing every per-piece draw call (which would need to stretch non-uniformly
+      // to compensate — exactly the distortion this avoids). Never stretch.
       const { naturalWidth: nw, naturalHeight: nh } = img;
-      const targetAspect = cols / rows;
+      const targetAspect = 1;
       const srcAspect = nw / nh;
       if (nw > 0 && nh > 0 && Math.abs(srcAspect - targetAspect) > 0.001) {
+        console.warn(`[jigsaw] Non-square source image for puzzle "${puzzleId}" (${nw}x${nh}) — center-cropped to square. Replace with a 1:1 source.`);
         const sw = srcAspect > targetAspect ? nh * targetAspect : nw;
         const sh = srcAspect > targetAspect ? nh : nw / targetAspect;
         const sx = (nw - sw) / 2;
@@ -1257,9 +1274,10 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       : effectiveUrl + (effectiveUrl.includes("?") ? "&" : "?") + `_ck=${reloadKey}`;
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveUrl, reloadKey, proxyTried, cols, rows]);
+  }, [effectiveUrl, reloadKey, proxyTried, puzzleId]);
 
   useEffect(() => {
+    if (rows !== cols) return; // config-error already set by the init effect above
     if (imageOk === false) {
       setStatus("image-error");
       return;
@@ -1268,7 +1286,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setStatus((current) => current === "loading"
       ? (restoredCompletionPendingRef.current ? "completion-pending" : "playing")
       : current);
-  }, [imageOk]);
+  }, [imageOk, rows, cols]);
 
   // Decorative completion-frame image — static asset, loaded once regardless of which
   // puzzle image is in play.
@@ -1287,60 +1305,80 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // ── Responsive canvas resize ─────────────────────────────────────────────
 
   useLayoutEffect(() => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
+    const boardArea = boardAreaRef.current;
+    if (!boardArea) return;
 
-    // The stage (board + fixed margin) never changes size at runtime — only the CSS pixel
-    // scale mapping it onto the screen does. That means, unlike the old scatter-era version
-    // of this effect, there's no "stage resized, remap piece positions" step needed here:
-    // logical positions stay valid across every resize, only scaleRef/canvas CSS size change.
-    const { w: stageW, h: stageH } = stageDimsRef.current;
-
+    // The stage never changes size at runtime — only the CSS pixel scale mapping it onto the
+    // screen does. Logical positions stay valid across every resize, only scaleRef/canvas CSS
+    // size change.
+    //
+    // boardArea (.jigsaw-board-area) is a flex child (flex:1 1 auto) of the column-flex
+    // .jigsaw-root, so its OWN post-layout clientWidth/clientHeight already reflects exactly
+    // "whatever's left after the header, tray, and (conditionally rendered) control bar" — in
+    // every mode. Measuring it directly means portrait, landscape (the CSS media query gives
+    // it a narrower flex-basis and the tray becomes a side rail) and fullscreen (the same flex
+    // column now covering the viewport) all fall out of one calculation, with no mode-specific
+    // branching or hardcoded pixel reservations needed.
     const update = () => {
-      const viewportW = Math.round(window.visualViewport?.width ?? window.innerWidth ?? window.screen.width ?? boardWidth);
-      const viewportH = Math.round(window.visualViewport?.height ?? window.innerHeight ?? window.screen.height ?? boardHeight);
-      const availW = Math.min(wrapper.clientWidth || boardWidth, viewportW);
-      const wrapperH = Math.min(wrapper.clientHeight || viewportH, viewportH);
-      const shortLandscape = !isFullscreen && viewportW > viewportH && viewportH <= 520;
+      const horizontalInset = 8;
+      const availableWidth = boardArea.clientWidth - horizontalInset;
+      const availableHeight = boardArea.clientHeight - 4;
 
-      // Always the same portrait-style layout — a square board sized to fit whatever space
-      // is available, with room reserved below it for the tray strip — regardless of device
-      // orientation or fullscreen state.
-      let boardAvailW: number;
-      let boardAvailH: number;
-      if (isFullscreen) {
-        boardAvailW = viewportW * 0.94;
-        boardAvailH = Math.max(160, viewportH - TRAY_H - 24) * 0.94;
-      } else if (shortLandscape) {
-        const sideRail = Math.min(viewportW * 0.32, 280);
-        boardAvailW = Math.max(160, availW - sideRail - 12);
-        boardAvailH = Math.max(160, wrapperH - 12);
-      } else {
-        boardAvailW = availW;
-        boardAvailH = Math.max(160, wrapperH - TRAY_H - (displayMode === "app-shell" ? 54 : 0));
-      }
+      // The decorative completion frame's border extends past its transparent "hole" (see
+      // FRAME_HOLE) by design — that's what makes it read as an actual picture frame around
+      // the finished puzzle. Once the celebration has finished and the frame is about to show,
+      // shrink the board itself so the frame's full overhang fits within the available area
+      // (never exceeding the viewport), instead of the board filling the whole area and
+      // leaving the frame nowhere to render but on top of/clipped by the board's own edge.
+      const holeW = FRAME_HOLE.right - FRAME_HOLE.left;
+      const holeH = FRAME_HOLE.bottom - FRAME_HOLE.top;
+      const boardSide = showFrame
+        ? Math.max(120, Math.floor(Math.min(availableWidth * holeW, availableHeight * holeH)))
+        : Math.max(120, Math.floor(Math.min(availableWidth, availableHeight)));
+      const canvasCssW = showFrame ? Math.round(boardSide / holeW) : boardSide;
+      const canvasCssH = showFrame ? Math.round(boardSide / holeH) : boardSide;
+      boardInsetPxRef.current = showFrame
+        ? { x: (FRAME_HOLE.left / holeW) * boardSide, y: (FRAME_HOLE.top / holeH) * boardSide }
+        : { x: 0, y: 0 };
 
-      const s = Math.max(0.1, Math.min(boardAvailW / stageW, boardAvailH / stageH));
+      const s = boardSide / BOARD_SIZE;
       scaleRef.current = s;
-
-      const rw = Math.round(stageW * s);
-      const rh = Math.round(stageH * s);
-      setCanvasW(rw);
-      setCanvasH(rh);
+      setCanvasW(canvasCssW);
+      setCanvasH(canvasCssH);
       const canvas = canvasRef.current;
       if (canvas) {
         const dpr           = window.devicePixelRatio || 1;
-        canvas.width        = rw * dpr;
-        canvas.height       = rh * dpr;
-        canvas.style.width  = `${rw}px`;
-        canvas.style.height = `${rh}px`;
-        dirtyRef.current    = true;
+        canvas.width        = canvasCssW * dpr;
+        canvas.height       = canvasCssH * dpr;
+        canvas.style.width  = `${canvasCssW}px`;
+        canvas.style.height = `${canvasCssH}px`;
+        // Assigning canvas.width/height always clears its bitmap, even when re-observing an
+        // unchanged size (ResizeObserver.observe fires once immediately on registration,
+        // regardless of whether anything actually changed — which happens on every re-run of
+        // this effect, e.g. when `showFrame` flips). Setting dirtyRef alone only gets picked up
+        // if a render() is already scheduled; once the render loop has gone idle (nothing left
+        // animating after the completion celebration settles), nothing would otherwise notice
+        // the now-blank canvas. requestCanvasRenderRef both marks it dirty and schedules a
+        // fresh frame if none is pending, so the just-cleared canvas always gets repainted.
+        requestCanvasRenderRef.current();
+      }
+
+      // Piece thumbnail size in the tray is derived from the tray strip's own measured
+      // rendered height (CSS-driven, responsive — see .jigsaw-tray in jigsaw.css) rather than
+      // a guessed constant.
+      const trayEl = trayStripRef.current;
+      if (trayEl) {
+        const trayH = trayEl.clientHeight;
+        if (trayH > 0) {
+          setTrayCellPx(Math.max(40, (trayH - TRAY_PAD_Y * 2) / (1 + THUMB_BLEED_FRAC * 2)));
+        }
       }
     };
 
     update();
     const ro = new ResizeObserver(update);
-    ro.observe(wrapper);
+    ro.observe(boardArea);
+    if (trayStripRef.current) ro.observe(trayStripRef.current);
     const onOrient = () => setTimeout(update, 150);
     // Coalesce rapid-fire resize events (e.g. mobile URL bar show/hide animation) into one
     // recompute per frame rather than reacting to every intermediate event.
@@ -1357,8 +1395,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       window.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onOrient);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayMode, isFullscreen, boardWidth, boardHeight]);
+  }, [displayMode, isFullscreen, showFrame]);
 
   // ── Auto-save (debounced) ────────────────────────────────────────────────
 
@@ -1532,29 +1569,27 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       ctx.scale(s, s);   // from here: 1 unit = 1 stage logical px — the full stage always fills
                          // the canvas exactly (fitScale), so there is no viewport offset to apply.
 
+      // Once the completion frame is showing, the canvas is deliberately sized larger than the
+      // board (see the resize effect) so the frame's decorative overhang has room to render —
+      // this shifts the board+pieces+frame drawing to sit inset within that extra canvas space,
+      // in CSS px converted to stage units. It's {0,0} at every other time, so this is a no-op
+      // during normal play.
+      const insetPx = boardInsetPxRef.current;
+      if (insetPx.x !== 0 || insetPx.y !== 0) {
+        ctx.translate(insetPx.x / scaleRef.current, insetPx.y / scaleRef.current);
+      }
+
       const _pw = pwRef.current, _ph = phRef.current;
       const _bOffX = boardOffXRef.current, _bOffY = boardOffYRef.current;
       const solved = isSolvedRef.current;
 
-      // Stage frame — a visible border around the full stage bounds, which is always a perfect
-      // square (boardWidth === boardHeight, guaranteed by useJigsawBoardDims). The board rect
-      // drawn below it can be narrower than the stage when the grid itself isn't square (e.g.
-      // more columns than rows) — it's deliberately letterboxed rather than stretched, to keep
-      // every piece a true square. Without this frame, that letterboxed margin was invisible
-      // (near-identical dark fill colors on both), so the square shape of the overall play area
-      // didn't read as square at all — it just looked like whatever aspect ratio the grid rect
-      // happened to be.
-      if (!solved) {
-        const { w: stageW, h: stageH } = stageDimsRef.current;
-        ctx.strokeStyle = "rgba(255,255,255,0.14)";
-        ctx.lineWidth = 1.5 / sCss;
-        ctx.strokeRect(0.75 / sCss, 0.75 / sCss, stageW - 1.5 / sCss, stageH - 1.5 / sCss);
-      }
-
       // Board area background + faint reference image. Rounded with the exact same corner
       // radius the four corner pieces cut into their own outer corner (pathOpts.cornerInset) —
       // a plain sharp-cornered rect here left a visible sliver of exposed background poking out
-      // past each corner piece's rounded cut.
+      // past each corner piece's rounded cut. The board now fills the entire stage exactly (no
+      // letterboxing — the grid is always square and the stage has no margin around it), so
+      // this rect's own border is the whole visible board outline; no separate stage frame is
+      // drawn behind it anymore.
       if (!solved) {
         const boardRectPath = roundedRectPath(_bOffX, _bOffY, gridW, gridH, pathOpts.cornerInset ?? 0);
         ctx.fillStyle = "#111111";
@@ -1765,28 +1800,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           const holeH = FRAME_HOLE.bottom - FRAME_HOLE.top;
           const scaleX = gridW / (frameImg.naturalWidth * holeW);
           const scaleY = gridH / (frameImg.naturalHeight * holeH);
-          let drawW = frameImg.naturalWidth * scaleX;
-          let drawH = frameImg.naturalHeight * scaleY;
-          let drawX = _bOffX - FRAME_HOLE.left * frameImg.naturalWidth * scaleX;
-          let drawY = _bOffY - FRAME_HOLE.top * frameImg.naturalHeight * scaleY;
+          const drawW = frameImg.naturalWidth * scaleX;
+          const drawH = frameImg.naturalHeight * scaleY;
+          const drawX = _bOffX - FRAME_HOLE.left * frameImg.naturalWidth * scaleX;
+          const drawY = _bOffY - FRAME_HOLE.top * frameImg.naturalHeight * scaleY;
 
           // The frame's own border extends past the hole (and so past the board) by design —
-          // that's what shows as the actual frame. STAGE_MARGIN (the space reserved around the
-          // board) is sized for piece tab overflow, not for this, so a wide or tall grid can
-          // easily ask for more overhang than that margin provides, clipping the frame at the
-          // canvas edge. Shrink the whole frame uniformly (preserving its own proportions, and
-          // its center on the board) to fit within the stage bounds if it would otherwise
-          // overhang past them, rather than letting it get cut off.
-          const { w: stageW, h: stageH } = stageDimsRef.current;
-          const shrink = Math.min(1, stageW / drawW, stageH / drawH);
-          if (shrink < 1) {
-            const cx = _bOffX + gridW / 2, cy = _bOffY + gridH / 2;
-            drawX = cx - (cx - drawX) * shrink;
-            drawY = cy - (cy - drawY) * shrink;
-            drawW *= shrink;
-            drawH *= shrink;
-          }
-
+          // that's what shows as the actual frame. The canvas itself is sized (see the resize
+          // effect's `showFrame` branch, and the inset translate applied above) to exactly fit
+          // this overhang once solved, so no further shrink-to-fit is needed here.
           ctx.save();
           ctx.globalAlpha = frameAlpha;
           ctx.drawImage(frameImg, drawX, drawY, drawW, drawH);
@@ -1857,7 +1879,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       rafRef.current = null;
       requestCanvasRenderRef.current = () => {};
     };
-  }, [boardWidth, boardHeight, gridW, gridH, rows, cols, imageOk, tableBackground, pathOpts]);
+  }, [gridW, gridH, rows, cols, imageOk, tableBackground, pathOpts]);
 
   useEffect(() => { requestCanvasRenderRef.current(); }, [canvasH, canvasW, imageOk, pieces, trayOrder]);
 
@@ -2610,6 +2632,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         }
 
         celebrationCompleteRef.current = true;
+        setShowFrame(true);
 
         if (completionConfirmedRef.current && !suppressInternalCongrats) {
           if (messageRef.current)
@@ -2625,6 +2648,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       } catch (err) {
         console.error("Jigsaw completion error:", err);
         celebrationCompleteRef.current = true;
+        setShowFrame(true);
         if (isFullscreen) setIsFullscreen(false);
         finishConfirmedCompletion();
       }
@@ -2684,6 +2708,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     completionResultRef.current = null;
     finalHandoffRef.current = false;
     frameFadeStartRef.current = null;
+    setShowFrame(false);
     startTimeRef.current = Date.now();
     savedElapsedRef.current = 0;
     setElapsedSeconds(0);
@@ -2820,21 +2845,21 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       // co-occurs with a pieces/trayOrder state change that already causes a re-render.
       data-drag-state={dragRef.current.phase}
       onKeyDown={onKeyboardCommand}
+      // display/flexDirection/overflow/background are intentionally left to the .jigsaw-root
+      // CSS class (jigsaw.css) rather than set here inline — an inline style always wins over
+      // any stylesheet rule regardless of selector specificity, which previously blocked the
+      // landscape media queries' row/grid layout overrides from ever applying.
       style={{
         position: isFullscreen ? "fixed" : "relative",
         inset: isFullscreen ? 0 : undefined,
         zIndex: isFullscreen ? 12000 : undefined,
         width: isFullscreen ? "100vw" : "100%",
         height: isFullscreen ? "100vh" : undefined,
-        backgroundColor: "#000000",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
         ...containerStyle,
       }}
     >
       {/* ── Canvas area ──────────────────────────────── */}
-      <div className="jigsaw-board-area">
+      <div className="jigsaw-board-area" ref={boardAreaRef}>
         <canvas
           ref={canvasRef}
           className="jigsaw-board-canvas"
@@ -2993,6 +3018,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </div>
         )}
 
+        {/* Config error — a non-square grid reached the player; there's nothing to retry */}
+        {status === "config-error" && (
+          <div className="jigsaw-completion-error" role="alert">
+            This puzzle&apos;s grid configuration isn&apos;t supported. Please contact support.
+          </div>
+        )}
+
         {/* Image error */}
         {imageOk === false && (
           <div style={{ position: "absolute", left: 12, top: 12, background: "rgba(0,0,0,0.6)",
@@ -3038,7 +3070,11 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       </div>
 
       {/* ── Tray strip ───────────────────────────────── */}
-      {displayMode === "app-shell" && !isSolved && (
+      {/* Fullscreen-only compact utility bar — Preview/Return/Reset/Fullscreen already live in
+          the header's "More puzzle actions" overflow menu in normal portrait mode (mobile
+          Daily), so this bar doesn't render there at all (it must not reduce the normal board
+          size). Catalog/standalone keeps its own always-visible in-canvas bar separately. */}
+      {displayMode === "app-shell" && !isSolved && isFullscreen && (
         <div className="jigsaw-app-control-bar">
           <JigsawControls
             canInteract={imageOk === true && status !== "loading"}
@@ -3059,20 +3095,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           className="jigsaw-tray no-scrollbar"
           role="list"
           aria-label="Loose puzzle pieces"
-          style={{
-            flexShrink: 0,
-            height: TRAY_H,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            overflowX: "auto",
-            overflowY: "hidden",
-            touchAction: "pan-x",
-            WebkitOverflowScrolling: "touch",
-            padding: "12px 14px",
-            background: "rgba(255,255,255,0.03)",
-            borderTop: "1px solid rgba(255,255,255,0.1)",
-          }}
         >
           {trayOrder.length === 0 && (
             <div style={{ margin: "0 auto", color: "rgba(255,255,255,0.35)", fontSize: 13, fontStyle: "italic" }}>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode, RefObject } from "react";
-import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
+import { useJigsawImageInfo } from "@/hooks/useJigsawImageInfo";
 import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
 import JimWyzePuzzle from "@/components/puzzle/JimWyzePuzzle";
 import DetectiveCasePuzzle from "@/components/puzzle/DetectiveCasePuzzle";
@@ -120,9 +120,9 @@ export function PuzzleTypeRenderer({
   onWordSearchComplete,
   skipControl,
 }: PuzzleTypeRendererProps) {
-  // Detect the jigsaw image's natural aspect ratio so the play board matches it —
-  // otherwise the fixed 640x480 default stretches/squishes non-4:3 images.
-  const jigsawBoardDims = useJigsawBoardDims(puzzle.puzzleType === 'jigsaw' ? jigsawPlayable?.imageUrl : null);
+  // Every jigsaw board is a fixed logical square regardless of the source image's own
+  // dimensions — this just gates rendering until the image probe resolves.
+  const jigsawImageInfo = useJigsawImageInfo(puzzle.puzzleType === 'jigsaw' ? jigsawPlayable?.imageUrl : null);
 
   if (puzzle.puzzleType === 'jigsaw') {
     const jigsawExtra = jigsawPlayable?.data as JigsawExtraData | undefined;
@@ -132,7 +132,7 @@ export function PuzzleTypeRenderer({
           <div className="p-4 rounded-lg border" style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.4)", color: "#fca5a5" }}>
             This jigsaw puzzle is missing its image. Upload an image in the admin puzzle creator.
           </div>
-        ) : !jigsawBoardDims ? (
+        ) : !jigsawImageInfo.ready ? (
           <div className="p-8 text-center text-gray-400">Loading puzzle image…</div>
         ) : (
           <div className="h-full min-h-0 overflow-hidden">
@@ -143,8 +143,6 @@ export function PuzzleTypeRenderer({
               imageUrl={jigsawPlayable.imageUrl}
               rows={jigsawPlayable.data.gridRows}
               cols={jigsawPlayable.data.gridCols}
-              boardWidth={jigsawBoardDims.w}
-              boardHeight={jigsawBoardDims.h}
               pieceExtFrac={typeof jigsawExtra?.pieceExtFrac === 'number' ? jigsawExtra.pieceExtFrac : undefined}
               pieceRFrac={typeof jigsawExtra?.pieceRFrac === 'number' ? jigsawExtra.pieceRFrac : undefined}
               pieceNHalfFrac={typeof jigsawExtra?.pieceNHalfFrac === 'number' ? jigsawExtra.pieceNHalfFrac : undefined}

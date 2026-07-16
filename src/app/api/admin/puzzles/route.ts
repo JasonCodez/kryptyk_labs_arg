@@ -224,20 +224,16 @@ export async function POST(request: NextRequest) {
 
     // Validate jigsaw puzzle
     if (puzzleType === 'jigsaw') {
-      const rows = puzzleData?.gridRows ? Number(puzzleData.gridRows) : 3;
+      const rows = puzzleData?.gridRows ? Number(puzzleData.gridRows) : 4;
       const cols = puzzleData?.gridCols ? Number(puzzleData.gridCols) : 4;
       const snap = puzzleData?.snapTolerance ? Number(puzzleData.snapTolerance) : 12;
 
-      if (!Number.isFinite(rows) || rows < 2 || rows > 50) {
+      // Jigsaw grids must be square, from a fixed set of supported sizes — checked
+      // server-side, not just in the admin UI.
+      const ALLOWED_GRID_SIZES = Array.from({ length: 14 }, (_, i) => i + 2); // 2..15
+      if (!Number.isFinite(rows) || !Number.isFinite(cols) || rows !== cols || !ALLOWED_GRID_SIZES.includes(rows)) {
         return NextResponse.json(
-          { error: "Jigsaw puzzles require gridRows between 2 and 50" },
-          { status: 400 }
-        );
-      }
-
-      if (!Number.isFinite(cols) || cols < 2 || cols > 50) {
-        return NextResponse.json(
-          { error: "Jigsaw puzzles require gridCols between 2 and 50" },
+          { error: "Jigsaw grids must be square. Choose 2×2 through 15×15." },
           { status: 400 }
         );
       }
@@ -365,7 +361,7 @@ export async function POST(request: NextRequest) {
         puzzleType === 'jigsaw'
           ? {
               create: {
-                gridRows: Number(puzzleData?.gridRows) || 3,
+                gridRows: Number(puzzleData?.gridRows) || 4,
                 gridCols: Number(puzzleData?.gridCols) || 4,
                 snapTolerance: Number(puzzleData?.snapTolerance) || 12,
                 rotationEnabled: false,

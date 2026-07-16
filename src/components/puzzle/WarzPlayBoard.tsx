@@ -9,7 +9,7 @@ import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 import { motion, AnimatePresence } from "framer-motion";
-import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
+import { useJigsawImageInfo } from "@/hooks/useJigsawImageInfo";
 
 interface WarzPuzzle {
   id: string;
@@ -51,7 +51,7 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
   const [showFailedModal, setShowFailedModal] = useState(false);
   const [failCountdown, setFailCountdown] = useState(5);
-  const jigsawBoardDims = useJigsawBoardDims(puzzle.puzzleType === 'jigsaw' ? puzzle.jigsaw?.imageUrl : null);
+  const jigsawImageInfo = useJigsawImageInfo(puzzle.puzzleType === 'jigsaw' ? puzzle.jigsaw?.imageUrl : null);
 
   useEffect(() => {
     startRef.current = Date.now();
@@ -266,14 +266,12 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
 
       case "jigsaw": {
         if (!puzzle.jigsaw?.imageUrl) return <p className="text-white">Jigsaw image missing.</p>;
-        if (!jigsawBoardDims) return <p className="text-white">Loading puzzle image…</p>;
+        if (!jigsawImageInfo.ready) return <p className="text-white">Loading puzzle image…</p>;
         return (
           <JigsawPuzzle
             imageUrl={puzzle.jigsaw.imageUrl}
             rows={puzzle.jigsaw.gridRows}
             cols={puzzle.jigsaw.gridCols}
-            boardWidth={jigsawBoardDims.w}
-            boardHeight={jigsawBoardDims.h}
             neighborSnapTolerance={puzzle.jigsaw.snapTolerance}
             puzzleId={puzzle.id}
             // The challenger solves before a challenge record/id exists. Puzzle identity is

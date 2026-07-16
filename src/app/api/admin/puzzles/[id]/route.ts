@@ -243,6 +243,20 @@ export async function PUT(
     );
   }
 
+  // Jigsaw grids must be square, from a fixed set of supported sizes — this update path had
+  // no validation at all before (silently coerced with fallback defaults), unlike create.
+  if (puzzleType === 'jigsaw') {
+    const ALLOWED_GRID_SIZES = Array.from({ length: 14 }, (_, i) => i + 2); // 2..15
+    const rows = Number(puzzleData?.gridRows);
+    const cols = Number(puzzleData?.gridCols);
+    if (!Number.isFinite(rows) || !Number.isFinite(cols) || rows !== cols || !ALLOWED_GRID_SIZES.includes(rows)) {
+      return NextResponse.json(
+        { error: 'Jigsaw grids must be square. Choose 2×2 through 15×15.' },
+        { status: 400 }
+      );
+    }
+  }
+
   const isEscapeRoomType = puzzleType === 'escape_room';
   const isJimWyzeType = puzzleType === 'jim_wyze_case';
   const escapeMinTeamSize = isEscapeRoomType
@@ -427,14 +441,14 @@ export async function PUT(
       await tx.jigsawPuzzle.upsert({
         where: { puzzleId },
         update: {
-          gridRows: Number(puzzleData.gridRows) || 3,
+          gridRows: Number(puzzleData.gridRows) || 4,
           gridCols: Number(puzzleData.gridCols) || 4,
           snapTolerance: Number(puzzleData.snapTolerance) || 12,
           rotationEnabled: false,
         },
         create: {
           puzzleId,
-          gridRows: Number(puzzleData.gridRows) || 3,
+          gridRows: Number(puzzleData.gridRows) || 4,
           gridCols: Number(puzzleData.gridCols) || 4,
           snapTolerance: Number(puzzleData.snapTolerance) || 12,
           rotationEnabled: false,

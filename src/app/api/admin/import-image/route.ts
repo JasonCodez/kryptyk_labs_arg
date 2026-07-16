@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import fs from "fs/promises";
 import path from "path";
 import { resolveUploadsPath } from "@/lib/uploadStorage";
+import { readImageDimensions, isSquareAspect } from "@/lib/imageDimensions";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 
@@ -51,6 +52,12 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await resp.arrayBuffer();
     const buf = Buffer.from(arrayBuffer);
     if (buf.length > MAX_BYTES) return NextResponse.json({ error: 'Image too large' }, { status: 413 });
+
+    // Every jigsaw source image must be square — checked server-side (this route is jigsaw-only).
+    const dims = readImageDimensions(buf);
+    if (dims && !isSquareAspect(dims.width, dims.height)) {
+      return NextResponse.json({ error: 'Jigsaw images must use a 1:1 square aspect ratio.' }, { status: 400 });
+    }
 
     // Determine filename and extension
     const origName = path.basename(parsedUrl.pathname) || 'image';
