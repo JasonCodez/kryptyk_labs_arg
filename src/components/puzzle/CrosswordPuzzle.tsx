@@ -906,13 +906,18 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const anyCoarsePointer = window.matchMedia("(any-pointer: coarse)");
     const coarsePointer = window.matchMedia("(pointer: coarse)");
     const compactViewport = window.matchMedia("(max-width: 1031px)");
-    const update = () => setTouchFirstLayout(coarsePointer.matches && compactViewport.matches);
+    const update = () => setTouchFirstLayout(
+      (anyCoarsePointer.matches || coarsePointer.matches) && compactViewport.matches
+    );
     update();
+    anyCoarsePointer.addEventListener("change", update);
     coarsePointer.addEventListener("change", update);
     compactViewport.addEventListener("change", update);
     return () => {
+      anyCoarsePointer.removeEventListener("change", update);
       coarsePointer.removeEventListener("change", update);
       compactViewport.removeEventListener("change", update);
     };
@@ -2240,7 +2245,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
           ref={gameSurfaceRef}
           className="crossword-game-surface flex flex-col items-center gap-4 select-none pb-6"
           tabIndex={0}
-          onKeyDown={handleKeyDown}
+          onKeyDown={useSurfaceKeyboard ? handleKeyDown : undefined}
           aria-label="Crossword game surface. Use letter keys to enter answers, Backspace to erase, arrow keys to move, and Tab or Enter for the next clue."
           data-testid="crossword-game-surface"
           style={{
@@ -2533,7 +2538,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                 ref={inputRef}
                 type="text"
                 className="absolute w-px h-px opacity-0 pointer-events-none"
-                onKeyDown={handleKeyDown}
+                onKeyDown={useSurfaceKeyboard ? undefined : handleKeyDown}
                 onBeforeInput={handleHiddenInputBeforeInput}
                 onInput={handleHiddenInputInput}
                 inputMode={useSurfaceKeyboard ? "none" : "text"}

@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { config as loadEnv } from "dotenv";
+import { encode } from "next-auth/jwt";
+
+loadEnv({ path: ".env.local", override: false, quiet: true });
+loadEnv({ path: ".env", override: false, quiet: true });
 
 const PUZZLE_ID = "e2e-crossword-mobile";
+const CATALOG_PUZZLE_ID = "e2e-catalog-crossword";
 const GRID_SIZE = 15;
 
 const lettersForRow = (row: number) => Array.from({ length: GRID_SIZE }, (_, col) =>
@@ -35,6 +41,32 @@ const expectedAnswers = new Map<string, string>([
     Array.from({ length: GRID_SIZE }, (_, row) => lettersForRow(row)[clue.col]).join(""),
   ] as const),
 ]);
+
+async function authenticateProtectedRoute(page: Page) {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
+
+  const sessionToken = await encode({
+    secret,
+    maxAge: 60 * 60,
+    token: {
+      sub: "e2e-user",
+      id: "e2e-user",
+      name: "Crossword Tester",
+      email: "crossword@example.test",
+      role: "user",
+      betaApproved: true,
+    },
+  });
+
+  await page.context().addCookies([{
+    name: "next-auth.session-token",
+    value: sessionToken,
+    url: "http://localhost:3000",
+    httpOnly: true,
+    sameSite: "Lax",
+  }]);
+}
 
 async function installAuthenticatedCrosswordFixture(page: Page) {
   const solved = new Set<string>();
@@ -139,7 +171,96 @@ async function installAuthenticatedCrosswordFixture(page: Page) {
   });
 }
 
+async function installAuthenticatedCatalogCrosswordFixture(page: Page) {
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace(/\/$/, "");
+
+    const fulfill = (body: unknown) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "cache-control": "no-store" },
+      body: JSON.stringify(body),
+    });
+
+    if (path === "/api/auth/session") {
+      await fulfill({
+        user: { id: "e2e-user", name: "Crossword Tester", email: "crossword@example.test" },
+        expires: "2099-01-01T00:00:00.000Z",
+      });
+      return;
+    }
+
+    if (path === `/api/puzzles/${CATALOG_PUZZLE_ID}`) {
+      await fulfill({
+        id: CATALOG_PUZZLE_ID,
+        title: "Catalog Crossword Hotfix",
+        description: "Deterministic catalog crossword",
+        content: "",
+        difficulty: "medium",
+        puzzleType: "crossword",
+        xpReward: 100,
+        solutions: [],
+        data: crosswordData,
+        category: { name: "Crossword" },
+        media: [],
+        userHistory: [],
+      });
+      return;
+    }
+
+    if (path === `/api/puzzles/${CATALOG_PUZZLE_ID}/progress`) {
+      await fulfill({
+        id: "e2e-progress",
+        userId: "e2e-user",
+        puzzleId: CATALOG_PUZZLE_ID,
+        solved: false,
+        attempts: 0,
+        pointsEarned: 0,
+        successfulAttempts: 0,
+        completionPercentage: 0,
+        sessionLogs: [],
+        partProgress: [],
+      });
+      return;
+    }
+
+    if (path === `/api/puzzles/${CATALOG_PUZZLE_ID}/hints`) {
+      await fulfill({ hints: [], hintTokens: 0, skipTokens: 0 });
+      return;
+    }
+
+    if (path === `/api/puzzles/${CATALOG_PUZZLE_ID}/crossword`) {
+      await fulfill({
+        solvedClues: [],
+        solvedCount: 0,
+        totalClues: expectedAnswers.size,
+        allSolved: false,
+        letters: null,
+        revealedCells: [],
+        activeClue: null,
+        elapsedMs: 0,
+        savedAt: null,
+      });
+      return;
+    }
+
+    if (path === "/api/user/info") {
+      await fulfill({ id: "e2e-user", totalXp: 0, activeSkin: "default" });
+      return;
+    }
+
+    if (path === "/api/user/profile") {
+      await fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
+      return;
+    }
+
+    await route.continue();
+  });
+}
+
 async function openPlayableCrossword(page: Page) {
+  await authenticateProtectedRoute(page);
   await installAuthenticatedCrosswordFixture(page);
   await page.goto("/daily/crossword", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("grid", { name: /crossword grid/i })).toBeVisible();
@@ -245,6 +366,27 @@ for (const viewport of MOBILE_VIEWPORTS) {
     });
   });
 }
+
+test.describe("catalog crossword report action", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("keeps the bug-report dialog mounted after More closes", async ({ page }) => {
+    await authenticateProtectedRoute(page);
+    await installAuthenticatedCatalogCrosswordFixture(page);
+    await page.goto(`/puzzles/${CATALOG_PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("grid", { name: /crossword grid/i })).toBeVisible();
+    const start = page.getByRole("button", { name: /start/i });
+    if (await start.isVisible().catch(() => false)) await start.click();
+
+    await page.getByRole("button", { name: "More puzzle actions" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await menu.getByRole("menuitem", { name: "Report Bug" }).click();
+
+    await expect(menu).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeVisible();
+  });
+});
 
 test.describe("playable desktop crossword", () => {
   test.use({ viewport: { width: 1440, height: 900 }, hasTouch: false, isMobile: false });

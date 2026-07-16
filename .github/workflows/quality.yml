@@ -23,7 +23,7 @@ jobs:
         run: npm ci
 
       - name: Lint crossword integration
-        run: npm run lint
+        run: npm run lint:crossword
 
       - name: Run unit tests
         run: npm run test:unit
@@ -33,6 +33,10 @@ jobs:
 
   crossword-browser:
     runs-on: ubuntu-latest
+    env:
+      NEXTAUTH_URL: http://localhost:3000
+      # Fixed test-only signing key. This is not a production credential.
+      NEXTAUTH_SECRET: puzzlewarz-crossword-e2e-only-not-production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

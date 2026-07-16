@@ -52,11 +52,23 @@ function jsonResponse(body: unknown) {
   } as Response);
 }
 
-function installMatchMedia(reducedMotion = false) {
+function installMatchMedia(
+  reducedMotion = false,
+  pointers: { anyCoarse?: boolean; primaryCoarse?: boolean; compact?: boolean } = {}
+) {
+  const { anyCoarse = true, primaryCoarse = true, compact = true } = pointers;
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: jest.fn((query: string) => ({
-      matches: query.includes("prefers-reduced-motion") ? reducedMotion : query.includes("pointer: coarse") || query.includes("max-width"),
+      matches: query.includes("prefers-reduced-motion")
+        ? reducedMotion
+        : query.includes("any-pointer: coarse")
+          ? anyCoarse
+          : query.includes("pointer: coarse")
+            ? primaryCoarse
+            : query.includes("max-width")
+              ? compact
+              : false,
       media: query,
       onchange: null,
       addEventListener: jest.fn(),
@@ -166,6 +178,22 @@ describe("CrosswordPuzzle mobile presentation", () => {
     fireEvent.click(firstCell());
     fireEvent.click(screen.getByTestId("crossword-key-backspace"));
     await waitFor(() => expect(firstCell().getAttribute("aria-label")).toContain("empty"));
+  });
+
+  test("one hardware key press performs exactly one letter-entry action", async () => {
+    installMatchMedia(false, { anyCoarse: true, primaryCoarse: false, compact: true });
+    renderPuzzle();
+    fireEvent.click(firstCell());
+
+    const surface = screen.getByTestId("crossword-game-surface");
+    fireEvent.keyDown(surface, { key: "A" });
+
+    const secondCell = screen.getByRole("gridcell", { name: /Row 1, column 2,/i });
+    const thirdCell = screen.getByRole("gridcell", { name: /Row 1, column 3,/i });
+    await waitFor(() => expect(firstCell().getAttribute("aria-label")).toContain("letter A"));
+    expect(secondCell.getAttribute("aria-selected")).toBe("true");
+    expect(secondCell.getAttribute("aria-label")).toContain("empty");
+    expect(thirdCell.getAttribute("aria-selected")).toBe("false");
   });
 
   test("clue sheet opens through the handle, selects a clue, and closes", async () => {

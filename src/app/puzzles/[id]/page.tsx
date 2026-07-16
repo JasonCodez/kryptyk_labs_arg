@@ -22,6 +22,7 @@ import { PuzzleTypeRenderer } from "@/components/puzzle/PuzzleTypeRenderer";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection";
 import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
+import BugReportModal from "@/components/puzzle/BugReportModal";
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { PuzzleHeaderCrosswordActions } from "@/components/app-shell/PuzzleHeader";
 import type {
@@ -206,6 +207,7 @@ interface LobbySocketPayload {
 export default function PuzzleDetailPage() {
   const crosswordRef = useRef<CrosswordPuzzleHandle | null>(null);
   const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
+  const [showCrosswordBugReport, setShowCrosswordBugReport] = useState(false);
   // Modal state for Sudoku start overlay
   const [showSudokuStartModal, setShowSudokuStartModal] = useState(false);
   // Modal state for Sudoku help/info
@@ -1346,7 +1348,8 @@ export default function PuzzleDetailPage() {
   ) : null;
 
   return (
-    <PuzzlePlayShell
+    <>
+      <PuzzlePlayShell
       backHref="/puzzles"
       title={displayTitle}
       progress={puzzle.puzzleType === "crossword"
@@ -1360,12 +1363,9 @@ export default function PuzzleDetailPage() {
             onHelp={() => crosswordRef.current?.openInstructions()}
             overflow={[
               skipControl,
-              <PuzzleBugReportButton
-                  key="report-bug"
-                  puzzleId={puzzleId}
-                  puzzleTitle={puzzle?.title ?? "This puzzle"}
-                  label="Report a bug"
-              />,
+              <button type="button" key="report-bug" onClick={() => setShowCrosswordBugReport(true)}>
+                Report Bug
+              </button>,
             ]}
           />
         : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
@@ -1957,6 +1957,14 @@ export default function PuzzleDetailPage() {
         </div>
       </div>
     </div>
-    </PuzzlePlayShell>
+      </PuzzlePlayShell>
+      {showCrosswordBugReport && puzzle.puzzleType === "crossword" && (
+        <BugReportModal
+          puzzleId={puzzleId}
+          puzzleTitle={puzzle.title ?? "This puzzle"}
+          onClose={() => setShowCrosswordBugReport(false)}
+        />
+      )}
+    </>
   );
 }
