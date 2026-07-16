@@ -12,12 +12,11 @@ export interface JigsawPersistablePiece {
 }
 
 export interface JigsawSavedProgress {
-  version: 2;
+  version: 3;
   signature: string;
   pieces: Record<string, { relX: number; relY: number; groupId: string; snapped: boolean; z: number }>;
   tray: string[];
   elapsedMs: number;
-  zoom: number;
   savedAt: number;
   completionPending?: boolean;
 }
@@ -35,7 +34,6 @@ export function serializeJigsawProgress({
   pieces,
   tray,
   elapsedMs,
-  zoom,
   completionPending = false,
   savedAt = Date.now(),
 }: {
@@ -43,12 +41,11 @@ export function serializeJigsawProgress({
   pieces: JigsawPersistablePiece[];
   tray: string[];
   elapsedMs: number;
-  zoom: number;
   completionPending?: boolean;
   savedAt?: number;
 }): JigsawSavedProgress {
   return {
-    version: 2,
+    version: 3,
     signature,
     pieces: Object.fromEntries(pieces.map((piece) => [piece.id, {
       relX: piece.pos.x - piece.correct.x,
@@ -59,7 +56,6 @@ export function serializeJigsawProgress({
     }])),
     tray: [...tray],
     elapsedMs: Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : 0),
-    zoom: Math.min(4, Math.max(0.4, Number.isFinite(zoom) ? zoom : 1)),
     savedAt,
     completionPending,
   };
@@ -96,7 +92,9 @@ export function validateJigsawSave({
 }): { progress: JigsawSavedProgress; pieces: JigsawPersistablePiece[] } | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<JigsawSavedProgress>;
-  if (!allowLegacy && (candidate.version !== 2 || candidate.signature !== signature)) return null;
+  // Version 2 saves (which also carried a now-ignored `zoom` field) are otherwise
+  // schema-identical to version 3 — accepted here and always rewritten as version 3 below.
+  if (!allowLegacy && (![2, 3].includes(candidate.version as number) || candidate.signature !== signature)) return null;
   if (!candidate.pieces || typeof candidate.pieces !== "object" || !Array.isArray(candidate.tray)) return null;
   const expectedIds = new Set(basePieces.map((piece) => piece.id));
   const savedIds = Object.keys(candidate.pieces);
@@ -129,12 +127,11 @@ export function validateJigsawSave({
   if (candidate.tray.some((id) => pieces.some((piece) => piece.groupId === id && piece.snapped))) return null;
 
   const progress: JigsawSavedProgress = {
-    version: 2,
+    version: 3,
     signature,
     pieces: candidate.pieces as JigsawSavedProgress["pieces"],
     tray: [...candidate.tray],
     elapsedMs: Number.isFinite(candidate.elapsedMs) ? Math.max(0, Number(candidate.elapsedMs)) : 0,
-    zoom: Number.isFinite(candidate.zoom) ? Math.min(4, Math.max(0.4, Number(candidate.zoom))) : 1,
     savedAt: Number.isFinite(candidate.savedAt) ? Number(candidate.savedAt) : Date.now(),
     completionPending: Boolean(candidate.completionPending),
   };

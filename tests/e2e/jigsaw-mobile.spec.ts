@@ -220,7 +220,7 @@ test("Catalog sends attempt_success once and delays its result UI until celebrat
   await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toBeVisible({ timeout: 10_000 });
 });
 
-test("Catalog supports tray drag, return, zoom, and header controls", async ({ page }) => {
+test("Catalog supports tray drag, return, and header controls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installCatalogFixture(page);
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
@@ -240,10 +240,51 @@ test("Catalog supports tray drag, return, zoom, and header controls", async ({ p
   await page.getByRole("button", { name: "More puzzle actions" }).click();
   await page.getByRole("menuitem", { name: "Return Loose Pieces" }).click();
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await expect(page.getByRole("button", { name: "Reset zoom" })).toHaveText("125%");
-  await page.getByRole("button", { name: "Reset zoom" }).click();
-  await expect(page.getByRole("button", { name: "Reset zoom" })).toHaveText("100%");
+});
+
+test("Desktop has no zoom controls, and Plus/Minus/0 do not alter the board", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Zoom in" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Zoom out" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reset zoom" })).toHaveCount(0);
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const before = await board.boundingBox();
+  await board.focus();
+  await page.keyboard.press("+");
+  await page.keyboard.press("-");
+  await page.keyboard.press("0");
+  const after = await board.boundingBox();
+  expect(after).toEqual(before);
+
+  // Preview/Help/Tray/Reset/Fullscreen remain available via the header overflow menu.
+  await page.getByRole("button", { name: "More puzzle actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Preview Image" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Return Loose Pieces" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Reset Puzzle" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Fullscreen" })).toBeVisible();
+});
+
+test("Dragging empty board space does not move the canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  const board = page.locator(".jigsaw-board-canvas");
+  const before = await board.boundingBox();
+  // A corner of the board, well away from any piece cell, in the STAGE_MARGIN buffer.
+  const startX = before!.x + before!.width * 0.02;
+  const startY = before!.y + before!.height * 0.02;
+  const pointerId = 501;
+  await board.dispatchEvent("pointerdown", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await board.dispatchEvent("pointermove", { pointerId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX + 80, clientY: startY + 60 });
+  await board.dispatchEvent("pointerup", { pointerId, pointerType: "mouse", button: 0, buttons: 0, clientX: startX + 80, clientY: startY + 60 });
+  const after = await board.boundingBox();
+  expect(after).toEqual(before);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-drag-state", "idle");
 });
 
 test("A cancelled tray drag returns the piece to its original tray slot, not the board", async ({ page }) => {
@@ -374,16 +415,28 @@ test("Keyboard placement snaps only within tolerance and merges via the real nei
   void groupLabel;
 });
 
-test("Fullscreen supports tray drag, pinch-zoom, and preserves state on exit", async ({ page }) => {
+test("Fullscreen is bigger, stationary, supports tray drag, and preserves state on exit", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installCatalogFixture(page);
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  const board = page.locator(".jigsaw-board-canvas");
+  const boxBeforeFullscreen = await board.boundingBox();
+
   await page.getByRole("button", { name: "More puzzle actions" }).click();
   await page.getByRole("menuitem", { name: "Fullscreen" }).click();
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-fullscreen", "true");
 
-  const board = page.locator(".jigsaw-board-canvas");
+  // The board becomes physically larger where space permits, and stays fully within the
+  // viewport (never cropped, never letterboxed off-screen).
+  const boxInFullscreen = await board.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(boxInFullscreen!.width * boxInFullscreen!.height).toBeGreaterThan(boxBeforeFullscreen!.width * boxBeforeFullscreen!.height);
+  expect(boxInFullscreen!.x).toBeGreaterThanOrEqual(0);
+  expect(boxInFullscreen!.y).toBeGreaterThanOrEqual(0);
+  expect(boxInFullscreen!.x + boxInFullscreen!.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(boxInFullscreen!.y + boxInFullscreen!.height).toBeLessThanOrEqual(viewport.height + 1);
+
   const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
   const from = await trayCanvas.boundingBox(); const to = await board.boundingBox();
   const dragId = 401;
@@ -394,6 +447,10 @@ test("Fullscreen supports tray drag, pinch-zoom, and preserves state on exit", a
   await board.dispatchEvent("pointerup", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 0, clientX: to!.x + to!.width / 2, clientY: to!.y + to!.height / 2 });
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
 
+  // Two-finger movement over the board does not scale or translate it — there is no pinch
+  // gesture anymore; a second pointer during a drag would cancel it (covered elsewhere), and
+  // with no drag active, additional pointers are simply ignored.
+  const boxBeforeTwoFinger = await board.boundingBox();
   const centerX = to!.x + to!.width / 2; const centerY = to!.y + to!.height / 2;
   await board.dispatchEvent("pointerdown", { pointerId: 402, pointerType: "touch", buttons: 1, clientX: centerX - 40, clientY: centerY });
   await board.dispatchEvent("pointerdown", { pointerId: 403, pointerType: "touch", buttons: 1, clientX: centerX + 40, clientY: centerY });
@@ -401,12 +458,15 @@ test("Fullscreen supports tray drag, pinch-zoom, and preserves state on exit", a
   await board.dispatchEvent("pointermove", { pointerId: 403, pointerType: "touch", buttons: 1, clientX: centerX + 90, clientY: centerY });
   await board.dispatchEvent("pointerup", { pointerId: 402, pointerType: "touch" });
   await board.dispatchEvent("pointerup", { pointerId: 403, pointerType: "touch" });
-  await expect(page.getByRole("button", { name: "Reset zoom" })).not.toHaveText("100%");
+  const boxAfterTwoFinger = await board.boundingBox();
+  expect(boxAfterTwoFinger).toEqual(boxBeforeTwoFinger);
 
+  const placedBeforeExit = await page.locator(".jigsaw-root").getAttribute("data-placed-pieces");
   const trayCountBeforeExit = await page.locator(".jigsaw-tray-piece").count();
   await page.getByRole("button", { name: "Exit fullscreen" }).click();
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-fullscreen", "false");
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(trayCountBeforeExit);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", placedBeforeExit ?? "0");
 });
 
 test("Warz mounts without restoring or writing Catalog and Daily progress", async ({ page }) => {

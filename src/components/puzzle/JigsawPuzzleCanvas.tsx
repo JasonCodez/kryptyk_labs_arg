@@ -256,7 +256,6 @@ export interface JigsawPresentationState {
   totalPieces: number;
   trayGroups: number;
   totalGroups: number;
-  zoom: number;
   previewOpen: boolean;
   fullscreen: boolean;
   resumed: boolean;
@@ -274,9 +273,6 @@ export interface JigsawPuzzleHandle {
   openPreview(): void;
   closePreview(): void;
   focusBoard(): void;
-  zoomIn(): void;
-  zoomOut(): void;
-  resetZoom(): void;
   returnLooseToTray(): void;
   requestReset(): void;
   enterFullscreen(): void;
@@ -991,29 +987,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const [selectedGroupId, setSelectedGroupId]           = useState<string | null>(null);
   const lastPresentationRef = useRef("");
 
-  // Viewport: pinch-zoom/pan lets a player inspect fine detail on the (always fully visible)
-  // board. viewOff is the top-left corner of the viewport in stage logical coordinates.
-  // scaleRef maps (stage unit → CSS pixel); clientToLogical adds viewOff back.
-  const viewOffXRef = useRef(0);
-  const viewOffYRef = useRef(0);
-
-  // User-applied zoom (multiplied on top of layout scaleRef). Updated by pinch and zoom buttons.
-  const MIN_ZOOM = 0.4;
-  const MAX_ZOOM = 4;
-  const userZoomRef = useRef(1);
-  const [userZoom, setUserZoom] = useState(1); // mirrors userZoomRef for button rendering only
-
-  // Active pointer positions for pinch/pan gesture detection
-  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  // Two-finger pinch gesture state
-  const pinchGestureRef = useRef<{ active: boolean; prevMidX: number; prevMidY: number; prevDist: number }>({
-    active: false, prevMidX: 0, prevMidY: 0, prevDist: 1,
-  });
-  // Single-finger pan gesture state
-  const panGestureRef = useRef<{ active: boolean; pointerId: number; lastX: number; lastY: number }>({
-    active: false, pointerId: -1, lastX: 0, lastY: 0,
-  });
-
 
 
   // ── Rebuild Path2D cache ─────────────────────────────────────────────────
@@ -1178,8 +1151,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       finalTray = saved.progress.tray;
       restoredCompletionPendingRef.current = Boolean(saved.progress.completionPending);
       completionPendingRef.current = restoredCompletionPendingRef.current;
-      userZoomRef.current = saved.progress.zoom;
-      setUserZoom(saved.progress.zoom);
       setResumed(true);
       setTimeout(() => setResumed(false), 3500);
     } else {
@@ -1189,8 +1160,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       finalTray = initial.trayOrder;
       restoredCompletionPendingRef.current = false;
       completionPendingRef.current = false;
-      userZoomRef.current = 1;
-      setUserZoom(1);
     }
 
     setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000)));
@@ -1365,13 +1334,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         canvas.height       = rh * dpr;
         canvas.style.width  = `${rw}px`;
         canvas.style.height = `${rh}px`;
-        // Re-center viewport: when the stage fits inside the canvas (e.g. after zoom-out),
-        // viewOff should be negative so the stage is centered rather than top-left.
-        const totalS  = s * userZoomRef.current;
-        const viewW2  = rw / totalS;
-        const viewH2  = rh / totalS;
-        viewOffXRef.current = stageW <= viewW2 ? (stageW - viewW2) / 2 : clamp(viewOffXRef.current, 0, stageW - viewW2);
-        viewOffYRef.current = stageH <= viewH2 ? (stageH - viewH2) / 2 : clamp(viewOffYRef.current, 0, stageH - viewH2);
         dirtyRef.current    = true;
       }
     };
@@ -1409,7 +1371,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         pieces: piecesRef.current,
         tray: trayOrderRef.current,
         elapsedMs: Math.max(0, Date.now() - startTimeRef.current),
-        zoom: userZoomRef.current,
         completionPending,
       })));
     } catch {}
@@ -1428,7 +1389,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       }
     }, 800);
     return () => clearTimeout(id);
-  }, [pieces, saveCurrentProgress, trayOrder, userZoom]);
+  }, [pieces, saveCurrentProgress, trayOrder]);
 
   // Kept current via a ref so the effects below (visibilitychange/pagehide/unmount) don't need
   // saveCurrentProgress in their own dependency arrays — none of them should re-run just
@@ -1436,7 +1397,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const saveCurrentProgressRef = useRef(saveCurrentProgress);
   saveCurrentProgressRef.current = saveCurrentProgress;
 
-  // A periodic safety-net save independent of the piece/tray/zoom-driven debounce above, for
+  // A periodic safety-net save independent of the piece/tray-driven debounce above, for
   // long idle-but-mounted sessions (e.g. the player is reading/thinking) where nothing has
   // moved recently but real wall-clock time is still elapsing. Preserves a completion-pending
   // save (a failed completion awaiting retry) rather than overwriting it with
@@ -1545,7 +1506,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
       const dpr = window.devicePixelRatio || 1;
       const W = canvas.width, H = canvas.height;
-      const s = scaleRef.current * userZoomRef.current * dpr;
+      const s = scaleRef.current * dpr;
       // `s` bakes in devicePixelRatio, which is exactly right for scaling *positions* into the
       // canvas's (dpr-scaled) pixel buffer — but reusing it for line widths / shadow blur radii
       // / offsets means those shrink as dpr climbs (a "2 device px" stroke is a crisp 2 CSS px
@@ -1554,7 +1515,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       // are almost universally dpr=2–3, which is exactly the "fine on desktop, smudgy seams on
       // mobile" split. Anything sized for how it should look on screen (not for how it maps into
       // the pixel buffer) needs the dpr-*less* scale below instead.
-      const sCss = scaleRef.current * userZoomRef.current;
+      const sCss = scaleRef.current;
 
       ctx.clearRect(0, 0, W, H);
 
@@ -1568,8 +1529,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       }
 
       ctx.save();
-      ctx.scale(s, s);   // from here: 1 unit = 1 stage logical px
-      ctx.translate(-viewOffXRef.current, -viewOffYRef.current); // apply viewport offset
+      ctx.scale(s, s);   // from here: 1 unit = 1 stage logical px — the full stage always fills
+                         // the canvas exactly (fitScale), so there is no viewport offset to apply.
 
       const _pw = pwRef.current, _ph = phRef.current;
       const _bOffX = boardOffXRef.current, _bOffY = boardOffYRef.current;
@@ -1621,17 +1582,16 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         sortedCacheRef.current = { pieces: piecesRef.current, ag, sorted };
       }
 
-      // Visible-viewport bounds (stage-logical space, with a small margin) — pieces fully
-      // outside this rect are skipped entirely rather than paying for shadow/clip/bevel/etc.
-      // Large scattered puzzles can have most of the board off-screen at any given pan/zoom,
-      // so this matters a lot more as piece count grows.
-      const viewW = W / s;
-      const viewH = H / s;
+      // Stage bounds (with a small margin) — pieces fully outside this rect are skipped
+      // entirely rather than paying for shadow/clip/bevel/etc. The full stage is always
+      // visible (no pan/zoom), so this is just the stage's own fixed extent, not a moving
+      // viewport — still worth culling against for large grids' render cost.
+      const { w: stageWForCull, h: stageHForCull } = stageDimsRef.current;
       const cullPad = Math.max(_pw, _ph) * 0.3;
-      const viewL = viewOffXRef.current - cullPad;
-      const viewT = viewOffYRef.current - cullPad;
-      const viewR = viewOffXRef.current + viewW + cullPad;
-      const viewB = viewOffYRef.current + viewH + cullPad;
+      const viewL = -cullPad;
+      const viewT = -cullPad;
+      const viewR = stageWForCull + cullPad;
+      const viewB = stageHForCull + cullPad;
 
       for (const p of sorted) {
         if (trayGroupSetRef.current.has(p.groupId)) continue; // rendered in the tray strip instead
@@ -1899,7 +1859,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     };
   }, [boardWidth, boardHeight, gridW, gridH, rows, cols, imageOk, tableBackground, pathOpts]);
 
-  useEffect(() => { requestCanvasRenderRef.current(); }, [canvasH, canvasW, imageOk, pieces, trayOrder, userZoom]);
+  useEffect(() => { requestCanvasRenderRef.current(); }, [canvasH, canvasW, imageOk, pieces, trayOrder]);
 
   // ── Hit testing ──────────────────────────────────────────────────────────
 
@@ -1932,85 +1892,17 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   }, []);
 
   // ── Client → logical canvas coords ──────────────────────────────────────
-
-  // Clamp viewport so the stage can never be panned beyond its edges.
-  const clampViewport = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const s    = scaleRef.current * userZoomRef.current;
-    const dpr  = window.devicePixelRatio || 1;
-    const viewW = canvas.width  / (s * dpr);
-    const viewH = canvas.height / (s * dpr);
-    const { w: stageW, h: stageH } = stageDimsRef.current;
-    // When the stage fits inside the viewport (zoomed out), center it; otherwise pan-clamp.
-    viewOffXRef.current = stageW <= viewW
-      ? (stageW - viewW) / 2
-      : clamp(viewOffXRef.current, 0, stageW - viewW);
-    viewOffYRef.current = stageH <= viewH
-      ? (stageH - viewH) / 2
-      : clamp(viewOffYRef.current, 0, stageH - viewH);
-  }, []);
-
-  const applyZoom = useCallback((factor: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect     = canvas.getBoundingClientRect();
-    const centerX  = rect.width  / 2;
-    const centerY  = rect.height / 2;
-    const s        = scaleRef.current;
-    const oldZoom  = userZoomRef.current;
-    const newZoom  = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
-    // Keep canvas center fixed in stage coords
-    const midStageX = centerX / (s * oldZoom) + viewOffXRef.current;
-    const midStageY = centerY / (s * oldZoom) + viewOffYRef.current;
-    userZoomRef.current  = newZoom;
-    viewOffXRef.current  = midStageX - centerX / (s * newZoom);
-    viewOffYRef.current  = midStageY - centerY / (s * newZoom);
-    clampViewport();
-    // When returning to or above 100%, pull any out-of-stage pieces back into stage
-    if (newZoom >= 1) {
-      const { w: sw, h: sh } = stageDimsRef.current;
-      const _pw = pwRef.current, _ph = phRef.current;
-      const clamped = piecesRef.current.map(p => {
-        if (p.snapped) return p;
-        const nx = clamp(p.pos.x, 0, sw - _pw);
-        const ny = clamp(p.pos.y, 0, sh - _ph);
-        return (nx === p.pos.x && ny === p.pos.y) ? p : { ...p, pos: { x: nx, y: ny } };
-      });
-      piecesRef.current = clamped;
-      setPiecesState(clamped);
-    }
-    setUserZoom(newZoom);
-    dirtyRef.current = true;
-  }, [clampViewport]);
-
-  const resetZoom = useCallback(() => {
-    userZoomRef.current = 1;
-    viewOffXRef.current = 0;
-    viewOffYRef.current = 0;
-    // Pull any out-of-stage pieces (placed while zoomed out) back into stage
-    const { w: sw, h: sh } = stageDimsRef.current;
-    const _pw = pwRef.current, _ph = phRef.current;
-    const clamped = piecesRef.current.map(p => {
-      if (p.snapped) return p;
-      const nx = clamp(p.pos.x, 0, sw - _pw);
-      const ny = clamp(p.pos.y, 0, sh - _ph);
-      return (nx === p.pos.x && ny === p.pos.y) ? p : { ...p, pos: { x: nx, y: ny } };
-    });
-    piecesRef.current = clamped;
-    setPiecesState(clamped);
-    setUserZoom(1);
-    dirtyRef.current = true;
-  }, []);
-
+  // The canvas's CSS size always equals stageWidth * fitScale exactly (no zoom, no viewport
+  // offset) — so converting a client point to stage-logical space is just the inverse of that
+  // one scale factor.
   const clientToLogical = useCallback((cx: number, cy: number): PiecePos => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: cx, y: cy };
     const rect = canvas.getBoundingClientRect();
-    const s = scaleRef.current * userZoomRef.current;
+    const s = scaleRef.current;
     return {
-      x: (cx - rect.left) / s + viewOffXRef.current,
-      y: (cy - rect.top)  / s + viewOffYRef.current,
+      x: (cx - rect.left) / s,
+      y: (cy - rect.top) / s,
     };
   }, []);
 
@@ -2048,9 +1940,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const totalS = scaleRef.current * userZoomRef.current;
     const boardBottomStage = boardOffYRef.current + gridH;
-    return rect.top + (boardBottomStage - viewOffYRef.current) * totalS;
+    return rect.top + boardBottomStage * scaleRef.current;
   }, [gridH]);
 
   // Draws the ghost's content (once, at board scale) and positions its wrapper, centered at
@@ -2064,7 +1955,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const showGhostFor = useCallback((groupId: string, clientX: number, clientY: number, startAtTraySize: boolean) => {
     const members = piecesRef.current.filter(p => p.groupId === groupId);
     if (!members.length) return;
-    const boardCellPx = pwRef.current * scaleRef.current * userZoomRef.current;
+    const boardCellPx = pwRef.current * scaleRef.current;
     const boardSize = computeThumbSize(members, pwRef.current, phRef.current, boardCellPx);
     const traySize  = computeThumbSize(members, pwRef.current, phRef.current, trayCellPx);
     ghostBoardSizeRef.current = boardSize;
@@ -2116,14 +2007,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     // dragRef into "idle" first means any such re-entrant call sees phase==="idle" and no-ops
     // immediately, instead of racing this same cleanup a second time.
     dragRef.current = { ...IDLE_DRAG, starts: new Map() };
-    // Deliberately does NOT delete pointerId from activePointersRef here: when cancelDrag is
-    // invoked because a SECOND pointer just interrupted this drag (pinch start), the first
-    // pointer is still physically down and needs to stay tracked for the pinch/pan gesture
-    // that follows in the same handler. Callers that know the pointer itself is actually
-    // ending (pointercancel, lostpointercapture) remove it from activePointersRef themselves.
     if (pointerId != null) {
       try { canvasRef.current?.releasePointerCapture(pointerId); } catch { /* noop */ }
-      if (panGestureRef.current.pointerId === pointerId) panGestureRef.current.active = false;
     }
     hideGhost();
     requestCanvasRenderRef.current();
@@ -2158,14 +2043,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       setScreenReaderStatus("Drag cancelled. Piece returned to its previous position.");
     }
   }, [resetPointerState, setPieces, setTrayOrder]);
-
-  // Wraps cancelDrag for pointercancel/lostpointercapture on the board canvas — these mean the
-  // pointer itself is actually gone, unlike the second-pointer-interrupt call site in
-  // onPointerDown, so it's this call site's job (not cancelDrag's) to forget it.
-  const onBoardDragInterrupted = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    activePointersRef.current.delete(e.pointerId);
-    cancelDrag();
-  }, [cancelDrag]);
 
   // Snapshot every tray item's midpoint once, at the moment the ghost enters the tray zone —
   // NOT re-measured on every recompute, because items shift sideways (CSS transform) once a
@@ -2256,7 +2133,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       return pos ? { ...p, pos } : p;
     }));
 
-    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { canvasRef.current?.setPointerCapture(e.pointerId); } catch { /* noop */ }
 
     dragRef.current = {
@@ -2313,37 +2189,22 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (completedRef.current || isSolvedRef.current) return;
 
-    // Track all active pointers
-    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-
-    const ptrs = activePointersRef.current;
-
-    // Two fingers → pinch-zoom + pan; cancel any ongoing piece drag or pan. Routed through
-    // cancelDrag (not a manual field reset) so a piece mid-drag is actually restored to its
-    // original tray slot/position instead of being silently abandoned wherever it was.
-    if (ptrs.size >= 2) {
+    const drag = dragRef.current;
+    // A second pointer arriving while a drag is already in progress interrupts it — cancel and
+    // restore, and otherwise ignore this new pointer entirely (no capture, no gesture state of
+    // any kind; there is no pinch/pan anymore).
+    if (drag.phase === "dragging" && e.pointerId !== drag.pointerId) {
       cancelDrag();
-      panGestureRef.current.active = false;
-      const vals = [...ptrs.values()];
-      const midX = (vals[0].x + vals[1].x) / 2;
-      const midY = (vals[0].y + vals[1].y) / 2;
-      const dist = Math.max(Math.hypot(vals[1].x - vals[0].x, vals[1].y - vals[0].y), 1);
-      pinchGestureRef.current = { active: true, prevMidX: midX, prevMidY: midY, prevDist: dist };
-      requestCanvasRenderRef.current();
       return;
     }
+    if (drag.phase !== "idle") return; // already pending/dragging on this same pointer
 
-    // One finger — check for piece hit first
     const lp  = clientToLogical(e.clientX, e.clientY);
     const hit = hitTest(lp.x, lp.y);
 
-    if (!hit) {
-      // No piece hit → single-finger pan
-      panGestureRef.current = { active: true, pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
-      return;
-    }
+    if (!hit) return; // empty board space: do nothing — no pan, no capture
 
+    e.currentTarget.setPointerCapture(e.pointerId);
     e.stopPropagation();
 
     const group = piecesRef.current.filter(p => p.groupId === hit.groupId);
@@ -2364,55 +2225,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   }, [clientToLogical, hitTest, cancelDrag]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Update tracked pointer position
-    if (activePointersRef.current.has(e.pointerId)) {
-      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
-
-    // ── Pinch gesture ────────────────────────────────────────────────────
-    const pinch = pinchGestureRef.current;
-    const ptrs  = activePointersRef.current;
-    if (pinch.active && ptrs.size >= 2) {
-      const vals  = [...ptrs.values()];
-      const midX  = (vals[0].x + vals[1].x) / 2;
-      const midY  = (vals[0].y + vals[1].y) / 2;
-      const dist  = Math.max(Math.hypot(vals[1].x - vals[0].x, vals[1].y - vals[0].y), 1);
-      const zoomDelta = dist / pinch.prevDist;
-      const newZoom   = clamp(userZoomRef.current * zoomDelta, MIN_ZOOM, MAX_ZOOM);
-      const canvas    = canvasRef.current;
-      if (canvas) {
-        const rect     = canvas.getBoundingClientRect();
-        const s        = scaleRef.current;
-        // Stage coords under the previous midpoint must stay fixed after zoom
-        const midStageX = (pinch.prevMidX - rect.left) / (s * userZoomRef.current) + viewOffXRef.current;
-        const midStageY = (pinch.prevMidY - rect.top)  / (s * userZoomRef.current) + viewOffYRef.current;
-        userZoomRef.current = newZoom;
-        viewOffXRef.current = midStageX - (midX - rect.left) / (s * newZoom);
-        viewOffYRef.current = midStageY - (midY - rect.top)  / (s * newZoom);
-        clampViewport();
-      }
-      pinch.prevMidX = midX;
-      pinch.prevMidY = midY;
-      pinch.prevDist = dist;
-      requestCanvasRenderRef.current();
-      return;
-    }
-
-    // ── Single-finger pan ────────────────────────────────────────────────
-    const pan = panGestureRef.current;
-    if (pan.active && pan.pointerId === e.pointerId) {
-      const s  = scaleRef.current * userZoomRef.current;
-      const dx = (e.clientX - pan.lastX) / s;
-      const dy = (e.clientY - pan.lastY) / s;
-      viewOffXRef.current -= dx;
-      viewOffYRef.current -= dy;
-      clampViewport();
-      pan.lastX = e.clientX;
-      pan.lastY = e.clientY;
-      requestCanvasRenderRef.current();
-      return;
-    }
-
     // ── Piece drag ───────────────────────────────────────────────────────
     const drag = dragRef.current;
     if (drag.phase !== "dragging" || e.pointerId !== drag.pointerId) return;
@@ -2478,29 +2290,27 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       moveGhost(e.clientX, e.clientY);
     }
 
-    // Constrain drag to the current visible viewport in stage-logical coords, unless ghosted
-    // (see above — while ghosted, the DOM ghost already follows the pointer unconstrained, so
-    // the underlying logical delta should too, or the two disagree the instant it hands back to
-    // canvas rendering). When zoomed out the viewport extends into the dark padding area, giving
-    // extra placement room; when zoomed in, the constraint keeps pieces within the visible
-    // section.
-    const cvs    = canvasRef.current;
-    const dpr    = window.devicePixelRatio || 1;
-    const totalS = scaleRef.current * userZoomRef.current;
-    const vpLeft   = viewOffXRef.current;
-    const vpTop    = viewOffYRef.current;
-    const vpRight  = cvs ? vpLeft + cvs.width  / (totalS * dpr) - _pw : stageDimsRef.current.w - _pw;
-    const vpBottom = cvs ? vpTop  + cvs.height / (totalS * dpr) - _ph : stageDimsRef.current.h - _ph;
-
-    let minX = Infinity, minY = Infinity;
-    for (const sp of drag.starts.values()) { minX = Math.min(minX, sp.x); minY = Math.min(minY, sp.y); }
+    // Constrain drag to the fixed stage bounds, unless ghosted (see above — while ghosted, the
+    // DOM ghost already follows the pointer unconstrained, so the underlying logical delta
+    // should too, or the two disagree the instant it hands back to canvas rendering). Uses the
+    // GROUP's full bounding box (not just one anchor corner), so a multi-piece merged group can
+    // never be dragged partially outside the stage — only the anchor piece's edge was checked
+    // before, which let a wide/tall group's far edge extend past the stage by (groupWidth - pw).
+    const { w: stageW, h: stageH } = stageDimsRef.current;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const sp of drag.starts.values()) {
+      minX = Math.min(minX, sp.x); minY = Math.min(minY, sp.y);
+      maxX = Math.max(maxX, sp.x); maxY = Math.max(maxY, sp.y);
+    }
+    const groupW = maxX - minX + _pw;
+    const groupH = maxY - minY + _ph;
 
     if (drag.ghosting) {
       drag.dx = rawDx;
       drag.dy = rawDy;
     } else {
-      drag.dx = clamp(rawDx, vpLeft - minX,  vpRight  - minX);
-      drag.dy = clamp(rawDy, vpTop  - minY,  vpBottom - minY);
+      drag.dx = clamp(rawDx, -minX, stageW - groupW - minX);
+      drag.dy = clamp(rawDy, -minY, stageH - groupH - minY);
     }
     requestCanvasRenderRef.current();
 
@@ -2529,30 +2339,11 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       wasOverTrayRef.current = false;
       setTrayInsertIndex(null);
     }
-  }, [clientToLogical, clampViewport, getBoardBottomClientY, applyGhostScale, showGhostFor, hideGhost, moveGhost, snapshotTrayLayout, setTrayInsertIndex, computeTrayInsertIndex]);
+  }, [clientToLogical, getBoardBottomClientY, applyGhostScale, showGhostFor, hideGhost, moveGhost, snapshotTrayLayout, setTrayInsertIndex, computeTrayInsertIndex]);
 
   // Commits a real drop — the pointer was actually released, as opposed to cancelDrag's
   // pointercancel/interruption path, which always restores instead of committing.
   const commitDrag = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    activePointersRef.current.delete(e.pointerId);
-
-    // End pinch when fewer than 2 pointers remain
-    const pinch = pinchGestureRef.current;
-    if (pinch.active) {
-      if (activePointersRef.current.size < 2) {
-        pinch.active = false;
-        setUserZoom(userZoomRef.current); // sync state for button rendering
-      }
-      return;
-    }
-
-    // End single-finger pan
-    const pan = panGestureRef.current;
-    if (pan.active && pan.pointerId === e.pointerId) {
-      pan.active = false;
-      return;
-    }
-
     const drag = dragRef.current;
     if (drag.phase !== "dragging" || e.pointerId !== drag.pointerId) return;
 
@@ -2752,17 +2543,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         const label = "flare";
         tl.addLabel(label);
 
-        // Positions `el` to exactly cover the board's current on-screen rect, accounting for
-        // user zoom + pan (viewOffXRef/viewOffYRef) — not just the base fit-to-container scale.
-        // Skipping zoom/pan here is what caused the reveal to drift off the board edges.
+        // Positions `el` to exactly cover the board's current on-screen rect.
         const positionBoardOverlay = (el: HTMLElement) => {
           const canvas = canvasRef.current;
           if (!canvas || !el.parentElement) return;
           const canvasRect = canvas.getBoundingClientRect();
           const parentRect = el.parentElement.getBoundingClientRect();
-          const cssScale = scaleRef.current * userZoomRef.current;
-          const boardCssX = (boardOffXRef.current - viewOffXRef.current) * cssScale;
-          const boardCssY = (boardOffYRef.current - viewOffYRef.current) * cssScale;
+          const cssScale = scaleRef.current;
+          const boardCssX = boardOffXRef.current * cssScale;
+          const boardCssY = boardOffYRef.current * cssScale;
           el.style.inset  = '';
           el.style.left   = `${canvasRect.left - parentRect.left + boardCssX}px`;
           el.style.top    = `${canvasRect.top  - parentRect.top  + boardCssY}px`;
@@ -2858,10 +2647,10 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setPortalReady(true);
     setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window);
   }, []);
-  // Every interaction that mutates drag/pan/pinch/ghost state now calls
-  // requestCanvasRenderRef.current() directly at its own call site (pointer handlers, drag
-  // lifecycle functions, keyboard placement) — a blanket native listener re-triggering a
-  // render on every raw pointer event is no longer needed.
+  // Every interaction that mutates drag/ghost state now calls requestCanvasRenderRef.current()
+  // directly at its own call site (pointer handlers, drag lifecycle functions, keyboard
+  // placement) — a blanket native listener re-triggering a render on every raw pointer event
+  // is no longer needed.
   // Cancel any in-flight drag on unmount so a component removed mid-drag (e.g. navigating away)
   // never leaves stale pointer capture or an abandoned piece behind.
   useEffect(() => () => cancelDrag(), [cancelDrag]);
@@ -2902,25 +2691,21 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setSelectedGroupId(null);
     setPieces(fresh.pieces);
     setTrayOrder(fresh.trayOrder);
-    resetZoom();
     setStatus(imageOk === true ? "playing" : "loading");
     setScreenReaderStatus("Puzzle reset. All pieces are back in the tray.");
     canvasRef.current?.focus();
-  }, [buildInitial, clearCurrentProgress, imageOk, resetZoom, setPieces, setTrayOrder]);
+  }, [buildInitial, clearCurrentProgress, imageOk, setPieces, setTrayOrder]);
 
   useImperativeHandle(forwardedRef, () => ({
     openInstructions: () => setShowHelp(true),
     openPreview: () => setShowPreview(true),
     closePreview: () => setShowPreview(false),
     focusBoard: () => canvasRef.current?.focus(),
-    zoomIn: () => applyZoom(1.25),
-    zoomOut: () => applyZoom(0.8),
-    resetZoom,
     returnLooseToTray: sendLooseToTray,
     requestReset: () => setShowReset(true),
     enterFullscreen: () => setIsFullscreen(true),
     exitFullscreen: () => setIsFullscreen(false),
-  }), [applyZoom, resetZoom, sendLooseToTray]);
+  }), [sendLooseToTray]);
 
   useEffect(() => {
     if (!onPresentationChange) return;
@@ -2931,7 +2716,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       totalPieces: pieces.length,
       trayGroups: trayOrder.length,
       totalGroups: groupCount,
-      zoom: userZoom,
       previewOpen: showPreview,
       fullscreen: isFullscreen,
       resumed,
@@ -2941,15 +2725,12 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     if (signature === lastPresentationRef.current) return;
     lastPresentationRef.current = signature;
     onPresentationChange(next);
-  }, [elapsedSeconds, groupCount, isFullscreen, onPresentationChange, pieces, resumed, showPreview, status, trayOrder.length, userZoom]);
+  }, [elapsedSeconds, groupCount, isFullscreen, onPresentationChange, pieces, resumed, showPreview, status, trayOrder.length]);
 
   const onKeyboardCommand = useCallback((event: React.KeyboardEvent) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const key = event.key.toLowerCase();
     if (key === "p") { event.preventDefault(); setShowPreview(true); return; }
-    if (key === "+" || key === "=") { event.preventDefault(); applyZoom(1.25); return; }
-    if (key === "-") { event.preventDefault(); applyZoom(0.8); return; }
-    if (key === "0") { event.preventDefault(); resetZoom(); return; }
     if (key === "?") { event.preventDefault(); setShowHelp(true); return; }
     if (key === "escape" && selectedGroupId) {
       event.preventDefault();
@@ -3018,7 +2799,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     queueMicrotask(() => canvasRef.current?.focus());
   // resolveJigsawDrop reads only refs and the staged array supplied above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyZoom, resetZoom, boardSnapTolerance, neighborSnapTolerance, selectedGroupId, setPieces, setTrayOrder]);
+  }, [boardSnapTolerance, neighborSnapTolerance, selectedGroupId, setPieces, setTrayOrder]);
 
   // ── JSX ──────────────────────────────────────────────────────────────────
 
@@ -3068,8 +2849,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={commitDrag}
-          onPointerCancel={onBoardDragInterrupted}
-          onLostPointerCapture={onBoardDragInterrupted}
+          onPointerCancel={cancelDrag}
+          onLostPointerCapture={cancelDrag}
           onPointerLeave={onPointerLeave}
         />
 
@@ -3135,12 +2916,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </div>
         )}
 
-        {/* Mobile hint — parked above the (now single-row) zoom controls and preview button
-            rather than sharing their vertical band, since a centered pill with this much text
-            plus two buttons is wide enough on a phone screen to otherwise overlap both the zoom
-            controls (bottom-left) and preview button (bottom-right) at once. Allowed to wrap
-            (rather than a strict single line) and capped to the viewport width so it can't
-            overflow off narrower screens either. */}
+        {/* Mobile hint — a transient, dismissible pill introducing the tray/drag interaction on
+            touch devices. Allowed to wrap (rather than a strict single line) and capped to the
+            viewport width so it can't overflow off narrower screens. */}
         {isTouchDevice && !isFullscreen && !mobileHintDismissed && !isSolved && (
           <div className="jigsaw-mobile-hint" style={{ position: "absolute", bottom: 58, left: "50%", transform: "translateX(-50%)",
                         zIndex: 9100, display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8,
@@ -3148,7 +2926,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
                         padding: "7px 12px", borderRadius: 22, boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
                         border: "1px solid rgba(255,255,255,0.12)",
                         maxWidth: "calc(100vw - 24px)", textAlign: "center" }}>
-            <span>Pinch to zoom · 1 finger to pan · tap piece to drag</span>
+            <span>Swipe the tray to browse · drag a piece up to pick it up</span>
             <button type="button" onClick={() => setIsFullscreen(true)}
                     style={{ background: "rgba(99,102,241,0.9)", border: "none", color: "white",
                              padding: "3px 10px", borderRadius: 12, cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
@@ -3159,48 +2937,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
                     style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)",
                              cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>
               ×
-            </button>
-          </div>
-        )}
-
-        {/* Zoom controls — horizontal rather than a stacked column: a 3-button-tall column ate
-            up a large vertical strip of an already-small mobile board, covering pieces near the
-            bottom-left corner. A single row is much shorter and stays out of the way. */}
-        {false && !isSolved && (
-          <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 9100,
-                        display: "flex", flexDirection: "row", gap: 4 }}>
-            <button
-              type="button"
-              onClick={() => applyZoom(1.25)}
-              disabled={userZoom >= MAX_ZOOM}
-              title="Zoom in"
-              style={{ width: 34, height: 34, borderRadius: 10,
-                       background: "rgba(10,20,40,0.85)", color: "rgba(255,255,255,0.9)",
-                       border: "1px solid rgba(255,255,255,0.2)", cursor: userZoom >= MAX_ZOOM ? "default" : "pointer",
-                       fontSize: 18, fontWeight: 700, lineHeight: 1, opacity: userZoom >= MAX_ZOOM ? 0.4 : 1 }}>
-              +
-            </button>
-            <button
-              type="button"
-              onClick={resetZoom}
-              disabled={userZoom === 1}
-              title="Reset zoom"
-              style={{ width: 34, height: 34, borderRadius: 10,
-                       background: "rgba(10,20,40,0.85)", color: "rgba(255,255,255,0.75)",
-                       border: "1px solid rgba(255,255,255,0.15)", cursor: userZoom === 1 ? "default" : "pointer",
-                       fontSize: 11, fontWeight: 700, lineHeight: 1, opacity: userZoom === 1 ? 0.4 : 1 }}>
-              {Math.round(userZoom * 100)}%
-            </button>
-            <button
-              type="button"
-              onClick={() => applyZoom(0.8)}
-              disabled={userZoom <= MIN_ZOOM}
-              title="Zoom out"
-              style={{ width: 34, height: 34, borderRadius: 10,
-                       background: "rgba(10,20,40,0.85)", color: "rgba(255,255,255,0.9)",
-                       border: "1px solid rgba(255,255,255,0.2)", cursor: userZoom <= MIN_ZOOM ? "default" : "pointer",
-                       fontSize: 18, fontWeight: 700, lineHeight: 1, opacity: userZoom <= MIN_ZOOM ? 0.4 : 1 }}>
-              −
             </button>
           </div>
         )}
@@ -3238,13 +2974,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
         {displayMode !== "app-shell" && !isSolved && (
           <JigsawControls
-            zoom={userZoom}
             canInteract={imageOk === true && status !== "loading"}
             fullscreen={isFullscreen}
             showUtilities
-            onZoomIn={() => applyZoom(1.25)}
-            onZoomOut={() => applyZoom(0.8)}
-            onResetZoom={resetZoom}
             onPreview={() => setShowPreview(true)}
             onFullscreen={() => setIsFullscreen(true)}
             onExitFullscreen={() => setIsFullscreen(false)}
@@ -3309,13 +3041,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       {displayMode === "app-shell" && !isSolved && (
         <div className="jigsaw-app-control-bar">
           <JigsawControls
-            zoom={userZoom}
             canInteract={imageOk === true && status !== "loading"}
             fullscreen={isFullscreen}
             showUtilities={isFullscreen}
-            onZoomIn={() => applyZoom(1.25)}
-            onZoomOut={() => applyZoom(0.8)}
-            onResetZoom={resetZoom}
             onPreview={() => setShowPreview(true)}
             onFullscreen={() => setIsFullscreen(true)}
             onExitFullscreen={() => setIsFullscreen(false)}
