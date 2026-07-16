@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
-import { motion, AnimatePresence, type Variants } from "framer-motion";
+import { useCallback, useEffect, useRef } from "react";
+import { motion, AnimatePresence, type Variants, useReducedMotion } from "framer-motion";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 export interface WordDefinitionData {
@@ -83,6 +83,24 @@ const item: Variants = {
 
 export default function WordDefinitionModal({ word, color, status, data, onDismiss }: WordDefinitionModalProps) {
   useBodyScrollLock();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => dialogRef.current?.focus());
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onDismiss(); return; }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const items = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])'));
+      if (!items.length) return;
+      if (event.shiftKey && document.activeElement === items[0]) { event.preventDefault(); items.at(-1)?.focus(); }
+      if (!event.shiftKey && document.activeElement === items.at(-1)) { event.preventDefault(); items[0].focus(); }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("keydown", handleKey); returnFocusRef.current?.focus(); };
+  }, [onDismiss]);
 
   const playPronunciation = useCallback(() => {
     if (!data?.audioUrl) return;
@@ -91,7 +109,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
       clip.volume = 0.7;
       void clip.play().catch(() => {});
     } catch {}
-  }, [data?.audioUrl]);
+  }, [data]);
 
   return (
     <AnimatePresence>
@@ -104,11 +122,16 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
         onClick={onDismiss}
       >
         <motion.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${word} definition`}
+          tabIndex={-1}
           key="word-def-card"
-          initial={{ scale: 0.85, opacity: 0, y: 12 }}
+          initial={reduceMotion ? false : { scale: 0.85, opacity: 0, y: 12 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.85, opacity: 0, y: 12 }}
-          transition={{ type: "spring", stiffness: 240, damping: 22 }}
+          transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 240, damping: 22 }}
           className="relative w-full max-w-sm rounded-2xl overflow-hidden"
           style={{
             background: "linear-gradient(160deg, rgba(15,15,26,0.98) 0%, rgba(4,4,8,0.98) 100%)",

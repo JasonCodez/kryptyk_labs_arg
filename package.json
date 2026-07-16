@@ -13,6 +13,7 @@
     "lint:crossword": "eslint src/components/puzzle/CrosswordPuzzle.tsx src/components/puzzle/crossword src/components/app-shell/PuzzleHeader.tsx src/components/app-shell/PuzzleHeader.test.tsx src/components/puzzle/PuzzleBugReportButton.tsx src/app/daily/crossword/page.tsx src/components/puzzle/PuzzleTypeRenderer.tsx \"src/app/puzzles/[id]/page.tsx\" tests/e2e/mobile-shell.spec.ts tests/e2e/crossword-mobile.spec.ts",
     "lint:anagram": "eslint src/components/puzzle/AnagramBlitz.tsx src/components/puzzle/AnagramBlitz.test.tsx src/components/puzzle/anagram src/components/puzzle/PuzzleTypeRenderer.tsx src/components/app-shell/PuzzleHeader.tsx src/lib/anagramConfig.ts \"src/app/puzzles/[id]/page.tsx\" tests/e2e/anagram-mobile.spec.ts",
     "lint:sudoku": "eslint src/components/puzzle/SudokuPuzzle.tsx src/components/puzzle/SudokuGrid.tsx src/components/puzzle/SudokuPuzzle.test.tsx src/components/puzzle/sudoku src/lib/sudokuPlay.ts src/lib/puzzle-progress/sudoku-actions.ts src/lib/puzzle-progress/sudoku-attempt-validation.ts src/lib/puzzle-progress/attempt-actions.ts src/app/daily/sudoku/page.tsx \"src/app/api/puzzles/[id]/progress/route.ts\" \"src/app/api/puzzles/[id]/progress/route.test.ts\" \"src/app/api/puzzles/[id]/progress/route-get.test.ts\" \"src/app/puzzles/[id]/page.tsx\" tests/e2e/sudoku-mobile.spec.ts",
+    "lint:word-search": "eslint src/components/puzzle/WordSearchPuzzle.tsx src/components/puzzle/WordSearchPuzzle.test.tsx src/components/puzzle/WordDefinitionModal.tsx src/components/puzzle/WordDefinitionModal.test.tsx src/components/puzzle/word-search src/lib/wordSearchCore.ts src/lib/wordSearchCore.test.ts src/app/daily/word-search/page.tsx src/components/puzzle/PuzzleTypeRenderer.tsx \"src/app/api/puzzles/[id]/word_search/route.ts\" \"src/app/api/puzzles/[id]/word_search/route.test.ts\" \"src/app/puzzles/[id]/page.tsx\" tests/e2e/word-search-mobile.spec.ts",
     "pwa:screenshots": "node scripts/generate-pwa-screenshots.mjs",
     "twa:init": "npx @bubblewrap/cli init --manifest=https://www.puzzlewarz.com/manifest.webmanifest",
     "twa:build": "npx @bubblewrap/cli build",
@@ -27,6 +28,7 @@
     "test:crossword": "playwright test tests/e2e/crossword-mobile.spec.ts",
     "test:anagram": "playwright test tests/e2e/anagram-mobile.spec.ts",
     "test:sudoku": "playwright test tests/e2e/sudoku-mobile.spec.ts",
+    "test:word-search": "playwright test tests/e2e/word-search-mobile.spec.ts",
     "socket-server": "node scripts/socket-server.js",
     "postinstall": "prisma generate"
   },

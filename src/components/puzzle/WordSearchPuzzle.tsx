@@ -1,12 +1,31 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { motion, useAnimationControls } from "framer-motion";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
-import { findWordInGrid, normalizeWordList } from "@/lib/wordSearchCore";
+import {
+  normalizePlayableWordSearch,
+  normalizeWordList,
+  snapWordSearchDirection,
+  wordSearchCellsInLine,
+  type WordSearchCell,
+} from "@/lib/wordSearchCore";
 import WordDefinitionModal, { type WordDefinitionData } from "@/components/puzzle/WordDefinitionModal";
-import { isHapticsEnabled } from "@/lib/juice";
+import WordSearchControls from "@/components/puzzle/word-search/WordSearchControls";
+import WordSearchWordDock from "@/components/puzzle/word-search/WordSearchWordDock";
+import WordSearchWordList, { WordSearchDesktopWordList } from "@/components/puzzle/word-search/WordSearchWordList";
+import { isHapticsEnabled, prefersReducedMotion } from "@/lib/juice";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -14,980 +33,568 @@ const IceBackground = dynamic(() => import("@/components/IceBackground"), { ssr:
 const NeonBackground = dynamic(() => import("@/components/NeonBackground"), { ssr: false });
 const RetroBackground = dynamic(() => import("@/components/RetroBackground"), { ssr: false });
 
+export type WordSearchStatus = "loading" | "playing" | "completing" | "won" | "error";
+
+export interface WordSearchPresentationState {
+  status: WordSearchStatus;
+  foundCount: number;
+  totalWords: number;
+  selectionLength: number;
+  selectedText: string;
+  wordListOpen: boolean;
+  definitionOpen: boolean;
+  hintPending: boolean;
+}
+
+export interface WordSearchPuzzleHandle {
+  openInstructions(): void;
+  focusBoard(): void;
+  openWordList(): void;
+  closeWordList(): void;
+  requestHint(): void;
+}
+
+export interface WordSearchCompletionResult {
+  success: boolean;
+  error?: string;
+}
+
 interface Props {
   puzzleId: string;
   wordSearchData: Record<string, unknown>;
-  onSolved?: () => void;
+  onSolved?: () => void | Promise<void>;
+  onComplete?: () => Promise<WordSearchCompletionResult>;
+  onPresentationChange?: (state: WordSearchPresentationState) => void;
+  displayMode?: "standalone" | "app-shell";
   alreadySolved?: boolean;
   warzMode?: boolean;
-  /** Daily-puzzle context: suppresses the route's normal point/XP award (the daily
-   * completion flow awards its own streak-based reward instead) without disabling
-   * autosave/hydrate the way warzMode does. */
   dailyMode?: boolean;
   hintTokens?: number;
   onHintUsed?: () => Promise<boolean>;
 }
 
-type CellCoord = { row: number; col: number };
+type DefinitionState = {
+  word: string;
+  colorIdx: number;
+  status: "loading" | "found" | "not-found";
+  data?: WordDefinitionData;
+};
 
 const WORD_COLORS = [
-  { bg: "rgba(34,197,94,0.28)", border: "#22c55e", text: "#4ade80" },
-  { bg: "rgba(59,130,246,0.28)", border: "#3b82f6", text: "#60a5fa" },
-  { bg: "rgba(234,179,8,0.28)", border: "#eab308", text: "#facc15" },
-  { bg: "rgba(239,68,68,0.28)", border: "#ef4444", text: "#f87171" },
-  { bg: "rgba(168,85,247,0.28)", border: "#a855f7", text: "#c084fc" },
-  { bg: "rgba(244,114,182,0.28)", border: "#f472b6", text: "#f9a8d4" },
-  { bg: "rgba(20,184,166,0.28)", border: "#14b8a6", text: "#2dd4bf" },
-  { bg: "rgba(249,115,22,0.28)", border: "#f97316", text: "#fb923c" },
+  { bg: "rgba(34,197,94,.28)", border: "#22c55e", text: "#86efac" },
+  { bg: "rgba(59,130,246,.28)", border: "#3b82f6", text: "#93c5fd" },
+  { bg: "rgba(234,179,8,.28)", border: "#eab308", text: "#fde047" },
+  { bg: "rgba(239,68,68,.28)", border: "#ef4444", text: "#fca5a5" },
+  { bg: "rgba(168,85,247,.28)", border: "#a855f7", text: "#d8b4fe" },
+  { bg: "rgba(244,114,182,.28)", border: "#f472b6", text: "#fbcfe8" },
+  { bg: "rgba(20,184,166,.28)", border: "#14b8a6", text: "#5eead4" },
+  { bg: "rgba(249,115,22,.28)", border: "#f97316", text: "#fdba74" },
 ];
 
-function serializeCoord(c: CellCoord) {
-  return `${c.row},${c.col}`;
-}
+const keyOf = ({ row, col }: WordSearchCell) => `${row},${col}`;
+const sameCell = (a: WordSearchCell | null, b: WordSearchCell) => Boolean(a && a.row === b.row && a.col === b.col);
 
-function cellsInLine(from: CellCoord, to: CellCoord): CellCoord[] {
-  const dr = to.row - from.row;
-  const dc = to.col - from.col;
-  if (dr === 0 && dc === 0) return [from];
-  const len = Math.max(Math.abs(dr), Math.abs(dc));
-  // Only allow straight lines (horizontal, vertical, diagonal)
-  if (dr !== 0 && dc !== 0 && Math.abs(dr) !== Math.abs(dc)) return [from];
-  const sr = dr === 0 ? 0 : Math.sign(dr);
-  const sc = dc === 0 ? 0 : Math.sign(dc);
-  return Array.from({ length: len + 1 }, (_, i) => ({
-    row: from.row + sr * i,
-    col: from.col + sc * i,
-  }));
-}
-
-function snapDirection(dr: number, dc: number): { dr: number; dc: number } | null {
-  if (dr === 0 && dc === 0) return null;
-  const octant = Math.round(Math.atan2(dr, dc) / (Math.PI / 4));
-  switch (octant) {
-    case 0: return { dr: 0, dc: 1 };
-    case 1: return { dr: 1, dc: 1 };
-    case 2: return { dr: 1, dc: 0 };
-    case 3: return { dr: 1, dc: -1 };
-    case 4:
-    case -4:
-      return { dr: 0, dc: -1 };
-    case -3: return { dr: -1, dc: -1 };
-    case -2: return { dr: -1, dc: 0 };
-    case -1: return { dr: -1, dc: 1 };
-    default:
-      return null;
-  }
-}
-
-function HowToPlayModal({ onClose, onShowIntro }: { onClose: () => void; onShowIntro: () => void }) {
+function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const returnRef = useRef<HTMLElement | null>(null);
+  useBodyScrollLock();
+  useEffect(() => {
+    returnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => ref.current?.focus());
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key !== "Tab" || !ref.current) return;
+      const focusable = Array.from(ref.current.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) return;
+      if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable.at(-1)?.focus(); }
+      if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0].focus(); }
+    };
+    addEventListener("keydown", key);
+    return () => { cancelAnimationFrame(frame); removeEventListener("keydown", key); returnRef.current?.focus(); };
+  }, [onClose]);
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-w-lg w-full rounded-xl p-6 shadow-2xl"
-        style={{ background: "#0f0f1a", border: "1px solid rgba(255,255,255,0.12)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between mb-4">
-          <h2 className="text-lg font-extrabold" style={{ color: "#FDE74C" }}>How to Play — Word Trove</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-4">✕</button>
-        </div>
-        <div className="space-y-3 text-sm text-gray-300">
-          <p>Find all the words listed to the side of the grid. Each word is hidden in the grid in a straight line.</p>
-          <p><strong className="text-white">How to select:</strong> Click and drag across the letters to highlight a word. Works in any direction — horizontal, vertical, or diagonal, and both forwards and backwards.</p>
-          <p><strong className="text-white">Finding a word:</strong> When you correctly select a word, it lights up in color and is crossed off the list. Find all words to solve the puzzle.</p>
-          <p><strong className="text-white">Hints:</strong> Use a hint token to automatically reveal a random unfound word. Hint tokens can be purchased from the Store.</p>
-        </div>
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <button
-            onClick={() => { onClose(); onShowIntro(); }}
-            className="text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-            style={{ color: "#9BD1D6" }}
-          >
-            🗝️ Why Word Trove?
-          </button>
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: "#FDE74C", color: "#000" }}>Got it</button>
-        </div>
+    <div className="word-search-dialog-layer" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="word-search-dialog">
+        <header><h2>{title}</h2><button type="button" onClick={onClose} aria-label="Close">×</button></header>
+        {children}
       </div>
     </div>
   );
 }
 
-function WordTroveIntroModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-w-lg w-full rounded-2xl p-6 shadow-2xl"
-        style={{ background: "linear-gradient(160deg, rgba(15,15,26,0.98) 0%, rgba(4,4,8,0.98) 100%)", border: "1px solid rgba(129,140,248,0.35)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <h2
-            className="text-xl font-black tracking-tight"
-            style={{
-              backgroundImage: "linear-gradient(135deg, #818cf8, #c084fc, #f472b6)",
-              backgroundClip: "text",
-              WebkitBackgroundClip: "text",
-              color: "transparent",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            🗝️ More Than a Word Search
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-4 shrink-0">✕</button>
-        </div>
-
-        <div className="space-y-3 text-sm text-gray-300 leading-relaxed">
-          <p>
-            Word Trove plays like a normal word search, but finding a word is just the start —
-            every one you find pops up its real definition, so each puzzle doubles as a
-            chance to pick up new vocabulary.
-          </p>
-          <p>
-            You&apos;ll run into a mix of words. Some will be everyday and familiar — others
-            might be new to you. That&apos;s intentional: the less common words are where the
-            actual learning happens, not a sign the puzzle is too hard.
-          </p>
-        </div>
-
-        <div className="mt-4 space-y-2 rounded-xl p-3.5" style={{ background: "rgba(129,140,248,0.08)", border: "1px solid rgba(129,140,248,0.2)" }}>
-          <div className="flex items-start gap-2.5 text-xs text-gray-300">
-            <span className="text-base leading-none">🔍</span>
-            <span>Find a word by dragging across the grid, same as always.</span>
-          </div>
-          <div className="flex items-start gap-2.5 text-xs text-gray-300">
-            <span className="text-base leading-none">📖</span>
-            <span>A popup reveals its definition, part of speech, and how to say it.</span>
-          </div>
-          <div className="flex items-start gap-2.5 text-xs text-gray-300">
-            <span className="text-base leading-none">🧠</span>
-            <span>Words with thin definitions link out to Merriam-Webster for the full picture.</span>
-          </div>
-        </div>
-
-        <div className="mt-5 text-right">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-bold"
-            style={{ background: "linear-gradient(135deg, #818cf8, #c084fc)", color: "#0f0f1a" }}
-          >
-            Let&apos;s play →
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function WordSearchPuzzle({
+const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function WordSearchPuzzle({
   puzzleId,
   wordSearchData,
   onSolved,
-  alreadySolved,
-  warzMode,
-  dailyMode,
+  onComplete,
+  onPresentationChange,
+  displayMode = "standalone",
+  alreadySolved = false,
+  warzMode = false,
+  dailyMode = false,
   hintTokens = 0,
   onHintUsed,
-}: Props) {
-  const grid = useMemo(() => (wordSearchData.grid ?? []) as string[][], [wordSearchData.grid]);
-  const words = useMemo(() => normalizeWordList(wordSearchData.words ?? []), [wordSearchData.words]);
-  const gridSize = grid.length || 12;
-  const storageKey = `ws-found-${puzzleId}`;
-
-  // Unified init: compute foundWords + their cell positions together
-  const [{ foundWords, foundWordCells }, setFoundState] = useState<{
-    foundWords: string[];
-    foundWordCells: Map<string, CellCoord[]>;
-  }>(() => {
-    const initialInput: string[] = alreadySolved
-      ? [...words]
-      : (() => {
-          if (typeof window === "undefined") return [];
-          try {
-            return JSON.parse(localStorage.getItem(storageKey) ?? "[]") as string[];
-          } catch {
-            return [];
-          }
-        })();
-
-    const initial = normalizeWordList(initialInput).filter((w) => words.includes(w));
-
-    const map = new Map<string, CellCoord[]>();
-    for (const w of initial) {
-      const cells = findWordInGrid(w, grid);
-      if (cells) map.set(w, cells);
-    }
-    return { foundWords: initial, foundWordCells: map };
-  });
-
-  const [selectedCells, setSelectedCells] = useState<CellCoord[]>([]);
-  const [flashWord, setFlashWord] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [gameStatus, setGameStatus] = useState<"playing" | "won">(() =>
-    alreadySolved || foundWords.length === words.length ? "won" : "playing"
-  );
-  const [wsHintCount, setWsHintCount] = useState(0);
-  const [isUltraNarrow, setIsUltraNarrow] = useState(false);
-  const [showRestoreNotice, setShowRestoreNotice] = useState(false);
-
-  // ── Juice: trail line + shake + pop feedback (purely presentational — none of this
-  // touches the drag/selection math above or below it) ──────────────────────────────
-  const [trailPoints, setTrailPoints] = useState<{ x: number; y: number }[]>([]);
-  const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set());
-  const gridShakeControls = useAnimationControls();
-
-  const gridRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<CellCoord | null>(null);
-  const isDraggingRef = useRef(false);
-  const selectedCellsRef = useRef<CellCoord[]>([]);
-  const directionLockRef = useRef<{ dr: number; dc: number } | null>(null);
-  const pointerIdRef = useRef<number | null>(null);
-  const queuedPointRef = useRef<{ x: number; y: number } | null>(null);
-  const moveRafRef = useRef<number | null>(null);
-  const restoreNoticeTimeoutRef = useRef<number | null>(null);
-  const foundWordsRef = useRef<string[]>(foundWords);
+}, ref) {
+  const normalized = useMemo(() => normalizePlayableWordSearch(wordSearchData.grid, wordSearchData.words), [wordSearchData.grid, wordSearchData.words]);
+  const { grid, words, placements, signature } = normalized;
+  const size = grid.length;
+  const storageKey = `word-search:v2:${puzzleId}`;
   const skin = usePuzzleSkin();
+  const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
+  const boardRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<number | null>(null);
+  const dragStartRef = useRef<WordSearchCell | null>(null);
+  const draggingRef = useRef(false);
+  const selectionRef = useRef<WordSearchCell[]>([]);
+  const directionRef = useRef<{ dr: number; dc: number } | null>(null);
+  const queuedPointRef = useRef<{ x: number; y: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const geometryRef = useRef<{ board: DOMRect; cells: Map<string, DOMRect> } | null>(null);
+  const foundRef = useRef<string[]>([]);
+  const completionRef = useRef(false);
+  const hintRef = useRef(false);
+  const activeCellRef = useRef<WordSearchCell>({ row: 0, col: 0 });
+  const keyboardSelectingRef = useRef(false);
+  const tapStartRef = useRef<WordSearchCell | null>(null);
+  const lastPresentationRef = useRef("");
+  const definitionQueueRef = useRef<DefinitionState[]>([]);
+  const gridShake = useAnimationControls();
+
+  const restore = useMemo(() => {
+    if (alreadySolved) return { found: words, hinted: [] as string[] };
+    if (typeof window === "undefined") return { found: [] as string[], hinted: [] as string[] };
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey) ?? "null") as { version?: number; signature?: string; foundWords?: unknown; hintedWords?: unknown } | null;
+      if (value?.version !== 2 || value.signature !== signature || !Array.isArray(value.foundWords)) return { found: [], hinted: [] };
+      const found = normalizeWordList(value.foundWords).filter((word) => placements.has(word));
+      const hinted = normalizeWordList(value.hintedWords ?? []).filter((word) => found.includes(word));
+      return { found, hinted };
+    } catch { return { found: [], hinted: [] }; }
+  }, [alreadySolved, placements, signature, storageKey, words]);
+
+  const [foundWords, setFoundWords] = useState<string[]>(restore.found);
+  const [hintedWords, setHintedWords] = useState<Set<string>>(new Set(restore.hinted));
+  const [selection, setSelectionState] = useState<WordSearchCell[]>([]);
+  const [activeCell, setActiveCell] = useState<WordSearchCell>({ row: 0, col: 0 });
+  const [status, setStatus] = useState<WordSearchStatus>(() => !size || !words.length ? "error" : alreadySolved || restore.found.length === words.length ? "won" : "loading");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [hintPending, setHintPending] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
-  const [definitionModal, setDefinitionModal] = useState<{
-    word: string;
-    colorIdx: number;
-    status: "loading" | "found" | "not-found";
-    data?: WordDefinitionData;
-  } | null>(null);
+  const [wordListOpen, setWordListOpen] = useState(false);
+  const [definition, setDefinition] = useState<DefinitionState | null>(null);
+  const [flashWord, setFlashWord] = useState<string | null>(null);
+  const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set());
+  const [trail, setTrail] = useState<Array<{ x: number; y: number }>>([]);
+  const [zoom, setZoom] = useState(1);
+  const [pageVisible, setPageVisible] = useState(true);
 
-  async function revealDefinition(word: string, colorIdx: number) {
-    setDefinitionModal({ word, colorIdx, status: "loading" });
-    try {
-      const res = await fetch(`/api/dictionary/define?word=${encodeURIComponent(word)}`);
-      const json = await res.json();
-      setDefinitionModal(
-        json.found
-          ? {
-              word,
-              colorIdx,
-              status: "found",
-              data: {
-                phonetic: json.phonetic,
-                audioUrl: json.audioUrl,
-                partOfSpeech: json.partOfSpeech,
-                definition: json.definition,
-                example: json.example,
-              },
-            }
-          : { word, colorIdx, status: "not-found" }
-      );
-    } catch {
-      setDefinitionModal({ word, colorIdx, status: "not-found" });
-    }
-  }
+  foundRef.current = foundWords;
+  const foundSet = useMemo(() => new Set(foundWords), [foundWords]);
+  const selectedSet = useMemo(() => new Set(selection.map(keyOf)), [selection]);
+  const selectedText = selection.map(({ row, col }) => grid[row]?.[col] ?? "").join("");
 
-  const showRestoredProgressBanner = () => {
-    if (restoreNoticeTimeoutRef.current !== null) {
-      window.clearTimeout(restoreNoticeTimeoutRef.current);
-    }
-    setShowRestoreNotice(true);
-    restoreNoticeTimeoutRef.current = window.setTimeout(() => {
-      setShowRestoreNotice(false);
-      restoreNoticeTimeoutRef.current = null;
-    }, 2600);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (moveRafRef.current !== null) {
-        cancelAnimationFrame(moveRafRef.current);
-      }
-      if (restoreNoticeTimeoutRef.current !== null) {
-        window.clearTimeout(restoreNoticeTimeoutRef.current);
-      }
-    };
+  const setSelection = useCallback((cells: WordSearchCell[]) => {
+    selectionRef.current = cells;
+    setSelectionState(cells);
   }, []);
 
-  useEffect(() => {
-    foundWordsRef.current = foundWords;
-  }, [foundWords]);
+  const measureBoard = useCallback(() => {
+    const board = boardRef.current;
+    const viewport = viewportRef.current;
+    if (!board || !viewport || !size) return;
+    const available = Math.max(180, Math.min(viewport.clientWidth, viewport.clientHeight || viewport.clientWidth));
+    const gap = size >= 18 ? 1 : 2;
+    const padding = 12;
+    const cell = Math.max(size > 18 ? 24 : 14, Math.floor((available - padding * 2 - gap * (size - 1)) / size));
+    board.style.setProperty("--word-search-cell", `${cell}px`);
+    board.style.setProperty("--word-search-gap", `${gap}px`);
+    const cells = new Map<string, DOMRect>();
+    board.querySelectorAll<HTMLElement>("[data-ws-row]").forEach((element) => cells.set(`${element.dataset.wsRow},${element.dataset.wsCol}`, element.getBoundingClientRect()));
+    geometryRef.current = { board: board.getBoundingClientRect(), cells };
+  }, [size]);
 
-  // First-time intro explaining Word Trove's "find a word, learn its definition" angle —
-  // shown once per browser, not on every puzzle, and skipped entirely for a puzzle the
-  // player has already solved (nothing left to "start" at that point).
-  useEffect(() => {
-    if (alreadySolved) return;
-    if (typeof window === "undefined") return;
-    try {
-      if (!localStorage.getItem("wordTroveIntroSeen")) setShowIntro(true);
-    } catch {}
-  }, [alreadySolved]);
-
-  const dismissIntro = () => {
-    setShowIntro(false);
-    try {
-      localStorage.setItem("wordTroveIntroSeen", "1");
-    } catch {}
-  };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const media = window.matchMedia("(max-width: 360px)");
-    const apply = () => setIsUltraNarrow(media.matches);
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, []);
-
-  // Hydrate progress from server so leaving/reloading resumes correctly even without localStorage.
-  useEffect(() => {
-    if (alreadySolved) return;
-    if (!puzzleId) return;
-
-    let cancelled = false;
-
-    const hydrateFromServer = async () => {
-      try {
-        const resp = await fetch(`/api/puzzles/${puzzleId}/word_search`, { cache: "no-store" });
-        if (!resp.ok) return;
-
-        const data = await resp.json();
-        const serverFound = normalizeWordList(data?.foundWords ?? []).filter((w) => words.includes(w));
-        if (serverFound.length === 0) return;
-
-        if (cancelled) return;
-
-        const hasNewServerProgress = serverFound.some((w) => !foundWordsRef.current.includes(w));
-        if (!hasNewServerProgress) return;
-
-        setFoundState((prev) => {
-          const mergedWords = Array.from(new Set([...prev.foundWords, ...serverFound]));
-          if (mergedWords.length === prev.foundWords.length) {
-            return prev;
-          }
-
-          const mergedCells = new Map(prev.foundWordCells);
-
-          for (const word of mergedWords) {
-            if (mergedCells.has(word)) continue;
-            const cells = findWordInGrid(word, grid);
-            if (cells) mergedCells.set(word, cells);
-          }
-
-          return {
-            foundWords: mergedWords,
-            foundWordCells: mergedCells,
-          };
-        });
-        showRestoredProgressBanner();
-
-        if (data?.allFound) {
-          setGameStatus("won");
-        }
-      } catch {
-        // Non-fatal: localStorage still provides client-side resume fallback.
-      }
-    };
-
-    hydrateFromServer();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [alreadySolved, puzzleId, words, grid]);
-
-  // Persist found words across page reloads
-  useEffect(() => {
-    if (!alreadySolved) {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(foundWords));
-      } catch {}
-    }
-  }, [foundWords, storageKey, alreadySolved]);
-
-  // Build a coord → color-index map for rendering
-  const cellColorMap = new Map<string, number>();
-  foundWordCells.forEach((cells, word) => {
-    const idx = words.indexOf(word) % WORD_COLORS.length;
-    cells.forEach((c) => cellColorMap.set(serializeCoord(c), idx));
-  });
-
-  const selectedSet = new Set(selectedCells.map(serializeCoord));
-
-  function setSelection(cells: CellCoord[]) {
-    selectedCellsRef.current = cells;
-    setSelectedCells(cells);
-  }
-
-  // Recompute the connecting trail line's pixel points whenever the selection changes.
-  // Cell size is a responsive clamp() rather than a fixed px value, so the centers are
-  // measured from the actual rendered cells (same data-ws-row/col hook cellFromPoint uses)
-  // instead of derived from CSS math.
   useLayoutEffect(() => {
-    const gridEl = gridRef.current;
-    if (!gridEl || selectedCells.length < 2) {
-      setTrailPoints([]);
-      return;
-    }
-    const gridRect = gridEl.getBoundingClientRect();
-    const points = selectedCells.map(({ row, col }) => {
-      const cellEl = gridEl.querySelector<HTMLElement>(`[data-ws-row="${row}"][data-ws-col="${col}"]`);
-      if (!cellEl) return null;
-      const r = cellEl.getBoundingClientRect();
-      return { x: r.left - gridRect.left + r.width / 2, y: r.top - gridRect.top + r.height / 2 };
-    });
-    if (points.some((p) => p === null)) return;
-    setTrailPoints(points as { x: number; y: number }[]);
-  }, [selectedCells]);
+    measureBoard();
+    const observer = new ResizeObserver(measureBoard);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    if (boardRef.current) observer.observe(boardRef.current);
+    return () => observer.disconnect();
+  }, [measureBoard]);
 
-  function triggerHaptic(pattern: number | number[]) {
-    if (!isHapticsEnabled()) return; // respect the Settings → Haptic Feedback toggle
-    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-      navigator.vibrate(pattern);
-    }
-  }
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(measureBoard);
+    return () => cancelAnimationFrame(frame);
+  }, [measureBoard, zoom]);
 
-  // Hint: reveal a random unfound word (costs 1 hint token)
-  const useWordSearchHint = async () => {
-    if (gameStatus !== "playing") return;
-    if (hintTokens < 1) return; // button is disabled; guard anyway
-    if (onHintUsed) {
-      const ok = await onHintUsed();
-      if (!ok) return;
-    }
-    const unfound = words.filter((w) => !foundWords.includes(w));
-    if (unfound.length === 0) return;
-    const word = unfound[Math.floor(Math.random() * unfound.length)];
-    const cells = findWordInGrid(word, grid);
-    if (!cells) return;
-    setFoundState((prev) => ({
-      foundWords: [...prev.foundWords, word],
-      foundWordCells: new Map(prev.foundWordCells).set(word, cells),
+  useLayoutEffect(() => {
+    const geometry = geometryRef.current;
+    if (!geometry || selection.length < 2) { setTrail([]); return; }
+    setTrail(selection.flatMap((cell) => {
+      const rect = geometry.cells.get(keyOf(cell));
+      return rect ? [{ x: rect.left - geometry.board.left + rect.width / 2, y: rect.top - geometry.board.top + rect.height / 2 }] : [];
     }));
-    triggerHaptic(12);
-    setFlashWord(word);
-    setTimeout(() => setFlashWord(null), 1200);
-    setWsHintCount((c) => c + 1);
-    revealDefinition(word, words.indexOf(word) % WORD_COLORS.length);
-  };
+  }, [selection, zoom]);
 
-  // ── Drag handlers ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (alreadySolved || warzMode || typeof window === "undefined") return;
+    try { if (!localStorage.getItem("wordTroveIntroSeen")) setShowIntro(true); } catch {}
+  }, [alreadySolved, warzMode]);
 
-  function startDrag(row: number, col: number) {
-    if (gameStatus !== "playing" || submitting) return;
-    dragStartRef.current = { row, col };
-    isDraggingRef.current = true;
-    directionLockRef.current = null;
-    setSelection([{ row, col }]);
-  }
+  useEffect(() => {
+    const updateVisibility = () => setPageVisible(document.visibilityState !== "hidden");
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
 
-  function extendDrag(row: number, col: number) {
-    const dragStart = dragStartRef.current;
-    if (!isDraggingRef.current || !dragStart) return;
+  useEffect(() => {
+    if (status !== "loading") return;
+    setStatus(alreadySolved || foundWords.length === words.length ? "won" : "playing");
+  }, [alreadySolved, foundWords.length, status, words.length]);
 
-    const rawDr = row - dragStart.row;
-    const rawDc = col - dragStart.col;
-    const lockThresholdReached = Math.max(Math.abs(rawDr), Math.abs(rawDc)) >= 2;
-    // Re-derive the snapped direction from the full start→current vector on every move,
-    // rather than freezing whatever direction the drag first crossed the threshold at.
-    // A one-time freeze meant an early wobble (meaning to go straight but drifting a cell)
-    // would permanently lock the wrong diagonal for the rest of the gesture — this way the
-    // player can correct course mid-drag, and since the vector is cumulative (not frame-to-
-    // frame), it naturally stabilizes as the drag gets longer instead of jittering.
-    directionLockRef.current = lockThresholdReached ? snapDirection(rawDr, rawDc) : null;
+  useEffect(() => {
+    if (alreadySolved || warzMode) return;
+    try { localStorage.setItem(storageKey, JSON.stringify({ version: 2, signature, foundWords, hintedWords: [...hintedWords] })); } catch {}
+  }, [alreadySolved, foundWords, hintedWords, signature, storageKey, warzMode]);
 
-    const dir = directionLockRef.current;
-    if (!dir) {
-      setSelection(cellsInLine(dragStart, { row, col }));
-      return;
+  useEffect(() => {
+    if (alreadySolved || warzMode || dailyMode || !puzzleId) return;
+    let cancelled = false;
+    void fetch(`/api/puzzles/${puzzleId}/word_search`, { cache: "no-store" }).then(async (response) => {
+      if (!response.ok || cancelled) return;
+      const data = await response.json();
+      const server = normalizeWordList(data.foundWords ?? []).filter((word) => placements.has(word));
+      if (cancelled) return;
+      // A successful catalog read is authoritative. Local state remains the
+      // offline fallback, but cannot claim words the server has not validated.
+      setFoundWords(server);
+      if (data.allFound) setStatus("won");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [alreadySolved, dailyMode, placements, puzzleId, warzMode]);
+
+  useEffect(() => {
+    const state: WordSearchPresentationState = { status, foundCount: foundWords.length, totalWords: words.length, selectionLength: selection.length, selectedText, wordListOpen, definitionOpen: Boolean(definition), hintPending };
+    const signatureValue = JSON.stringify(state);
+    if (signatureValue !== lastPresentationRef.current) {
+      lastPresentationRef.current = signatureValue;
+      onPresentationChange?.(state);
     }
+  }, [definition, foundWords.length, hintPending, onPresentationChange, selectedText, selection.length, status, wordListOpen, words.length]);
 
-    const maxRowSteps =
-      dir.dr > 0
-        ? gridSize - 1 - dragStart.row
-        : dir.dr < 0
-        ? dragStart.row
-        : Number.POSITIVE_INFINITY;
-    const maxColSteps =
-      dir.dc > 0
-        ? gridSize - 1 - dragStart.col
-        : dir.dc < 0
-        ? dragStart.col
-        : Number.POSITIVE_INFINITY;
-    const maxSteps = Math.min(maxRowSteps, maxColSteps);
-    const rawSteps = dir.dr !== 0 ? Math.round(rawDr / dir.dr) : Math.round(rawDc / dir.dc);
-    const clampedSteps = Math.max(0, Math.min(maxSteps, rawSteps));
-    const lockedTo = {
-      row: dragStart.row + dir.dr * clampedSteps,
-      col: dragStart.col + dir.dc * clampedSteps,
-    };
+  const haptic = useCallback((pattern: number | number[]) => {
+    if (isHapticsEnabled() && typeof navigator.vibrate === "function") navigator.vibrate(pattern);
+  }, []);
 
-    setSelection(cellsInLine(dragStart, lockedTo));
-  }
-
-  async function endDrag() {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-    const cells = selectedCellsRef.current;
-    setSelection([]);
-    dragStartRef.current = null;
-    directionLockRef.current = null;
-
-    if (cells.length < 2) return;
-
-    const selWord = cells.map((c) => grid[c.row]?.[c.col] ?? "").join("");
-    const revWord = selWord.split("").reverse().join("");
-    const matched =
-      words.find(
-        (w) => (w === selWord || w === revWord) && !foundWords.includes(w)
-      ) ?? null;
-
-    if (!matched) {
-      triggerHaptic(30);
-      gridShakeControls.start({
-        x: [0, -7, 7, -5, 5, -2, 2, 0],
-        transition: { duration: 0.4, ease: "easeOut" },
-      });
-      return;
-    }
-
-    setSubmitting(true);
-    const newFoundWords = [...foundWords, matched];
+  const fetchDefinition = useCallback(async (word: string, colorIdx: number): Promise<DefinitionState> => {
     try {
-      const resp = await fetch(`/api/puzzles/${puzzleId}/word_search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          word: matched,
-          cells: cells.map((c) => ({ row: c.row, col: c.col })),
-          allFoundWords: newFoundWords,
-          ...(warzMode && { warzMode: true }),
-          ...(dailyMode && { dailyMode: true }),
-        }),
-      });
-      const data = await resp.json();
-      if (data.valid) {
-        const canonicalCells = findWordInGrid(matched, grid) ?? cells;
-        setFoundState((prev) => ({
-          foundWords: newFoundWords,
-          foundWordCells: new Map(prev.foundWordCells).set(matched, canonicalCells),
-        }));
-        triggerHaptic([12, 30, 12]);
-        setFlashWord(matched);
-        setTimeout(() => setFlashWord(null), 1200);
-        const poppedKeys = canonicalCells.map(serializeCoord);
-        setPoppingCells((prev) => new Set([...prev, ...poppedKeys]));
-        setTimeout(() => {
-          setPoppingCells((prev) => {
-            const next = new Set(prev);
-            poppedKeys.forEach((k) => next.delete(k));
-            return next;
-          });
-        }, 450);
-        revealDefinition(matched, words.indexOf(matched) % WORD_COLORS.length);
+      const response = await fetch(`/api/dictionary/define?word=${encodeURIComponent(word)}`);
+      const json = await response.json();
+      return json.found ? { word, colorIdx, status: "found", data: { phonetic: json.phonetic, audioUrl: json.audioUrl, partOfSpeech: json.partOfSpeech, definition: json.definition, example: json.example } } : { word, colorIdx, status: "not-found" };
+    } catch { return { word, colorIdx, status: "not-found" }; }
+  }, []);
+
+  const showNextDefinition = useCallback(() => {
+    setDefinition((current) => current ?? definitionQueueRef.current.shift() ?? null);
+  }, []);
+
+  const queueDefinition = useCallback((word: string) => {
+    const colorIdx = words.indexOf(word) % WORD_COLORS.length;
+    void fetchDefinition(word, colorIdx).then((result) => {
+      definitionQueueRef.current.push(result);
+      window.setTimeout(showNextDefinition, reduceMotion ? 0 : 320);
+    });
+  }, [fetchDefinition, reduceMotion, showNextDefinition, words]);
+
+  const openDefinition = useCallback((word: string) => {
+    if (!foundRef.current.includes(word)) return;
+    setDefinition({ word, colorIdx: words.indexOf(word) % WORD_COLORS.length, status: "loading" });
+    void fetchDefinition(word, words.indexOf(word) % WORD_COLORS.length).then(setDefinition);
+  }, [fetchDefinition, words]);
+
+  const celebrateWord = useCallback((word: string, cells: WordSearchCell[], hinted = false) => {
+    setFoundWords((previous) => previous.includes(word) ? previous : [...previous, word]);
+    if (hinted) setHintedWords((previous) => new Set(previous).add(word));
+    haptic([12, 30, 12]);
+    setFlashWord(word);
+    const keys = cells.map(keyOf);
+    setPoppingCells((previous) => new Set([...previous, ...keys]));
+    window.setTimeout(() => { setFlashWord(null); setPoppingCells((previous) => { const next = new Set(previous); keys.forEach((key) => next.delete(key)); return next; }); }, reduceMotion ? 80 : 500);
+    queueDefinition(word);
+  }, [haptic, queueDefinition, reduceMotion]);
+
+  const finishDailyCompletion = useCallback(async () => {
+    if (!onComplete || completionRef.current) return;
+    completionRef.current = true;
+    setStatus("completing");
+    setError("");
+    try {
+      const result = await onComplete();
+      if (!result.success) { setStatus("error"); setError(result.error || "Completion could not be recorded."); completionRef.current = false; return; }
+      setStatus("won");
+      await onSolved?.();
+    } catch {
+      setStatus("error"); setError("Completion could not be recorded. Check your connection and retry."); completionRef.current = false;
+    }
+  }, [onComplete, onSolved]);
+
+  const submitSelection = useCallback(async (cells: WordSearchCell[]) => {
+    if (cells.length < 2 || status !== "playing" || submitting) return;
+    const forward = cells.map(({ row, col }) => grid[row]?.[col] ?? "").join("");
+    const reverse = [...forward].reverse().join("");
+    const word = words.find((item) => !foundRef.current.includes(item) && (item === forward || item === reverse));
+    if (!word) {
+      haptic(30);
+      void gridShake.start(reduceMotion ? { opacity: [1, .6, 1], transition: { duration: .16 } } : { x: [0, -6, 6, -3, 3, 0], transition: { duration: .28 } });
+      return;
+    }
+    const nextWords = [...foundRef.current, word];
+    const canonicalCells = placements.get(word) ?? cells;
+    if (warzMode) {
+      celebrateWord(word, canonicalCells);
+      if (nextWords.length === words.length) { setStatus("won"); onSolved?.(); }
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/puzzles/${puzzleId}/word_search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word, cells, allFoundWords: nextWords, ...(dailyMode && { dailyMode: true }) }) });
+      const data = await response.json();
+      if (!response.ok || !data.valid) throw new Error(data.error || "That word could not be saved.");
+      celebrateWord(word, canonicalCells);
+      if (data.allFound) {
+        if (dailyMode) await finishDailyCompletion();
+        else { setStatus("won"); await onSolved?.(); }
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "That word could not be saved.");
+    } finally { setSubmitting(false); }
+  }, [celebrateWord, dailyMode, finishDailyCompletion, grid, gridShake, haptic, onSolved, placements, puzzleId, reduceMotion, status, submitting, warzMode, words]);
+
+  const requestHint = useCallback(async () => {
+    if (status !== "playing" || hintRef.current || hintTokens < 1) return;
+    const candidates = words.filter((word) => !foundRef.current.includes(word) && placements.has(word));
+    if (!candidates.length) { setError("No placeable words remain for a hint."); return; }
+    hintRef.current = true;
+    setHintPending(true);
+    setError("");
+    try {
+      if (onHintUsed && !(await onHintUsed())) return;
+      const word = candidates[Math.floor(Math.random() * candidates.length)];
+      const cells = placements.get(word);
+      if (!cells) { setError("The hinted word could not be located."); return; }
+      if (warzMode) celebrateWord(word, cells, true);
+      else {
+        const nextWords = [...foundRef.current, word];
+        const response = await fetch(`/api/puzzles/${puzzleId}/word_search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ word, cells, allFoundWords: nextWords, ...(dailyMode && { dailyMode: true }) }) });
+        const data = await response.json();
+        if (!response.ok || !data.valid) throw new Error(data.error || "The hint was consumed, but the word could not be saved.");
+        celebrateWord(word, cells, true);
         if (data.allFound) {
-          setGameStatus("won");
-          triggerHaptic([20, 40, 20]);
-          onSolved?.();
+          if (dailyMode) await finishDailyCompletion();
+          else { setStatus("won"); await onSolved?.(); }
         }
       }
-    } catch {}
-    setSubmitting(false);
-  }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The hint could not be applied."); }
+    finally { hintRef.current = false; setHintPending(false); }
+  }, [celebrateWord, dailyMode, finishDailyCompletion, hintTokens, onHintUsed, onSolved, placements, puzzleId, status, warzMode, words]);
 
-  // ── Pointer helpers ─────────────────────────────────────────────────────────
+  useImperativeHandle(ref, () => ({
+    openInstructions: () => setShowHelp(true),
+    focusBoard: () => (boardRef.current?.querySelector<HTMLElement>('[data-active="true"]') ?? boardRef.current)?.focus(),
+    openWordList: () => setWordListOpen(true),
+    closeWordList: () => setWordListOpen(false),
+    requestHint: () => { void requestHint(); },
+  }), [requestHint]);
 
-  function cellFromPoint(x: number, y: number, allowNearest = false): CellCoord | null {
-    const el = document.elementFromPoint(x, y) as HTMLElement | null;
-    if (el) {
-      const r = Number(el.dataset.wsRow);
-      const c = Number(el.dataset.wsCol);
-      if (!isNaN(r) && !isNaN(c)) {
-        return { row: r, col: c };
-      }
-    }
-
-    const gridEl = gridRef.current;
-    if (!gridEl || grid.length === 0) return null;
-
-    const gridRect = gridEl.getBoundingClientRect();
-    const hitSlop = 18;
-    if (
-      x < gridRect.left - hitSlop ||
-      x > gridRect.right + hitSlop ||
-      y < gridRect.top - hitSlop ||
-      y > gridRect.bottom + hitSlop
-    ) {
-      return null;
-    }
-
-    const firstCell = gridEl.querySelector('[data-ws-row="0"][data-ws-col="0"]') as HTMLElement | null;
-    if (!firstCell) return null;
-
-    const firstRect = firstCell.getBoundingClientRect();
-    const stepX = firstRect.width + 3;
-    const stepY = firstRect.height + 3;
-    const rawRow = Math.round((y - firstRect.top) / stepY);
-    const rawCol = Math.round((x - firstRect.left) / stepX);
-
-    if (!allowNearest) {
-      if (rawRow < 0 || rawRow >= grid.length) return null;
-      const rowLen = grid[rawRow]?.length ?? 0;
-      if (rawCol < 0 || rawCol >= rowLen) return null;
-    }
-
-    const clampedRow = Math.max(0, Math.min(grid.length - 1, rawRow));
-    const rowLen = grid[clampedRow]?.length ?? gridSize;
-    const clampedCol = Math.max(0, Math.min(Math.max(0, rowLen - 1), rawCol));
-    return { row: clampedRow, col: clampedCol };
-  }
-
-  function queuePointerMove(x: number, y: number) {
-    queuedPointRef.current = { x, y };
-    if (moveRafRef.current !== null) return;
-    moveRafRef.current = requestAnimationFrame(() => {
-      moveRafRef.current = null;
-      const point = queuedPointRef.current;
-      queuedPointRef.current = null;
-      if (!point) return;
-      const cell = cellFromPoint(point.x, point.y, true);
-      if (cell) extendDrag(cell.row, cell.col);
+  const cellFromPoint = useCallback((x: number, y: number, nearest = false): WordSearchCell | null => {
+    const geometry = geometryRef.current;
+    if (!geometry) return null;
+    let best: { cell: WordSearchCell; distance: number } | null = null;
+    geometry.cells.forEach((rect, key) => {
+      const [row, col] = key.split(",").map(Number);
+      const dx = Math.max(rect.left - x, 0, x - rect.right);
+      const dy = Math.max(rect.top - y, 0, y - rect.bottom);
+      const distance = Math.hypot(dx, dy);
+      if (!best || distance < best.distance) best = { cell: { row, col }, distance };
     });
-  }
+    const hit = best as { cell: WordSearchCell; distance: number } | null;
+    return hit && hit.distance <= (nearest ? 24 : 12) ? hit.cell : null;
+  }, []);
 
-  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    const cell = cellFromPoint(e.clientX, e.clientY);
-    if (!cell) return;
-    startDrag(cell.row, cell.col);
-    pointerIdRef.current = e.pointerId;
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {}
-    e.preventDefault();
-  }
+  const extendDrag = useCallback((cell: WordSearchCell) => {
+    const start = dragStartRef.current;
+    if (!start || !draggingRef.current) return;
+    const dr = cell.row - start.row, dc = cell.col - start.col;
+    directionRef.current = Math.max(Math.abs(dr), Math.abs(dc)) >= 2 ? snapWordSearchDirection(dr, dc) : null;
+    const direction = directionRef.current;
+    if (!direction) { setSelection(wordSearchCellsInLine(start, cell)); return; }
+    const maxRowSteps = direction.dr > 0 ? size - 1 - start.row : direction.dr < 0 ? start.row : Number.POSITIVE_INFINITY;
+    const columns = grid[0]?.length ?? size;
+    const maxColSteps = direction.dc > 0 ? columns - 1 - start.col : direction.dc < 0 ? start.col : Number.POSITIVE_INFINITY;
+    const rawSteps = direction.dr !== 0 ? Math.round(dr / direction.dr) : Math.round(dc / direction.dc);
+    const steps = Math.max(0, Math.min(maxRowSteps, maxColSteps, rawSteps));
+    const target = { row: start.row + direction.dr * steps, col: start.col + direction.dc * steps };
+    setSelection(wordSearchCellsInLine(start, target));
+  }, [grid, setSelection, size]);
 
-  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
-    if (!isDraggingRef.current) return;
-    e.preventDefault();
-    queuePointerMove(e.clientX, e.clientY);
-  }
+  const cancelSelection = useCallback(() => {
+    draggingRef.current = false; dragStartRef.current = null; tapStartRef.current = null; directionRef.current = null; pointerRef.current = null; setSelection([]); keyboardSelectingRef.current = false;
+  }, [setSelection]);
 
-  async function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
-    if (moveRafRef.current !== null) {
-      cancelAnimationFrame(moveRafRef.current);
-      moveRafRef.current = null;
+  const lineToTappedCell = useCallback((tapStart: WordSearchCell, tapped: WordSearchCell) => {
+    const dr = tapped.row - tapStart.row, dc = tapped.col - tapStart.col;
+    const direction = snapWordSearchDirection(dr, dc);
+    const columns = grid[0]?.length ?? size;
+    const maxRowSteps = direction?.dr ? (direction.dr > 0 ? size - 1 - tapStart.row : tapStart.row) : Number.POSITIVE_INFINITY;
+    const maxColSteps = direction?.dc ? (direction.dc > 0 ? columns - 1 - tapStart.col : tapStart.col) : Number.POSITIVE_INFINITY;
+    const steps = Math.max(0, Math.min(maxRowSteps, maxColSteps, Math.max(Math.abs(dr), Math.abs(dc))));
+    const tapEnd = direction ? { row: tapStart.row + direction.dr * steps, col: tapStart.col + direction.dc * steps } : tapped;
+    return wordSearchCellsInLine(tapStart, tapEnd);
+  }, [grid, size]);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (pointerRef.current !== null && pointerRef.current !== event.pointerId) { cancelSelection(); return; }
+    const cell = cellFromPoint(event.clientX, event.clientY);
+    if (!cell || status !== "playing" || submitting) return;
+    pointerRef.current = event.pointerId; dragStartRef.current = tapStartRef.current ?? cell; draggingRef.current = true; directionRef.current = null; activeCellRef.current = cell; setActiveCell(cell); setSelection(tapStartRef.current ? lineToTappedCell(tapStartRef.current, cell) : [cell]);
+    event.currentTarget.setPointerCapture?.(event.pointerId); event.preventDefault();
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerRef.current !== event.pointerId || !draggingRef.current) return;
+    event.preventDefault(); queuedPointRef.current = { x: event.clientX, y: event.clientY };
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => { rafRef.current = null; const point = queuedPointRef.current; if (point) { const cell = cellFromPoint(point.x, point.y, true); if (cell) extendDrag(cell); } });
+  };
+  const onPointerUp = async (event: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerRef.current !== event.pointerId) return;
+    if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    const cell = cellFromPoint(event.clientX, event.clientY, true); if (cell) extendDrag(cell);
+    const cells = selectionRef.current; draggingRef.current = false; pointerRef.current = null; dragStartRef.current = null; directionRef.current = null; setSelection([]);
+    if (cells.length === 1) {
+      const tapped = cells[0];
+      if (!tapStartRef.current) { tapStartRef.current = tapped; setSelection([tapped]); return; }
+      if (sameCell(tapStartRef.current, tapped)) { tapStartRef.current = null; return; }
+      const tapCells = lineToTappedCell(tapStartRef.current, tapped);
+      tapStartRef.current = null;
+      await submitSelection(tapCells);
+      return;
     }
-    const cell = cellFromPoint(e.clientX, e.clientY, true);
-    if (cell) extendDrag(cell.row, cell.col);
-    pointerIdRef.current = null;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-    await endDrag();
-  }
+    tapStartRef.current = null;
+    await submitSelection(cells);
+  };
 
-  function handlePointerCancel(e: React.PointerEvent<HTMLDivElement>) {
-    if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
-    pointerIdRef.current = null;
-    isDraggingRef.current = false;
-    dragStartRef.current = null;
-    directionLockRef.current = null;
-    setSelection([]);
-  }
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") return;
+    if (event.key.toLowerCase() === "w" && !keyboardSelectingRef.current) { event.preventDefault(); setWordListOpen(true); return; }
+    if (event.key.toLowerCase() === "h" && !keyboardSelectingRef.current) { event.preventDefault(); setShowHelp(true); return; }
+    if (event.key === "Escape") { event.preventDefault(); cancelSelection(); return; }
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      if (!keyboardSelectingRef.current) { keyboardSelectingRef.current = true; dragStartRef.current = activeCellRef.current; setSelection([activeCellRef.current]); }
+      else { const cells = selectionRef.current; keyboardSelectingRef.current = false; dragStartRef.current = null; setSelection([]); void submitSelection(cells); }
+      return;
+    }
+    const movement: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    const delta = movement[event.key]; if (!delta) return;
+    event.preventDefault();
+    const current = activeCellRef.current;
+    const next = { row: Math.max(0, Math.min(size - 1, current.row + delta[0])), col: Math.max(0, Math.min((grid[0]?.length ?? size) - 1, current.col + delta[1])) };
+    activeCellRef.current = next;
+    setActiveCell(next); if (keyboardSelectingRef.current) setSelection(wordSearchCellsInLine(dragStartRef.current ?? current, next));
+  };
 
-  // Responsive cell size: allow tighter cells for larger grids on small screens.
-  // Subtracts: grid inner padding (10px*2=20px) + outer container padding (~16px) + cell gaps.
-  const minCellPx = gridSize >= 18 ? 10 : gridSize >= 15 ? 12 : 14;
-  const viewportCap = gridSize >= 18 ? "98vw" : "96vw";
-  const cellSz = `clamp(${minCellPx}px, calc((min(${viewportCap}, 480px) - 36px - ${(gridSize - 1) * 3}px) / ${gridSize}), 40px)`;
-  const longestWordLen = words.reduce((max, w) => Math.max(max, w.length), 0);
-  const compactWordGrid = isUltraNarrow && words.length >= 10 && longestWordLen <= 14;
+  const cellColors = useMemo(() => {
+    const map = new Map<string, number>();
+    foundWords.forEach((word) => (placements.get(word) ?? []).forEach((cell) => map.set(keyOf(cell), words.indexOf(word) % WORD_COLORS.length)));
+    return map;
+  }, [foundWords, placements, words]);
+
+  const canZoom = size > 18;
+  const selectedBackground = (() => {
+    const key = skin._key;
+    if (key === "lava" || key === "skin_lava") return <LavaBackground />;
+    if (key === "galaxy" || key === "skin_galaxy") return <GalaxyBackground />;
+    if (["ice", "skin_ice", "christmas", "skin_christmas"].includes(key ?? "")) return <IceBackground />;
+    if (key === "neon" || key === "skin_neon") return <NeonBackground />;
+    if (key === "retro" || key === "skin_retro") return <RetroBackground />;
+    return null;
+  })();
 
   return (
-    <>
-      {showIntro && <WordTroveIntroModal onClose={dismissIntro} />}
-      {showHelp && <HowToPlayModal onClose={() => setShowHelp(false)} onShowIntro={() => setShowIntro(true)} />}
-      {definitionModal && (
-        <WordDefinitionModal
-          word={definitionModal.word}
-          color={WORD_COLORS[definitionModal.colorIdx]}
-          status={definitionModal.status}
-          data={definitionModal.data}
-          onDismiss={() => setDefinitionModal(null)}
-        />
-      )}
-      <div
-        data-skin={skin._key ?? "default"}
-        style={{
-          position: "relative",
-          borderRadius: "1rem",
-          overflow: "hidden",
-          width: "100%",
-          maxWidth: "100vw",
-        }}
-      >
-        {/* Animated skin backgrounds */}
-        {(skin._key === "lava" || skin._key === "skin_lava") && <LavaBackground />}
-        {(skin._key === "galaxy" || skin._key === "skin_galaxy") && <GalaxyBackground />}
-        {(skin._key === "ice" || skin._key === "skin_ice" || skin._key === "christmas" || skin._key === "skin_christmas") && <IceBackground />}
-        {(skin._key === "neon" || skin._key === "skin_neon") && <NeonBackground />}
-        {(skin._key === "retro" || skin._key === "skin_retro") && <RetroBackground />}
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            background: skin.backdropScrim,
-            zIndex: 0,
-          }}
-        />
+    <div className="word-search-root" data-testid="word-search-root" data-display-mode={displayMode} data-status={status} data-grid-size={size} data-skin={skin._key ?? "default"}>
+      {pageVisible && selectedBackground}
+      <div className="word-search-scrim" aria-hidden style={{ background: skin.backdropScrim }} />
+      {showIntro && <Dialog title="More than a word search" onClose={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}><p>Every word you find opens its real definition, turning each puzzle into a quick vocabulary discovery.</p><p>Definitions include pronunciation, part of speech, examples, and audio when available.</p><button type="button" onClick={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}>Start searching</button></Dialog>}
+      {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag across letters, or use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
+      {definition && <WordDefinitionModal word={definition.word} color={WORD_COLORS[definition.colorIdx]} status={definition.status} data={definition.data} onDismiss={() => { setDefinition(null); requestAnimationFrame(showNextDefinition); }} />}
+      <WordSearchWordList open={wordListOpen} words={words} foundWords={foundSet} onClose={() => setWordListOpen(false)} onOpenDefinition={openDefinition} />
 
-      <div
-        className="flex flex-col items-center gap-4 select-none pb-6"
-          style={{ position: "relative", zIndex: 1, overflowX: "hidden", fontFamily: skin.tileFontFamily !== "inherit" ? skin.tileFontFamily : "'Clear Sans', 'Helvetica Neue', Arial, sans-serif" }}
-      >
-        {/* Header */}
-        <div className="text-center w-full px-4">
-          <h2
-            className="text-2xl sm:text-3xl font-black tracking-[0.2em] mb-1"
-            style={{
-              backgroundImage: "linear-gradient(135deg, #818cf8, #c084fc, #f472b6)",
-              backgroundClip: "text",
-              WebkitBackgroundClip: "text",
-              color: "transparent",
-              WebkitTextFillColor: "transparent",
-              filter: "drop-shadow(0 0 12px rgba(129,140,248,0.4))",
-            }}
-          >
-            WORD TROVE
-          </h2>
-          <p className="text-xs font-medium" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>
-            {foundWords.length} / {words.length} words found
-          </p>
-          {showRestoreNotice && (
-            <div
-              className="mt-2 inline-flex items-center rounded-md px-3 py-1 text-[11px] font-semibold"
-              style={{
-                background: "rgba(34,197,94,0.14)",
-                border: "1px solid rgba(34,197,94,0.45)",
-                color: "#86efac",
-                textShadow: "none",
-              }}
+      <div className="word-search-game-surface">
+        {displayMode === "standalone" && <header className="word-search-standalone-header"><div><h2>WORD TROVE</h2><p>{foundWords.length} / {words.length} found</p></div><button type="button" onClick={() => setShowHelp(true)}>Help</button></header>}
+        {status === "won" && <div className="word-search-success" role="status">🎉 All {words.length} words found!</div>}
+        {status === "completing" && <div className="word-search-message" role="status">Saving completion…</div>}
+        {error && <div className="word-search-error" role="alert">{error}{status === "error" && dailyMode && <button type="button" onClick={() => void finishDailyCompletion()}>Retry Completion</button>}</div>}
+
+        <div className="word-search-play-layout">
+          <div ref={viewportRef} className="word-search-board-viewport" data-zoomed={zoom > 1 || undefined}>
+            <motion.div
+              ref={boardRef}
+              role="grid"
+              aria-label={`Word Trove letter grid, ${size} rows by ${grid[0]?.length ?? 0} columns`}
+              aria-rowcount={size}
+              aria-colcount={grid[0]?.length ?? 0}
+              tabIndex={-1}
+              className="word-search-board"
+              style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+              animate={gridShake}
+              onKeyDown={onKeyDown}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={cancelSelection}
             >
-              Progress restored from your last session
-            </div>
-          )}
-        </div>
-
-        {gameStatus === "won" && (
-          <div
-            className="px-6 py-3 rounded-xl font-bold text-lg text-center"
-            style={{
-              background: "rgba(34,197,94,0.12)",
-              border: "1px solid rgba(34,197,94,0.5)",
-              color: "#4ade80",
-            }}
-          >
-            🎉 All {words.length} words found!
+              {trail.length > 1 && <svg className="word-search-trail" aria-hidden><polyline points={trail.map(({ x, y }) => `${x},${y}`).join(" ")} /></svg>}
+              {grid.map((row, rowIndex) => (
+                <div role="row" className="word-search-row" key={rowIndex}>
+                  {row.map((letter, colIndex) => {
+                    const cell = { row: rowIndex, col: colIndex };
+                    const key = keyOf(cell); const colorIndex = cellColors.get(key); const found = colorIndex !== undefined; const selected = selectedSet.has(key); const active = sameCell(activeCell, cell); const hinted = [...hintedWords].some((word) => placements.get(word)?.some((item) => sameCell(item, cell)));
+                    return <motion.div
+                      role="gridcell"
+                      key={key}
+                      data-ws-row={rowIndex}
+                      data-ws-col={colIndex}
+                      data-found={found || undefined}
+                      data-hinted={hinted || undefined}
+                      data-selected={selected || undefined}
+                      data-active={active || undefined}
+                      tabIndex={active ? 0 : -1}
+                      aria-selected={selected}
+                      aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}, letter ${letter}${found ? ", found word" : ""}`}
+                      className="word-search-cell"
+                      onFocus={() => { activeCellRef.current = cell; setActiveCell(cell); }}
+                      animate={reduceMotion ? undefined : { scale: poppingCells.has(key) ? [1, 1.25, 1] : selected ? 1.08 : 1 }}
+                      style={found ? { "--word-color-bg": WORD_COLORS[colorIndex].bg, "--word-color-border": WORD_COLORS[colorIndex].border, "--word-color-text": WORD_COLORS[colorIndex].text } as React.CSSProperties : undefined}
+                    >{letter}</motion.div>;
+                  })}
+                </div>
+              ))}
+            </motion.div>
           </div>
-        )}
 
-        {/* Grid + word list */}
-        <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 items-start w-full max-w-2xl px-1 sm:px-2">
-          {/* Letter grid */}
-          <motion.div
-            ref={gridRef}
-            animate={gridShakeControls}
-            className="flex-shrink-0 mx-auto sm:mx-0"
-            style={{
-              position: "relative",
-              display: "flex",
-              flexDirection: "column",
-              gap: 3,
-              touchAction: "none",
-              background: "rgba(0,0,0,0.55)",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-              borderRadius: "0.75rem",
-              padding: "10px",
-              width: "fit-content",
-              maxWidth: "100%",
-            }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
-          >
-            {/* Connecting trail line — a smooth stroke through the letters you're
-                currently dragging across, redrawn every time the selection changes. */}
-            {trailPoints.length > 1 && (
-              <svg
-                className="pointer-events-none"
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", zIndex: 1 }}
-              >
-                <motion.polyline
-                  points={trailPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-                  fill="none"
-                  stroke={skin.boardBorder}
-                  strokeWidth={5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ filter: `drop-shadow(0 0 6px ${skin.boardBorder})` }}
-                  initial={false}
-                  animate={{ opacity: 0.85 }}
-                />
-              </svg>
-            )}
-
-            {grid.map((row, ri) => (
-              <div key={ri} style={{ display: "flex", gap: 3 }}>
-                {row.map((letter, ci) => {
-                  const key = serializeCoord({ row: ri, col: ci });
-                  const colorIdx = cellColorMap.get(key);
-                  const isSelected = selectedSet.has(key);
-                  const isFound = colorIdx !== undefined;
-                  const isPopping = poppingCells.has(key);
-                  const color = isFound ? WORD_COLORS[colorIdx] : null;
-
-                  return (
-                    <motion.div
-                      key={ci}
-                      data-ws-row={ri}
-                      data-ws-col={ci}
-                      className="flex items-center justify-center font-black rounded"
-                      animate={{
-                        scale: isPopping ? [1, 1.35, 1] : isSelected ? 1.14 : 1,
-                        y: isSelected ? -3 : 0,
-                      }}
-                      transition={
-                        isPopping
-                          ? { duration: 0.45, ease: "easeOut", times: [0, 0.4, 1] }
-                          : { type: "spring", stiffness: 500, damping: 22 }
-                      }
-                      style={{
-                        position: "relative",
-                        zIndex: 2,
-                        width: cellSz,
-                        height: cellSz,
-                        fontSize: `clamp(0.45rem, 2.4vw, 0.875rem)`,
-                        cursor: gameStatus === "playing" ? "crosshair" : "default",
-                        background: isSelected
-                          ? skin.accentActive
-                          : isFound
-                          ? color!.bg
-                          : skin.tileBg,
-                        border: isSelected
-                          ? `2px solid ${skin.boardBorder}`
-                          : isFound
-                          ? `2px solid ${color!.border}`
-                          : `2px solid ${skin.tileBorder}`,
-                        color: isSelected
-                          ? "#ffffff"
-                          : isFound
-                          ? color!.text
-                          : skin.tileText,
-                        boxShadow: isSelected
-                          ? `0 4px 14px -2px ${skin.boardBorder}, 0 0 0 3px ${skin.boardBorder}40`
-                          : isFound
-                          ? `0 0 6px ${color!.border}40`
-                          : "none",
-                        userSelect: "none",
-                        WebkitUserSelect: "none",
-                      }}
-                    >
-                      {letter}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            ))}
-          </motion.div>
-
-          {/* Word list */}
-          <div className="w-full sm:w-auto flex-1 flex flex-col gap-1.5 sm:gap-2 sm:min-w-[100px]">
-            <p
-              className="w-full text-[11px] sm:text-xs font-semibold tracking-[0.12em] mb-1"
-              style={{ color: "#cbd5e1", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}
-            >
-              FIND THESE WORDS
-            </p>
-            <div
-              className={compactWordGrid ? "w-full grid grid-cols-2 gap-1.5 sm:grid-cols-1 sm:gap-2" : "w-full flex flex-wrap sm:flex-col gap-1.5 sm:gap-2"}
-            >
-              {words.map((word, wi) => {
-                const found = foundWords.includes(word);
-                const colorIdx = wi % WORD_COLORS.length;
-                const color = found ? WORD_COLORS[colorIdx] : null;
-                const isFlashing = flashWord === word;
-
-                return (
-                  <motion.div
-                    key={word}
-                    className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-sm font-semibold leading-tight"
-                    animate={{ scale: isFlashing ? [1, 1.22, 1.06] : 1 }}
-                    transition={
-                      isFlashing
-                        ? { duration: 0.4, ease: "easeOut", times: [0, 0.4, 1] }
-                        : { type: "spring", stiffness: 420, damping: 14 }
-                    }
-                    style={{
-                      width: compactWordGrid ? "100%" : undefined,
-                      textAlign: compactWordGrid ? "center" : "left",
-                      background: found ? color!.bg : skin.tileBg,
-                      border: `1px solid ${found ? color!.border : "rgba(148,163,184,0.4)"}`,
-                      color: found ? color!.text : "#cbd5e1",
-                      textDecoration: found ? "line-through" : "none",
-                      boxShadow: isFlashing ? `0 0 14px ${color!.border}` : "none",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {word}
-                  </motion.div>
-                );
-              })}
-            </div>
-            {gameStatus === "playing" && (
-              <>
-                <button
-                  onClick={useWordSearchHint}
-                  disabled={hintTokens < 1}
-                  className="w-full px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    background: hintTokens < 1 ? "rgba(255,107,107,0.1)" : "rgba(56,145,166,0.15)",
-                    border: `1px solid ${hintTokens < 1 ? "rgba(255,107,107,0.5)" : "rgba(56,145,166,0.4)"}`,
-                    color: hintTokens < 1 ? "#FF6B6B" : "#3891A6",
-                  }}
-                  title={hintTokens < 1 ? "No hint tokens — purchase from the Store" : `Use 1 hint token (${hintTokens} remaining)`}
-                >
-                  💡 {hintTokens < 1 ? "No Hint Tokens" : `Hint (${hintTokens} hint token${hintTokens !== 1 ? "s" : ""})`}{wsHintCount > 0 ? ` · used ${wsHintCount}` : ""}
-                </button>
-                {hintTokens < 1 && (
-                  <a
-                    href="/store"
-                    className="block text-center text-xs font-semibold underline transition-opacity hover:opacity-80"
-                    style={{ color: "#FDE74C" }}
-                  >
-                    Buy tokens →
-                  </a>
-                )}
-</>
-            )}
-            <button
-              onClick={() => setShowHelp(true)}
-              className="w-full px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
-              style={{ background: "rgba(253,231,76,0.08)", border: "1px solid rgba(253,231,76,0.3)", color: "#FDE74C" }}
-            >
-              ? How to play
-            </button>
-          </div>
+          <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={() => setWordListOpen(true)} />
+          <WordSearchControls hintTokens={hintTokens} hintPending={hintPending} disabled={status !== "playing"} canZoom={canZoom} zoomed={zoom > 1} onHint={() => void requestHint()} onZoomIn={() => setZoom((value) => Math.min(2, value + .25))} onZoomOut={() => setZoom((value) => Math.max(1, value - .25))} onResetZoom={() => setZoom(1)} />
+          <WordSearchDesktopWordList words={words} foundWords={foundSet} onOpenDefinition={openDefinition} />
         </div>
+        {flashWord && <span className="word-search-live" aria-live="polite">Found {flashWord}</span>}
       </div>
-      </div>
-    </>
+    </div>
   );
-}
+});
+
+export default WordSearchPuzzle;

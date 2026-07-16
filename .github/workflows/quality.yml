@@ -53,6 +53,9 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Lint Word Trove changes
+        run: npm run lint:word-search
+
       - name: Run crossword browser tests
         run: npm run test:crossword
 
@@ -61,3 +64,6 @@ jobs:
 
       - name: Run Sudoku browser tests
         run: npm run test:sudoku
+
+      - name: Run Word Trove browser tests
+        run: npm run test:word-search

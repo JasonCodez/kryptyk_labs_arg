@@ -32,6 +32,10 @@ import type {
   AnagramBlitzHandle,
   AnagramPresentationState,
 } from "@/components/puzzle/AnagramBlitz";
+import type {
+  WordSearchPresentationState,
+  WordSearchPuzzleHandle,
+} from "@/components/puzzle/WordSearchPuzzle";
 import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
@@ -224,9 +228,11 @@ export default function PuzzleDetailPage() {
   const crosswordRef = useRef<CrosswordPuzzleHandle | null>(null);
   const anagramRef = useRef<AnagramBlitzHandle | null>(null);
   const sudokuRef = useRef<SudokuPuzzleHandle | null>(null);
+  const wordSearchRef = useRef<WordSearchPuzzleHandle | null>(null);
   const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
   const [anagramPresentation, setAnagramPresentation] = useState<AnagramPresentationState | null>(null);
   const [sudokuPresentation, setSudokuPresentation] = useState<SudokuPresentationState | null>(null);
+  const [wordSearchPresentation, setWordSearchPresentation] = useState<WordSearchPresentationState | null>(null);
   const [sudokuCelebrationPending, setSudokuCelebrationPending] = useState(false);
   const [showHeaderBugReport, setShowHeaderBugReport] = useState(false);
   const { data: session, status } = useSession();
@@ -755,6 +761,32 @@ export default function PuzzleDetailPage() {
     }
   };
 
+  // Word Trove's final validated word already commits progress, points, and XP in
+  // /word_search. This hand-off only refreshes that authoritative result and opens
+  // the existing completion UI; it must never issue a generic attempt_success.
+  const handleWordSearchComplete = async () => {
+    if (puzzleTypeCompletionInFlightRef.current || progress?.solved) return;
+    puzzleTypeCompletionInFlightRef.current = true;
+    setError("");
+    const previousPoints = progress?.pointsEarned ?? 0;
+    try {
+      const response = await fetch(`/api/puzzles/${puzzleId}/progress`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Completion was recorded, but progress could not be refreshed.");
+      const updated = await response.json();
+      if (!updated?.solved) throw new Error("Completion is still being confirmed. Please try again.");
+      if (!pageMountedRef.current) return;
+      setProgress(updated);
+      setJustAwardedPoints(Math.max(0, (updated.pointsEarned ?? previousPoints) - previousPoints));
+      setCompletionSeconds(sessionStartRef.current ? Math.round((Date.now() - sessionStartRef.current.getTime()) / 1000) : null);
+      setSuccess(true);
+      handlePuzzleSolved();
+    } catch (cause) {
+      if (pageMountedRef.current) setError(cause instanceof Error ? cause.message : "Completion could not be refreshed.");
+    } finally {
+      puzzleTypeCompletionInFlightRef.current = false;
+    }
+  };
+
   const handleSkipPuzzle = async () => {
     if (isSkipping || progress?.solved) return;
     if (effectiveSkipTokens < 1) return;
@@ -1099,7 +1131,11 @@ export default function PuzzleDetailPage() {
             ? <span aria-label={`Remaining time ${formatSudokuHeaderTime(sudokuPresentation?.timeMs ?? (puzzle.sudoku?.timeLimitSeconds ?? 900) * 1000)}`}>
                 {formatSudokuHeaderTime(sudokuPresentation?.timeMs ?? (puzzle.sudoku?.timeLimitSeconds ?? 900) * 1000)}
               </span>
-            : undefined}
+            : puzzle.puzzleType === "word_search"
+              ? <span aria-label={`${wordSearchPresentation?.foundCount ?? 0} of ${wordSearchPresentation?.totalWords ?? 0} words found`}>
+                  {wordSearchPresentation?.foundCount ?? 0}/{wordSearchPresentation?.totalWords ?? 0} found
+                </span>
+              : undefined}
       actions={puzzle.puzzleType === "crossword"
         ? <PuzzleHeaderCrosswordActions
             onClues={() => crosswordRef.current?.openClueSheet()}
@@ -1132,15 +1168,26 @@ export default function PuzzleDetailPage() {
                   <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
                 ]}
               />
+            : puzzle.puzzleType === "word_search"
+              ? <PuzzleHeaderActions
+                  onHelp={() => wordSearchRef.current?.openInstructions()}
+                  helpLabel="How to play Word Trove"
+                  overflow={[
+                    skipControl,
+                    <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
+                  ]}
+                />
           : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
-      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" ? "fixed" : "scroll"}
+      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" || puzzle.puzzleType === "word_search" ? "fixed" : "scroll"}
       contentClassName={puzzle.puzzleType === "crossword"
         ? "pw-crossword-shell-content"
         : puzzle.puzzleType === "anagram_blitz"
           ? "pw-anagram-shell-content"
           : puzzle.puzzleType === "sudoku"
             ? "pw-sudoku-shell-content"
-            : undefined}
+            : puzzle.puzzleType === "word_search"
+              ? "pw-word-search-shell-content"
+              : undefined}
     >
     <div
       style={{
@@ -1503,6 +1550,9 @@ export default function PuzzleDetailPage() {
               onCrosswordPresentationChange={setCrosswordPresentation}
               anagramRef={anagramRef}
               onAnagramPresentationChange={setAnagramPresentation}
+              wordSearchRef={wordSearchRef}
+              onWordSearchPresentationChange={setWordSearchPresentation}
+              onWordSearchSolved={handleWordSearchComplete}
               skipControl={skipControl}
             />
 
@@ -1596,7 +1646,7 @@ export default function PuzzleDetailPage() {
             )}
 
             {/* Hints / Progress Section Wrapper */}
-            <div className="puzzle-detail-progress-section">
+            {puzzle.puzzleType !== "word_search" && <div className="puzzle-detail-progress-section">
             <PuzzleProgressSection
               progress={progress}
               puzzleTitle={puzzle?.title}
@@ -1608,14 +1658,14 @@ export default function PuzzleDetailPage() {
               teamIdParam={teamIdParam}
               puzzleType={puzzle?.puzzleType}
             />
-            </div>
+            </div>}
             </div>{/* end card body */}
           </div>{/* end card outer */}
         </div>
       </div>
     </div>
       </PuzzlePlayShell>
-      {showHeaderBugReport && (puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku") && (
+      {showHeaderBugReport && (puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" || puzzle.puzzleType === "word_search") && (
         <BugReportModal
           puzzleId={puzzleId}
           puzzleTitle={puzzle.title ?? "This puzzle"}

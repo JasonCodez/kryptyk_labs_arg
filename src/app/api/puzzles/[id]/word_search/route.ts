@@ -208,12 +208,14 @@ export async function POST(
           progressUpdate.successfulAttempts = { increment: 1 };
         }
 
-        await prisma.userPuzzleProgress.update({
-          where: { id: progress.id },
+        // Claim completion with a conditional write. Concurrent final-word requests
+        // may both validate, but only one is allowed to own points/XP/reward writes.
+        const updateResult = await prisma.userPuzzleProgress.updateMany({
+          where: { id: progress.id, solved: false },
           data: progressUpdate,
         });
 
-        if (allFound) {
+        if (allFound && updateResult.count === 1) {
           const awardPoints = puzzle.solutions?.[0]?.points ?? 100;
 
           await prisma.userPuzzleProgress.update({

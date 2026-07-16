@@ -2,6 +2,7 @@
 @import "../styles/crossword.css";
 @import "../styles/anagram.css";
 @import "../styles/sudoku.css";
+@import "../styles/word-search.css";
 
 /* AppBottomNav — the primary mobile nav bar. Visible below the "nav:" breakpoint
    (1032px), the same width Navbar switches from its mobile layout to the full

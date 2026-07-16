@@ -11,7 +11,10 @@ import ParasiteCodePuzzle from "@/components/puzzle/ParasiteCodePuzzle";
 import GridlockFilePuzzle from "@/components/puzzle/GridlockFilePuzzle";
 import CrackTheSafePuzzle from "@/components/puzzle/CrackTheSafePuzzle";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
-import WordSearchPuzzle from "@/components/puzzle/WordSearchPuzzle";
+import WordSearchPuzzle, {
+  type WordSearchPresentationState,
+  type WordSearchPuzzleHandle,
+} from "@/components/puzzle/WordSearchPuzzle";
 import CrosswordPuzzle, {
   type CrosswordPresentationState,
   type CrosswordPuzzleHandle,
@@ -83,6 +86,9 @@ interface PuzzleTypeRendererProps {
   onCrosswordPresentationChange?: (state: CrosswordPresentationState) => void;
   anagramRef?: RefObject<AnagramBlitzHandle | null>;
   onAnagramPresentationChange?: (state: AnagramPresentationState) => void;
+  wordSearchRef?: RefObject<WordSearchPuzzleHandle | null>;
+  onWordSearchPresentationChange?: (state: WordSearchPresentationState) => void;
+  onWordSearchSolved: () => void | Promise<void>;
   // Skip-token button — normally rendered below the puzzle by PuzzleProgressSection, which gets
   // hidden behind the fullscreen overlay. Passed through to PuzzleFullscreenFrame so it stays
   // reachable while a puzzle is fullscreen.
@@ -113,6 +119,9 @@ export function PuzzleTypeRenderer({
   onCrosswordPresentationChange,
   anagramRef,
   onAnagramPresentationChange,
+  wordSearchRef,
+  onWordSearchPresentationChange,
+  onWordSearchSolved,
   skipControl,
 }: PuzzleTypeRendererProps) {
   // Detect the jigsaw image's natural aspect ratio so the play board matches it —
@@ -378,23 +387,18 @@ export function PuzzleTypeRenderer({
 
   if (puzzle.puzzleType === 'word_search') {
     return (
-      <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
-          {progress?.solved && (
-            <div className="mb-6 p-4 rounded-lg border text-white"
-                 style={{ backgroundColor: "rgba(56, 211, 153, 0.1)", borderColor: "#38D399" }}>
-              🔍 You already found all the words!
-            </div>
-          )}
-          <WordSearchPuzzle
-            puzzleId={puzzleId}
-            wordSearchData={(puzzle.data ?? {}) as Record<string, unknown>}
-            alreadySolved={progress?.solved ?? false}
-            hintTokens={effectiveHintTokens}
-            onHintUsed={onHintUsed}
-            onSolved={() => onSolved()}
-          />
-        </PuzzleFullscreenFrame>
+      <div className="word-search-renderer-shell">
+        <WordSearchPuzzle
+          ref={wordSearchRef}
+          puzzleId={puzzleId}
+          wordSearchData={(puzzle.data ?? {}) as Record<string, unknown>}
+          alreadySolved={progress?.solved ?? false}
+          hintTokens={effectiveHintTokens}
+          onHintUsed={onHintUsed}
+          displayMode="app-shell"
+          onPresentationChange={onWordSearchPresentationChange}
+          onSolved={onWordSearchSolved}
+        />
       </div>
     );
   }

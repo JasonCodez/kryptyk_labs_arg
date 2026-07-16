@@ -2,6 +2,9 @@ import {
   findWordInGrid,
   generateWordSearchGrid,
   normalizeWordList,
+  normalizePlayableWordSearch,
+  snapWordSearchDirection,
+  wordSearchCellsInLine,
   validateWordSearchPuzzleData,
   validateWordSelection,
 } from "./wordSearchCore";
@@ -93,5 +96,19 @@ describe("wordSearchCore", () => {
     const result = validateWordSearchPuzzleData(data);
     expect(result.valid).toBe(false);
     expect(result.error).toContain("not present in grid");
+  });
+
+  test("play normalization excludes unplaceable words and keeps repeated letters", () => {
+    const normalized = normalizePlayableWordSearch([["B", "O", "O", "K"], ["X", "X", "X", "X"], ["X", "X", "X", "X"], ["X", "X", "X", "X"]], ["BOOK", "MISSING", "book"]);
+    expect(normalized.words).toEqual(["BOOK"]);
+    expect(normalized.placements.get("BOOK")).toHaveLength(4);
+    expect(normalized.signature).toContain("BOOK");
+  });
+
+  test("selection geometry snaps to eight directions and creates contiguous cells", () => {
+    expect(snapWordSearchDirection(4, 3)).toEqual({ dr: 1, dc: 1 });
+    expect(wordSearchCellsInLine({ row: 4, col: 4 }, { row: 1, col: 1 })).toEqual([
+      { row: 4, col: 4 }, { row: 3, col: 3 }, { row: 2, col: 2 }, { row: 1, col: 1 },
+    ]);
   });
 });

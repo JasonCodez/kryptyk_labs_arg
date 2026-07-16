@@ -1,5 +1,12 @@
 export type WordSearchCell = { row: number; col: number };
 
+export type NormalizedWordSearch = {
+  grid: string[][];
+  words: string[];
+  placements: Map<string, WordSearchCell[]>;
+  signature: string;
+};
+
 type Direction = { dr: number; dc: number };
 
 type Placement = {
@@ -347,6 +354,44 @@ export function findWordInGrid(wordInput: unknown, grid: string[][]): WordSearch
   }
 
   return null;
+}
+
+/** Canonical client/server puzzle shape. Only words which can actually be selected
+ * are exposed to play, progress, hints, or completion accounting. */
+export function normalizePlayableWordSearch(gridInput: unknown, wordsInput: unknown): NormalizedWordSearch {
+  const grid = normalizeWordSearchGrid(gridInput);
+  const placements = new Map<string, WordSearchCell[]>();
+  const words = normalizeWordList(wordsInput).filter((word) => {
+    const cells = findWordInGrid(word, grid);
+    if (!cells) return false;
+    placements.set(word, cells);
+    return true;
+  });
+  const signature = `${grid.map((row) => row.join("")).join("/")}|${words.join(",")}`;
+  return { grid, words, placements, signature };
+}
+
+export function wordSearchCellsInLine(from: WordSearchCell, to: WordSearchCell): WordSearchCell[] {
+  const dr = to.row - from.row;
+  const dc = to.col - from.col;
+  if (dr === 0 && dc === 0) return [from];
+  const length = Math.max(Math.abs(dr), Math.abs(dc));
+  if (dr !== 0 && dc !== 0 && Math.abs(dr) !== Math.abs(dc)) return [from];
+  const rowStep = dr === 0 ? 0 : Math.sign(dr);
+  const colStep = dc === 0 ? 0 : Math.sign(dc);
+  return Array.from({ length: length + 1 }, (_, index) => ({
+    row: from.row + rowStep * index,
+    col: from.col + colStep * index,
+  }));
+}
+
+export function snapWordSearchDirection(dr: number, dc: number): Direction | null {
+  if (dr === 0 && dc === 0) return null;
+  const octant = Math.round(Math.atan2(dr, dc) / (Math.PI / 4));
+  return WORD_SEARCH_DIRECTIONS.find((direction) => {
+    const directionOctant = Math.round(Math.atan2(direction.dr, direction.dc) / (Math.PI / 4));
+    return directionOctant === octant || (Math.abs(octant) === 4 && Math.abs(directionOctant) === 4);
+  }) ?? null;
 }
 
 export function cellsAreStraightContiguous(cells: WordSearchCell[]): boolean {
