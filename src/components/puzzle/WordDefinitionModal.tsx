@@ -167,7 +167,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
           <button
             onClick={onDismiss}
             aria-label="Close"
-            className="absolute top-3 right-3 z-10 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors text-lg leading-none"
+            className="absolute top-2 right-2 z-10 min-w-11 min-h-11 flex items-center justify-center rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors text-lg leading-none"
           >
             ✕
           </button>
@@ -209,7 +209,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
                   href={merriamWebsterUrl(word)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block mt-3 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                  className="inline-flex min-h-11 items-center mt-3 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
                   style={{ color: color.text }}
                 >
                   Check Merriam-Webster ↗
@@ -228,7 +228,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
                   <motion.button
                     variants={item}
                     onClick={playPronunciation}
-                    className="flex items-center gap-1.5 mx-auto mb-4 px-3 py-1 rounded-full text-xs font-semibold transition-transform hover:scale-105 active:scale-95"
+                    className="flex min-h-11 items-center gap-1.5 mx-auto mb-4 px-3 py-1 rounded-full text-xs font-semibold transition-transform hover:scale-105 active:scale-95"
                     style={{ background: "rgba(255,255,255,0.08)", color: "#e2e8f0" }}
                   >
                     🔊 Hear it
@@ -268,7 +268,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
                   href={merriamWebsterUrl(word)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block mt-4 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                  className="inline-flex min-h-11 items-center mt-4 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
                   style={{ color: color.text }}
                 >
                   Full definition on Merriam-Webster ↗
@@ -280,7 +280,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
               variants={item}
               onClick={onDismiss}
               disabled={status === "loading"}
-              className="w-full mt-6 py-2.5 rounded-xl text-sm font-bold tracking-wide transition-all hover:brightness-110 active:scale-95 disabled:opacity-40"
+              className="w-full min-h-11 mt-6 py-2.5 rounded-xl text-sm font-bold tracking-wide transition-all hover:brightness-110 active:scale-95 disabled:opacity-40"
               style={{
                 background: `linear-gradient(135deg, ${color.bg}, ${color.border}30)`,
                 border: `1px solid ${color.border}80`,

@@ -3,8 +3,6 @@ import prisma from "@/lib/prisma";
 import { requireAuthenticatedUser } from "@/lib/requireAuthenticatedUser";
 import { validateSameOrigin } from "@/lib/requestSecurity";
 import { calcLevel } from "@/lib/levels";
-import { awardSeasonXp } from "@/lib/seasonXp";
-import { getXpMultiplier } from "@/lib/getXpMultiplier";
 import {
   findWordInGrid,
   normalizeWord,
@@ -44,16 +42,22 @@ export async function GET(
       return NextResponse.json({ error: "Puzzle data is invalid" }, { status: 400 });
     }
 
-    const foundSubmissions = await prisma.puzzleSubmission.findMany({
-      where: {
-        puzzleId,
-        userId: currentUser.id,
-        isCorrect: true,
-        answer: { in: placeableWords },
-      },
-      select: { answer: true },
-      distinct: ["answer"],
-    });
+    const [foundSubmissions, progress] = await Promise.all([
+      prisma.puzzleSubmission.findMany({
+        where: {
+          puzzleId,
+          userId: currentUser.id,
+          isCorrect: true,
+          answer: { in: placeableWords },
+        },
+        select: { answer: true },
+        distinct: ["answer"],
+      }),
+      prisma.userPuzzleProgress.findUnique({
+        where: { userId_puzzleId: { userId: currentUser.id, puzzleId } },
+        select: { solved: true },
+      }),
+    ]);
 
     const foundWords = normalizeWordList(foundSubmissions.map((s) => s.answer));
     const foundCount = foundWords.length;
@@ -62,7 +66,8 @@ export async function GET(
       foundWords,
       foundCount,
       total: placeableWords.length,
-      allFound: foundCount >= placeableWords.length,
+      allFound: foundCount >= placeableWords.length && Boolean(progress?.solved),
+      completionCommitted: Boolean(progress?.solved),
     });
   } catch (err) {
     console.error("[word_search][GET] Error:", err);
@@ -137,131 +142,155 @@ export async function POST(
 
     let foundCount = clientFoundSet.size;
     let allFound = foundCount >= placeableWords.length;
+    let persisted = false;
+    let completionCommitted = false;
 
     // Persist progress. Skipped for warzMode (short synchronous head-to-head round) and
     // dailyMode (the daily-rotation flow owns its own completion/reward bookkeeping via
     // DailyPuzzleRecord, awarded once by /api/daily/word_search/complete) — for both,
     // allFound/foundCount fall back to the client-reported tally above.
-    if (!warzMode && !dailyMode) try {
-      const now = new Date();
-
-      let progress = await prisma.userPuzzleProgress.findUnique({
-        where: { userId_puzzleId: { userId: currentUser.id, puzzleId } },
-      });
-
-      if (!progress) {
-        progress = await prisma.userPuzzleProgress.create({
-          data: { userId: currentUser.id, puzzleId },
-        });
-      }
-
-      const alreadyFound = await prisma.puzzleSubmission.findFirst({
-        where: {
-          puzzleId,
-          userId: currentUser.id,
-          isCorrect: true,
-          answer: cleanWord,
-        },
-        select: { id: true },
-      });
-
-      if (!alreadyFound) {
-        await prisma.puzzleSubmission.create({
-          data: {
-            puzzleId,
-            userId: currentUser.id,
-            answer: cleanWord,
-            isCorrect: true,
-            feedback: "word_search_found",
-          },
-        });
-      }
-
-      const foundSubmissions = await prisma.puzzleSubmission.findMany({
-        where: {
-          puzzleId,
-          userId: currentUser.id,
-          isCorrect: true,
-          answer: { in: placeableWords },
-        },
-        select: { answer: true },
-        distinct: ["answer"],
-      });
-
-      foundCount = foundSubmissions.length;
-      allFound = foundCount >= placeableWords.length;
-
-      if (!progress.solved) {
-        const completionPct = (foundCount / placeableWords.length) * 100;
-        const progressUpdate: Record<string, unknown> = {
-          lastAttemptAt: now,
-          completionPercentage: completionPct,
-        };
-
-        if (!alreadyFound) {
-          progressUpdate.attempts = { increment: 1 };
-        }
-
-        if (allFound) {
-          progressUpdate.solved = true;
-          progressUpdate.solvedAt = now;
-          progressUpdate.successfulAttempts = { increment: 1 };
-        }
-
-        // Claim completion with a conditional write. Concurrent final-word requests
-        // may both validate, but only one is allowed to own points/XP/reward writes.
-        const updateResult = await prisma.userPuzzleProgress.updateMany({
-          where: { id: progress.id, solved: false },
-          data: progressUpdate,
-        });
-
-        if (allFound && updateResult.count === 1) {
-          const awardPoints = puzzle.solutions?.[0]?.points ?? 100;
-
-          await prisma.userPuzzleProgress.update({
-            where: { id: progress.id },
-            data: { pointsEarned: { increment: awardPoints } },
+    if (!warzMode && !dailyMode) {
+      try {
+        const result = await prisma.$transaction(async (tx) => {
+          const now = new Date();
+          const progress = await tx.userPuzzleProgress.upsert({
+            where: { userId_puzzleId: { userId: currentUser.id, puzzleId } },
+            create: { userId: currentUser.id, puzzleId },
+            update: {},
           });
 
-          await prisma.user.update({
-            where: { id: currentUser.id },
-            data: { totalPoints: { increment: awardPoints } },
+          const alreadyFound = await tx.puzzleSubmission.findFirst({
+            where: { puzzleId, userId: currentUser.id, isCorrect: true, answer: cleanWord },
+            select: { id: true },
           });
-
-          const existing = await prisma.globalLeaderboard.findFirst({
-            where: { userId: currentUser.id },
-          });
-          if (existing) {
-            await prisma.globalLeaderboard.update({
-              where: { id: existing.id },
-              data: { totalPoints: { increment: awardPoints } },
-            });
-          } else {
-            await prisma.globalLeaderboard.create({
-              data: { userId: currentUser.id, totalPoints: awardPoints },
+          if (!alreadyFound) {
+            await tx.puzzleSubmission.create({
+              data: {
+                puzzleId,
+                userId: currentUser.id,
+                answer: cleanWord,
+                isCorrect: true,
+                feedback: "word_search_found",
+              },
             });
           }
 
-          const baseXpWs = puzzle.xpReward ?? 50;
-          const xpMultiplierWs = await getXpMultiplier(currentUser.id);
-          const xpGain = baseXpWs * xpMultiplierWs;
-          const freshUser = await prisma.user.findUnique({
-            where: { id: currentUser.id },
-            select: { xp: true },
+          const submissions = await tx.puzzleSubmission.findMany({
+            where: {
+              puzzleId,
+              userId: currentUser.id,
+              isCorrect: true,
+              answer: { in: placeableWords },
+            },
+            select: { answer: true },
+            distinct: ["answer"],
           });
-          const newXp = (freshUser?.xp ?? 0) + xpGain;
-          const { level, title } = calcLevel(newXp);
-          await prisma.user.update({
-            where: { id: currentUser.id },
-            data: { xp: newXp, level, xpTitle: title },
+          const durableFoundCount = normalizeWordList(submissions.map((submission) => submission.answer)).length;
+          const durableAllFound = durableFoundCount >= placeableWords.length;
+
+          if (!progress.solved) {
+            const progressUpdate = {
+              lastAttemptAt: now,
+              completionPercentage: (durableFoundCount / placeableWords.length) * 100,
+              ...(!alreadyFound && { attempts: { increment: 1 } }),
+              ...(durableAllFound && {
+                solved: true,
+                solvedAt: now,
+                successfulAttempts: { increment: 1 },
+              }),
+            };
+            const claimed = await tx.userPuzzleProgress.updateMany({
+              where: { id: progress.id, solved: false },
+              data: progressUpdate,
+            });
+
+            if (durableAllFound && claimed.count === 1) {
+              const awardPoints = puzzle.solutions?.[0]?.points ?? 100;
+              const user = await tx.user.findUnique({
+                where: { id: currentUser.id },
+                select: { xp: true, xpBoostExpiresAt: true },
+              });
+              if (!user) throw new Error("Reward recipient was not found");
+              const xpMultiplier = user.xpBoostExpiresAt && user.xpBoostExpiresAt.getTime() > now.getTime() ? 2 : 1;
+              const xpGain = (puzzle.xpReward ?? 50) * xpMultiplier;
+              const newXp = (user.xp ?? 0) + xpGain;
+              const { level, title } = calcLevel(newXp);
+
+              await tx.userPuzzleProgress.update({
+                where: { id: progress.id },
+                data: { pointsEarned: { increment: awardPoints } },
+              });
+              await tx.user.update({
+                where: { id: currentUser.id },
+                data: {
+                  totalPoints: { increment: awardPoints },
+                  xp: newXp,
+                  level,
+                  xpTitle: title,
+                },
+              });
+
+              const leaderboard = await tx.globalLeaderboard.findFirst({ where: { userId: currentUser.id } });
+              if (leaderboard) {
+                await tx.globalLeaderboard.update({
+                  where: { id: leaderboard.id },
+                  data: { totalPoints: { increment: awardPoints }, puzzlesSolved: { increment: 1 } },
+                });
+              } else {
+                await tx.globalLeaderboard.create({
+                  data: { userId: currentUser.id, totalPoints: awardPoints, puzzlesSolved: 1 },
+                });
+              }
+
+              const seasonPass = await tx.userSeasonPass.findFirst({
+                where: {
+                  userId: currentUser.id,
+                  season: { isActive: true, startDate: { lte: now }, endDate: { gte: now } },
+                },
+                include: { season: { include: { tiers: { orderBy: { tierNumber: "asc" } } } } },
+              });
+              if (seasonPass) {
+                const seasonXp = seasonPass.seasonXp + xpGain;
+                let currentTier = 0;
+                for (const tier of seasonPass.season.tiers) {
+                  if (seasonXp < tier.xpRequired) break;
+                  currentTier = tier.tierNumber;
+                }
+                await tx.userSeasonPass.update({
+                  where: { id: seasonPass.id },
+                  data: { seasonXp, currentTier },
+                });
+              }
+            }
+          }
+
+          const committedProgress = await tx.userPuzzleProgress.findUnique({
+            where: { id: progress.id },
+            select: { solved: true },
           });
-          // Season pass XP
-          await awardSeasonXp(currentUser.id, xpGain);
-        }
+          return {
+            foundCount: durableFoundCount,
+            allFound: durableAllFound,
+            completionCommitted: Boolean(committedProgress?.solved),
+          };
+        });
+        foundCount = result.foundCount;
+        allFound = result.allFound;
+        completionCommitted = result.completionCommitted;
+        persisted = true;
+      } catch (persistErr) {
+        console.error("[word_search] Failed to persist progress:", persistErr);
+        return NextResponse.json(
+          {
+            valid: false,
+            persisted: false,
+            completionCommitted: false,
+            recoverable: true,
+            error: "That word could not be saved. Please try it again.",
+          },
+          { status: 503 },
+        );
       }
-    } catch (persistErr) {
-      console.error("[word_search] Failed to persist progress:", persistErr);
-      // Non-fatal: still return the result to the player
     }
 
     return NextResponse.json({
@@ -269,6 +298,8 @@ export async function POST(
       allFound,
       foundCount,
       total: placeableWords.length,
+      persisted,
+      completionCommitted,
     });
   } catch (err) {
     console.error("[word_search] Error:", err);

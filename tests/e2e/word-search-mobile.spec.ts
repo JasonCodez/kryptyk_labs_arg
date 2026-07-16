@@ -22,8 +22,9 @@ function fixture(size: number, short = false) {
     ["WORD", 9, 0, 0, 1],
     ["TROVE", 10, 0, 0, 1],
     ["PUZZLE", 11, 0, 0, 1],
+    ["ZOOM", 15, 10, 0, 1],
   ];
-  const selected = short ? placements.slice(0, 2) : placements.slice(0, size >= 15 ? 12 : 10);
+  const selected = short ? placements.slice(0, 2) : placements.slice(0, size >= 20 ? 13 : size >= 15 ? 12 : 10);
   for (const [word, row, col, dr, dc] of selected) word.split("").forEach((letter, index) => { grid[row + dr * index][col + dc * index] = letter; });
   return { grid, words: selected.map(([word]) => word) };
 }
@@ -63,9 +64,9 @@ async function installRoutes(page: Page, size: number, short = false) {
       if (method === "POST") {
         const body = request.postDataJSON() as { word: string; dailyMode?: boolean };
         found.add(body.word); if (found.size === data.words.length && !body.dailyMode) catalogSolved = true;
-        return fulfill({ valid: true, foundCount: found.size, total: data.words.length, allFound: found.size === data.words.length });
+        return fulfill({ valid: true, persisted: !body.dailyMode, completionCommitted: !body.dailyMode && found.size === data.words.length, foundCount: found.size, total: data.words.length, allFound: found.size === data.words.length });
       }
-      return fulfill({ foundWords: [...found], foundCount: found.size, total: data.words.length, allFound: found.size === data.words.length });
+      return fulfill({ foundWords: [...found], foundCount: found.size, total: data.words.length, allFound: catalogSolved && found.size === data.words.length, completionCommitted: catalogSolved });
     }
     if (path === `/api/puzzles/${PUZZLE_ID}/progress`) {
       if (method === "POST" && request.postDataJSON().action === "attempt_success") attemptSuccess += 1;
@@ -118,7 +119,10 @@ test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, 
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const state = await installRoutes(page, 15); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
   await dragWord(page, [0, 0], [0, 2]); await expect.poll(() => state.found.has("CAT")).toBe(true);
-  await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+  const catDefinition = page.getByRole("dialog", { name: "CAT definition" });
+  const definitionTargets = await catDefinition.locator("button,a").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+  definitionTargets.forEach((height) => expect(height).toBeGreaterThanOrEqual(44));
+  await catDefinition.getByRole("button", { name: /Keep Searching/ }).click();
   await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.has("DOG")).toBe(true);
   await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click();
   await dragWord(page, [0, 14], [3, 14]); await expect.poll(() => state.found.has("BIRD")).toBe(true);
@@ -137,16 +141,27 @@ test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, 
 test("catalog uses server reward authority, keeps modal outside More, restores progress, and has desktop panel", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 }); await authenticate(page); const state = await installRoutes(page, 10, true); await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 }); await expect(page.locator(".word-search-desktop-list")).toBeVisible(); await expect(page.locator(".word-search-list-button")).toBeHidden();
+  await page.getByRole("grid").focus(); await page.keyboard.press("w"); await expect(page.locator(".word-search-desktop-list")).toBeFocused(); await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0); await page.keyboard.press("Escape"); await expect(page.locator('.word-search-cell[data-active="true"]')).toBeFocused();
   await page.getByRole("button", { name: "More puzzle actions" }).click(); await page.getByRole("menuitem", { name: "Report Bug" }).click(); await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeVisible(); await expect(page.getByRole("menu")).toHaveCount(0); await page.keyboard.press("Escape");
   await dragWord(page, [0, 0], [0, 2]); await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("button", { name: /CAT, found/ })).toBeVisible({ timeout: 15_000 });
-  await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.size).toBe(2); await expect.poll(state.attemptSuccess).toBe(0);
+  await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.size).toBe(2); await expect.poll(state.attemptSuccess).toBe(0); await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible(); await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
 });
 
 test("failed daily completion keeps the board and retry records completion once more", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const state = await installRoutes(page, 10, true); state.failNextDaily(); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
   await dragWord(page, [0, 0], [0, 2]); await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await dragWord(page, [1, 0], [1, 2]);
-  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await page.getByRole("button", { name: "Retry Completion" }).click();
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await expect.poll(state.dailyCompletions).toBe(1); await expect(page.getByText("Solved for today!")).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await page.reload({ waitUntil: "domcontentloaded" }); await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 }); await page.getByRole("button", { name: "Retry Completion" }).click();
   await expect.poll(state.dailyCompletions).toBe(2); await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 5_000 });
+});
+
+test("20x20 board keeps selection geometry after zooming and panning", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 }); await authenticate(page); const state = await installRoutes(page, 20); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Zoom in" }).click(); await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.locator(".word-search-board-viewport").evaluate((viewport) => { viewport.scrollLeft = 90; viewport.scrollTop = 170; viewport.dispatchEvent(new Event("scroll")); });
+  await dragWord(page, [15, 10], [15, 13]);
+  await expect.poll(() => state.found.has("ZOOM")).toBe(true);
+  await expect(page.getByRole("dialog", { name: "ZOOM definition" })).toBeVisible();
 });

@@ -33,6 +33,7 @@ import type {
   AnagramPresentationState,
 } from "@/components/puzzle/AnagramBlitz";
 import type {
+  WordSearchCompletionResult,
   WordSearchPresentationState,
   WordSearchPuzzleHandle,
 } from "@/components/puzzle/WordSearchPuzzle";
@@ -764,8 +765,11 @@ export default function PuzzleDetailPage() {
   // Word Trove's final validated word already commits progress, points, and XP in
   // /word_search. This hand-off only refreshes that authoritative result and opens
   // the existing completion UI; it must never issue a generic attempt_success.
-  const handleWordSearchComplete = async () => {
-    if (puzzleTypeCompletionInFlightRef.current || progress?.solved) return;
+  const handleWordSearchComplete = async (): Promise<WordSearchCompletionResult> => {
+    if (progress?.solved) return { success: true };
+    if (puzzleTypeCompletionInFlightRef.current) {
+      return { success: false, error: "Completion is already being refreshed." };
+    }
     puzzleTypeCompletionInFlightRef.current = true;
     setError("");
     const previousPoints = progress?.pointsEarned ?? 0;
@@ -774,14 +778,17 @@ export default function PuzzleDetailPage() {
       if (!response.ok) throw new Error("Completion was recorded, but progress could not be refreshed.");
       const updated = await response.json();
       if (!updated?.solved) throw new Error("Completion is still being confirmed. Please try again.");
-      if (!pageMountedRef.current) return;
+      if (!pageMountedRef.current) return { success: false, error: "Completion view is no longer available." };
       setProgress(updated);
       setJustAwardedPoints(Math.max(0, (updated.pointsEarned ?? previousPoints) - previousPoints));
       setCompletionSeconds(sessionStartRef.current ? Math.round((Date.now() - sessionStartRef.current.getTime()) / 1000) : null);
       setSuccess(true);
       handlePuzzleSolved();
+      return { success: true };
     } catch (cause) {
-      if (pageMountedRef.current) setError(cause instanceof Error ? cause.message : "Completion could not be refreshed.");
+      const message = cause instanceof Error ? cause.message : "Completion could not be refreshed.";
+      if (pageMountedRef.current) setError(message);
+      return { success: false, error: message };
     } finally {
       puzzleTypeCompletionInFlightRef.current = false;
     }
@@ -1552,7 +1559,7 @@ export default function PuzzleDetailPage() {
               onAnagramPresentationChange={setAnagramPresentation}
               wordSearchRef={wordSearchRef}
               onWordSearchPresentationChange={setWordSearchPresentation}
-              onWordSearchSolved={handleWordSearchComplete}
+              onWordSearchComplete={handleWordSearchComplete}
               skipControl={skipControl}
             />
 

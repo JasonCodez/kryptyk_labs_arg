@@ -48,7 +48,7 @@ function installFetch({ failCompletion = false } = {}) {
     if (!init?.method) return { ok: true, json: async () => ({ foundWords: found, allFound: false }) } as Response;
     const body = JSON.parse(String(init.body)) as { word: string };
     found = [...new Set([...found, body.word])];
-    return { ok: !failCompletion, json: async () => failCompletion ? ({ error: "Offline" }) : ({ valid: true, allFound: found.length === 2, foundCount: found.length, total: 2 }) } as Response;
+    return { ok: !failCompletion, json: async () => failCompletion ? ({ error: "Offline" }) : ({ valid: true, persisted: true, completionCommitted: found.length === 2, allFound: found.length === 2, foundCount: found.length, total: 2 }) } as Response;
   });
   global.fetch = fetchMock;
   return fetchMock;
@@ -123,6 +123,8 @@ test("daily completion waits for success and exposes retry without losing the bo
   expect(await screen.findByRole("button", { name: "Retry Completion" })).toBeTruthy();
   expect(screen.getByRole("grid")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry Completion" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
   await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
   expect(onComplete).toHaveBeenCalledTimes(2);
 });
@@ -132,6 +134,8 @@ test("a successful daily completion callback is guarded exactly once", async () 
   renderGame({ onComplete, hintTokens: 2, onHintUsed: async () => true });
   fireEvent.click(screen.getByRole("button", { name: /Hint/ })); await waitFor(() => expect(screen.getByText("1 / 2 found")).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: /Hint/ })); fireEvent.click(screen.getByRole("button", { name: /Finding|Hint/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
   await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
   expect(onComplete).toHaveBeenCalledTimes(1);
 });
@@ -155,4 +159,93 @@ test("stale or malformed restore payload is rejected", async () => {
   const callback = jest.fn(); renderGame({ onPresentationChange: callback });
   await waitFor(() => expect(callback.mock.calls.at(-1)?.[0].status).toBe("playing"));
   expect(callback.mock.calls.at(-1)?.[0].foundCount).toBe(0);
+});
+
+test("catalog stays loading and replaces stale local completion with authoritative partial progress", async () => {
+  const seed = renderGame();
+  await waitFor(() => expect(localStorage.getItem("word-search:v2:word-search-test")).toBeTruthy());
+  const restored = JSON.parse(localStorage.getItem("word-search:v2:word-search-test")!);
+  seed.unmount();
+  localStorage.setItem("word-search:v2:word-search-test", JSON.stringify({ ...restored, foundWords: ["CAT", "DOG"] }));
+
+  let resolveGet!: (response: Response) => void;
+  global.fetch = jest.fn((input: RequestInfo | URL) => {
+    if (String(input).includes("/dictionary/")) return Promise.resolve({ ok: true, json: async () => ({ found: false }) } as Response);
+    return new Promise<Response>((resolve) => { resolveGet = resolve; });
+  }) as jest.Mock;
+  const callback = jest.fn<void, [WordSearchPresentationState]>();
+  render(<WordSearchPuzzle puzzleId="word-search-test" wordSearchData={DATA} displayMode="app-shell" onPresentationChange={callback} />);
+  expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("loading");
+
+  resolveGet({ ok: true, json: async () => ({ foundWords: ["CAT"], allFound: false, completionCommitted: false }) } as Response);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  expect(callback.mock.calls.at(-1)?.[0].foundCount).toBe(1);
+});
+
+test("restored daily all-found state exposes retry and records completion once", async () => {
+  const onComplete = jest.fn().mockResolvedValueOnce({ success: false, error: "Offline" }).mockResolvedValueOnce({ success: true });
+  const first = renderGame({ onComplete, hintTokens: 2, onHintUsed: async () => true });
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  await waitFor(() => expect(screen.getByText("1 / 2 found")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  expect(await screen.findByRole("button", { name: "Retry Completion" })).toBeTruthy();
+  await waitFor(() => expect(localStorage.getItem("word-search:v2:word-search-test")).toContain("DOG"));
+  first.unmount();
+
+  renderGame({ onComplete });
+  const retry = await screen.findByRole("button", { name: "Retry Completion" });
+  expect(onComplete).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onComplete).toHaveBeenCalledTimes(2);
+});
+
+test("catalog completion handoff waits for final definition dismissal and can retry without resubmitting", async () => {
+  let found: string[] = [];
+  const onComplete = jest.fn().mockResolvedValueOnce({ success: false, error: "Refresh failed" }).mockResolvedValueOnce({ success: true });
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/dictionary/")) return { ok: true, json: async () => ({ found: false }) } as Response;
+    if (!init?.method) return { ok: true, json: async () => ({ foundWords: found, allFound: false }) } as Response;
+    const body = JSON.parse(String(init.body)) as { word: string };
+    found = [...new Set([...found, body.word])];
+    return { ok: true, json: async () => ({ valid: true, persisted: true, completionCommitted: found.length === 2, allFound: found.length === 2, foundCount: found.length, total: 2 }) } as Response;
+  });
+  global.fetch = fetchMock;
+  render(<WordSearchPuzzle puzzleId="word-search-test" wordSearchData={DATA} displayMode="app-shell" hintTokens={2} onHintUsed={async () => true} onComplete={onComplete} />);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  await waitFor(() => expect(screen.getByText("1 / 2 found")).toBeTruthy());
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  expect(await screen.findByRole("dialog", { name: /definition/ })).toBeTruthy();
+  expect(onComplete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  expect(await screen.findByRole("button", { name: "Retry Completion" })).toBeTruthy();
+  expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === "POST")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Retry Completion" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === "POST")).toHaveLength(2);
+  expect(onComplete).toHaveBeenCalledTimes(2);
+});
+
+test("catalog persistence failure does not celebrate or store the word and remains retryable", async () => {
+  let postCount = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/dictionary/")) return { ok: true, json: async () => ({ found: false }) } as Response;
+    if (!init?.method) return { ok: true, json: async () => ({ foundWords: [], allFound: false, completionCommitted: false }) } as Response;
+    postCount += 1;
+    if (postCount === 1) return { ok: false, json: async () => ({ valid: false, persisted: false, recoverable: true, error: "Save failed" }) } as Response;
+    return { ok: true, json: async () => ({ valid: true, persisted: true, completionCommitted: false, allFound: false, foundCount: 1, total: 2 }) } as Response;
+  }) as jest.Mock;
+  render(<WordSearchPuzzle puzzleId="word-search-test" wordSearchData={DATA} displayMode="app-shell" />);
+  const board = screen.getByRole("grid");
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Save failed"));
+  expect(screen.getByText("0 / 2 found")).toBeTruthy();
+  expect(JSON.parse(localStorage.getItem("word-search:v2:word-search-test")!).foundWords).not.toContain("CAT");
+
+  fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  await waitFor(() => expect(screen.getByText("1 / 2 found")).toBeTruthy());
+  expect(postCount).toBe(2);
 });

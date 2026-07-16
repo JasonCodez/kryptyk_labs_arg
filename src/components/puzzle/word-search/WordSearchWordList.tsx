@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { forwardRef, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Pressable from "@/components/juice/Pressable";
@@ -38,14 +38,28 @@ function WordItems({ words, foundWords, onOpenDefinition }: Omit<Props, "open" |
   );
 }
 
-export function WordSearchDesktopWordList(props: Omit<Props, "open" | "onClose">) {
+interface DesktopProps extends Omit<Props, "open" | "onClose"> {
+  onEscape?: () => void;
+}
+
+export const WordSearchDesktopWordList = forwardRef<HTMLElement, DesktopProps>(function WordSearchDesktopWordList({ onEscape, ...props }, ref) {
   return (
-    <aside className="word-search-desktop-list" aria-label="Words to find">
+    <aside
+      ref={ref}
+      className="word-search-desktop-list"
+      aria-label="Words to find"
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        onEscape?.();
+      }}
+    >
       <div><h2>Words to find</h2><span>{props.foundWords.size}/{props.words.length}</span></div>
       <WordItems {...props} />
     </aside>
   );
-}
+});
 
 export default function WordSearchWordList({ open, words, foundWords, onClose, onOpenDefinition }: Props) {
   const headingId = useId();

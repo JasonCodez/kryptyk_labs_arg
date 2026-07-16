@@ -12,6 +12,7 @@ import GridlockFilePuzzle from "@/components/puzzle/GridlockFilePuzzle";
 import CrackTheSafePuzzle from "@/components/puzzle/CrackTheSafePuzzle";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle, {
+  type WordSearchCompletionResult,
   type WordSearchPresentationState,
   type WordSearchPuzzleHandle,
 } from "@/components/puzzle/WordSearchPuzzle";
@@ -88,7 +89,7 @@ interface PuzzleTypeRendererProps {
   onAnagramPresentationChange?: (state: AnagramPresentationState) => void;
   wordSearchRef?: RefObject<WordSearchPuzzleHandle | null>;
   onWordSearchPresentationChange?: (state: WordSearchPresentationState) => void;
-  onWordSearchSolved: () => void | Promise<void>;
+  onWordSearchComplete: () => Promise<WordSearchCompletionResult>;
   // Skip-token button — normally rendered below the puzzle by PuzzleProgressSection, which gets
   // hidden behind the fullscreen overlay. Passed through to PuzzleFullscreenFrame so it stays
   // reachable while a puzzle is fullscreen.
@@ -121,7 +122,7 @@ export function PuzzleTypeRenderer({
   onAnagramPresentationChange,
   wordSearchRef,
   onWordSearchPresentationChange,
-  onWordSearchSolved,
+  onWordSearchComplete,
   skipControl,
 }: PuzzleTypeRendererProps) {
   // Detect the jigsaw image's natural aspect ratio so the play board matches it —
@@ -397,7 +398,7 @@ export function PuzzleTypeRenderer({
           onHintUsed={onHintUsed}
           displayMode="app-shell"
           onPresentationChange={onWordSearchPresentationChange}
-          onSolved={onWordSearchSolved}
+          onComplete={onWordSearchComplete}
         />
       </div>
     );
