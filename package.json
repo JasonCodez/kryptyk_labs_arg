@@ -9,7 +9,8 @@
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start -p $PORT",
-    "lint": "eslint",
+    "lint": "eslint src/components/puzzle/CrosswordPuzzle.tsx src/components/puzzle/crossword src/components/app-shell/PuzzleHeader.tsx src/components/app-shell/PuzzleHeader.test.tsx src/components/puzzle/PuzzleBugReportButton.tsx src/app/daily/crossword/page.tsx src/components/puzzle/PuzzleTypeRenderer.tsx \"src/app/puzzles/[id]/page.tsx\" tests/e2e/mobile-shell.spec.ts tests/e2e/crossword-mobile.spec.ts",
+    "lint:all": "eslint .",
     "pwa:screenshots": "node scripts/generate-pwa-screenshots.mjs",
     "twa:init": "npx @bubblewrap/cli init --manifest=https://www.puzzlewarz.com/manifest.webmanifest",
     "twa:build": "npx @bubblewrap/cli build",
@@ -20,6 +21,8 @@
     "seed:ghost": "tsx scripts/seed-ghost-users.ts",
     "validate:escape-room": "tsx scripts/validate-escape-room-wiring.ts",
     "test:e2e": "playwright test",
+    "test:unit": "jest --runInBand",
+    "test:crossword": "playwright test tests/e2e/crossword-mobile.spec.ts",
     "socket-server": "node scripts/socket-server.js",
     "postinstall": "prisma generate"
   },

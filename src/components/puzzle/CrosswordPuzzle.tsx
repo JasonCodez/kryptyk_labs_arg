@@ -702,6 +702,8 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
   const gridGap = getGridGap(cols);
   const gridPixelWidth = getGridPixelWidth(cols, cellSize);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const gameSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const useSurfaceKeyboard = displayMode === "app-shell" && touchFirstLayout;
   const desktopClueRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const checkingCluesRef = useRef<Map<string, string>>(new Map());
   const checkQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -1486,10 +1488,14 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
   );
 
   const focusKeyboardInput = useCallback(() => {
+    if (useSurfaceKeyboard) {
+      gameSurfaceRef.current?.focus({ preventScroll: true });
+      return;
+    }
     const input = inputRef.current;
     if (!input) return;
     input.focus({ preventScroll: true });
-  }, []);
+  }, [useSurfaceKeyboard]);
 
   // ── Select all clues sorted numerically for Tab navigation ────────────────
   const sortedClues = useMemo<ActiveClue[]>(() => {
@@ -1682,6 +1688,10 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
   // ── Keyboard handling ─────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.currentTarget !== e.target) {
+        const target = e.target as HTMLElement;
+        if (target.closest("button, a, input, textarea, select")) return;
+      }
       if (gameStatus !== "playing" || !activeClue || !cursorCell) return;
       const { row, col } = cursorCell;
       const key = e.key.toUpperCase();
@@ -2227,7 +2237,12 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
         />
 
         <div
+          ref={gameSurfaceRef}
           className="crossword-game-surface flex flex-col items-center gap-4 select-none pb-6"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          aria-label="Crossword game surface. Use letter keys to enter answers, Backspace to erase, arrow keys to move, and Tab or Enter for the next clue."
+          data-testid="crossword-game-surface"
           style={{
             position: "relative",
             zIndex: 1,
@@ -2368,7 +2383,6 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                   overflow: "hidden",
                 }}
                 onClick={focusKeyboardInput}
-                onTouchStart={focusKeyboardInput}
               >
                 {initialGrid.map((rowArr, r) =>
                   rowArr.map((cell, c) => {
@@ -2522,7 +2536,9 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                 onKeyDown={handleKeyDown}
                 onBeforeInput={handleHiddenInputBeforeInput}
                 onInput={handleHiddenInputInput}
-                inputMode={touchFirstLayout && displayMode === "app-shell" ? "none" : "text"}
+                inputMode={useSurfaceKeyboard ? "none" : "text"}
+                tabIndex={-1}
+                aria-hidden={useSurfaceKeyboard || undefined}
                 autoCapitalize="characters"
                 autoCorrect="off"
                 autoComplete="off"

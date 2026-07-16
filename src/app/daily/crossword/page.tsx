@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import StreakTimer from "@/components/StreakTimer";
 import CrosswordPuzzle, {
   type CrosswordPresentationState,
   type CrosswordPuzzleHandle,
@@ -49,12 +48,11 @@ export default function DailyCrosswordPage() {
     <PuzzlePlayShell
       backHref="/daily"
       title="Daily Crossword"
-      subtitle={`#${dayNumber || "---"}`}
+      subtitle={`#${dayNumber || "---"}${streak > 0 ? ` · 🔥 ${streak}` : ""}`}
       progress={<span aria-label={`Elapsed time ${formattedElapsed}`}>{formattedElapsed}</span>}
       actions={<PuzzleHeaderCrosswordActions
         onClues={() => crosswordRef.current?.openClueSheet()}
         onHelp={() => crosswordRef.current?.openInstructions()}
-        overflow={streak > 0 ? <StreakTimer streak={streak} solvedToday={isDone} size="sm" /> : undefined}
       />}
       contentMode="fixed"
       contentClassName="pw-crossword-shell-content"

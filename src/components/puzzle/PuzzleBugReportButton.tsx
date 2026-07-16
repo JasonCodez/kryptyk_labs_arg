@@ -15,6 +15,8 @@ interface PuzzleBugReportButtonProps {
   // button matches them instead of looking like a one-off.
   className?: string;
   label?: string;
+  role?: string;
+  tabIndex?: number;
 }
 
 const DEFAULT_STYLE: React.CSSProperties = {
@@ -33,6 +35,8 @@ export default function PuzzleBugReportButton({
   puzzleTitle,
   style,
   className,
+  role,
+  tabIndex,
   label = "🐞 Report Bug",
 }: PuzzleBugReportButtonProps) {
   const [open, setOpen] = useState(false);
@@ -40,11 +44,11 @@ export default function PuzzleBugReportButton({
   return (
     <>
       {className ? (
-        <button type="button" onClick={() => setOpen(true)} className={className} style={style}>
+        <button type="button" onClick={() => setOpen(true)} className={className} style={style} role={role} tabIndex={tabIndex}>
           {label}
         </button>
       ) : (
-        <button type="button" onClick={() => setOpen(true)} style={{ ...DEFAULT_STYLE, ...style }}>
+        <button type="button" onClick={() => setOpen(true)} style={{ ...DEFAULT_STYLE, ...style }} role={role} tabIndex={tabIndex}>
           {label}
         </button>
       )}

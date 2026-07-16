@@ -1,7 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  Fragment,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import Pressable from "@/components/juice/Pressable";
 
@@ -17,6 +28,16 @@ interface PuzzleHeaderProps {
   actions?: ReactNode;
   /** Optional click handler for the back control (still navigates via backHref). */
   onBack?: () => void;
+}
+
+function actionableElements(children: ReactNode): ReactElement[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement(child)) return [];
+    if (child.type === Fragment) {
+      return actionableElements((child.props as { children?: ReactNode }).children);
+    }
+    return [child];
+  });
 }
 
 interface PuzzleHeaderCrosswordActionsProps {
@@ -46,31 +67,71 @@ function PuzzleHeaderOverflowMenu({ children }: { children: ReactNode }) {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const closeMenu = useCallback((restoreFocus = true) => {
+    setOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => buttonRef.current?.focus());
+  }, []);
+
+  const openMenu = useCallback(() => {
     const button = buttonRef.current;
     if (button) {
       const rect = button.getBoundingClientRect();
       setPosition({ top: rect.bottom + 6, right: Math.max(8, window.innerWidth - rect.right) });
     }
+    setOpen(true);
+  }, []);
+
+  const menuItems = actionableElements(children).map((child) => {
+    const element = child as ReactElement<{
+      className?: string;
+      role?: string;
+      tabIndex?: number;
+    }>;
+    return cloneElement(element, {
+      className: `pw-play-header-menu-item${element.props.className ? ` ${element.props.className}` : ""}`,
+      role: element.props.role ?? "menuitem",
+      tabIndex: -1,
+    });
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const focusFrame = window.requestAnimationFrame(() => {
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    });
 
     const handlePointer = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) setOpen(false);
+      if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) closeMenu();
     };
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpen(false);
-        buttonRef.current?.focus();
+        closeMenu();
       }
     };
     window.addEventListener("pointerdown", handlePointer);
     window.addEventListener("keydown", handleKey);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("pointerdown", handlePointer);
       window.removeEventListener("keydown", handleKey);
     };
-  }, [open]);
+  }, [closeMenu, open]);
+
+  const handleMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    if (!items.length) return;
+    const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLElement));
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = items.length - 1;
+    if (nextIndex !== null) {
+      event.preventDefault();
+      items[nextIndex].focus();
+    }
+  }, []);
 
   return (
     <>
@@ -81,7 +142,7 @@ function PuzzleHeaderOverflowMenu({ children }: { children: ReactNode }) {
         aria-label="More puzzle actions"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => open ? closeMenu() : openMenu()}
       >
         <HeaderActionIcon kind="more" />
       </Pressable>
@@ -91,9 +152,14 @@ function PuzzleHeaderOverflowMenu({ children }: { children: ReactNode }) {
           role="menu"
           className="pw-play-header-menu"
           style={{ position: "fixed", top: position.top, right: position.right }}
-          onClick={() => setOpen(false)}
+          onKeyDown={handleMenuKeyDown}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (!next || (!event.currentTarget.contains(next) && !buttonRef.current?.contains(next))) closeMenu();
+          }}
+          onClick={() => closeMenu()}
         >
-          {children}
+          <div className="pw-play-header-menu-stack" role="none">{menuItems}</div>
         </div>,
         document.body
       )}
@@ -106,9 +172,10 @@ export function PuzzleHeaderCrosswordActions({
   onHelp,
   overflow,
 }: PuzzleHeaderCrosswordActionsProps) {
+  const overflowActions = actionableElements(overflow);
   return (
     <div className="pw-play-header-action-group">
-      <Pressable type="button" className="pw-play-header-action" onClick={onClues} aria-label="Open crossword clues">
+      <Pressable type="button" className="pw-play-header-action pw-play-header-crossword-clues" onClick={onClues} aria-label="Open crossword clues">
         <HeaderActionIcon kind="clues" />
         <span className="pw-play-header-action-text">Clues</span>
       </Pressable>
@@ -116,7 +183,7 @@ export function PuzzleHeaderCrosswordActions({
         <HeaderActionIcon kind="help" />
         <span className="pw-play-header-action-text">Help</span>
       </Pressable>
-      {overflow && <PuzzleHeaderOverflowMenu>{overflow}</PuzzleHeaderOverflowMenu>}
+      {overflowActions.length > 0 && <PuzzleHeaderOverflowMenu>{overflowActions}</PuzzleHeaderOverflowMenu>}
     </div>
   );
 }

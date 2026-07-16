@@ -1358,17 +1358,15 @@ export default function PuzzleDetailPage() {
         ? <PuzzleHeaderCrosswordActions
             onClues={() => crosswordRef.current?.openClueSheet()}
             onHelp={() => crosswordRef.current?.openInstructions()}
-            overflow={
-              <div className="pw-play-header-menu-stack">
-                {skipControl}
-                <PuzzleBugReportButton
+            overflow={[
+              skipControl,
+              <PuzzleBugReportButton
+                  key="report-bug"
                   puzzleId={puzzleId}
                   puzzleTitle={puzzle?.title ?? "This puzzle"}
-                  className="pw-play-header-menu-item"
                   label="Report a bug"
-                />
-              </div>
-            }
+              />,
+            ]}
           />
         : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
       contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" ? "fixed" : "scroll"}

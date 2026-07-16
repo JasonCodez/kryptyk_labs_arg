@@ -64,8 +64,9 @@ for (const viewport of MOBILE_VIEWPORTS) {
         await expect(page.locator('[data-testid="puzzle-header-title"]')).toBeVisible();
 
         if (route === '/daily/crossword') {
-          await expect(page.getByRole('button', { name: 'Open crossword clues' })).toBeVisible();
+          await expect(page.getByRole('button', { name: 'Open crossword clues' })).toBeHidden();
           await expect(page.getByRole('button', { name: 'How to play crossword' })).toBeVisible();
+          await expect(page.getByRole('button', { name: 'More puzzle actions' })).toHaveCount(0);
           const titleBox = await page.locator('[data-testid="puzzle-header-title"]').boundingBox();
           expect(titleBox?.width).toBeGreaterThanOrEqual(56);
         }
