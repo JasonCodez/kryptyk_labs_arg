@@ -227,6 +227,7 @@ export default function PuzzleDetailPage() {
   const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
   const [anagramPresentation, setAnagramPresentation] = useState<AnagramPresentationState | null>(null);
   const [sudokuPresentation, setSudokuPresentation] = useState<SudokuPresentationState | null>(null);
+  const [sudokuCelebrationPending, setSudokuCelebrationPending] = useState(false);
   const [showHeaderBugReport, setShowHeaderBugReport] = useState(false);
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -440,6 +441,8 @@ export default function PuzzleDetailPage() {
     setProgress(null);
     setProgressLoading(true);
     setProgressError("");
+    setSudokuCelebrationPending(false);
+    setSudokuPresentation(null);
 
     const fetchProgress = async () => {
       try {
@@ -1062,6 +1065,18 @@ export default function PuzzleDetailPage() {
     )
   ) : null;
 
+  const catalogSudokuMounted = puzzle.puzzleType === "sudoku"
+    && !progressLoading
+    && !progressError
+    && progress?.puzzleId === puzzleId
+    && Boolean(sudokuOriginal)
+    && Boolean(sudokuSolution)
+    && (!progress.solved || sudokuCelebrationPending);
+  const canGiveUpSudoku = catalogSudokuMounted
+    && !progress?.solved
+    && sudokuPresentation?.status !== "won"
+    && sudokuPresentation?.status !== "lost";
+
   return (
     <>
       <PuzzlePlayShell
@@ -1112,7 +1127,7 @@ export default function PuzzleDetailPage() {
                 onHelp={() => sudokuRef.current?.openInstructions()}
                 helpLabel="How to play Sudoku"
                 overflow={[
-                  <button type="button" key="give-up" onClick={() => sudokuRef.current?.requestGiveUp()}>Give Up</button>,
+                  canGiveUpSudoku ? <button type="button" key="give-up" onClick={() => sudokuRef.current?.requestGiveUp()}>Give Up</button> : null,
                   skipControl,
                   <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
                 ]}
@@ -1366,7 +1381,7 @@ export default function PuzzleDetailPage() {
               <section className="sudoku-status-card" role="alert">{progressError}</section>
             )}
 
-            {puzzle.puzzleType === "sudoku" && !progressLoading && !progressError && progress?.puzzleId === puzzleId && sudokuOriginal && sudokuSolution && !progress.solved && (
+            {catalogSudokuMounted && sudokuOriginal && sudokuSolution && progress && (
               <SudokuPuzzle
                 ref={sudokuRef}
                 puzzleId={puzzleId}
@@ -1417,7 +1432,9 @@ export default function PuzzleDetailPage() {
                     const body = await response.json().catch(() => ({}));
                     return { success: false, error: body.error || "Completion was not confirmed. Retry submission." };
                   }
-                  const updated = await response.json(); setProgress(updated); setCompletionSeconds(elapsedSeconds);
+                  const updated = await response.json();
+                  setSudokuCelebrationPending(true);
+                  setProgress(updated); setCompletionSeconds(elapsedSeconds);
                   setJustAwardedPoints(Math.max(0, (updated.pointsEarned ?? previousPoints) - previousPoints));
                   return { success: true, attemptsUsed: updated.attempts };
                 }}
@@ -1456,11 +1473,14 @@ export default function PuzzleDetailPage() {
                   const updated = await start.json(); setProgress(updated);
                   return { startedAt: updated.sudokuStartedAt, expiresAt: updated.sudokuExpiresAt, attemptsUsed: updated.attempts };
                 }}
-                onCelebrationComplete={() => { setSuccess(true); setShowSolvedMessage(true); handlePuzzleSolved(); }}
+                onCelebrationComplete={() => {
+                  setSudokuCelebrationPending(false);
+                  setSuccess(true); setShowSolvedMessage(true); handlePuzzleSolved();
+                }}
               />
             )}
 
-            {puzzle.puzzleType === "sudoku" && !progressLoading && progress?.puzzleId === puzzleId && progress.solved && (
+            {puzzle.puzzleType === "sudoku" && !progressLoading && progress?.puzzleId === puzzleId && progress.solved && !sudokuCelebrationPending && (
               <section className="sudoku-result-card"><span aria-hidden>✓</span><h2>Sudoku solved!</h2><p>Your completion has been recorded.</p></section>
             )}
 

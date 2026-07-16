@@ -20,8 +20,8 @@ async function authenticate(page: Page) {
   await page.context().addCookies([{ name: "next-auth.session-token", value: token, url: "http://localhost:3000", httpOnly: true, sameSite: "Lax" }]);
 }
 
-async function installFixture(page: Page, options: { startedAt?: string; expiresAt?: string; attempts?: number; maxAttempts?: number; timeLimitSeconds?: number; failFirstStart?: boolean } = {}) {
-  let attempts = options.attempts ?? 0; let solved = false; let startedAt: string | null = options.startedAt ?? null; let expiresAt: string | null = options.expiresAt ?? null; let lockedAt: string | null = null; let lockReason: string | null = null; let completions = 0; let dailyCompletions = 0; let startFailures = options.failFirstStart ? 1 : 0;
+async function installFixture(page: Page, options: { startedAt?: string; expiresAt?: string; attempts?: number; maxAttempts?: number; timeLimitSeconds?: number; failFirstStart?: boolean; solved?: boolean } = {}) {
+  let attempts = options.attempts ?? 0; let solved = options.solved ?? false; let startedAt: string | null = options.startedAt ?? null; let expiresAt: string | null = options.expiresAt ?? null; let lockedAt: string | null = null; let lockReason: string | null = null; let completions = 0; let dailyCompletions = 0; let startFailures = options.failFirstStart ? 1 : 0; let timerStarts = 0;
   const completionBodies: Array<Record<string, unknown>> = [];
   const progress = () => ({ id: "sudoku-progress", userId: "e2e-user", puzzleId: PUZZLE_ID, solved, attempts, pointsEarned: solved ? 100 : 0, successfulAttempts: solved ? 1 : 0, completionPercentage: solved ? 100 : 0, sudokuStartedAt: startedAt, sudokuExpiresAt: expiresAt, sudokuLockedAt: lockedAt, sudokuLockReason: lockReason, sessionLogs: [], partProgress: [] });
   await page.route("**/api/**", async (route) => {
@@ -38,6 +38,7 @@ async function installFixture(page: Page, options: { startedAt?: string; expires
       if (method === "POST") {
         const body = request.postDataJSON() as { action?: string; reason?: string; durationSeconds?: number };
         if (body.action === "start_sudoku_timer") {
+          timerStarts += 1;
           if (startFailures > 0) { startFailures -= 1; return fulfill({ error: "Round start failed" }, 503); }
           startedAt = new Date().toISOString(); expiresAt = new Date(Date.now() + (options.timeLimitSeconds ?? 900) * 1000).toISOString(); lockedAt = null; lockReason = null;
         }
@@ -54,7 +55,7 @@ async function installFixture(page: Page, options: { startedAt?: string; expires
     if (path === "/api/user/profile") return fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
     return fulfill({});
   });
-  return { completionCount: () => completions, dailyCompletionCount: () => dailyCompletions, completionBodies, attempts: () => attempts, startedAt: () => startedAt, expiresAt: () => expiresAt };
+  return { completionCount: () => completions, dailyCompletionCount: () => dailyCompletions, timerStartCount: () => timerStarts, completionBodies, attempts: () => attempts, startedAt: () => startedAt, expiresAt: () => expiresAt };
 }
 
 async function restoreCompletedGrid(page: Page) {
@@ -92,6 +93,15 @@ test("catalog Sudoku resumes timer, keeps bug dialog mounted, and uses hardware 
   await page.getByRole("button", { name: "More puzzle actions" }).click(); await page.getByRole("menuitem", { name: "Report Bug" }).click(); await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeVisible(); await expect(page.getByRole("menu")).toHaveCount(0);
 });
 
+test("brand-new catalog Sudoku mounts and starts one authoritative timer", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const fixture = await installFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("sudoku-root")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Loading your Sudoku round…")).toHaveCount(0);
+  await expect.poll(fixture.timerStartCount).toBe(1);
+  await page.waitForTimeout(500); expect(fixture.timerStartCount()).toBe(1);
+});
+
 test("completing Daily Sudoku sends exactly one daily completion request", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); await restoreCompletedGrid(page);
   const fixture = await installFixture(page); await page.goto("/daily/sudoku", { waitUntil: "domcontentloaded" });
@@ -112,6 +122,20 @@ test("catalog completion sends one authoritative success with elapsed duration",
   expect(duration).toBeGreaterThanOrEqual(29); expect(duration).toBeLessThanOrEqual(35);
 });
 
+test("catalog board remains mounted until celebration hands off to XP", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); await restoreCompletedGrid(page);
+  const fixture = await installFixture(page, { startedAt: new Date(Date.now() - 30_000).toISOString(), expiresAt: new Date(Date.now() + 870_000).toISOString() });
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Check Puzzle" })).toBeEnabled({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Check Puzzle" }).click(); await expect.poll(fixture.completionCount).toBe(1);
+  await expect(page.getByTestId("sudoku-root")).toHaveAttribute("data-status", "won");
+  await expect(page.getByRole("heading", { name: "Sudoku solved!" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Continue" })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("heading", { name: "Sudoku solved!" })).toBeVisible();
+  expect(fixture.completionCount()).toBe(1);
+});
+
 test("incorrect catalog attempt locks at the maximum and retry starts from zero", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page);
   const wrong = SOLUTION.map((row) => [...row]); [wrong[0][1], wrong[0][2]] = [wrong[0][2], wrong[0][1]];
@@ -129,9 +153,17 @@ test("timeout is locked before Try Again starts a fresh countdown", async ({ pag
   const fixture = await installFixture(page, { startedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 800).toISOString(), timeLimitSeconds: 2 });
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Round over" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "More puzzle actions" }).click(); await expect(page.getByRole("menuitem", { name: "Give Up" })).toHaveCount(0); await page.keyboard.press("Escape");
   const retry = page.getByRole("button", { name: "Try Again" }); await expect(retry).toBeEnabled(); await retry.click();
   await expect(page.getByTestId("sudoku-root")).toHaveAttribute("data-status", "playing");
   expect(new Date(fixture.expiresAt()!).getTime()).toBeGreaterThan(Date.now());
+});
+
+test("already-solved catalog Sudoku renders static result without Give Up", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); await installFixture(page, { solved: true });
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Sudoku solved!" })).toBeVisible({ timeout: 15_000 }); await expect(page.getByTestId("sudoku-root")).toHaveCount(0);
+  await page.getByRole("button", { name: "More puzzle actions" }).click(); await expect(page.getByRole("menuitem", { name: "Give Up" })).toHaveCount(0);
 });
 
 test("failed catalog start exposes Retry Start and recovers", async ({ page }) => {

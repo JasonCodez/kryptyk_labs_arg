@@ -67,16 +67,29 @@ export async function GET(
 
     if (!progress) {
       // Return default progress if not started
+      const now = new Date().toISOString();
       return NextResponse.json(
         {
           id: null,
+          userId: user.id,
+          puzzleId: id,
           solved: false,
+          solvedAt: null,
           attempts: 0,
           failedAttempts: 0,
           successfulAttempts: 0,
+          lastAttemptAt: null,
+          averageTimePerAttempt: null,
           totalTimeSpent: 0,
+          currentSessionStart: null,
           completionPercentage: 0,
           pointsEarned: 0,
+          viewedAt: now,
+          updatedAt: now,
+          sudokuStartedAt: null,
+          sudokuExpiresAt: null,
+          sudokuLockedAt: null,
+          sudokuLockReason: null,
           sessionLogs: [],
           partProgress: [],
         },
