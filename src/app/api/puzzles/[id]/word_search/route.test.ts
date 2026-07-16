@@ -9,10 +9,12 @@ jest.mock("@/lib/prisma", () => ({ __esModule: true, default: {
   user: { update: jest.fn(), findUnique: jest.fn() },
   globalLeaderboard: { findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
   userSeasonPass: { findFirst: jest.fn(), update: jest.fn() },
+  notification: { findFirst: jest.fn() },
   $transaction: jest.fn(),
 } }));
 jest.mock("@/lib/requireAuthenticatedUser", () => ({ requireAuthenticatedUser: jest.fn(async () => ({ id: "user-1" })) }));
 jest.mock("@/lib/requestSecurity", () => ({ validateSameOrigin: jest.fn(() => null) }));
+jest.mock("@/lib/notification-service", () => ({ createNotification: jest.fn(async () => ({ id: "notification-1" })) }));
 
 type MockDatabase = {
   puzzle: { findUnique: jest.Mock };
@@ -21,6 +23,7 @@ type MockDatabase = {
   user: { update: jest.Mock; findUnique: jest.Mock };
   globalLeaderboard: { findFirst: jest.Mock; update: jest.Mock; create: jest.Mock };
   userSeasonPass: { findFirst: jest.Mock; update: jest.Mock };
+  notification: { findFirst: jest.Mock };
   $transaction: jest.Mock;
 };
 const db = prisma as unknown as MockDatabase;
@@ -47,6 +50,7 @@ beforeEach(() => {
   db.globalLeaderboard.update.mockResolvedValue({});
   db.userSeasonPass.findFirst.mockResolvedValue(null);
   db.userSeasonPass.update.mockResolvedValue({});
+  db.notification.findFirst.mockResolvedValue(null);
 });
 
 function finalRequest() {
@@ -59,6 +63,18 @@ function finalRequest() {
 
 async function postFinal() {
   return POST(finalRequest(), { params: Promise.resolve({ id: "puzzle-1" }) });
+}
+
+function reconcileRequest() {
+  return new NextRequest("http://localhost/api/puzzles/puzzle-1/word_search", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "reconcile_completion" }),
+  });
+}
+
+async function reconcile() {
+  return POST(reconcileRequest(), { params: Promise.resolve({ id: "puzzle-1" }) });
 }
 
 test("concurrent final selections award catalog points and XP only once", async () => {
@@ -112,9 +128,52 @@ test("GET only reports allFound when submissions and durable progress agree", as
   db.userPuzzleProgress.findUnique.mockResolvedValue({ solved: false });
   const context = { params: Promise.resolve({ id: "puzzle-1" }) };
   const partial = await GET(new NextRequest("http://localhost/api/puzzles/puzzle-1/word_search"), context);
-  expect(await partial.json()).toMatchObject({ foundWords: ["CAT", "DOG"], allFound: false, completionCommitted: false });
+  expect(await partial.json()).toMatchObject({ foundWords: ["CAT", "DOG"], submissionsComplete: true, allFound: false, completionCommitted: false, repairRequired: true });
 
   db.userPuzzleProgress.findUnique.mockResolvedValue({ solved: true });
   const complete = await GET(new NextRequest("http://localhost/api/puzzles/puzzle-1/word_search"), context);
-  expect(await complete.json()).toMatchObject({ allFound: true, completionCommitted: true });
+  expect(await complete.json()).toMatchObject({ allFound: true, completionCommitted: true, repairRequired: false });
+});
+
+test("reconcile_completion atomically repairs legacy submissions without creating another submission", async () => {
+  const response = await reconcile();
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ valid: true, persisted: true, completionCommitted: true, submissionsComplete: true });
+  expect(db.puzzleSubmission.create).not.toHaveBeenCalled();
+  expect(db.user.update).toHaveBeenCalledTimes(1);
+  expect(db.globalLeaderboard.update).toHaveBeenCalledTimes(1);
+});
+
+test("reconcile_completion rejects an incomplete durable submission set", async () => {
+  db.puzzleSubmission.findMany.mockResolvedValue([{ answer: "CAT" }]);
+  const response = await reconcile();
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ valid: false, recoverable: true, submissionsComplete: false, completionCommitted: false });
+  expect(db.user.update).not.toHaveBeenCalled();
+});
+
+test("concurrent reconciliation claims and awards a legacy completion exactly once", async () => {
+  db.userPuzzleProgress.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+  const [first, second] = await Promise.all([reconcile(), reconcile()]);
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(db.user.update).toHaveBeenCalledTimes(1);
+  expect(db.globalLeaderboard.update).toHaveBeenCalledTimes(1);
+});
+
+test("season tier notification happens after commit and notification failure is non-fatal", async () => {
+  const { createNotification } = jest.requireMock("@/lib/notification-service") as { createNotification: jest.Mock };
+  db.userSeasonPass.findFirst.mockResolvedValue({
+    id: "pass-1",
+    seasonXp: 90,
+    currentTier: 0,
+    isPremium: false,
+    season: { tiers: [{ tierNumber: 1, xpRequired: 100, premRewardType: "points" }] },
+  });
+  createNotification.mockRejectedValueOnce(new Error("notification unavailable"));
+  const response = await reconcile();
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ completionCommitted: true });
+  expect(createNotification).toHaveBeenCalledTimes(1);
+  expect(db.userSeasonPass.update).toHaveBeenCalledTimes(1);
 });

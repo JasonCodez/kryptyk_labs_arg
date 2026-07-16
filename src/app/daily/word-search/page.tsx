@@ -76,6 +76,8 @@ export default function DailyWordSearchPage() {
               puzzleId={content.puzzleId}
               wordSearchData={wordSearchData}
               dailyMode
+              persistenceScope="daily"
+              dailyDayNumber={dayNumber}
               hintTokens={hintTokens}
               onHintUsed={async () => {
                 const response = await fetch("/api/user/consume-hint-token", { method: "POST", headers: { "Content-Type": "application/json" } });

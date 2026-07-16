@@ -26,6 +26,11 @@ import WordSearchWordDock from "@/components/puzzle/word-search/WordSearchWordDo
 import WordSearchWordList, { WordSearchDesktopWordList } from "@/components/puzzle/word-search/WordSearchWordList";
 import { isHapticsEnabled, prefersReducedMotion } from "@/lib/juice";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import {
+  restoreWordSearchProgress,
+  wordSearchStorageKey,
+  type WordSearchPersistenceScope,
+} from "@/lib/wordSearchPersistence";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -69,6 +74,9 @@ interface Props {
   alreadySolved?: boolean;
   warzMode?: boolean;
   dailyMode?: boolean;
+  persistenceScope?: WordSearchPersistenceScope;
+  dailyDayNumber?: number;
+  puzzleInstanceId?: string;
   hintTokens?: number;
   onHintUsed?: () => Promise<boolean>;
 }
@@ -123,7 +131,7 @@ function Dialog({ title, onClose, children }: { title: string; onClose: () => vo
   );
 }
 
-const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function WordSearchPuzzle({
+const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function WordSearchPuzzleInner({
   puzzleId,
   wordSearchData,
   onSolved,
@@ -133,13 +141,16 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
   alreadySolved = false,
   warzMode = false,
   dailyMode = false,
+  persistenceScope,
+  dailyDayNumber,
   hintTokens = 0,
   onHintUsed,
 }, ref) {
   const normalized = useMemo(() => normalizePlayableWordSearch(wordSearchData.grid, wordSearchData.words), [wordSearchData.grid, wordSearchData.words]);
   const { grid, words, placements, signature } = normalized;
   const size = grid.length;
-  const storageKey = `word-search:v2:${puzzleId}`;
+  const effectiveScope = persistenceScope ?? (warzMode ? "none" : dailyMode ? "daily" : "catalog");
+  const storageKey = wordSearchStorageKey(effectiveScope, puzzleId, dailyDayNumber);
   const skin = usePuzzleSkin();
   const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
   const boardRef = useRef<HTMLDivElement>(null);
@@ -156,6 +167,7 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
   const foundRef = useRef<string[]>([]);
   const completionRef = useRef(false);
   const completionRecordedRef = useRef(false);
+  const catalogCompletionCommittedRef = useRef(false);
   const completionHandoffPendingRef = useRef(false);
   const finalDefinitionPendingRef = useRef(false);
   const solvedHandoffRef = useRef(false);
@@ -168,17 +180,15 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
   const definitionRef = useRef<DefinitionState | null>(null);
   const gridShake = useAnimationControls();
 
-  const restore = useMemo(() => {
-    if (alreadySolved) return { found: words, hinted: [] as string[] };
-    if (typeof window === "undefined") return { found: [] as string[], hinted: [] as string[] };
-    try {
-      const value = JSON.parse(localStorage.getItem(storageKey) ?? "null") as { version?: number; signature?: string; foundWords?: unknown; hintedWords?: unknown } | null;
-      if (value?.version !== 2 || value.signature !== signature || !Array.isArray(value.foundWords)) return { found: [], hinted: [] };
-      const found = normalizeWordList(value.foundWords).filter((word) => placements.has(word));
-      const hinted = normalizeWordList(value.hintedWords ?? []).filter((word) => found.includes(word));
-      return { found, hinted };
-    } catch { return { found: [], hinted: [] }; }
-  }, [alreadySolved, placements, signature, storageKey, words]);
+  const restore = useMemo(() => restoreWordSearchProgress({
+    storage: typeof window === "undefined" ? null : localStorage,
+    scope: effectiveScope,
+    puzzleId,
+    dailyDayNumber,
+    signature,
+    placeableWords: words,
+    alreadySolved,
+  }), [alreadySolved, dailyDayNumber, effectiveScope, puzzleId, signature, words]);
 
   const [foundWords, setFoundWords] = useState<string[]>(restore.found);
   const [hintedWords, setHintedWords] = useState<Set<string>>(new Set(restore.hinted));
@@ -258,9 +268,9 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
   }, [geometryVersion, selection, zoom]);
 
   useEffect(() => {
-    if (alreadySolved || warzMode || typeof window === "undefined") return;
+    if (alreadySolved || effectiveScope === "none" || typeof window === "undefined") return;
     try { if (!localStorage.getItem("wordTroveIntroSeen")) setShowIntro(true); } catch {}
-  }, [alreadySolved, warzMode]);
+  }, [alreadySolved, effectiveScope]);
 
   useEffect(() => {
     const updateVisibility = () => setPageVisible(document.visibilityState !== "hidden");
@@ -271,12 +281,12 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
 
   useEffect(() => {
     if (status !== "loading") return;
-    if (!dailyMode && !warzMode) return;
-    if (alreadySolved) {
+    if (effectiveScope === "catalog") return;
+    if (alreadySolved && effectiveScope !== "none") {
       setStatus("won");
       return;
     }
-    if (dailyMode && foundWords.length === words.length) {
+    if (effectiveScope === "daily" && foundWords.length === words.length) {
       completionHandoffPendingRef.current = true;
       completionRecordedRef.current = false;
       completionRef.current = false;
@@ -286,15 +296,15 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
       return;
     }
     setStatus("playing");
-  }, [alreadySolved, dailyMode, foundWords.length, status, warzMode, words.length]);
+  }, [alreadySolved, effectiveScope, foundWords.length, status, words.length]);
 
   useEffect(() => {
-    if (alreadySolved || warzMode) return;
-    try { localStorage.setItem(storageKey, JSON.stringify({ version: 2, signature, foundWords, hintedWords: [...hintedWords] })); } catch {}
-  }, [alreadySolved, foundWords, hintedWords, signature, storageKey, warzMode]);
+    if (alreadySolved || !storageKey) return;
+    try { localStorage.setItem(storageKey, JSON.stringify({ version: 3, signature, foundWords, hintedWords: [...hintedWords] })); } catch {}
+  }, [alreadySolved, foundWords, hintedWords, signature, storageKey]);
 
   useEffect(() => {
-    if (warzMode || dailyMode || !puzzleId) return;
+    if (effectiveScope !== "catalog" || !puzzleId) return;
     let cancelled = false;
     void fetch(`/api/puzzles/${puzzleId}/word_search`, { cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("Progress could not be restored.");
@@ -306,11 +316,22 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
       setFoundWords(server);
       setHintedWords((previous) => new Set([...previous].filter((word) => server.includes(word))));
       setError("");
-      if (data.allFound) {
+      if (data.repairRequired) {
+        catalogCompletionCommittedRef.current = false;
+        completionRef.current = false;
+        completionRecordedRef.current = false;
+        completionHandoffPendingRef.current = true;
+        finalDefinitionPendingRef.current = false;
+        solvedHandoffRef.current = false;
+        setError("Every word is saved, but completion still needs to be committed.");
+        setStatus("completion-pending");
+      } else if (data.allFound) {
+        catalogCompletionCommittedRef.current = true;
         completionRecordedRef.current = true;
         solvedHandoffRef.current = true;
         setStatus("won");
       } else {
+        catalogCompletionCommittedRef.current = false;
         completionRef.current = false;
         completionRecordedRef.current = false;
         completionHandoffPendingRef.current = false;
@@ -324,7 +345,7 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
       setStatus("error");
     });
     return () => { cancelled = true; };
-  }, [catalogLoadAttempt, dailyMode, placements, puzzleId, warzMode]);
+  }, [catalogLoadAttempt, effectiveScope, placements, puzzleId]);
 
   useEffect(() => {
     const state: WordSearchPresentationState = { status, foundCount: foundWords.length, totalWords: words.length, selectionLength: selection.length, selectedText, wordListOpen, definitionOpen: Boolean(definition), hintPending };
@@ -401,6 +422,18 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
     setStatus("completing");
     setError("");
     try {
+      if (effectiveScope === "catalog" && !catalogCompletionCommittedRef.current) {
+        const response = await fetch(`/api/puzzles/${puzzleId}/word_search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reconcile_completion" }),
+        });
+        const reconciliation = await response.json();
+        if (!response.ok || !reconciliation.completionCommitted) {
+          throw new Error(reconciliation.error || "Completion could not be committed.");
+        }
+        catalogCompletionCommittedRef.current = true;
+      }
       const result = await onComplete();
       if (!result.success) {
         setStatus("completion-pending");
@@ -419,7 +452,7 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
     } catch {
       setStatus("completion-pending"); setError("Completion could not be recorded. Check your connection and retry."); completionRef.current = false;
     }
-  }, [onComplete, onSolved]);
+  }, [effectiveScope, onComplete, onSolved, puzzleId]);
 
   const dismissDefinition = useCallback(() => {
     const wasFinal = Boolean(definition?.final);
@@ -464,6 +497,7 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
       if (!dailyMode && (!data.persisted || (data.allFound && !data.completionCommitted))) {
         throw new Error("That word could not be durably saved. Please try it again.");
       }
+      if (!dailyMode && data.completionCommitted) catalogCompletionCommittedRef.current = true;
       celebrateWord(word, canonicalCells, false, Boolean(data.allFound));
       if (data.allFound) {
         completionHandoffPendingRef.current = true;
@@ -496,6 +530,7 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
         if (!dailyMode && (!data.persisted || (data.allFound && !data.completionCommitted))) {
           throw new Error("The hinted word could not be durably saved. Please retry it.");
         }
+        if (!dailyMode && data.completionCommitted) catalogCompletionCommittedRef.current = true;
         celebrateWord(word, cells, true, Boolean(data.allFound));
         if (data.allFound) {
           completionHandoffPendingRef.current = true;
@@ -717,6 +752,13 @@ const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function Word
       </div>
     </div>
   );
+});
+
+const WordSearchPuzzle = forwardRef<WordSearchPuzzleHandle, Props>(function WordSearchPuzzle(props, ref) {
+  const normalized = normalizePlayableWordSearch(props.wordSearchData.grid, props.wordSearchData.words);
+  const scope = props.persistenceScope ?? (props.warzMode ? "none" : props.dailyMode ? "daily" : "catalog");
+  const identity = [scope, props.dailyDayNumber ?? "", props.puzzleId, normalized.signature, props.puzzleInstanceId ?? ""].join(":");
+  return <WordSearchPuzzleInner key={identity} {...props} ref={ref} />;
 });
 
 export default WordSearchPuzzle;

@@ -32,6 +32,7 @@ interface WarzPuzzle {
 
 interface Props {
   puzzle: WarzPuzzle;
+  instanceId: string;
   wager: number;
   onDone: (completionSeconds: number, forfeited?: boolean) => void;
   submitError?: string | null;
@@ -44,14 +45,18 @@ function formatTime(sec: number) {
   return `${m}:${s}`;
 }
 
-export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRetry }: Props) {
-  const startRef = useRef<number>(Date.now());
+export default function WarzPlayBoard({ puzzle, instanceId, wager, onDone, submitError, onRetry }: Props) {
+  const startRef = useRef<number>(0);
   const [elapsed, setElapsed] = useState(0);
   const [solved, setSolved] = useState(false);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
   const [showFailedModal, setShowFailedModal] = useState(false);
   const [failCountdown, setFailCountdown] = useState(5);
   const jigsawBoardDims = useJigsawBoardDims(puzzle.puzzleType === 'jigsaw' ? puzzle.jigsaw?.imageUrl : null);
+
+  useEffect(() => {
+    startRef.current = Date.now();
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -64,6 +69,8 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
   useEffect(() => {
     if (!showFailedModal) return;
     if (failCountdown <= 0) {
+      // The countdown subscription owns this terminal transition.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSolved(true);
       onDone(0, true);
       return;
@@ -229,6 +236,8 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
             wordSearchData={puzzle.data ?? {}}
             alreadySolved={false}
             warzMode
+            persistenceScope="none"
+            puzzleInstanceId={instanceId}
             onSolved={() => handleSolved()}
           />
         );

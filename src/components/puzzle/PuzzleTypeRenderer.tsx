@@ -393,6 +393,7 @@ export function PuzzleTypeRenderer({
           ref={wordSearchRef}
           puzzleId={puzzleId}
           wordSearchData={(puzzle.data ?? {}) as Record<string, unknown>}
+          persistenceScope="catalog"
           alreadySolved={progress?.solved ?? false}
           hintTokens={effectiveHintTokens}
           onHintUsed={onHintUsed}

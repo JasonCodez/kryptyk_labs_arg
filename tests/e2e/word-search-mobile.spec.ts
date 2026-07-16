@@ -46,11 +46,14 @@ async function installRoutes(page: Page, size: number, short = false) {
   let attemptSuccess = 0;
   let hintConsumes = 0;
   let failDailyOnce = false;
+  let dailyDayNumber = 142;
+  let repairRequired = false;
+  let reconciliations = 0;
   await page.route("**/api/**", async (route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/\/$/, ""); const method = request.method();
     const fulfill = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
     if (path === "/api/auth/session") return fulfill({ user: { id: "e2e-user", name: "Word Trove Tester", email: "trove@example.test" }, expires: "2099-01-01T00:00:00.000Z" });
-    if (path === "/api/daily/word_search/content") return fulfill({ available: true, dayNumber: 142, puzzleId: PUZZLE_ID });
+    if (path === "/api/daily/word_search/content") return fulfill({ available: true, dayNumber: dailyDayNumber, puzzleId: PUZZLE_ID });
     if (path === "/api/daily/word_search/complete") {
       if (method === "POST") {
         dailyCompletions += 1;
@@ -62,11 +65,15 @@ async function installRoutes(page: Page, size: number, short = false) {
     if (path === `/api/puzzles/${PUZZLE_ID}`) return fulfill({ id: PUZZLE_ID, title: "Word Trove E2E", description: "Deterministic Word Trove", content: "", difficulty: "medium", puzzleType: "word_search", xpReward: 100, solutions: [{ points: 100 }], data, category: { name: "Word Games" }, media: [], userHistory: [] });
     if (path === `/api/puzzles/${PUZZLE_ID}/word_search`) {
       if (method === "POST") {
-        const body = request.postDataJSON() as { word: string; dailyMode?: boolean };
+        const body = request.postDataJSON() as { action?: string; word: string; dailyMode?: boolean };
+        if (body.action === "reconcile_completion") {
+          reconciliations += 1; repairRequired = false; catalogSolved = true;
+          return fulfill({ valid: true, persisted: true, submissionsComplete: true, completionCommitted: true, allFound: true, foundCount: found.size, total: data.words.length });
+        }
         found.add(body.word); if (found.size === data.words.length && !body.dailyMode) catalogSolved = true;
         return fulfill({ valid: true, persisted: !body.dailyMode, completionCommitted: !body.dailyMode && found.size === data.words.length, foundCount: found.size, total: data.words.length, allFound: found.size === data.words.length });
       }
-      return fulfill({ foundWords: [...found], foundCount: found.size, total: data.words.length, allFound: catalogSolved && found.size === data.words.length, completionCommitted: catalogSolved });
+      return fulfill({ foundWords: [...found], foundCount: found.size, total: data.words.length, submissionsComplete: found.size === data.words.length, repairRequired, allFound: catalogSolved && found.size === data.words.length, completionCommitted: catalogSolved });
     }
     if (path === `/api/puzzles/${PUZZLE_ID}/progress`) {
       if (method === "POST" && request.postDataJSON().action === "attempt_success") attemptSuccess += 1;
@@ -75,12 +82,23 @@ async function installRoutes(page: Page, size: number, short = false) {
     if (path === `/api/puzzles/${PUZZLE_ID}/hints`) return fulfill({ hints: [], hintTokens: 2, skipTokens: 1 });
     if (path === "/api/user/consume-hint-token") { hintConsumes += 1; return fulfill({ remainingTokens: Math.max(0, 2 - hintConsumes) }); }
     if (path === `/api/puzzles/${PUZZLE_ID}/comparison-stats`) return fulfill({ percentile: 50, averageTime: 60, totalSolves: 1 });
-    if (path === "/api/user/info") return fulfill({ id: "e2e-user", totalXp: 0, activeSkin: "default" });
+    if (path === "/api/user/info") return fulfill({ id: "e2e-user", username: "trove-tester", totalPoints: 1000, totalXp: 0, activeSkin: "default" });
+    if (path === "/api/warz/check-eligible") return fulfill({ eligible: true });
     if (path === "/api/user/profile") return fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
     if (path === "/api/dictionary/define") return fulfill({ found: true, partOfSpeech: "noun", definition: `Definition of ${url.searchParams.get("word")}`, example: null, audioUrl: null, phonetic: null });
     return fulfill({});
   });
-  return { data, found, dailyCompletions: () => dailyCompletions, attemptSuccess: () => attemptSuccess, hintConsumes: () => hintConsumes, failNextDaily: () => { failDailyOnce = true; } };
+  return {
+    data,
+    found,
+    dailyCompletions: () => dailyCompletions,
+    attemptSuccess: () => attemptSuccess,
+    hintConsumes: () => hintConsumes,
+    reconciliations: () => reconciliations,
+    failNextDaily: () => { failDailyOnce = true; },
+    setDailyDay: (day: number) => { dailyDayNumber = day; },
+    seedLegacyRepair: () => { data.words.forEach((word) => found.add(word)); repairRequired = true; catalogSolved = false; },
+  };
 }
 
 async function dragWord(page: Page, start: [number, number], end: [number, number]) {
@@ -164,4 +182,50 @@ test("20x20 board keeps selection geometry after zooming and panning", async ({ 
   await dragWord(page, [15, 10], [15, 13]);
   await expect.poll(() => state.found.has("ZOOM")).toBe(true);
   await expect(page.getByRole("dialog", { name: "ZOOM definition" })).toBeVisible();
+});
+
+test("catalog, daily days, and consecutive Warz rounds remain isolated for the same puzzle id", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 850 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("0 / 2 found")).toBeVisible();
+  await dragWord(page, [0, 0], [0, 2]);
+  state.setDailyDay(143);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("0 / 2 found")).toBeVisible();
+
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click();
+  await expect(page.getByTestId("word-search-root")).toBeVisible();
+  await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+
+  await page.goto("/coming-soon", { waitUntil: "domcontentloaded" });
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click({ timeout: 20_000 });
+  await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
+});
+
+test("legacy catalog mismatch repairs in place without generic attempt_success", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 850 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  state.seedLegacyRepair();
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("grid")).toBeVisible();
+  await page.getByRole("button", { name: "Retry Completion" }).click();
+  await expect.poll(state.reconciliations).toBe(1);
+  await expect.poll(state.attemptSuccess).toBe(0);
+  await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
 });
