@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import SudokuGrid from "@/components/puzzle/SudokuGrid";
+import SudokuPuzzle from "@/components/puzzle/SudokuPuzzle";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle from "@/components/puzzle/WordSearchPuzzle";
 import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
@@ -240,12 +240,16 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
         try { parsed = JSON.parse(puzzle.sudoku.puzzleGrid); } catch { parsed = []; }
         try { solution = JSON.parse(puzzle.sudoku.solutionGrid); } catch { solution = []; }
         return (
-          <SudokuGrid
+          <SudokuPuzzle
+            puzzleId={`warz-${puzzle.id}`}
             puzzle={parsed}
-            givens={parsed.map((r) => r.map((v) => (v !== 0 ? 1 : 0)))}
             solution={solution}
-            validateOnChange
-            onValidatedSuccess={() => handleSolved()}
+            mode="daily"
+            displayMode="standalone"
+            onComplete={async (_grid, elapsedSeconds) => {
+              handleSolved(elapsedSeconds);
+              return { success: true };
+            }}
           />
         );
       }

@@ -58,3 +58,6 @@ jobs:
 
       - name: Run Anagram Blitz browser tests
         run: npm run test:anagram
+
+      - name: Run Sudoku browser tests
+        run: npm run test:sudoku

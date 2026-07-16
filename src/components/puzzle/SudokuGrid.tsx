@@ -1,410 +1,111 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import dynamic from "next/dynamic";
-import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
-import { juice } from "@/lib/juice";
+import { findSudokuConflicts, normalizeSudokuNotes, sudokuCellKey, type SudokuCell, type SudokuNotes } from "@/lib/sudokuPlay";
 
-const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
-const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
-const IceBackground = dynamic(() => import("@/components/IceBackground"), { ssr: false });
-const NeonBackground = dynamic(() => import("@/components/NeonBackground"), { ssr: false });
-const RetroBackground = dynamic(() => import("@/components/RetroBackground"), { ssr: false });
-
-interface SudokuGridProps {
+export interface SudokuGridProps {
   puzzle: number[][];
   givens?: number[][];
-  onSubmit?: (solution: number[][]) => void;
-  onChange?: (grid: number[][]) => void;
+  grid?: number[][];
+  notes?: SudokuNotes;
+  selectedCell?: SudokuCell | null;
+  lockedCells?: Set<string>;
+  hintedCells?: Set<string>;
   disabled?: boolean;
+  celebrating?: boolean;
+  onSelectCell?: (cell: SudokuCell) => void;
+  onChange?: (grid: number[][]) => void;
+  onSubmit?: (grid: number[][]) => void;
+  onValidatedSuccess?: (grid: number[][]) => void;
   solution?: number[][];
   validateOnChange?: boolean;
   maxAttempts?: number;
   usedAttempts?: number;
   onAttempt?: (attemptNumber: number, locked: boolean) => void;
-  // Called after successful validation/animation; defaults to onSubmit timing
-  onValidatedSuccess?: (solution: number[][]) => void;
-  onNotify?: (message: string, type?: 'info' | 'success' | 'error') => void;
+  onNotify?: (message: string, type?: "info" | "success" | "error") => void;
   onGiveUp?: () => void;
   onRequestGiveUp?: () => void;
   hintTokens?: number;
   onHintUsed?: () => Promise<boolean>;
 }
 
-export default function SudokuGrid({ puzzle, givens, onSubmit, onChange, disabled = false, solution, validateOnChange = false, onValidatedSuccess, onNotify, maxAttempts = 5, usedAttempts, onAttempt, onGiveUp, onRequestGiveUp, hintTokens = 0, onHintUsed }: SudokuGridProps) {
-  const skin = usePuzzleSkin();
-  const [grid, setGrid] = useState<number[][]>(() => puzzle.map((row) => [...row]));
-  const initialPuzzleRef = ((): { current: number[][] } => {
-    const ref: { current: number[][] } = { current: puzzle.map((r) => [...r]) };
-    return ref;
-  })();
-  const [incorrectMap, setIncorrectMap] = useState<boolean[][]>(() => Array(9).fill(null).map(() => Array(9).fill(false)));
-  const [incorrectCount, setIncorrectCount] = useState(0);
-  const [submitMessage, setSubmitMessage] = useState<{ message: string; type?: 'info'|'success'|'error' } | null>(null);
-  const [animating, setAnimating] = useState<'idle'|'validating'|'error'|'success'>('idle');
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [hasAttempted, setHasAttempted] = useState(false);
-  const [attempts, setAttempts] = useState(0);
-  const [locked, setLocked] = useState(false);
-  const [sudokuHintCount, setSudokuHintCount] = useState(0);
+/** Semantic, input-free Sudoku board. Game state and validation live in SudokuPuzzle. */
+export default function SudokuGrid({
+  puzzle, givens = puzzle, grid: controlledGrid, notes: controlledNotes, selectedCell: controlledSelected,
+  lockedCells = new Set(), hintedCells = new Set(), disabled = false, celebrating = false, onSelectCell,
+}: SudokuGridProps) {
+  const [fallbackGrid] = useState(() => puzzle.map((row) => [...row]));
+  const [fallbackSelected, setFallbackSelected] = useState<SudokuCell | null>(null);
+  const grid = controlledGrid ?? fallbackGrid;
+  const notes = controlledNotes ?? normalizeSudokuNotes({});
+  const selectedCell = controlledSelected === undefined ? fallbackSelected : controlledSelected;
+  const conflicts = useMemo(() => findSudokuConflicts(grid), [grid]);
+  const selectedValue = selectedCell ? grid[selectedCell.row]?.[selectedCell.col] : 0;
 
-  useEffect(() => {
-    setGrid(puzzle.map((row) => [...row]));
-    initialPuzzleRef.current = puzzle.map((row) => [...row]);
-  }, [puzzle]);
-
-  const handleCellChange = (row: number, col: number, value: string) => {
+  const select = (row: number, col: number) => {
     if (disabled) return;
-    const isGiven = typeof givens !== 'undefined' ? (givens[row]?.[col] ?? 0) !== 0 : (initialPuzzleRef.current[row]?.[col] ?? 0) !== 0;
-    if (isGiven) return;
-
-    const num = value === "" ? 0 : Number.parseInt(value, 10);
-    if (Number.isNaN(num) || num < 0 || num > 9) return;
-
-    const next = (() => {
-      // compute next grid synchronously so we can notify parent immediately
-      const n = grid.map((r) => [...r]);
-      n[row][col] = num;
-      return n;
-    })();
-    setGrid(next);
-    if (typeof onChange === 'function') onChange(next.map((r) => [...r]));
+    const next = { row, col };
+    setFallbackSelected(next);
+    onSelectCell?.(next);
   };
-
-  const useSudokuHint = async () => {
-    if (!solution || disabled) return;
-    if (hintTokens < 1) {
-      setSubmitMessage({ message: 'You need a hint token. Purchase them in the Store!', type: 'error' });
-      return;
-    }
-    // Deduct token server-side first; abort if it fails
-    if (onHintUsed) {
-      const ok = await onHintUsed();
-      if (!ok) {
-        setSubmitMessage({ message: 'Failed to use hint token. Please try again.', type: 'error' });
-        return;
-      }
-    }
-    const emptyCells: [number, number][] = [];
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const isGiven = typeof givens !== 'undefined' ? (givens[r]?.[c] ?? 0) !== 0 : (initialPuzzleRef.current[r]?.[c] ?? 0) !== 0;
-        if (!isGiven && grid[r][c] === 0) emptyCells.push([r, c]);
-      }
-    }
-    if (emptyCells.length === 0) return;
-    const [row, col] = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-    handleCellChange(row, col, String(solution[row][col]));
-    setSudokuHintCount((c) => c + 1);
-  };
-
-  const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-
-  const handleSubmit = async () => {
-    // Prevent submitting incomplete puzzles
-    const isComplete = grid.flat().every((n) => n !== 0);
-    if (!isComplete) {
-      // show inline message below submit button
-      setSubmitMessage({ message: 'Please fill all cells before submitting the Sudoku.', type: 'info' });
-      return;
-    }
-    // If a solution is provided, run animated validation
-    if (!Array.isArray(solution)) {
-      console.warn('[SudokuGrid] submit blocked: no solution provided');
-      setSubmitMessage({ message: 'Sudoku solution unavailable. Cannot validate submission.', type: 'error' });
-      return;
-    }
-
-    console.debug('[SudokuGrid] submitting, solution present:', Array.isArray(solution));
-    // run animated validation
-    if (Array.isArray(solution)) {
-      setAnimating('validating');
-      const incorrect = findIncorrectCells(grid, solution);
-      if (incorrect.length > 0) {
-        // mark that the user has attempted to submit; count attempts but do NOT reveal incorrect cells
-        setHasAttempted(true);
-        const nextAttempts = attempts + 1;
-        setAttempts(nextAttempts);
-        const isLocked = nextAttempts >= maxAttempts;
-        if (isLocked) setLocked(true);
-        if (typeof onAttempt === 'function') onAttempt(nextAttempts, isLocked);
-        // show inline message below submit button (page-level handler will perform lock logic)
-        if (isLocked) setSubmitMessage({ message: `Maximum attempts reached. Puzzle locked.`, type: 'error' });
-        else setSubmitMessage({ message: `Incorrect. Attempts: ${nextAttempts}/${maxAttempts}`, type: 'error' });
-        juice.error();
-        setAnimating('error');
-        await sleep(800);
-        setAnimating('idle');
-        return;
-      }
-
-      // success animation
-      setIncorrectMap(Array(9).fill(null).map(() => Array(9).fill(false)));
-      juice.success();
-      setAnimating('success');
-
-      // confetti if allowed
-      if (!reducedMotion) {
-        try {
-          // @ts-ignore - canvas-confetti has no type declarations in this project
-          const confetti = (await import('canvas-confetti')).default;
-          confetti({ particleCount: 140, spread: 70, origin: { y: 0.6 } });
-        } catch {
-          // ignore if not available
-        }
-      }
-
-      // The staggered cell-pop wave covers all 81 cells (30ms apart, ~0.45s pop each), so the
-      // last cell doesn't finish popping until ~2.9s in. Give it room to fully play out — and a
-      // beat of hold after — instead of handing off to the page-level modal partway through.
-      await sleep(1400);
-
-      if (!reducedMotion) {
-        try {
-          // @ts-ignore - canvas-confetti has no type declarations in this project
-          const confetti = (await import('canvas-confetti')).default;
-          confetti({ particleCount: 90, spread: 100, origin: { y: 0.5 }, angle: 60 });
-          confetti({ particleCount: 90, spread: 100, origin: { y: 0.5 }, angle: 120 });
-        } catch {
-          // ignore if not available
-        }
-      }
-
-      await sleep(1500);
-      setAnimating('idle');
-
-      // call validated success handler (page will award points / open modal)
-      // clear any submit message on success
-      setSubmitMessage(null);
-      if (typeof onValidatedSuccess === 'function') {
-        onValidatedSuccess(grid.map((r) => [...r]));
-      } else {
-        onSubmit?.(grid);
-      }
-
-      return;
-    }
-
-    // No solution provided: just submit
-    onSubmit?.(grid);
-  };
-
-  // Validation helpers
-  const findIncorrectCells = (g: number[][], sol: number[][]) => {
-    const incorrect: [number, number][] = [];
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        if ((puzzle[r]?.[c] || 0) === 0) {
-          // only validate user-entered cells
-          const solutionVal = Number(sol[r]?.[c] ?? -1);
-          const gridVal = Number(g[r]?.[c] ?? -1);
-          if (gridVal !== 0 && solutionVal !== gridVal) {
-            incorrect.push([r, c]);
-          }
-        }
-      }
-    }
-    return incorrect;
-  };
-
-  const validateGrid = (g: number[][]) => {
-    if (!Array.isArray(solution)) return;
-    if (!hasAttempted && !validateOnChange) return;
-    const incorrect = findIncorrectCells(g, solution);
-    setIncorrectCount(incorrect.length);
-  };
-
-  useEffect(() => {
-    if (Array.isArray(solution) && validateOnChange) {
-      validateGrid(grid);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [solution]);
-
-  useEffect(() => {
-    if (Array.isArray(solution) && validateOnChange) {
-      validateGrid(grid);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grid]);
-
-  useEffect(() => {
-    try {
-      const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-      setReducedMotion(Boolean(mq.matches));
-    } catch {
-      setReducedMotion(false);
-    }
-  }, []);
-
-  const isComplete = grid.flat().every((n) => n !== 0);
-
-  const effectiveAttempts = typeof usedAttempts === 'number' ? usedAttempts : attempts;
-  const attemptsLeft = Math.max(0, (maxAttempts || 0) - (effectiveAttempts || 0));
 
   return (
-    <div
-      data-skin={skin._key ?? "default"}
-      style={{
-        position: "relative",
-        borderRadius: "1rem",
-        overflow: "hidden",
-        width: "100%",
-        maxWidth: "100vw",
-      }}
+    <motion.div
+      className={`sudoku-grid${celebrating ? " is-celebrating" : ""}`}
+      role="grid"
+      aria-label="Sudoku board"
+      aria-rowcount={9}
+      aria-colcount={9}
+      animate={celebrating ? { scale: [1, 1.015, 1] } : undefined}
+      transition={{ duration: 0.5 }}
     >
-      {/* Animated skin backgrounds */}
-      {(skin._key === "lava" || skin._key === "skin_lava") && <LavaBackground />}
-      {(skin._key === "galaxy" || skin._key === "skin_galaxy") && <GalaxyBackground />}
-      {(skin._key === "ice" || skin._key === "skin_ice" || skin._key === "christmas" || skin._key === "skin_christmas") && <IceBackground />}
-      {(skin._key === "neon" || skin._key === "skin_neon") && <NeonBackground />}
-      {(skin._key === "retro" || skin._key === "skin_retro") && <RetroBackground />}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          background: skin.backdropScrim,
-          zIndex: 0,
-        }}
-      />
-
-    <div className="flex flex-col gap-2 sm:gap-4 items-center justify-center py-3 px-1.5 sm:py-14 sm:px-10" style={{ position: "relative", zIndex: 1 }}>
-      {/* Title */}
-      <h2
-        className="text-lg sm:text-3xl font-black tracking-[0.2em] mb-0.5 sm:mb-1 text-center"
-        style={{
-          backgroundImage: "linear-gradient(135deg, #FDE74C, #FFB86B, #3891A6)",
-          backgroundClip: "text",
-          WebkitBackgroundClip: "text",
-          color: "transparent",
-          WebkitTextFillColor: "transparent",
-          filter: "drop-shadow(0 0 12px rgba(253,231,76,0.4))",
-        }}
-      >
-        SUDOKU
-      </h2>
-      <p className="text-xs font-medium" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>
-        Attempts left: <span className="font-semibold">{attemptsLeft}</span>
-      </p>
-
-      <motion.div
-          className="w-full border-2 sm:border-4 p-1.5 sm:p-3 rounded"
-          style={{
-            background: skin.boardBg,
-            borderColor: skin.boardBorder,
-            boxShadow: skin.boardShadow !== "none" ? skin.boardShadow : undefined,
-            borderRadius: skin.boardRadius,
-            width: '100%',
-            maxWidth: 'min(100%, 720px)',
-            aspectRatio: '1 / 1',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-          variants={{ idle: {}, popParent: { transition: { staggerChildren: 0.03 } } }}
-          animate={animating === 'success' ? 'popParent' : 'idle'}
-        >
-          {grid.map((row, rowIdx) => (
-            <div key={rowIdx} className="flex flex-1">
-              {row.map((cell, colIdx) => {
-              const isGiven = givens ? (givens[rowIdx]?.[colIdx] !== 0) : (initialPuzzleRef.current[rowIdx]?.[colIdx] !== 0);
-              const thickRight = colIdx === 2 || colIdx === 5;
-              const thickBottom = rowIdx === 2 || rowIdx === 5;
-
-              return (
-                  <motion.div
-                    key={`${rowIdx}-${colIdx}`}
-                    variants={{
-                      idle: { scale: 1, x: 0 },
-                      pop: { scale: [1, 1.12, 1], transition: { duration: 0.45, ease: 'easeOut' } },
-                      shake: { x: [0, -6, 6, -6, 6, 0], transition: { duration: 0.6, ease: 'easeInOut' } },
-                    }}
-                    animate={animating === 'success' ? 'pop' : 'idle'}
-                    className="flex-1"
-                    style={{ flex: '1 1 0%', minWidth: 0 }}
-                  >
-                    <input
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={cell === 0 ? "" : String(cell)}
-                      disabled={disabled || isGiven}
-                      onChange={(e) => handleCellChange(rowIdx, colIdx, e.target.value)}
-                      className="w-full h-full text-center border focus:outline-none disabled:opacity-80"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        boxSizing: 'border-box',
-                        minWidth: 0,
-                        fontSize: 'clamp(16px, 4vw, 28px)',
-                        borderRightWidth: thickRight ? "3px" : "1px",
-                        borderBottomWidth: thickBottom ? "3px" : "1px",
-                        borderRightColor: thickRight ? skin.boardBorder : undefined,
-                        borderBottomColor: thickBottom ? skin.boardBorder : undefined,
-                        fontWeight: isGiven ? 700 : 500,
-                        padding: 0,
-                        lineHeight: '1',
-                        color: isGiven ? skin.tileText : skin.accentActive.replace(/[\d.]+\)$/, "1)"),
-                        background: skin.tileBg,
-                        borderColor: skin.tileBorder,
-                        boxShadow: undefined,
-                      }}
-                    />
-                  </motion.div>
-              );
-            })}
-          </div>
-        ))}
-        </motion.div>
-
-      <div className="w-full flex items-center justify-center">
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={disabled || !isComplete}
-          className="px-4 py-2 rounded font-bold transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
-          style={{ background: skin.btnBg, color: skin.btnText }}
-        >
-          Submit Sudoku
-        </button>
-        {solution && !disabled && (
-          <>
-            <button
-              type="button"
-              onClick={useSudokuHint}
-              disabled={hintTokens < 1}
-              className="ml-3 px-4 py-2 rounded font-semibold transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                background: hintTokens < 1 ? "rgba(255,107,107,0.1)" : "rgba(56,145,166,0.2)",
-                border: `1px solid ${hintTokens < 1 ? "rgba(255,107,107,0.5)" : "rgba(56,145,166,0.5)"}`,
-                color: hintTokens < 1 ? "#FF6B6B" : "#3891A6",
-              }}
-              title={hintTokens < 1 ? "No hint tokens — purchase from the Store" : `Use 1 hint token (${hintTokens} remaining)`}
-            >
-              💡 {hintTokens < 1 ? "No Hint Tokens" : `Hint (${hintTokens} hint token${hintTokens !== 1 ? "s" : ""})`}{sudokuHintCount > 0 ? ` · used ${sudokuHintCount}` : ""}
-            </button>
-            {hintTokens < 1 && (
-              <a
-                href="/store"
-                className="ml-2 text-xs font-semibold underline transition-opacity hover:opacity-80"
-                style={{ color: "#FDE74C" }}
+      {grid.map((row, rowIndex) => (
+        <div className="sudoku-row" role="row" key={rowIndex}>
+          {row.map((value, colIndex) => {
+            const key = sudokuCellKey(rowIndex, colIndex);
+            const given = givens[rowIndex]?.[colIndex] !== 0;
+            const selected = selectedCell?.row === rowIndex && selectedCell?.col === colIndex;
+            const related = selectedCell != null && (
+              selectedCell.row === rowIndex || selectedCell.col === colIndex ||
+              (Math.floor(selectedCell.row / 3) === Math.floor(rowIndex / 3) && Math.floor(selectedCell.col / 3) === Math.floor(colIndex / 3))
+            );
+            const matching = Boolean(value && selectedValue === value);
+            const cellNotes = notes[key] ?? [];
+            const label = `Row ${rowIndex + 1}, column ${colIndex + 1}, ${given ? "given" : "editable"}, ${value ? `value ${value}` : cellNotes.length ? `candidates ${cellNotes.join(", ")}` : "empty"}`;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="gridcell"
+                className="sudoku-cell"
+                data-row={rowIndex + 1}
+                data-column={colIndex + 1}
+                data-given={given || undefined}
+                data-related={related || undefined}
+                data-matching={matching || undefined}
+                data-conflict={conflicts.has(key) || undefined}
+                data-hinted={hintedCells.has(key) || undefined}
+                data-locked={lockedCells.has(key) || undefined}
+                aria-selected={selected}
+                aria-readonly={given || lockedCells.has(key)}
+                aria-label={label}
+                tabIndex={selected || (!selectedCell && rowIndex === 0 && colIndex === 0) ? 0 : -1}
+                disabled={disabled}
+                onClick={() => select(rowIndex, colIndex)}
               >
-                Buy tokens →
-              </a>
-            )}
-          </>
-        )}
-      </div>
-      {submitMessage && (
-        <div className={`mt-2 text-sm ${submitMessage.type === 'error' ? 'text-red-400' : submitMessage.type === 'success' ? 'text-green-400' : 'text-yellow-300'}`}>
-          {submitMessage.message}
+                {value ? <span className={given ? "sudoku-given" : "sudoku-value"}>{value}</span> : (
+                  <span className="sudoku-candidates" aria-hidden>
+                    {Array.from({ length: 9 }, (_, index) => index + 1).map((candidate) => (
+                      <span key={candidate}>{cellNotes.includes(candidate) ? candidate : ""}</span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-      )}
-      {!isComplete && !disabled && (
-        <div className="text-sm text-center font-medium" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>Please complete all cells before submitting.</div>
-      )}
-    </div>
-    </div>
+      ))}
+    </motion.div>
   );
 }

@@ -1,0 +1,63 @@
+.sudoku-puzzle { width: 100%; height: 100%; min-height: 0; color: #fff; }
+.pw-sudoku-shell-content, .pw-sudoku-shell-content .puzzle-detail-play-stage, .pw-sudoku-shell-content .puzzle-detail-play-inner, .pw-sudoku-shell-content .puzzle-detail-play-container, .pw-sudoku-shell-content .puzzle-detail-play-card, .pw-sudoku-shell-content .puzzle-detail-play-card-body { height: 100%; min-height: 0; }
+.pw-sudoku-shell-content .puzzle-detail-play-inner { padding: 0 !important; }.pw-sudoku-shell-content .puzzle-detail-play-container { max-width: none !important; }.pw-sudoku-shell-content .puzzle-detail-play-card { margin: 0 !important; border: 0 !important; border-radius: 0 !important; }.pw-sudoku-shell-content .puzzle-detail-play-card-body { padding: 0 !important; overflow: hidden; }
+.sudoku-game-surface { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: clamp(6px, 1.4vh, 14px); outline: none; overflow: hidden; padding: 6px max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-right)); }
+.sudoku-board-region { min-height: 0; display: flex; align-items: center; justify-content: center; }
+.sudoku-grid { width: min(100%, calc(100dvh - 330px), 620px); max-height: 100%; aspect-ratio: 1; display: grid; grid-template-rows: repeat(9, 1fr); border: 3px solid #86d8e8; border-radius: 8px; overflow: hidden; background: #071016; box-shadow: 0 12px 34px rgba(0,0,0,.35); }
+.sudoku-row { display: grid; grid-template-columns: repeat(9, 1fr); min-height: 0; }
+.sudoku-cell { position: relative; min-width: 0; min-height: 0; border: 0; border-right: 1px solid rgba(134,216,232,.28); border-bottom: 1px solid rgba(134,216,232,.28); background: rgba(9,49,58,.76); color: #fff; padding: 0; font: inherit; cursor: pointer; }
+.sudoku-cell:nth-child(3), .sudoku-cell:nth-child(6) { border-right-width: 3px; border-right-color: #86d8e8; }
+.sudoku-row:nth-child(3) .sudoku-cell, .sudoku-row:nth-child(6) .sudoku-cell { border-bottom-width: 3px; border-bottom-color: #86d8e8; }
+.sudoku-cell[data-related] { background: rgba(56,145,166,.21); }
+.sudoku-cell[data-matching] { background: rgba(253,231,76,.18); }
+.sudoku-cell[aria-selected="true"] { z-index: 2; background: rgba(56,145,166,.55); box-shadow: inset 0 0 0 3px #fde74c; }
+.sudoku-cell[data-conflict] { color: #ff9d9d; background: rgba(255,93,93,.18); }
+.sudoku-cell[data-hinted] { background: rgba(125,249,180,.2); }
+.sudoku-cell[data-locked]::after { content: ""; position: absolute; right: 2px; top: 2px; width: 5px; height: 5px; border-radius: 50%; background: #38d399; }
+.sudoku-given, .sudoku-value { display: grid; place-items: center; height: 100%; font-size: clamp(16px, 5.8vw, 34px); line-height: 1; }
+.sudoku-given { color: #fff; font-weight: 850; }
+.sudoku-value { color: #fde74c; font-weight: 700; }
+.sudoku-candidates { position: absolute; inset: 2px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); font-size: clamp(6px, 1.8vw, 11px); color: #dbeafe; }
+.sudoku-candidates > span { display: grid; place-items: center; }
+.sudoku-controls { display: grid; gap: 7px; }
+.sudoku-utility-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sudoku-tool, .sudoku-number-key, .sudoku-validation-row button, .sudoku-result-card button, .sudoku-result-card a { min-height: 44px; border: 1px solid rgba(134,216,232,.32); border-radius: 10px; background: rgba(9,49,58,.88); color: #fff; font-weight: 750; }
+.sudoku-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; line-height: 1.05; }
+.sudoku-tool span { color: #fde74c; font-size: 10px; margin-top: 2px; }
+.sudoku-tool[aria-pressed="true"] { background: #3891a6; box-shadow: inset 0 0 0 2px #fde74c; }
+.sudoku-number-pad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.sudoku-number-key { font-size: 21px; background: linear-gradient(180deg, rgba(56,145,166,.92), rgba(22,90,107,.92)); }
+.sudoku-number-key:active { transform: scale(.94); }
+.sudoku-validation-row { min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.sudoku-validation-row p { margin: 0; max-height: 2.5em; overflow: auto; color: #dddBF1; font-size: 12px; line-height: 1.2; }
+.sudoku-validation-row button { min-width: 128px; padding: 0 14px; background: #fde74c; color: #071016; }
+.sudoku-validation-row button:disabled, .sudoku-tool:disabled, .sudoku-number-key:disabled { opacity: .42; }
+.sudoku-internal-header { display: flex; align-items: center; justify-content: space-between; max-width: 620px; margin: 0 auto 8px; }
+.sudoku-internal-header h2 { margin: 0; letter-spacing: .18em; }
+.sudoku-internal-header button { min-height: 44px; padding: 0 16px; border-radius: 9px; }
+.sudoku-dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.72); }
+.sudoku-help-dialog, .sudoku-confirm-dialog { position: relative; width: min(100%, 430px); padding: 24px; border: 1px solid rgba(134,216,232,.35); border-radius: 16px; background: #071016; color: #fff; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+.sudoku-help-dialog h2, .sudoku-confirm-dialog h2 { margin: 0 30px 12px 0; color: #fde74c; }
+.sudoku-dialog-close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border: 0; background: transparent; color: #fff; font-size: 28px; }
+.sudoku-dialog-primary, .sudoku-confirm-dialog button { min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 750; }
+.sudoku-confirm-dialog > div { display: flex; justify-content: flex-end; gap: 8px; }
+.sudoku-status-card, .sudoku-result-card { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 24px; }
+.sudoku-result-card > span { font-size: 48px; }.sudoku-result-card h2, .sudoku-result-card p { margin: 0; }.sudoku-result-card > div { display: flex; gap: 10px; }.sudoku-result-card button, .sudoku-result-card a { display: grid; place-items: center; padding: 0 18px; text-decoration: none; }
+.sudoku-spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.25); border-top-color: #fde74c; border-radius: 50%; animation: sudoku-spin .8s linear infinite; }
+@keyframes sudoku-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 1031px) {
+  body:has(.pw-sudoku-shell-content) { padding-bottom: 0; overflow: hidden; }
+}
+
+@media (min-width: 540px) { .sudoku-number-pad { grid-template-columns: repeat(9, 1fr); }.sudoku-grid { width: min(100%, calc(100dvh - 280px), 620px); } }
+@media (orientation: landscape) and (max-height: 600px) and (min-width: 650px) {
+  .sudoku-game-surface { grid-template-columns: minmax(0, 1fr) minmax(290px, .72fr); grid-template-rows: minmax(0, 1fr); gap: 12px; }
+  .sudoku-grid { width: min(100%, calc(100dvh - 110px), 540px); }
+  .sudoku-controls { align-content: center; }.sudoku-number-pad { grid-template-columns: repeat(5, 1fr); }
+}
+@media (min-width: 1032px) {
+  .sudoku-game-surface { max-width: 1060px; margin: 0 auto; grid-template-columns: minmax(440px, 620px) minmax(300px, 360px); grid-template-rows: minmax(0, 1fr); align-items: center; gap: 32px; }
+  .sudoku-grid { width: min(100%, calc(100dvh - 210px), 620px); }.sudoku-number-pad { grid-template-columns: repeat(3, 1fr); }.sudoku-number-key { min-height: 54px; }
+}
+@media (prefers-reduced-motion: reduce) { .sudoku-puzzle *, .sudoku-puzzle *::before, .sudoku-puzzle *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }

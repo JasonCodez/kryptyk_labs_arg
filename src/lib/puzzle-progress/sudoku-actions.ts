@@ -22,8 +22,10 @@ export async function startSudokuTimer(
   if (!progress.sudokuStartedAt || !progress.sudokuExpiresAt) {
     const now = new Date();
     const limitSeconds = puzzleRecord.sudoku?.timeLimitSeconds ?? 15 * 60;
+    // New clients omit clientStartedAtMs. Keep accepting a bounded legacy value,
+    // but never allow local storage to move the authoritative start far into the past.
     const startedAt =
-      clientStartedAtMs && Number.isFinite(clientStartedAtMs)
+      clientStartedAtMs && Number.isFinite(clientStartedAtMs) && Date.now() - clientStartedAtMs < 5 * 60 * 1000
         ? new Date(Math.min(Date.now(), clientStartedAtMs))
         : now;
 
@@ -73,6 +75,7 @@ export async function clearSudokuState(progress: {
     await prisma.userPuzzleProgress.update({
       where: { id: progress.id },
       data: {
+        ...(progress.solved ? {} : { attempts: 0 }),
         sudokuStartedAt: null,
         sudokuExpiresAt: null,
         sudokuLockedAt: null,

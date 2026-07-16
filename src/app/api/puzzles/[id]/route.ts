@@ -142,15 +142,16 @@ export async function GET(
     // Some Prisma client generations may not include newly added fields
     // (e.g., timeLimitSeconds) in nested select types. Fetch it separately
     // when a sudoku record exists and attach to the payload for the client.
-    let outPayload = puzzle as (typeof puzzle & { sudoku?: { timeLimitSeconds?: number | null } });
+    let outPayload = puzzle as (typeof puzzle & { sudoku?: { timeLimitSeconds?: number | null; maxAttempts?: number | null } });
     if (puzzle?.sudoku) {
       try {
         const extra = await prisma.sudokuPuzzle.findUnique({
           where: { puzzleId: puzzle.id },
-          select: ({ timeLimitSeconds: true } as unknown) as Prisma.SudokuPuzzleSelect<any>,
+          select: ({ timeLimitSeconds: true, maxAttempts: true } as unknown) as Prisma.SudokuPuzzleSelect<any>,
         });
         const extraTl = (extra as any)?.timeLimitSeconds ?? null;
-        outPayload = { ...puzzle, sudoku: { ...puzzle.sudoku, timeLimitSeconds: extraTl } };
+        const extraMax = (extra as any)?.maxAttempts ?? 5;
+        outPayload = { ...puzzle, sudoku: { ...puzzle.sudoku, timeLimitSeconds: extraTl, maxAttempts: extraMax } };
       } catch (e) {
         console.warn('[PUZZLE FETCH] Failed to fetch sudoku.extra:', e);
       }

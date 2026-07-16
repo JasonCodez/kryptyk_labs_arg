@@ -120,6 +120,13 @@ interface RawPuzzleEdit {
     rotationEnabled?: boolean;
     imageUrl?: string;
   };
+  sudoku?: {
+    puzzleGrid?: string;
+    solutionGrid?: string;
+    difficulty?: string;
+    timeLimitSeconds?: number | null;
+    maxAttempts?: number | null;
+  };
 }
 
 export default function AdminPuzzlesPage() {
@@ -150,6 +157,7 @@ export default function AdminPuzzlesPage() {
   const [sudokuDifficulty, setSudokuDifficulty] = useState<'easy' | 'medium' | 'hard' | 'expert' | 'extreme'>('medium');
   const [sudokuPuzzle, setSudokuPuzzle] = useState<{ puzzle: number[][]; solution: number[][] } | null>(null);
   const [sudokuTimeLimit, setSudokuTimeLimit] = useState<number | undefined>(15 * 60);
+  const [sudokuMaxAttempts, setSudokuMaxAttempts] = useState(5);
   const [formData, setFormData] = useState<PuzzleFormData>({
     title: "",
     description: "",
@@ -335,6 +343,19 @@ export default function AdminPuzzlesPage() {
         }
       }
 
+      if (p.sudoku) {
+        try {
+          const storedPuzzle = p.sudoku.puzzleGrid ? JSON.parse(p.sudoku.puzzleGrid) as number[][] : null;
+          const storedSolution = p.sudoku.solutionGrid ? JSON.parse(p.sudoku.solutionGrid) as number[][] : null;
+          if (storedPuzzle && storedSolution) setSudokuPuzzle({ puzzle: storedPuzzle, solution: storedSolution });
+        } catch { setSudokuPuzzle(null); }
+        if (["easy", "medium", "hard", "expert", "extreme"].includes(p.sudoku.difficulty || "")) {
+          setSudokuDifficulty(p.sudoku.difficulty as 'easy' | 'medium' | 'hard' | 'expert' | 'extreme');
+        }
+        setSudokuTimeLimit(p.sudoku.timeLimitSeconds ?? undefined);
+        setSudokuMaxAttempts(Math.max(1, Math.min(20, p.sudoku.maxAttempts ?? 5)));
+      }
+
       setFormData(baseData);
       setEditingId(id);
       setPuzzleId(id);
@@ -379,6 +400,10 @@ export default function AdminPuzzlesPage() {
     setJigsawImageUrl("");
     setJigsawImagePreview("");
     setJigsawImageFile(null);
+    setSudokuPuzzle(null);
+    setSudokuDifficulty('medium');
+    setSudokuTimeLimit(15 * 60);
+    setSudokuMaxAttempts(5);
     setFormError("");
     setFormSuccess("");
   };
@@ -666,6 +691,7 @@ export default function AdminPuzzlesPage() {
         submitBody.sudokuSolution = sudokuPuzzle.solution;
         submitBody.sudokuDifficulty = sudokuDifficulty;
         submitBody.timeLimitSeconds = sudokuTimeLimit;
+        submitBody.maxAttempts = sudokuMaxAttempts;
         // Sudoku answers are entered on the board; don't send a separate correctAnswer
         delete submitBody.correctAnswer;
       }
@@ -1299,6 +1325,18 @@ export default function AdminPuzzlesPage() {
                           />
                           <div className="text-xs text-gray-400">Leave blank for no limit</div>
                         </div>
+                      </div>
+                      <div className="mt-3">
+                        <label className="block text-sm font-semibold text-gray-300 mb-2">Maximum completed-board checks</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={sudokuMaxAttempts}
+                          onChange={(event) => setSudokuMaxAttempts(Math.max(1, Math.min(20, Number(event.target.value) || 5)))}
+                          className="w-32 px-3 py-2 rounded bg-slate-700/50 border border-slate-600 text-white"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">Incomplete checks never consume an attempt.</p>
                       </div>
                     </div>
                   )}

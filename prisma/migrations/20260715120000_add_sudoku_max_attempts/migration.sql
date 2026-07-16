@@ -1,0 +1,2 @@
+ALTER TABLE "sudoku_puzzles"
+ADD COLUMN "maxAttempts" INTEGER NOT NULL DEFAULT 5;

@@ -1,93 +1,64 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import StreakTimer from "@/components/StreakTimer";
-import SudokuGrid from "@/components/puzzle/SudokuGrid";
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
+import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
+import SudokuPuzzle, { type SudokuPresentationState, type SudokuPuzzleHandle } from "@/components/puzzle/SudokuPuzzle";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
+
+const formatElapsed = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
 export default function DailySudokuPage() {
   const { status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
-  const { loading, available, dayNumber, streak, completedToday, nextReward, content, submitCompletion } =
-    useDailyPuzzle("sudoku");
+  const { loading, available, dayNumber, streak, completedToday, content, submitCompletion } = useDailyPuzzle("sudoku");
+  const sudokuRef = useRef<SudokuPuzzleHandle>(null);
+  const [presentation, setPresentation] = useState<SudokuPresentationState | null>(null);
   const [solved, setSolved] = useState(false);
   const [reward, setReward] = useState<{ points: number; xp: number } | null>(null);
 
-  const grid = useMemo(() => {
-    if (!content?.puzzleGrid) return null;
-    try {
-      return JSON.parse(content.puzzleGrid) as number[][];
-    } catch {
-      return null;
-    }
-  }, [content?.puzzleGrid]);
-
-  const solution = useMemo(() => {
-    if (!content?.solutionGrid) return null;
-    try {
-      return JSON.parse(content.solutionGrid) as number[][];
-    } catch {
-      return null;
-    }
-  }, [content?.solutionGrid]);
-
+  const grid = useMemo(() => { try { return content?.puzzleGrid ? JSON.parse(content.puzzleGrid) as number[][] : null; } catch { return null; } }, [content?.puzzleGrid]);
+  const solution = useMemo(() => { try { return content?.solutionGrid ? JSON.parse(content.solutionGrid) as number[][] : null; } catch { return null; } }, [content?.solutionGrid]);
   const isDone = completedToday || solved;
 
   return (
     <PuzzlePlayShell
       backHref="/daily"
       title="Daily Sudoku"
-      subtitle={`#${dayNumber || "---"}`}
-      actions={streak > 0 ? <StreakTimer streak={streak} solvedToday={isDone} size="sm" /> : null}
+      subtitle={`#${dayNumber || "---"}${streak > 0 ? ` · 🔥 ${streak}` : ""}`}
+      progress={presentation ? formatElapsed(presentation.timeMs) : "0:00"}
+      actions={<PuzzleHeaderActions onHelp={() => sudokuRef.current?.openInstructions()} helpLabel="How to play Sudoku" />}
+      contentMode="fixed"
+      contentClassName="pw-sudoku-shell-content"
     >
-      <div className="flex flex-col items-center px-3 pt-4 pb-6">
-        {!isAuthenticated ? (
-          <div className="mt-16 text-center">
-            <p className="text-white font-bold mb-3">Sign in to play the daily sudoku</p>
-            <Link href="/auth/signin" className="px-5 py-2 rounded-lg text-sm font-bold inline-block" style={{ background: "#FDE74C", color: "#020202" }}>
-              Sign in
-            </Link>
-          </div>
-        ) : loading ? (
-          <div className="flex items-center gap-2 mt-20" style={{ color: "#3891A6" }}>
-            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading today&apos;s puzzle…</span>
-          </div>
-        ) : !available || !grid || !solution ? (
-          <p className="mt-16 text-sm" style={{ color: "#AB9F9D" }}>Today&apos;s sudoku isn&apos;t ready yet — check back soon.</p>
-        ) : isDone ? (
-          <div className="w-full max-w-sm mt-10 p-6 rounded-xl text-center" style={{ border: "1px solid rgba(56,211,153,0.18)", background: "rgba(56,211,153,0.04)" }}>
-            <div className="text-4xl mb-2">✓</div>
-            <p className="text-white font-bold mb-1">Solved for today!</p>
-            {reward && (
-              <p className="text-sm" style={{ color: "#38D399" }}>+{reward.points} pts · +{reward.xp} xp</p>
-            )}
-            <p className="text-xs mt-3" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
-          </div>
-        ) : (
-          <div className="w-full max-w-3xl">
-            {nextReward && (
-              <p className="text-xs text-center mb-3" style={{ color: "#DDDBF1" }}>
-                Day {nextReward.streakDay} reward: +{nextReward.points} pts · +{nextReward.xp} xp
-              </p>
-            )}
-            <SudokuGrid
-              puzzle={grid}
-              givens={grid}
-              solution={solution}
-              validateOnChange
-              onValidatedSuccess={async () => {
-                setSolved(true);
-                const result = await submitCompletion();
-                if (result?.reward) setReward(result.reward);
-              }}
-            />
-          </div>
-        )}
-      </div>
+      {!isAuthenticated ? (
+        <div className="sudoku-status-card"><p>Sign in to play the daily Sudoku.</p><Link href="/auth/signin" className="sudoku-dialog-primary">Sign in</Link></div>
+      ) : loading ? (
+        <div className="sudoku-status-card" role="status"><span className="sudoku-spinner" />Loading today&apos;s puzzle…</div>
+      ) : !available || !grid || !solution ? (
+        <div className="sudoku-status-card">Today&apos;s Sudoku isn&apos;t ready yet. Check back soon.</div>
+      ) : isDone ? (
+        <section className="sudoku-result-card"><span aria-hidden>✓</span><h2>Solved for today!</h2>{reward && <p>+{reward.points} pts · +{reward.xp} xp</p>}<p>Come back tomorrow for a new puzzle.</p></section>
+      ) : (
+        <SudokuPuzzle
+          ref={sudokuRef}
+          puzzleId={`daily-sudoku-${dayNumber}`}
+          puzzle={grid}
+          solution={solution}
+          mode="daily"
+          displayMode="app-shell"
+          onPresentationChange={setPresentation}
+          onComplete={async () => {
+            const result = await submitCompletion();
+            if (!result) return { success: false, error: "Daily completion could not be recorded. Try again." };
+            if (result.reward) setReward(result.reward);
+            return { success: true };
+          }}
+          onCelebrationComplete={() => setSolved(true)}
+        />
+      )}
     </PuzzlePlayShell>
   );
 }

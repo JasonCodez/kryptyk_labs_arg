@@ -347,6 +347,7 @@ model SudokuPuzzle {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   timeLimitSeconds Int?
+  maxAttempts      Int      @default(5)
   puzzle           Puzzle   @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
 
   @@index([puzzleId])

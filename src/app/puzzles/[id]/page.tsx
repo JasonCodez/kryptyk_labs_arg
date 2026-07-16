@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import ImageViewer from "@/components/ImageViewer";
+import SudokuPuzzle, { type SudokuPresentationState, type SudokuPuzzleHandle } from "@/components/puzzle/SudokuPuzzle";
 import SudokuGrid from "@/components/puzzle/SudokuGrid";
 import { PuzzlePageSkeleton } from "@/components/Skeleton";
 import PuzzleCompletionRatingModal from "@/components/puzzle/PuzzleCompletionRatingModal";
@@ -62,6 +63,11 @@ function formatAnagramHeaderTime(timeLeftMs: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatSudokuHeaderTime(timeMs: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(timeMs / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
 interface Puzzle {
@@ -219,8 +225,10 @@ interface LobbySocketPayload {
 export default function PuzzleDetailPage() {
   const crosswordRef = useRef<CrosswordPuzzleHandle | null>(null);
   const anagramRef = useRef<AnagramBlitzHandle | null>(null);
+  const sudokuRef = useRef<SudokuPuzzleHandle | null>(null);
   const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
   const [anagramPresentation, setAnagramPresentation] = useState<AnagramPresentationState | null>(null);
+  const [sudokuPresentation, setSudokuPresentation] = useState<SudokuPresentationState | null>(null);
   const [showHeaderBugReport, setShowHeaderBugReport] = useState(false);
   // Modal state for Sudoku start overlay
   const [showSudokuStartModal, setShowSudokuStartModal] = useState(false);
@@ -469,6 +477,9 @@ export default function PuzzleDetailPage() {
 
   // Server-backed Sudoku timer (anti-cheat): start/resume based on persisted deadline.
   useEffect(() => {
+    // Phase 4 timer ownership lives in SudokuPuzzle; this legacy effect remains only
+    // for source compatibility while the surrounding catalog page is decomposed.
+    if (puzzle?.puzzleType === 'sudoku') return;
     if (puzzle?.puzzleType !== 'sudoku') return;
     if (!puzzle?.sudoku) return;
     if (!progress) return;
@@ -540,6 +551,7 @@ export default function PuzzleDetailPage() {
 
   // If Sudoku fails (time limit reached or max attempts), auto-redirect to puzzles page.
   useEffect(() => {
+    if (puzzle?.puzzleType === 'sudoku') return;
     if (puzzle?.puzzleType !== 'sudoku') return;
     if (!timeLimitExceeded && !maxAttemptsExceeded) return;
 
@@ -559,6 +571,7 @@ export default function PuzzleDetailPage() {
   // deadline is not a one-way lockout, especially for puzzles gated behind
   // campaign progression (see src/lib/puzzleProgression.ts).
   useEffect(() => {
+    if (puzzle?.puzzleType === 'sudoku') return;
     if (puzzle?.puzzleType !== 'sudoku') return;
     if (!timeLimitExceeded) return;
     if (progress?.solved) return;
@@ -1393,7 +1406,9 @@ export default function PuzzleDetailPage() {
       title={displayTitle}
       subtitle={puzzle.puzzleType === "anagram_blitz"
         ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? normalizedAnagramConfig.words.length} solved`
-        : undefined}
+        : puzzle.puzzleType === "sudoku"
+          ? `${sudokuPresentation?.attemptsLeft ?? puzzle.sudoku?.maxAttempts ?? 5} attempts left`
+          : undefined}
       progress={puzzle.puzzleType === "crossword"
         ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}`}>
             {formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}
@@ -1402,7 +1417,11 @@ export default function PuzzleDetailPage() {
           ? <span aria-label={`Remaining time ${formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? normalizedAnagramConfig.timeLimitSeconds * 1000)}`}>
               {formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? normalizedAnagramConfig.timeLimitSeconds * 1000)}
             </span>
-          : undefined}
+          : puzzle.puzzleType === "sudoku"
+            ? <span aria-label={`Remaining time ${formatSudokuHeaderTime(sudokuPresentation?.timeMs ?? (puzzle.sudoku?.timeLimitSeconds ?? 900) * 1000)}`}>
+                {formatSudokuHeaderTime(sudokuPresentation?.timeMs ?? (puzzle.sudoku?.timeLimitSeconds ?? 900) * 1000)}
+              </span>
+            : undefined}
       actions={puzzle.puzzleType === "crossword"
         ? <PuzzleHeaderCrosswordActions
             onClues={() => crosswordRef.current?.openClueSheet()}
@@ -1425,13 +1444,25 @@ export default function PuzzleDetailPage() {
                 </button>,
               ]}
             />
+          : puzzle.puzzleType === "sudoku"
+            ? <PuzzleHeaderActions
+                onHelp={() => sudokuRef.current?.openInstructions()}
+                helpLabel="How to play Sudoku"
+                overflow={[
+                  <button type="button" key="give-up" onClick={() => sudokuRef.current?.requestGiveUp()}>Give Up</button>,
+                  skipControl,
+                  <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
+                ]}
+              />
           : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
-      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" ? "fixed" : "scroll"}
+      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" ? "fixed" : "scroll"}
       contentClassName={puzzle.puzzleType === "crossword"
         ? "pw-crossword-shell-content"
         : puzzle.puzzleType === "anagram_blitz"
           ? "pw-anagram-shell-content"
-          : undefined}
+          : puzzle.puzzleType === "sudoku"
+            ? "pw-sudoku-shell-content"
+            : undefined}
     >
     <div
       style={{
@@ -1459,7 +1490,7 @@ export default function PuzzleDetailPage() {
       } as React.CSSProperties}
       className="puzzle-detail-play-stage min-h-full"
     >
-      <PuzzlePageOverlays
+      {puzzle.puzzleType !== "sudoku" && <PuzzlePageOverlays
         timeLimitExceeded={timeLimitExceeded}
         maxAttemptsExceeded={maxAttemptsExceeded}
         showGiveUpConfirm={showGiveUpConfirm}
@@ -1467,7 +1498,7 @@ export default function PuzzleDetailPage() {
         onGoToPuzzles={() => router.push('/puzzles')}
         onGiveUpConfirm={handleGiveUpConfirm}
         onGiveUpCancel={() => setShowGiveUpConfirm(false)}
-      />
+      />}
 
 
       <div className="puzzle-detail-play-inner flex-1 w-full px-0 sm:px-8 py-3 sm:py-8">
@@ -1696,6 +1727,90 @@ export default function PuzzleDetailPage() {
             {/* Toasts (inline above puzzle) */}
             <Toasts toasts={toasts} onRemove={(id) => removeToast(id)} inline />
 
+            {puzzle.puzzleType === "sudoku" && sudokuOriginal && sudokuSolution && !progress?.solved && (
+              <SudokuPuzzle
+                ref={sudokuRef}
+                puzzleId={puzzleId}
+                puzzle={sudokuOriginal}
+                solution={sudokuSolution}
+                mode="catalog"
+                displayMode="app-shell"
+                attemptsUsed={progress?.attempts ?? 0}
+                attemptsAllowed={puzzle.sudoku?.maxAttempts ?? 5}
+                hintTokens={effectiveHintTokens}
+                timeLimitSeconds={puzzle.sudoku?.timeLimitSeconds ?? 900}
+                serverStartedAt={progress?.sudokuStartedAt ? String(progress.sudokuStartedAt) : null}
+                serverExpiresAt={progress?.sudokuExpiresAt ? String(progress.sudokuExpiresAt) : null}
+                serverLockedAt={progress?.sudokuLockedAt ? String(progress.sudokuLockedAt) : null}
+                serverLockReason={progress?.sudokuLockReason ?? null}
+                onPresentationChange={setSudokuPresentation}
+                onStartRound={async () => {
+                  const response = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "start_sudoku_timer" }),
+                  });
+                  if (!response.ok) throw new Error("Unable to start Sudoku round");
+                  const updated = await response.json(); setProgress(updated);
+                  return { startedAt: updated.sudokuStartedAt, expiresAt: updated.sudokuExpiresAt, lockedAt: updated.sudokuLockedAt, lockReason: updated.sudokuLockReason, attemptsUsed: updated.attempts };
+                }}
+                onIncorrectAttempt={async (checkedGrid) => {
+                  const response = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "log_attempt", grid: checkedGrid }),
+                  });
+                  if (!response.ok) return { success: false, error: "That check could not be recorded." };
+                  const updated = await response.json(); setProgress(updated);
+                  return { success: false, attemptsUsed: updated.attempts };
+                }}
+                onComplete={async (completedGrid, elapsedSeconds) => {
+                  const previousPoints = progress?.pointsEarned ?? 0;
+                  const response = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+                    body: JSON.stringify({ action: "attempt_success", durationSeconds: elapsedSeconds, grid: completedGrid }),
+                  });
+                  if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    return { success: false, error: body.error || "Completion was not confirmed. Retry submission." };
+                  }
+                  const updated = await response.json(); setProgress(updated); setCompletionSeconds(elapsedSeconds);
+                  setJustAwardedPoints(Math.max(0, (updated.pointsEarned ?? previousPoints) - previousPoints));
+                  return { success: true, attemptsUsed: updated.attempts };
+                }}
+                onHintUsed={handleSudokuHintUsed}
+                onGiveUp={async () => {
+                  const response = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "lock_puzzle", reason: "given_up" }),
+                  });
+                  if (response.ok) setProgress(await response.json());
+                }}
+                onTimeout={async () => {
+                  const response = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+                    body: JSON.stringify({ action: "lock_puzzle", reason: "time_limit" }),
+                  });
+                  if (response.ok) setProgress(await response.json());
+                }}
+                onRetry={async () => {
+                  const clear = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clear_state" }),
+                  });
+                  if (!clear.ok) throw new Error("Unable to clear round");
+                  const start = await fetch(`/api/puzzles/${puzzleId}/progress`, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start_sudoku_timer" }),
+                  });
+                  if (!start.ok) throw new Error("Unable to restart round");
+                  const updated = await start.json(); setProgress(updated);
+                  return { startedAt: updated.sudokuStartedAt, expiresAt: updated.sudokuExpiresAt, attemptsUsed: updated.attempts };
+                }}
+                onCelebrationComplete={() => { setSuccess(true); setShowSolvedMessage(true); handlePuzzleSolved(); }}
+              />
+            )}
+
+            {puzzle.puzzleType === "sudoku" && progress?.solved && (
+              <section className="sudoku-result-card"><span aria-hidden>✓</span><h2>Sudoku solved!</h2><p>Your completion has been recorded.</p></section>
+            )}
+
             <PuzzleTypeRenderer
               puzzle={puzzle}
               progress={progress}
@@ -1719,7 +1834,7 @@ export default function PuzzleDetailPage() {
             />
 
             {/* Default form — text / sudoku / code_master puzzle types */}
-            {!['jigsaw','escape_room','jim_wyze_case','detective_case','crime_rpg','parasite_code','gridlock_file','crack_safe','word_crack','crossword','word_search','anagram_blitz','arg','blackout','vault','logic_grid'].includes(puzzle?.puzzleType ?? '') && (
+            {!['sudoku','jigsaw','escape_room','jim_wyze_case','detective_case','crime_rpg','parasite_code','gridlock_file','crack_safe','word_crack','crossword','word_search','anagram_blitz','arg','blackout','vault','logic_grid'].includes(puzzle?.puzzleType ?? '') && (
               <form onSubmit={handleSubmit} className="mb-8">
                 {progress?.solved && (
                   <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: "rgba(76, 91, 92, 0.3)", borderColor: "#3891A6" }}>
@@ -2022,7 +2137,7 @@ export default function PuzzleDetailPage() {
       </div>
     </div>
       </PuzzlePlayShell>
-      {showHeaderBugReport && (puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz") && (
+      {showHeaderBugReport && (puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku") && (
         <BugReportModal
           puzzleId={puzzleId}
           puzzleTitle={puzzle.title ?? "This puzzle"}

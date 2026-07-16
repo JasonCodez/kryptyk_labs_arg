@@ -16,7 +16,7 @@ type AttemptProgress = {
 
 type AttemptPuzzleRecord = {
   puzzleType: string;
-  sudoku?: { solutionGrid?: string | null; timeLimitSeconds?: number | null } | null;
+  sudoku?: { solutionGrid?: string | null; timeLimitSeconds?: number | null; maxAttempts?: number | null } | null;
   solutions?: Array<{ points?: number | null }>;
   parts?: Array<{ pointsValue?: number | null }>;
   xpReward?: number | null;
@@ -72,6 +72,10 @@ export async function handleAttemptSuccess(
   // Enforce Sudoku time limit server-side
   if (puzzleRecord.puzzleType === "sudoku") {
     const now = new Date();
+    const maxAttempts = Math.max(1, puzzleRecord.sudoku?.maxAttempts ?? 5);
+    if (progress.attempts >= maxAttempts) {
+      return NextResponse.json({ error: "Maximum Sudoku attempts reached" }, { status: 403 });
+    }
     if (progress.sudokuLockedAt) {
       return NextResponse.json({ error: "Sudoku puzzle is locked" }, { status: 403 });
     }
@@ -79,16 +83,12 @@ export async function handleAttemptSuccess(
       return NextResponse.json({ error: "Sudoku timer not started" }, { status: 403 });
     }
     if (now.getTime() > progress.sudokuExpiresAt.getTime()) {
-      // Reset (not permanently lock) so the player can start a fresh attempt
-      // next time instead of being shut out of the puzzle entirely.
       try {
         await prisma.userPuzzleProgress.update({
           where: { id: progress.id },
           data: {
-            sudokuStartedAt: null,
-            sudokuExpiresAt: null,
-            sudokuLockedAt: null,
-            sudokuLockReason: null,
+            sudokuLockedAt: now,
+            sudokuLockReason: "time_limit",
           },
         });
       } catch { /* ignore */ }

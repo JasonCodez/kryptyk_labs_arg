@@ -111,6 +111,7 @@ export async function PUT(
     sudokuSolution,
     sudokuDifficulty,
     timeLimitSeconds,
+    maxAttempts,
     minTeamSize,
     maxTeamSize,
     isWarzExclusive,
@@ -408,6 +409,7 @@ export async function PUT(
           solutionGrid: JSON.stringify(sudokuSolution),
           difficulty: sudokuDifficulty || "medium",
           timeLimitSeconds: timeLimitSeconds ?? 900,
+          maxAttempts: Math.max(1, Math.min(20, Number(maxAttempts) || 5)),
         },
         create: {
           puzzleId,
@@ -415,6 +417,7 @@ export async function PUT(
           solutionGrid: JSON.stringify(sudokuSolution),
           difficulty: sudokuDifficulty || "medium",
           timeLimitSeconds: timeLimitSeconds ?? 900,
+          maxAttempts: Math.max(1, Math.min(20, Number(maxAttempts) || 5)),
         },
       });
     }

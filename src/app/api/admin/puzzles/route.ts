@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
       sudokuSolution,
       sudokuDifficulty,
       timeLimitSeconds,
+      maxAttempts,
       isWarzExclusive,
       isActive,
       gridlockReleaseAt,
@@ -578,10 +579,11 @@ export async function POST(request: NextRequest) {
           puzzleGrid: typeof sudokuGrid === 'string' ? sudokuGrid : JSON.stringify(sudokuGrid),
           solutionGrid: typeof sudokuSolution === 'string' ? sudokuSolution : JSON.stringify(sudokuSolution),
           difficulty: sudokuDifficulty || 'medium',
+          maxAttempts: Math.max(1, Math.min(20, Number(maxAttempts) || 5)),
         };
 
         const created = await prisma.sudokuPuzzle.create({
-          data: baseSudokuData,
+          data: baseSudokuData as Prisma.SudokuPuzzleUncheckedCreateInput,
         });
 
         // If a time limit was provided, apply it in a separate update (best-effort, type-safe).

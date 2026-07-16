@@ -221,6 +221,30 @@ export async function POST(
         break;
 
       case "log_attempt":
+        if (puzzleRecord.puzzleType === "sudoku") {
+          const submitted = parsed.grid;
+          const validCompletedGrid = Array.isArray(submitted) && submitted.length === 9 && submitted.every((row) =>
+            Array.isArray(row) && row.length === 9 && row.every((value) => Number.isInteger(value) && value >= 1 && value <= 9)
+          );
+          if (!validCompletedGrid) {
+            return NextResponse.json({ error: "A completed Sudoku grid is required" }, { status: 400 });
+          }
+          try {
+            const solution = puzzleRecord.sudoku?.solutionGrid ? JSON.parse(puzzleRecord.sudoku.solutionGrid) as number[][] : null;
+            if (solution && submitted!.every((row, rowIndex) => row.every((value, colIndex) => value === solution[rowIndex]?.[colIndex]))) {
+              return NextResponse.json({ error: "Correct Sudoku grids must use attempt_success" }, { status: 400 });
+            }
+          } catch {
+            return NextResponse.json({ error: "Server missing Sudoku solution" }, { status: 500 });
+          }
+          const maxAttempts = Math.max(1, Number((puzzleRecord.sudoku as { maxAttempts?: number | null } | null)?.maxAttempts ?? 5));
+          if (progress.attempts >= maxAttempts) {
+            return NextResponse.json({ error: "Maximum Sudoku attempts reached" }, { status: 403 });
+          }
+          await logAttempt(progress, durationSeconds);
+          if (progress.attempts + 1 >= maxAttempts) await lockSudoku(progress, "max_attempts");
+          break;
+        }
         await logAttempt(progress, durationSeconds);
         break;
 
