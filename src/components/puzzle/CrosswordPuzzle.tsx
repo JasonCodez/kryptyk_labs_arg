@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { TegakiRenderer, type TegakiBundle } from "tegaki";
 import caveat from "../../../node_modules/tegaki/dist/fonts/caveat/bundle.mjs";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import { juice } from "@/lib/juice";
+import ActiveClueDock from "@/components/puzzle/crossword/ActiveClueDock";
+import CrosswordKeyboard from "@/components/puzzle/crossword/CrosswordKeyboard";
+import CrosswordClueSheet from "@/components/puzzle/crossword/CrosswordClueSheet";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -33,6 +36,24 @@ export interface CrosswordData {
   };
 }
 
+export interface CrosswordPresentationState {
+  elapsedMs: number;
+  solvedCount: number;
+  totalClues: number;
+  gameStatus: "playing" | "won";
+  activeClue: {
+    direction: Direction;
+    number: number;
+    clueText: string;
+  } | null;
+}
+
+export interface CrosswordPuzzleHandle {
+  openInstructions: () => void;
+  openClueSheet: () => void;
+  focusInput: () => void;
+}
+
 interface Props {
   puzzleId: string;
   crosswordData: Record<string, unknown>;
@@ -41,6 +62,8 @@ interface Props {
   onHintUsed?: () => Promise<boolean>;
   onSolved?: (elapsedSeconds?: number) => void;
   warzMode?: boolean;
+  onPresentationChange?: (state: CrosswordPresentationState) => void;
+  displayMode?: "standalone" | "app-shell";
 }
 
 type Direction = "across" | "down";
@@ -111,6 +134,11 @@ interface LetterDrawToken {
   drawStartScale: number;
   drawMidScale: number;
 }
+
+type CrosswordCssProperties = React.CSSProperties & Record<`--${string}`, string | number>;
+type CrosswordAudioWindow = Window & typeof globalThis & {
+  webkitAudioContext?: typeof AudioContext;
+};
 
 function createEmptyLetters(rows: number, cols: number): string[][] {
   return Array.from({ length: rows }, () => Array(cols).fill(""));
@@ -378,7 +406,8 @@ function getInitialCellSize(cols: number): number {
 function useCellSize(
   containerRef: React.RefObject<HTMLDivElement | null>,
   cols: number,
-  rows: number
+  rows: number,
+  fitAvailableHeight: boolean
 ): number {
   const [size, setSize] = useState(() => getInitialCellSize(cols));
 
@@ -392,17 +421,22 @@ function useCellSize(
       const chromeWidth = getGridChrome(cols, gridGap);
       const byWidth = Math.floor((availableWidth - chromeWidth) / cols);
 
-      const isMobileWidth = typeof window !== "undefined" && window.innerWidth < 768;
-      const heightBudget = typeof window !== "undefined" && isMobileWidth
-        ? Math.max(260, window.innerHeight * 0.58)
-        : Number.POSITIVE_INFINITY;
+      const isMobileWidth = typeof window !== "undefined" && window.innerWidth < 1032;
+      const measuredHeight = containerRef.current.clientHeight;
+      const heightBudget = fitAvailableHeight && isMobileWidth && measuredHeight > 40
+        ? measuredHeight
+        : typeof window !== "undefined" && isMobileWidth
+          ? Math.max(220, window.innerHeight * 0.52)
+          : Number.POSITIVE_INFINITY;
       const byHeight = rows > 0 && Number.isFinite(heightBudget)
         ? Math.floor((heightBudget - getGridChrome(rows, gridGap)) / rows)
         : Number.POSITIVE_INFINITY;
 
       const maxCellSize = isMobileWidth ? 36 : 52;
       const fittedCellSize = Math.min(maxCellSize, byWidth, byHeight);
-      setSize(Math.max(5, fittedCellSize));
+      // Eight pixels is the readability floor. Oversized grids that cannot fit
+      // at that floor stay contained in the grid stage's internal pan region.
+      setSize(Math.max(8, fittedCellSize));
     };
 
     update();
@@ -413,7 +447,7 @@ function useCellSize(
       ro.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [containerRef, cols, rows]);
+  }, [containerRef, cols, rows, fitAvailableHeight]);
 
   return size;
 }
@@ -520,7 +554,7 @@ function CrosswordCompletionOverlay() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function CrosswordPuzzle({
+const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function CrosswordPuzzle({
   puzzleId,
   crosswordData,
   alreadySolved = false,
@@ -528,7 +562,9 @@ export default function CrosswordPuzzle({
   onHintUsed,
   onSolved,
   warzMode = false,
-}: Props) {
+  onPresentationChange,
+  displayMode = "standalone",
+}: Props, forwardedRef) {
   const skin = usePuzzleSkin();
 
   // Parse + validate incoming data
@@ -655,15 +691,18 @@ export default function CrosswordPuzzle({
   const [letterDrawTokens, setLetterDrawTokens] = useState<Record<string, LetterDrawToken>>({});
   const [completionAnimating, setCompletionAnimating] = useState(false);
   const [boardCelebrating, setBoardCelebrating] = useState(false);
+  const [clueSheetOpen, setClueSheetOpen] = useState(false);
+  const [touchFirstLayout, setTouchFirstLayout] = useState(false);
   const [showRestoreNotice, setShowRestoreNotice] = useState(() =>
     !alreadySolved && Boolean(localProgressRef.current)
   );
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const cellSize = useCellSize(containerRef, cols, rows);
+  const cellSize = useCellSize(containerRef, cols, rows, displayMode === "app-shell");
   const gridGap = getGridGap(cols);
   const gridPixelWidth = getGridPixelWidth(cols, cellSize);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const desktopClueRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const checkingCluesRef = useRef<Map<string, string>>(new Map());
   const checkQueueRef = useRef<Promise<void>>(Promise.resolve());
   const solvedAnimationTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -689,6 +728,8 @@ export default function CrosswordPuzzle({
   const lastPencilSfxAtRef = useRef(0);
   const lastPencilSfxClueKeyRef = useRef<string | null>(null);
   const lastSavedPayloadRef = useRef<string>("");
+  const onPresentationChangeRef = useRef<Props["onPresentationChange"]>(onPresentationChange);
+  const lastPresentationSignatureRef = useRef("");
 
   const showRestoredProgressBanner = useCallback(() => {
     if (restoreNoticeTimerRef.current) clearTimeout(restoreNoticeTimerRef.current);
@@ -734,7 +775,7 @@ export default function CrosswordPuzzle({
 
   const playProceduralPencilSfx = useCallback(() => {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx = window.AudioContext || (window as CrosswordAudioWindow).webkitAudioContext;
       if (!AudioCtx) return;
 
       const ctx = pencilAudioContextRef.current ?? new AudioCtx();
@@ -858,6 +899,24 @@ export default function CrosswordPuzzle({
   }, [onSolved]);
 
   useEffect(() => {
+    onPresentationChangeRef.current = onPresentationChange;
+  }, [onPresentationChange]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const coarsePointer = window.matchMedia("(pointer: coarse)");
+    const compactViewport = window.matchMedia("(max-width: 1031px)");
+    const update = () => setTouchFirstLayout(coarsePointer.matches && compactViewport.matches);
+    update();
+    coarsePointer.addEventListener("change", update);
+    compactViewport.addEventListener("change", update);
+    return () => {
+      coarsePointer.removeEventListener("change", update);
+      compactViewport.removeEventListener("change", update);
+    };
+  }, []);
+
+  useEffect(() => {
     elapsedMsRef.current = elapsedMs;
   }, [elapsedMs]);
 
@@ -906,9 +965,11 @@ export default function CrosswordPuzzle({
   }, [showRestoredProgressBanner]);
 
   useEffect(() => {
+    const solvedTimers = solvedAnimationTimersRef.current;
+    const letterTimers = letterDrawTimersRef.current;
     return () => {
-      solvedAnimationTimersRef.current.forEach((timer) => clearTimeout(timer));
-      letterDrawTimersRef.current.forEach((timer) => clearTimeout(timer));
+      solvedTimers.forEach((timer) => clearTimeout(timer));
+      letterTimers.forEach((timer) => clearTimeout(timer));
       if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
       if (preCompletionTimerRef.current) clearTimeout(preCompletionTimerRef.current);
       if (boardCelebrationTimerRef.current) clearTimeout(boardCelebrationTimerRef.current);
@@ -1070,6 +1131,39 @@ export default function CrosswordPuzzle({
     const cells = getWordCells(initialGrid, startClue.row, startClue.col, activeClue.direction);
     return new Set(cells.map((c) => `${c.row},${c.col}`));
   }, [activeClue, initialGrid, data]);
+
+  const presentationState = useMemo<CrosswordPresentationState>(() => {
+    const clue = activeClue
+      ? (activeClue.direction === "across" ? data?.clues.across : data?.clues.down)
+          ?.find((entry) => entry.number === activeClue.number)
+      : undefined;
+
+    return {
+      elapsedMs,
+      solvedCount: solvedClues.size,
+      totalClues: data ? data.clues.across.length + data.clues.down.length : 0,
+      gameStatus,
+      activeClue: activeClue && clue
+        ? { direction: activeClue.direction, number: activeClue.number, clueText: clue.text }
+        : null,
+    };
+  }, [activeClue, data, elapsedMs, gameStatus, solvedClues.size]);
+
+  useEffect(() => {
+    const active = presentationState.activeClue;
+    const signature = [
+      presentationState.elapsedMs,
+      presentationState.solvedCount,
+      presentationState.totalClues,
+      presentationState.gameStatus,
+      active?.direction ?? "",
+      active?.number ?? "",
+      active?.clueText ?? "",
+    ].join("|");
+    if (signature === lastPresentationSignatureRef.current) return;
+    lastPresentationSignatureRef.current = signature;
+    onPresentationChangeRef.current?.(presentationState);
+  }, [presentationState]);
 
   const triggerSolvedClueAnimation = useCallback((key: string, direction: Direction, number: number) => {
     const solvedClue = direction === "across"
@@ -1391,6 +1485,12 @@ export default function CrosswordPuzzle({
     [initialGrid]
   );
 
+  const focusKeyboardInput = useCallback(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+  }, []);
+
   // ── Select all clues sorted numerically for Tab navigation ────────────────
   const sortedClues = useMemo<ActiveClue[]>(() => {
     if (!data) return [];
@@ -1402,22 +1502,44 @@ export default function CrosswordPuzzle({
     return all;
   }, [data]);
 
-  const goToNextClue = useCallback(() => {
+  const selectClueForNavigation = useCallback((next: ActiveClue, focusInput = true) => {
+    if (!data) return;
+    const clue = next.direction === "across"
+      ? data.clues.across.find((entry) => entry.number === next.number)
+      : data.clues.down.find((entry) => entry.number === next.number);
+    if (!clue) return;
+
+    const cells = getWordCells(initialGrid, clue.row, clue.col, next.direction);
+    const isCellLocked = (row: number, col: number) => {
+      const cell = initialGrid[row]?.[col];
+      if (!cell || cell.isBlack) return true;
+      return Boolean(
+        (cell.acrossNumber && solvedCluesRef.current.has(`across-${cell.acrossNumber}`)) ||
+        (cell.downNumber && solvedCluesRef.current.has(`down-${cell.downNumber}`))
+      );
+    };
+    const target = cells.find((cell) => !letters[cell.row]?.[cell.col] && !isCellLocked(cell.row, cell.col))
+      ?? cells.find((cell) => !isCellLocked(cell.row, cell.col))
+      ?? cells[0]
+      ?? { row: clue.row, col: clue.col };
+
+    setCluePanelDirection(next.direction);
+    setActiveClue(next);
+    setCursorCell(target);
+    if (focusInput) window.requestAnimationFrame(focusKeyboardInput);
+  }, [data, focusKeyboardInput, initialGrid, letters]);
+
+  const goToRelativeClue = useCallback((delta: number) => {
     if (!activeClue || !sortedClues.length) return;
     const idx = sortedClues.findIndex(
       (c) => c.direction === activeClue.direction && c.number === activeClue.number
     );
-    const next = sortedClues[(idx + 1) % sortedClues.length];
-    setActiveClue(next);
-    // move cursor to first empty cell in next clue
-    if (data) {
-      const clue =
-        next.direction === "across"
-          ? data.clues.across.find((c) => c.number === next.number)
-          : data.clues.down.find((c) => c.number === next.number);
-      if (clue) setCursorCell({ row: clue.row, col: clue.col });
-    }
-  }, [activeClue, sortedClues, data]);
+    const nextIndex = (idx + delta + sortedClues.length) % sortedClues.length;
+    selectClueForNavigation(sortedClues[nextIndex]);
+  }, [activeClue, selectClueForNavigation, sortedClues]);
+
+  const goToNextClue = useCallback(() => goToRelativeClue(1), [goToRelativeClue]);
+  const goToPreviousClue = useCallback(() => goToRelativeClue(-1), [goToRelativeClue]);
 
   const isLockedCell = useCallback(
     (row: number, col: number): boolean => {
@@ -1436,13 +1558,27 @@ export default function CrosswordPuzzle({
     [initialGrid]
   );
 
-  const focusKeyboardInput = useCallback(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus({ preventScroll: true });
-  }, []);
-
   // ── Cell click ─────────────────────────────────────────────────────────────
+  const canSwitchDirection = Boolean(
+    cursorCell &&
+    initialGrid[cursorCell.row]?.[cursorCell.col]?.acrossNumber &&
+    initialGrid[cursorCell.row]?.[cursorCell.col]?.downNumber
+  );
+
+  const toggleActiveDirection = useCallback(() => {
+    if (gameStatus !== "playing" || !activeClue || !cursorCell) return;
+    const cell = initialGrid[cursorCell.row]?.[cursorCell.col];
+    if (!cell?.acrossNumber || !cell.downNumber) return;
+    const direction: Direction = activeClue.direction === "across" ? "down" : "across";
+    setActiveClue({
+      direction,
+      number: direction === "across" ? cell.acrossNumber : cell.downNumber,
+    });
+    setCluePanelDirection(direction);
+    juice.tick();
+    focusKeyboardInput();
+  }, [activeClue, cursorCell, focusKeyboardInput, gameStatus, initialGrid]);
+
   const handleCellClick = useCallback(
     (row: number, col: number) => {
       if (gameStatus !== "playing") return;
@@ -1458,9 +1594,7 @@ export default function CrosswordPuzzle({
       if (cursorCell?.row === row && cursorCell?.col === col && activeClue) {
         // Toggle direction on same cell
         if (hasAcross && hasDown) {
-          const newDir: Direction = activeClue.direction === "across" ? "down" : "across";
-          const num = newDir === "across" ? cell.acrossNumber! : cell.downNumber!;
-          setActiveClue({ direction: newDir, number: num });
+          toggleActiveDirection();
         }
       } else {
         setCursorCell({ row, col });
@@ -1476,7 +1610,7 @@ export default function CrosswordPuzzle({
         }
       }
     },
-    [gameStatus, initialGrid, cursorCell, activeClue, focusKeyboardInput]
+    [gameStatus, initialGrid, cursorCell, activeClue, focusKeyboardInput, toggleActiveDirection]
   );
 
   const handleDeleteAtCursor = useCallback(() => {
@@ -1534,6 +1668,16 @@ export default function CrosswordPuzzle({
     },
     [gameStatus, activeClue, cursorCell, isLockedCell, advanceCursor, triggerLetterDrawAnimation]
   );
+
+  const handleCustomKeyboardLetter = useCallback((letter: string) => {
+    handleLetterEntry(letter);
+    window.requestAnimationFrame(focusKeyboardInput);
+  }, [focusKeyboardInput, handleLetterEntry]);
+
+  const handleCustomKeyboardBackspace = useCallback(() => {
+    handleDeleteAtCursor();
+    window.requestAnimationFrame(focusKeyboardInput);
+  }, [focusKeyboardInput, handleDeleteAtCursor]);
 
   // ── Keyboard handling ─────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
@@ -1658,24 +1802,31 @@ export default function CrosswordPuzzle({
   const handleClueClick = useCallback(
     (direction: Direction, number: number) => {
       if (gameStatus !== "playing") return;
-      setCluePanelDirection(direction);
-      setActiveClue({ direction, number });
-      if (data) {
-        const clue =
-          direction === "across"
-            ? data.clues.across.find((c) => c.number === number)
-            : data.clues.down.find((c) => c.number === number);
-        if (clue) {
-          // Move cursor to first empty cell in this clue
-          const cells = getWordCells(initialGrid, clue.row, clue.col, direction);
-          const firstEmpty = cells.find((c) => !letters[c.row][c.col]);
-          setCursorCell(firstEmpty ?? cells[0] ?? { row: clue.row, col: clue.col });
-        }
-      }
-      focusKeyboardInput();
+      selectClueForNavigation({ direction, number });
     },
-    [gameStatus, data, initialGrid, letters, focusKeyboardInput]
+    [gameStatus, selectClueForNavigation]
   );
+
+  const openClueSheet = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth >= 1032) {
+      const key = activeClue ? `${activeClue.direction}-${activeClue.number}` : null;
+      const clueButton = key
+        ? desktopClueRefs.current.get(key)
+        : desktopClueRefs.current.values().next().value;
+      clueButton?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      clueButton?.focus({ preventScroll: true });
+      return;
+    }
+    setClueSheetOpen(true);
+    juice.whoosh();
+  }, [activeClue]);
+  const closeClueSheet = useCallback(() => setClueSheetOpen(false), []);
+
+  useImperativeHandle(forwardedRef, () => ({
+    openInstructions: () => setShowInstructions(true),
+    openClueSheet,
+    focusInput: focusKeyboardInput,
+  }), [focusKeyboardInput, openClueSheet]);
 
   const getCellStatus = (row: number, col: number): { isSolved: boolean; isJustSolved: boolean } => {
     const cell = initialGrid[row]?.[col];
@@ -2016,7 +2167,7 @@ export default function CrosswordPuzzle({
           border-radius: 999px;
         }
 
-        @media (min-width: 1024px) {
+        @media (min-width: 1032px) {
           .crossword-clue-panel-scroll {
             max-height: min(62vh, 520px);
           }
@@ -2054,9 +2205,10 @@ export default function CrosswordPuzzle({
       {completionOverlay}
 
       <div
-        className="wc-skin-root"
+        className="wc-skin-root crossword-root"
         data-skin={skin._key ?? "default"}
-        style={{ position: "relative", borderRadius: "1rem", overflow: "hidden", width: "100%", maxWidth: "100vw" }}
+        data-display-mode={displayMode}
+        style={{ position: "relative", borderRadius: "1rem", overflow: "hidden", width: "100%", maxWidth: "100%" }}
       >
         {(skin._key === "lava"   || skin._key === "skin_lava")   && <LavaBackground />}
         {(skin._key === "galaxy" || skin._key === "skin_galaxy") && <GalaxyBackground />}
@@ -2075,15 +2227,15 @@ export default function CrosswordPuzzle({
         />
 
         <div
-          className="flex flex-col items-center gap-4 select-none pb-6"
+          className="crossword-game-surface flex flex-col items-center gap-4 select-none pb-6"
           style={{
             position: "relative",
             zIndex: 1,
             fontFamily: "'Clear Sans','Helvetica Neue',Arial,sans-serif",
           }}
         >
-          {/* Header */}
-          <div className="text-center relative w-full px-8 pt-4">
+          {/* Standalone chrome; PuzzleHeader owns this information in app-shell mode. */}
+          {displayMode === "standalone" && <div className="crossword-standalone-header text-center relative w-full px-8 pt-4">
             <h2 className="text-2xl sm:text-3xl font-black tracking-[0.2em] mb-1"
               style={{
                 display: "inline-block",
@@ -2107,7 +2259,7 @@ export default function CrosswordPuzzle({
             <p className="text-[11px] mt-1 font-semibold" style={{ color: "#94a3b8", textShadow: "0 1px 4px rgba(0,0,0,0.65)" }}>
               Elapsed {formatElapsedStopwatch(elapsedMs)}
             </p>
-          </div>
+          </div>}
 
           {/* Win banner */}
           {gameStatus === "won" && (
@@ -2134,12 +2286,12 @@ export default function CrosswordPuzzle({
           )}
 
           {/* Main layout: grid + clues */}
-          <div className="w-full min-w-0 max-w-full px-2 flex flex-col lg:flex-row gap-4 items-start justify-center overflow-hidden">
+          <div className="crossword-main-layout w-full min-w-0 max-w-full px-2 flex gap-4 items-start justify-center overflow-hidden">
 
             {/* Grid */}
-            <div className="flex w-full min-w-0 max-w-full flex-col items-center gap-2 lg:flex-1">
+            <div className="crossword-board-column flex w-full min-w-0 max-w-full flex-col items-center gap-2">
               {/* Active clue banner */}
-              <div style={{ position: "relative", width: "100%", maxWidth: gridPixelWidth > 0 ? `${gridPixelWidth}px` : "24rem" }}>
+              {displayMode === "standalone" && <div style={{ position: "relative", width: "100%", maxWidth: gridPixelWidth > 0 ? `${gridPixelWidth}px` : "24rem" }}>
               {latestSolvedClue && (
                 <div
                   className="crossword-word-toast"
@@ -2179,17 +2331,27 @@ export default function CrosswordPuzzle({
                   <span style={{ color: "#6b7280" }}>Click a cell to begin</span>
                 )}
               </div>
-              </div>
+              </div>}
 
               {/* Grid container */}
               <div
                 ref={containerRef}
-                className="flex w-full min-w-0 justify-center"
+                className="crossword-grid-stage flex w-full min-w-0 justify-center"
                 style={{
                   maxWidth: "min(100%, calc(100vw - 1rem))",
                 }}
               >
+              {displayMode === "app-shell" && latestSolvedClue && (
+                <div className="crossword-word-toast crossword-grid-word-toast">
+                  Correct: {latestSolvedClue.number} {latestSolvedClue.direction}
+                </div>
+              )}
               <div
+                role="grid"
+                aria-label={`${rows} by ${cols} crossword grid`}
+                aria-busy={submitting}
+                aria-rowcount={rows}
+                aria-colcount={cols}
                 style={{
                   boxSizing: "border-box",
                   display: "inline-grid",
@@ -2224,14 +2386,14 @@ export default function CrosswordPuzzle({
                     const tegakiSegmentSize = isCompactCell ? 1.1 : 1.4;
                     const letterDrawVars = shouldAnimateLetterDraw && letterDrawToken
                       ? ({
-                          ["--cw-write-duration" as any]: `${letterDrawToken.durationMs}ms`,
-                          ["--cw-draw-start-y" as any]: `${letterDrawToken.drawStartY}px`,
-                          ["--cw-draw-mid-y" as any]: `${letterDrawToken.drawMidY}px`,
-                          ["--cw-draw-start-rot" as any]: `${letterDrawToken.drawStartRotate}deg`,
-                          ["--cw-draw-mid-rot" as any]: `${letterDrawToken.drawMidRotate}deg`,
-                          ["--cw-draw-start-scale" as any]: String(letterDrawToken.drawStartScale),
-                          ["--cw-draw-mid-scale" as any]: String(letterDrawToken.drawMidScale),
-                        } as React.CSSProperties)
+                          "--cw-write-duration": `${letterDrawToken.durationMs}ms`,
+                          "--cw-draw-start-y": `${letterDrawToken.drawStartY}px`,
+                          "--cw-draw-mid-y": `${letterDrawToken.drawMidY}px`,
+                          "--cw-draw-start-rot": `${letterDrawToken.drawStartRotate}deg`,
+                          "--cw-draw-mid-rot": `${letterDrawToken.drawMidRotate}deg`,
+                          "--cw-draw-start-scale": String(letterDrawToken.drawStartScale),
+                          "--cw-draw-mid-scale": String(letterDrawToken.drawMidScale),
+                        } as CrosswordCssProperties)
                       : undefined;
                     const cellClasses = [
                       status.isJustSolved ? "crossword-cell-success" : "",
@@ -2241,16 +2403,27 @@ export default function CrosswordPuzzle({
                     return (
                       <div
                         key={`${r}-${c}`}
+                        role="gridcell"
+                        aria-rowindex={r + 1}
+                        aria-colindex={c + 1}
+                        aria-selected={!cell.isBlack ? palette.isActive : undefined}
+                        data-selected={!cell.isBlack && palette.isActive ? "true" : undefined}
+                        data-active-word={!cell.isBlack && activeWordCells.has(cellKey) ? "true" : undefined}
+                        data-revealed={!cell.isBlack && revealed.has(cellKey) ? "true" : undefined}
+                        data-solved={!cell.isBlack && status.isSolved ? "true" : undefined}
+                        aria-label={cell.isBlack
+                          ? `Row ${r + 1}, column ${c + 1}, blocked square`
+                          : `Row ${r + 1}, column ${c + 1}${cell.clueNumber !== undefined ? `, clue ${cell.clueNumber}` : ""}, ${letters[r][c] ? `letter ${letters[r][c]}` : "empty"}`}
                         className={cellClasses || undefined}
                         style={{
                           width: cellSize,
                           height: cellSize,
                           ...cellStyle(r, c, status, palette),
                           ...(status.isJustSolved
-                            ? ({ ["--cw-cell-delay" as any]: `${solvedDelayMs}ms` } as React.CSSProperties)
+                            ? ({ "--cw-cell-delay": `${solvedDelayMs}ms` } as CrosswordCssProperties)
                             : {}),
                           ...(boardCelebrating
-                            ? ({ ["--cw-board-wave-delay" as any]: `${(r + c) * BOARD_WAVE_STAGGER_MS}ms` } as React.CSSProperties)
+                            ? ({ "--cw-board-wave-delay": `${(r + c) * BOARD_WAVE_STAGGER_MS}ms` } as CrosswordCssProperties)
                             : {}),
                           borderRadius: "3px",
                           display: "flex",
@@ -2349,7 +2522,7 @@ export default function CrosswordPuzzle({
                 onKeyDown={handleKeyDown}
                 onBeforeInput={handleHiddenInputBeforeInput}
                 onInput={handleHiddenInputInput}
-                inputMode="text"
+                inputMode={touchFirstLayout && displayMode === "app-shell" ? "none" : "text"}
                 autoCapitalize="characters"
                 autoCorrect="off"
                 autoComplete="off"
@@ -2358,7 +2531,20 @@ export default function CrosswordPuzzle({
                 aria-label="Crossword input"
               />
 
+              {displayMode === "app-shell" && (
+                <ActiveClueDock
+                  activeClue={presentationState.activeClue}
+                  canSwitchDirection={canSwitchDirection}
+                  disabled={gameStatus !== "playing"}
+                  onPrevious={goToPreviousClue}
+                  onNext={goToNextClue}
+                  onSwitchDirection={toggleActiveDirection}
+                  onOpenClues={openClueSheet}
+                />
+              )}
+
               {/* Hint button */}
+              <div className="crossword-utility-row">
               {gameStatus === "playing" && (
                 <button
                   onClick={useHintToken}
@@ -2373,11 +2559,20 @@ export default function CrosswordPuzzle({
                   {hintLoading ? "..." : hintTokens < 1 ? "🔤 No Hint Tokens" : `🔤 Reveal Letter (${hintTokens} token${hintTokens !== 1 ? "s" : ""})`}
                 </button>
               )}
+              </div>
+
+              {displayMode === "app-shell" && (
+                <CrosswordKeyboard
+                  disabled={gameStatus !== "playing" || !activeClue || !cursorCell}
+                  onLetter={handleCustomKeyboardLetter}
+                  onBackspace={handleCustomKeyboardBackspace}
+                />
+              )}
             </div>
 
             {/* Clue panel */}
             <div
-              className="w-full min-w-0 max-w-full lg:w-[22rem] lg:flex-none"
+              className="crossword-desktop-clue-panel w-full min-w-0 max-w-full"
               style={{
                 borderRadius: 12,
                 border: "1px solid rgba(129,140,248,0.28)",
@@ -2432,6 +2627,10 @@ export default function CrosswordPuzzle({
                     return (
                       <button
                         key={clue.number}
+                        ref={(node) => {
+                          if (node) desktopClueRefs.current.set(key, node);
+                          else desktopClueRefs.current.delete(key);
+                        }}
                         type="button"
                         onClick={() => handleClueClick(cluePanelDirection, clue.number)}
                         className={`text-left px-2.5 py-2 rounded-lg text-xs transition-all${justSolved ? " crossword-clue-success" : ""}`}
@@ -2454,8 +2653,24 @@ export default function CrosswordPuzzle({
               </div>
             </div>
           </div>
+
+          <CrosswordClueSheet
+            open={clueSheetOpen}
+            direction={cluePanelDirection}
+            acrossClues={acrossClues}
+            downClues={downClues}
+            solvedClues={solvedClues}
+            activeClue={presentationState.activeClue}
+            onDirectionChange={setCluePanelDirection}
+            onSelectClue={handleClueClick}
+            onClose={closeClueSheet}
+          />
         </div>
       </div>
     </>
   );
-}
+});
+
+CrosswordPuzzle.displayName = "CrosswordPuzzle";
+
+export default CrosswordPuzzle;

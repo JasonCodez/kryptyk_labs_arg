@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
 import { EscapeRoomPuzzle } from "@/components/puzzle/EscapeRoomPuzzle";
 import JimWyzePuzzle from "@/components/puzzle/JimWyzePuzzle";
@@ -12,7 +12,10 @@ import GridlockFilePuzzle from "@/components/puzzle/GridlockFilePuzzle";
 import CrackTheSafePuzzle from "@/components/puzzle/CrackTheSafePuzzle";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle from "@/components/puzzle/WordSearchPuzzle";
-import CrosswordPuzzle from "@/components/puzzle/CrosswordPuzzle";
+import CrosswordPuzzle, {
+  type CrosswordPresentationState,
+  type CrosswordPuzzleHandle,
+} from "@/components/puzzle/CrosswordPuzzle";
 import LogicGridPuzzle from "@/components/puzzle/LogicGridPuzzle";
 import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
 import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
@@ -72,6 +75,8 @@ interface PuzzleTypeRendererProps {
   onSolved: (elapsed?: number, xp?: number) => void;
   onJigsawComplete: (timeSpentSeconds?: number) => Promise<number>;
   onJigsawShowRatingModal: () => void;
+  crosswordRef?: RefObject<CrosswordPuzzleHandle | null>;
+  onCrosswordPresentationChange?: (state: CrosswordPresentationState) => void;
   // Skip-token button — normally rendered below the puzzle by PuzzleProgressSection, which gets
   // hidden behind the fullscreen overlay. Passed through to PuzzleFullscreenFrame so it stays
   // reachable while a puzzle is fullscreen.
@@ -97,6 +102,8 @@ export function PuzzleTypeRenderer({
   onSolved,
   onJigsawComplete,
   onJigsawShowRatingModal,
+  crosswordRef,
+  onCrosswordPresentationChange,
   skipControl,
 }: PuzzleTypeRendererProps) {
   // Detect the jigsaw image's natural aspect ratio so the play board matches it —
@@ -321,7 +328,7 @@ export function PuzzleTypeRenderer({
 
   if (puzzle.puzzleType === 'crossword') {
     return (
-      <div className="mb-8">
+      <div className="crossword-renderer-shell">
         <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
@@ -330,8 +337,11 @@ export function PuzzleTypeRenderer({
             </div>
           )}
           <CrosswordPuzzle
+            ref={crosswordRef}
             puzzleId={puzzleId}
             crosswordData={(puzzle.data ?? {}) as Record<string, unknown>}
+            displayMode="app-shell"
+            onPresentationChange={onCrosswordPresentationChange}
             alreadySolved={progress?.solved ?? false}
             hintTokens={effectiveHintTokens}
             onHintUsed={onHintUsed}

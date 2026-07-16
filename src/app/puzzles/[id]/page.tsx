@@ -23,6 +23,11 @@ import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection";
 import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
+import { PuzzleHeaderCrosswordActions } from "@/components/app-shell/PuzzleHeader";
+import type {
+  CrosswordPresentationState,
+  CrosswordPuzzleHandle,
+} from "@/components/puzzle/CrosswordPuzzle";
 import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
@@ -34,6 +39,16 @@ interface XpModalData {
   newTitle: string;
   oldProgress: number;
   newProgress: number;
+}
+
+function formatCrosswordHeaderTime(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 interface Puzzle {
@@ -189,6 +204,8 @@ interface LobbySocketPayload {
 }
 
 export default function PuzzleDetailPage() {
+  const crosswordRef = useRef<CrosswordPuzzleHandle | null>(null);
+  const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
   // Modal state for Sudoku start overlay
   const [showSudokuStartModal, setShowSudokuStartModal] = useState(false);
   // Modal state for Sudoku help/info
@@ -1332,8 +1349,30 @@ export default function PuzzleDetailPage() {
     <PuzzlePlayShell
       backHref="/puzzles"
       title={displayTitle}
-      actions={<PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
-      contentMode={puzzle.puzzleType === "jigsaw" ? "fixed" : "scroll"}
+      progress={puzzle.puzzleType === "crossword"
+        ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}`}>
+            {formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}
+          </span>
+        : undefined}
+      actions={puzzle.puzzleType === "crossword"
+        ? <PuzzleHeaderCrosswordActions
+            onClues={() => crosswordRef.current?.openClueSheet()}
+            onHelp={() => crosswordRef.current?.openInstructions()}
+            overflow={
+              <div className="pw-play-header-menu-stack">
+                {skipControl}
+                <PuzzleBugReportButton
+                  puzzleId={puzzleId}
+                  puzzleTitle={puzzle?.title ?? "This puzzle"}
+                  className="pw-play-header-menu-item"
+                  label="Report a bug"
+                />
+              </div>
+            }
+          />
+        : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
+      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" ? "fixed" : "scroll"}
+      contentClassName={puzzle.puzzleType === "crossword" ? "pw-crossword-shell-content" : undefined}
     >
     <div
       style={{
@@ -1359,7 +1398,7 @@ export default function PuzzleDetailPage() {
         "--ps-btn-text":    skin.btnText,
         "--ps-label":       skin.labelColor,
       } as React.CSSProperties}
-      className="min-h-full"
+      className="puzzle-detail-play-stage min-h-full"
     >
       <PuzzlePageOverlays
         timeLimitExceeded={timeLimitExceeded}
@@ -1372,12 +1411,12 @@ export default function PuzzleDetailPage() {
       />
 
 
-      <div className="flex-1 w-full px-0 sm:px-8 py-3 sm:py-8">
-        <div className="w-full max-w-5xl mx-auto">
+      <div className="puzzle-detail-play-inner flex-1 w-full px-0 sm:px-8 py-3 sm:py-8">
+        <div className="puzzle-detail-play-container w-full max-w-5xl mx-auto">
 
           {/* ── Main puzzle card ─────────────────────────────────── */}
           <div
-            className="rounded-none sm:rounded-2xl mb-3 sm:mb-8 overflow-hidden border-0 sm:border shadow-none sm:shadow-[0_4px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(56,145,166,0.06)_inset]"
+            className="puzzle-detail-play-card rounded-none sm:rounded-2xl mb-3 sm:mb-8 overflow-hidden border-0 sm:border shadow-none sm:shadow-[0_4px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(56,145,166,0.06)_inset]"
             style={{
               backgroundColor: "rgba(10,12,18,0.98)",
               borderColor: "rgba(56,145,166,0.28)",
@@ -1387,7 +1426,7 @@ export default function PuzzleDetailPage() {
             {/* Visually-hidden h1 — PuzzleHeader shows the title visually; the page still
                 needs one real heading for accessibility/SEO. */}
             <h1 className="sr-only">{displayTitle}</h1>
-            <div className="px-0 py-3 sm:p-8">
+            <div className="puzzle-detail-play-card-body px-0 py-3 sm:p-8">
 
             {/* Math Problem Configuration (if present) */}
             {puzzle.puzzleType === 'math' && puzzle.math && (
@@ -1612,6 +1651,8 @@ export default function PuzzleDetailPage() {
               onSolved={handlePuzzleTypeComplete}
               onJigsawComplete={handleJigsawComplete}
               onJigsawShowRatingModal={handlePuzzleSolved}
+              crosswordRef={crosswordRef}
+              onCrosswordPresentationChange={setCrosswordPresentation}
               skipControl={skipControl}
             />
 
@@ -1900,6 +1941,7 @@ export default function PuzzleDetailPage() {
             )}
 
             {/* Hints / Progress Section Wrapper */}
+            <div className="puzzle-detail-progress-section">
             <PuzzleProgressSection
               progress={progress}
               puzzleTitle={puzzle?.title}
@@ -1911,6 +1953,7 @@ export default function PuzzleDetailPage() {
               teamIdParam={teamIdParam}
               puzzleType={puzzle?.puzzleType}
             />
+            </div>
             </div>{/* end card body */}
           </div>{/* end card outer */}
         </div>

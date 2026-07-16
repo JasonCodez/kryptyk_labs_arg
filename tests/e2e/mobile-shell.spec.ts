@@ -63,6 +63,13 @@ for (const viewport of MOBILE_VIEWPORTS) {
         // Title is always present and stable via data-testid.
         await expect(page.locator('[data-testid="puzzle-header-title"]')).toBeVisible();
 
+        if (route === '/daily/crossword') {
+          await expect(page.getByRole('button', { name: 'Open crossword clues' })).toBeVisible();
+          await expect(page.getByRole('button', { name: 'How to play crossword' })).toBeVisible();
+          const titleBox = await page.locator('[data-testid="puzzle-header-title"]').boundingBox();
+          expect(titleBox?.width).toBeGreaterThanOrEqual(56);
+        }
+
         await expectNoHorizontalOverflow(page);
       });
     }

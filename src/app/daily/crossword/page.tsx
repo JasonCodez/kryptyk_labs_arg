@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import StreakTimer from "@/components/StreakTimer";
-import CrosswordPuzzle from "@/components/puzzle/CrosswordPuzzle";
+import CrosswordPuzzle, {
+  type CrosswordPresentationState,
+  type CrosswordPuzzleHandle,
+} from "@/components/puzzle/CrosswordPuzzle";
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
+import { PuzzleHeaderCrosswordActions } from "@/components/app-shell/PuzzleHeader";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
 
 export default function DailyCrosswordPage() {
@@ -16,6 +20,15 @@ export default function DailyCrosswordPage() {
   const [crosswordData, setCrosswordData] = useState<Record<string, unknown> | null>(null);
   const [reward, setReward] = useState<{ points: number; xp: number } | null>(null);
   const [solved, setSolved] = useState(false);
+  const crosswordRef = useRef<CrosswordPuzzleHandle | null>(null);
+  const [presentation, setPresentation] = useState<CrosswordPresentationState | null>(null);
+
+  const formattedElapsed = (() => {
+    const totalSeconds = Math.max(0, Math.floor((presentation?.elapsedMs ?? 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  })();
 
   useEffect(() => {
     if (!content?.puzzleId) return;
@@ -37,9 +50,16 @@ export default function DailyCrosswordPage() {
       backHref="/daily"
       title="Daily Crossword"
       subtitle={`#${dayNumber || "---"}`}
-      actions={streak > 0 ? <StreakTimer streak={streak} solvedToday={isDone} size="sm" /> : null}
+      progress={<span aria-label={`Elapsed time ${formattedElapsed}`}>{formattedElapsed}</span>}
+      actions={<PuzzleHeaderCrosswordActions
+        onClues={() => crosswordRef.current?.openClueSheet()}
+        onHelp={() => crosswordRef.current?.openInstructions()}
+        overflow={streak > 0 ? <StreakTimer streak={streak} solvedToday={isDone} size="sm" /> : undefined}
+      />}
+      contentMode="fixed"
+      contentClassName="pw-crossword-shell-content"
     >
-      <div className="flex flex-col items-center px-3 pt-4 pb-6">
+      <div className="crossword-daily-stage flex flex-col items-center px-3 pt-4 pb-6">
         {!isAuthenticated ? (
           <div className="mt-16 text-center">
             <p className="text-white font-bold mb-3">Sign in to play the daily crossword</p>
@@ -75,8 +95,11 @@ export default function DailyCrosswordPage() {
               </p>
             )}
             <CrosswordPuzzle
+              ref={crosswordRef}
               puzzleId={content.puzzleId}
               crosswordData={crosswordData}
+              displayMode="app-shell"
+              onPresentationChange={setPresentation}
               onSolved={async () => {
                 setSolved(true);
                 const result = await submitCompletion();
