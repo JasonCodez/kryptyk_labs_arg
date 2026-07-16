@@ -27,6 +27,7 @@ export default function AnagramLetterTray({
   return (
     <div
       className="anagram-letter-tray"
+      role="group"
       aria-label="Scrambled letter tray"
       data-feedback={feedback ?? undefined}
       data-testid="anagram-letter-tray"

@@ -76,6 +76,7 @@ interface PuzzleTypeRendererProps {
   effectiveHintTokens: number;
   onHintUsed: () => Promise<boolean>;
   onSolved: (elapsed?: number, xp?: number) => void;
+  onAnagramSolved: (elapsedSeconds: number) => void;
   onJigsawComplete: (timeSpentSeconds?: number) => Promise<number>;
   onJigsawShowRatingModal: () => void;
   crosswordRef?: RefObject<CrosswordPuzzleHandle | null>;
@@ -105,6 +106,7 @@ export function PuzzleTypeRenderer({
   effectiveHintTokens,
   onHintUsed,
   onSolved,
+  onAnagramSolved,
   onJigsawComplete,
   onJigsawShowRatingModal,
   crosswordRef,
@@ -407,7 +409,7 @@ export function PuzzleTypeRenderer({
           alreadySolved={progress?.solved ?? false}
           displayMode="app-shell"
           onPresentationChange={onAnagramPresentationChange}
-          onSolved={(elapsedSeconds) => onSolved(elapsedSeconds)}
+          onSolved={onAnagramSolved}
           onFailed={() => {}}
         />
       </div>

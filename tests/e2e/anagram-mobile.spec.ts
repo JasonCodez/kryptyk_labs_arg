@@ -12,6 +12,25 @@ const ANAGRAM_DATA = {
   hint: "Short test words",
 };
 
+const LONG_ANAGRAM_DATA = {
+  words: [
+    "ABCDEFGHIJ",
+    "AABBCCDDEEFFGG",
+    "ABCDEFGHIJKLMNOPQR",
+    "BALLOON",
+    "BOOKKEEPER",
+    "MISSISSIPPI",
+    "PUZZLE",
+    "KEYBOARD",
+    "LANDSCAPE",
+    "ACCESSIBLE",
+    "TOUCHSCREEN",
+    "CELEBRATION",
+  ],
+  timeLimit: 180,
+  hint: "Deterministic layout fixtures",
+};
+
 async function authenticateProtectedRoute(page: Page) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
@@ -36,7 +55,7 @@ async function authenticateProtectedRoute(page: Page) {
   }]);
 }
 
-async function installAnagramFixture(page: Page) {
+async function installAnagramFixture(page: Page, anagramData = ANAGRAM_DATA) {
   let solved = false;
   let attemptSuccessCount = 0;
 
@@ -69,7 +88,7 @@ async function installAnagramFixture(page: Page) {
         puzzleType: "anagram_blitz",
         xpReward: 100,
         solutions: [{ points: 100 }],
-        data: ANAGRAM_DATA,
+        data: anagramData,
         category: { name: "Word Games" },
         media: [],
         userHistory: [],
@@ -126,9 +145,9 @@ async function installAnagramFixture(page: Page) {
   return { getAttemptSuccessCount: () => attemptSuccessCount };
 }
 
-async function openAnagram(page: Page) {
+async function openAnagram(page: Page, anagramData = ANAGRAM_DATA) {
   await authenticateProtectedRoute(page);
-  const fixture = await installAnagramFixture(page);
+  const fixture = await installAnagramFixture(page, anagramData);
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("anagram-root")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Start" }).click();
@@ -139,6 +158,40 @@ async function openAnagram(page: Page) {
 async function expectNoDocumentOverflow(page: Page) {
   const widths = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
   expect(widths.document).toBeLessThanOrEqual(widths.viewport + 1);
+}
+
+async function expectNoDocumentScroll(page: Page) {
+  const dimensions = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    documentWidth: document.documentElement.scrollWidth,
+    documentHeight: document.documentElement.scrollHeight,
+  }));
+  expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
+  expect(dimensions.documentHeight).toBeLessThanOrEqual(dimensions.viewportHeight + 1);
+}
+
+async function expectPracticalTileTargets(page: Page, answerLength: number) {
+  await expect(page.locator(".anagram-letter-tile")).toHaveCount(answerLength);
+  await expect(page.locator(".anagram-answer-slot")).toHaveCount(answerLength);
+  const sizes = await page.locator(".anagram-letter-tile, .anagram-answer-slot").evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    })
+  );
+  for (const size of sizes) {
+    expect(size.width).toBeGreaterThanOrEqual(44);
+    expect(size.height).toBeGreaterThanOrEqual(44);
+  }
+  const submit = page.getByRole("button", { name: "Submit" });
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeVisible();
+  const submitBox = await submit.boundingBox();
+  const viewport = page.viewportSize();
+  expect(submitBox).not.toBeNull();
+  expect(submitBox!.y + submitBox!.height).toBeLessThanOrEqual(viewport!.height + 1);
+  await expectNoDocumentScroll(page);
 }
 
 async function expectActiveGameFits(page: Page) {
@@ -191,6 +244,25 @@ for (const viewport of MOBILE_VIEWPORTS) {
       await expect(page.locator('.anagram-answer-slot[data-filled="true"]')).toHaveCount(0);
     });
   });
+
+  test.describe(`Anagram Blitz long-word layout @ ${viewport.label}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height }, hasTouch: true, isMobile: true });
+
+    test("keeps 10, 14, and 18-character targets practical with 12 progress indicators", async ({ page }) => {
+      await openAnagram(page, LONG_ANAGRAM_DATA);
+      await expect(page.locator(".anagram-progress-dots > span")).toHaveCount(12);
+      await expectPracticalTileTargets(page, 10);
+
+      await page.getByRole("button", { name: "Pass" }).click();
+      await expect(page.getByTestId("anagram-current-entry")).toHaveAttribute("data-entry-id", `${PUZZLE_ID}-word-1`);
+      await expectPracticalTileTargets(page, 14);
+
+      await page.getByRole("button", { name: "Pass" }).click();
+      await expect(page.getByTestId("anagram-current-entry")).toHaveAttribute("data-entry-id", `${PUZZLE_ID}-word-2`);
+      await expectPracticalTileTargets(page, 18);
+      await expect(page.getByTestId("anagram-current-entry")).toHaveCSS("overflow-y", "auto");
+    });
+  });
 }
 
 test.describe("Anagram Blitz interactions", () => {
@@ -227,6 +299,23 @@ test.describe("Anagram Blitz interactions", () => {
     await expect.poll(fixture.getAttemptSuccessCount).toBe(1);
     await page.waitForTimeout(300);
     expect(fixture.getAttemptSuccessCount()).toBe(1);
+  });
+
+  test("initiates parent completion before an immediate navigation", async ({ page }) => {
+    const fixture = await openAnagram(page, { words: ["CAT"], timeLimit: 60, hint: "Navigate away" });
+    await page.getByTestId("anagram-game-surface").focus();
+    await page.keyboard.press("C");
+    await page.keyboard.press("A");
+    await page.keyboard.press("T");
+    const completionRequest = page.waitForRequest((request) => {
+      if (request.method() !== "POST") return false;
+      if (new URL(request.url()).pathname !== `/api/puzzles/${PUZZLE_ID}/progress`) return false;
+      return (request.postDataJSON() as { action?: string }).action === "attempt_success";
+    });
+    await page.keyboard.press("Enter");
+    await page.goto("/puzzles", { waitUntil: "domcontentloaded" });
+    await completionRequest;
+    await expect.poll(fixture.getAttemptSuccessCount).toBe(1);
   });
 });
 

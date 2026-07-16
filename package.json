@@ -11,7 +11,7 @@
     "start": "next start -p $PORT",
     "lint": "eslint .",
     "lint:crossword": "eslint src/components/puzzle/CrosswordPuzzle.tsx src/components/puzzle/crossword src/components/app-shell/PuzzleHeader.tsx src/components/app-shell/PuzzleHeader.test.tsx src/components/puzzle/PuzzleBugReportButton.tsx src/app/daily/crossword/page.tsx src/components/puzzle/PuzzleTypeRenderer.tsx \"src/app/puzzles/[id]/page.tsx\" tests/e2e/mobile-shell.spec.ts tests/e2e/crossword-mobile.spec.ts",
-    "lint:anagram": "eslint src/components/puzzle/AnagramBlitz.tsx src/components/puzzle/AnagramBlitz.test.tsx src/components/puzzle/anagram src/components/puzzle/PuzzleTypeRenderer.tsx src/components/app-shell/PuzzleHeader.tsx \"src/app/puzzles/[id]/page.tsx\" tests/e2e/anagram-mobile.spec.ts",
+    "lint:anagram": "eslint src/components/puzzle/AnagramBlitz.tsx src/components/puzzle/AnagramBlitz.test.tsx src/components/puzzle/anagram src/components/puzzle/PuzzleTypeRenderer.tsx src/components/app-shell/PuzzleHeader.tsx src/lib/anagramConfig.ts \"src/app/puzzles/[id]/page.tsx\" tests/e2e/anagram-mobile.spec.ts",
     "pwa:screenshots": "node scripts/generate-pwa-screenshots.mjs",
     "twa:init": "npx @bubblewrap/cli init --manifest=https://www.puzzlewarz.com/manifest.webmanifest",
     "twa:build": "npx @bubblewrap/cli build",

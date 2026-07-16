@@ -18,6 +18,7 @@ import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
 import { juice, prefersReducedMotion } from "@/lib/juice";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
+import { normalizeAnagramConfig } from "@/lib/anagramConfig";
 import AnagramLetterTray from "@/components/puzzle/anagram/AnagramLetterTray";
 import AnagramAnswerSlots from "@/components/puzzle/anagram/AnagramAnswerSlots";
 import AnagramControls from "@/components/puzzle/anagram/AnagramControls";
@@ -114,12 +115,10 @@ function stableScramble(answer: string, entryId: string): AnagramTile[] {
 }
 
 export function buildAnagramWordEntries(puzzleId: string, rawWords: unknown): AnagramWordEntry[] {
-  if (!Array.isArray(rawWords)) return [];
-  return rawWords.flatMap((rawWord, index) => {
-    const answer = String(rawWord).toUpperCase().replace(/[^A-Z]/g, "");
-    if (!answer) return [];
+  const words = normalizeAnagramConfig({ words: rawWords }).words;
+  return words.map((answer, index) => {
     const id = `${puzzleId}-word-${index}`;
-    return [{ id, answer, scrambled: stableScramble(answer, id) }];
+    return { id, answer, scrambled: stableScramble(answer, id) };
   });
 }
 
@@ -221,9 +220,10 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
   onPresentationChange,
   displayMode = "standalone",
 }, ref) {
-  const entries = useMemo(() => buildAnagramWordEntries(puzzleId, anagramData.words), [anagramData.words, puzzleId]);
+  const normalizedConfig = useMemo(() => normalizeAnagramConfig(anagramData), [anagramData]);
+  const entries = useMemo(() => buildAnagramWordEntries(puzzleId, normalizedConfig.words), [normalizedConfig.words, puzzleId]);
   const entryMap = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
-  const totalTimeMs = Math.max(1, Number(anagramData.timeLimit ?? 60)) * 1000;
+  const totalTimeMs = normalizedConfig.timeLimitSeconds * 1000;
   const hint = anagramData.hint ? String(anagramData.hint) : null;
   const initialTrayOrders = useMemo(() => Object.fromEntries(entries.map((entry) => [entry.id, entry.scrambled.map((tile) => tile.id)])), [entries]);
   const skin = usePuzzleSkin();
@@ -238,6 +238,7 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [recentTileId, setRecentTileId] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [completedLocally, setCompletedLocally] = useState(false);
 
   const gameSurfaceRef = useRef<HTMLDivElement | null>(null);
   const completionTargetRef = useRef<HTMLDivElement | null>(null);
@@ -375,6 +376,7 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
     setFeedback(null);
     setRecentTileId(null);
     setShowHelp(false);
+    setCompletedLocally(false);
   }, [alreadySolved, clearPendingTimeouts, clearTicker, entries, initialTrayOrders, totalTimeMs]);
 
   useImperativeHandle(ref, () => ({
@@ -393,9 +395,10 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
   }), [currentEntry, entries.length, solvedEntryIds.length, status, timeLeftMs]);
 
   useEffect(() => {
+    const visibleHeaderSecond = Math.max(0, Math.ceil(presentationState.timeLeftMs / 1000));
     const signature = [
       presentationState.status,
-      Math.round(presentationState.timeLeftMs),
+      visibleHeaderSecond,
       presentationState.solvedCount,
       presentationState.totalWords,
       presentationState.currentWordNumber,
@@ -479,12 +482,14 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
     setPlaced([]);
     queueRef.current = [];
     setQueueIds([]);
-    if (!solvedCallbackGuardRef.current) {
-      solvedCallbackGuardRef.current = true;
-      const elapsedSeconds = Math.max(0, Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000));
-      schedule(() => onSolvedRef.current?.(elapsedSeconds), reduceMotion ? 80 : 240);
-    }
-  }, [reduceMotion, schedule, setPlaced]);
+  }, [setPlaced]);
+
+  const notifySolved = useCallback(() => {
+    if (solvedCallbackGuardRef.current) return;
+    solvedCallbackGuardRef.current = true;
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000));
+    onSolvedRef.current?.(elapsedSeconds);
+  }, []);
 
   const handleSubmit = useCallback(() => {
     if (statusRef.current !== "playing" || feedback === "correct" || !currentEntry) return;
@@ -507,8 +512,10 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
 
     if (finalWord) {
       terminalGuardRef.current = true;
+      setCompletedLocally(true);
       clearTicker();
       deadlineRef.current = null;
+      notifySolved();
       juice.reward();
       confettiBurstAt(completionTargetRef.current, { particleCount: 42, spread: 78 });
       schedule(finishWinAfterFeedback, reduceMotion ? 180 : 650);
@@ -524,7 +531,7 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
       setRecentTileId(null);
       window.requestAnimationFrame(focusGame);
     }, reduceMotion ? 120 : 460);
-  }, [clearTicker, currentEntry, currentTileMap, feedback, finishWinAfterFeedback, focusGame, reduceMotion, schedule, setPlaced]);
+  }, [clearTicker, currentEntry, currentTileMap, feedback, finishWinAfterFeedback, focusGame, notifySolved, reduceMotion, schedule, setPlaced]);
 
   const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Tab") return;
@@ -615,7 +622,7 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
             <h2>Unable to start</h2>
             <p>This puzzle has no playable words configured.</p>
           </div>
-        ) : alreadySolved ? (
+        ) : alreadySolved && !completedLocally ? (
           <div className="anagram-state-card">
             <span className="anagram-state-icon" aria-hidden>✓</span>
             <h2>Already solved</h2>
@@ -655,8 +662,11 @@ const AnagramBlitz = forwardRef<AnagramBlitzHandle, AnagramBlitzProps>(function 
                 <span>Time remaining</span>
                 <strong aria-label={`Remaining time ${formatTime(timeLeftMs)}`}>{formatTime(timeLeftMs)}</strong>
               </div>
-              <div className="anagram-timer-track" role="progressbar" aria-label="Blitz time remaining" aria-valuemin={0} aria-valuemax={totalTimeMs} aria-valuenow={Math.round(timeLeftMs)}>
-                <div className="anagram-timer-fill" style={{ width: `${timerPercent}%` }} />
+              <div className="anagram-timer-rail">
+                <div className="anagram-timer-track" role="progressbar" aria-label="Blitz time remaining" aria-valuemin={0} aria-valuemax={totalTimeMs} aria-valuenow={Math.round(timeLeftMs)} aria-valuetext={`${formatTime(timeLeftMs)} remaining`}>
+                  <div className="anagram-timer-fill" style={{ width: `${timerPercent}%` }} />
+                </div>
+                {urgent && <span className="anagram-low-time-warning" aria-live="polite">Hurry!</span>}
               </div>
             </div>
 

@@ -27,6 +27,7 @@ export default function AnagramAnswerSlots({
   return (
     <div
       className="anagram-answer-slots"
+      role="group"
       aria-label="Anagram answer"
       data-feedback={feedback ?? undefined}
       data-testid="anagram-answer-slots"

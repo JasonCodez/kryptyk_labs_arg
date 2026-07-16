@@ -6,6 +6,7 @@ import AnagramBlitz, {
   type AnagramBlitzHandle,
   type AnagramPresentationState,
 } from "./AnagramBlitz";
+import { normalizeAnagramConfig } from "@/lib/anagramConfig";
 
 jest.mock("next/dynamic", () => () => () => null);
 jest.mock("framer-motion", () => ({ useReducedMotion: () => false }));
@@ -133,6 +134,17 @@ describe("AnagramBlitz tile game", () => {
     jest.useRealTimers();
   });
 
+  test("normalizes invalid time limits and non-playable words", () => {
+    expect(normalizeAnagramConfig({
+      timeLimit: Number.POSITIVE_INFINITY,
+      words: ["  co-op  ", "123", "", null, "résumé", "A-B"],
+    })).toEqual({
+      timeLimitSeconds: 60,
+      words: ["COOP", "RSUM", "AB"],
+    });
+    expect(normalizeAnagramConfig({ timeLimit: "45", words: ["cat"] }).timeLimitSeconds).toBe(45);
+  });
+
   test("repeated letters receive distinct stable tile IDs", () => {
     renderGame({ words: ["LETTER"] });
     startGame();
@@ -152,6 +164,20 @@ describe("AnagramBlitz tile game", () => {
     expect(changes.at(-1)?.solvedCount).toBe(1);
   });
 
+  test("presentation timer updates are limited to visible header-second changes", () => {
+    const onPresentationChange = jest.fn();
+    renderGame({ timeLimit: 30, onPresentationChange });
+    startGame();
+    onPresentationChange.mockClear();
+
+    for (let tick = 0; tick < 100; tick += 1) {
+      act(() => jest.advanceTimersByTime(100));
+    }
+
+    expect(onPresentationChange.mock.calls.length).toBeGreaterThanOrEqual(9);
+    expect(onPresentationChange.mock.calls.length).toBeLessThanOrEqual(11);
+  });
+
   test("tapping a tray tile fills the next answer slot", () => {
     renderGame();
     startGame();
@@ -159,6 +185,14 @@ describe("AnagramBlitz tile game", () => {
     fireEvent.click(tile);
     expect(filledSlots()).toHaveLength(1);
     expect(filledSlots()[0].dataset.tileId).toBe(tile.dataset.tileId);
+  });
+
+  test("exposes grouped tile collections and formatted timer text", () => {
+    renderGame();
+    startGame();
+    expect(screen.getByRole("group", { name: "Scrambled letter tray" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Anagram answer" })).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "Blitz time remaining" }).getAttribute("aria-valuetext")).toBe("1:00 remaining");
   });
 
   test("tapping an answer tile returns it to the tray", () => {
@@ -236,14 +270,16 @@ describe("AnagramBlitz tile game", () => {
     expect(filledSlots().map((slot) => slot.dataset.letter).join("")).toBe("ACT");
   });
 
-  test("completion callback fires exactly once", () => {
+  test("completion callback fires immediately, survives cleanup, and remains exactly once", () => {
     const onSolved = jest.fn();
-    renderGame({ words: ["CAT"], onSolved });
+    const game = renderGame({ words: ["CAT"], onSolved });
     startGame();
     typeAnswer("CAT");
     submitWithKeyboard();
-    act(() => jest.advanceTimersByTime(1000));
+    expect(onSolved).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(surface(), { key: "Enter" });
+    expect(onSolved).toHaveBeenCalledTimes(1);
+    game.unmount();
     act(() => jest.advanceTimersByTime(2000));
     expect(onSolved).toHaveBeenCalledTimes(1);
     expect(onSolved).toHaveBeenCalledWith(expect.any(Number));

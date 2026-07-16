@@ -36,6 +36,7 @@ import type {
 import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
+import { normalizeAnagramConfig } from "@/lib/anagramConfig";
 
 interface XpModalData {
   xpGained: number;
@@ -247,6 +248,7 @@ export default function PuzzleDetailPage() {
   const sudokuTimerRef = useRef<number | null>(null);
   const sudokuLockSentRef = useRef(false);
   const puzzleTypeCompletionInFlightRef = useRef(false);
+  const pageMountedRef = useRef(true);
   const [sudokuElapsed, setSudokuElapsed] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -270,6 +272,11 @@ export default function PuzzleDetailPage() {
   const [xpModalData, setXpModalData] = useState<XpModalData | null>(null);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [comparisonStats, setComparisonStats] = useState<ComparisonStats | null>(null);
+
+  useEffect(() => {
+    pageMountedRef.current = true;
+    return () => { pageMountedRef.current = false; };
+  }, []);
 
   // Fetch user's current total XP so we can animate the XP bar on puzzle completion
   useEffect(() => {
@@ -956,7 +963,11 @@ export default function PuzzleDetailPage() {
     return 0;
   };
 
-  const handlePuzzleTypeComplete = async (elapsed?: number, xp?: number) => {
+  const handlePuzzleTypeComplete = async (
+    elapsed?: number,
+    xp?: number,
+    options?: { modalDelayMs?: number },
+  ) => {
     if (progress?.solved) {
       return;
     }
@@ -967,8 +978,9 @@ export default function PuzzleDetailPage() {
     puzzleTypeCompletionInFlightRef.current = true;
     setError("");
     try {
-      const committed = await recordCompletionAndShowModal(elapsed, xp);
-      if (committed) {
+      const modalNotBefore = Date.now() + Math.max(0, options?.modalDelayMs ?? 0);
+      const committed = await recordCompletionAndShowModal(elapsed, xp, modalNotBefore);
+      if (committed && pageMountedRef.current) {
         setSuccess(true);
       }
     } finally {
@@ -1006,7 +1018,11 @@ export default function PuzzleDetailPage() {
   };
 
   // Used by non-sudoku puzzle types: computes elapsed, fetches updated points, then shows modals.
-  const recordCompletionAndShowModal = async (elapsedOverride?: number, xpOverride?: number): Promise<boolean> => {
+  const recordCompletionAndShowModal = async (
+    elapsedOverride?: number,
+    xpOverride?: number,
+    modalNotBefore = 0,
+  ): Promise<boolean> => {
     const prevPoints = progress?.pointsEarned || 0;
     const elapsed = elapsedOverride ?? (sessionStartRef.current ? Math.round((Date.now() - sessionStartRef.current.getTime()) / 1000) : null);
     setCompletionSeconds(elapsed);
@@ -1016,6 +1032,7 @@ export default function PuzzleDetailPage() {
         const completionResponse = await fetch(`/api/puzzles/${puzzleId}/progress`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
           body: JSON.stringify({
             action: 'attempt_success',
             ...(typeof elapsed === 'number' ? { durationSeconds: elapsed } : {}),
@@ -1035,6 +1052,7 @@ export default function PuzzleDetailPage() {
         }
 
         const updatedProgress = await completionResponse.json();
+        if (!pageMountedRef.current) return true;
         setProgress(updatedProgress);
         const newPoints = updatedProgress?.pointsEarned ?? prevPoints;
         setJustAwardedPoints(Math.max(0, newPoints - prevPoints));
@@ -1049,6 +1067,7 @@ export default function PuzzleDetailPage() {
       const progressResponse = await fetch(`/api/puzzles/${puzzleId}/progress`);
       if (progressResponse.ok) {
         const updatedProgress = await progressResponse.json();
+        if (!pageMountedRef.current) return true;
         setProgress(updatedProgress);
         const newPoints = updatedProgress?.pointsEarned ?? prevPoints;
         setJustAwardedPoints(Math.max(0, newPoints - prevPoints));
@@ -1056,6 +1075,12 @@ export default function PuzzleDetailPage() {
     } catch (err) {
       console.error("Failed to refresh progress for completion modal:", err);
     }
+    if (!pageMountedRef.current) return true;
+    const modalDelay = Math.max(0, modalNotBefore - Date.now());
+    if (modalDelay > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, modalDelay));
+    }
+    if (!pageMountedRef.current) return true;
     handlePuzzleSolved(xpOverride);
     return true;
   };
@@ -1309,6 +1334,7 @@ export default function PuzzleDetailPage() {
   }
 
   const skin = getSkinTokens(activeSkin);
+  const normalizedAnagramConfig = normalizeAnagramConfig(puzzle.data);
 
   const displayTitle = (() => {
     const escapeTitle = (puzzle?.escapeRoom?.roomTitle || '').toString().trim();
@@ -1366,15 +1392,15 @@ export default function PuzzleDetailPage() {
       backHref="/puzzles"
       title={displayTitle}
       subtitle={puzzle.puzzleType === "anagram_blitz"
-        ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? (Array.isArray(puzzle.data?.words) ? puzzle.data.words.length : 0)} solved`
+        ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? normalizedAnagramConfig.words.length} solved`
         : undefined}
       progress={puzzle.puzzleType === "crossword"
         ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}`}>
             {formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}
           </span>
         : puzzle.puzzleType === "anagram_blitz"
-          ? <span aria-label={`Remaining time ${formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? Number(puzzle.data?.timeLimit ?? 60) * 1000)}`}>
-              {formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? Number(puzzle.data?.timeLimit ?? 60) * 1000)}
+          ? <span aria-label={`Remaining time ${formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? normalizedAnagramConfig.timeLimitSeconds * 1000)}`}>
+              {formatAnagramHeaderTime(anagramPresentation?.timeLeftMs ?? normalizedAnagramConfig.timeLimitSeconds * 1000)}
             </span>
           : undefined}
       actions={puzzle.puzzleType === "crossword"
@@ -1682,6 +1708,7 @@ export default function PuzzleDetailPage() {
               effectiveHintTokens={effectiveHintTokens}
               onHintUsed={handleSudokuHintUsed}
               onSolved={handlePuzzleTypeComplete}
+              onAnagramSolved={(elapsedSeconds) => handlePuzzleTypeComplete(elapsedSeconds, undefined, { modalDelayMs: 900 })}
               onJigsawComplete={handleJigsawComplete}
               onJigsawShowRatingModal={handlePuzzleSolved}
               crosswordRef={crosswordRef}
