@@ -29,9 +29,12 @@ import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import VaultPuzzle from "@/components/puzzle/VaultPuzzle";
 import CipherClashPuzzle from "@/components/puzzle/CipherClashPuzzle";
-import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
+import JigsawPuzzle, {
+  type JigsawCompletionResult,
+  type JigsawPresentationState,
+  type JigsawPuzzleHandle,
+} from "@/components/puzzle/JigsawPuzzle";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
-import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
 
 // The admin puzzle creator persists a few extra tunable fields on jigsaw puzzles
@@ -43,14 +46,6 @@ type JigsawExtraData = JigsawPuzzleType['data'] & {
   pieceNHalfFrac?: number;
   pieceShoulderStart?: number;
   funFact?: string;
-};
-
-type JigsawControlsApi = {
-  reset: () => void;
-  sendLooseToTray: () => void;
-  enterFullscreen: () => void;
-  exitFullscreen: () => void;
-  isFullscreen: boolean;
 };
 
 interface PuzzleBase {
@@ -75,14 +70,14 @@ interface PuzzleTypeRendererProps {
   teamIdParam?: string;
   lobbyIdParam?: string;
   jigsawPlayable: JigsawPuzzleType | null;
-  jigsawControls: JigsawControlsApi | null;
-  setJigsawControls: (api: JigsawControlsApi) => void;
   effectiveHintTokens: number;
   onHintUsed: () => Promise<boolean>;
   onSolved: (elapsed?: number, xp?: number) => void;
   onAnagramSolved: (elapsedSeconds: number) => void;
-  onJigsawComplete: (timeSpentSeconds?: number) => Promise<number>;
+  onJigsawComplete: (timeSpentSeconds?: number) => Promise<JigsawCompletionResult>;
   onJigsawShowRatingModal: () => void;
+  jigsawRef?: RefObject<JigsawPuzzleHandle | null>;
+  onJigsawPresentationChange?: (state: JigsawPresentationState) => void;
   crosswordRef?: RefObject<CrosswordPuzzleHandle | null>;
   onCrosswordPresentationChange?: (state: CrosswordPresentationState) => void;
   anagramRef?: RefObject<AnagramBlitzHandle | null>;
@@ -108,14 +103,14 @@ export function PuzzleTypeRenderer({
   teamIdParam,
   lobbyIdParam,
   jigsawPlayable,
-  jigsawControls,
-  setJigsawControls,
   effectiveHintTokens,
   onHintUsed,
   onSolved,
   onAnagramSolved,
   onJigsawComplete,
   onJigsawShowRatingModal,
+  jigsawRef,
+  onJigsawPresentationChange,
   crosswordRef,
   onCrosswordPresentationChange,
   anagramRef,
@@ -132,30 +127,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'jigsaw') {
     const jigsawExtra = jigsawPlayable?.data as JigsawExtraData | undefined;
     return (
-      <div className="mb-8">
-        {jigsawPlayable && (
-          <div className="mb-4 flex flex-col items-stretch gap-3">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
-              <button
-                onClick={() => jigsawControls?.enterFullscreen?.()}
-                className="w-full sm:w-auto px-3 py-2 rounded bg-gray-800 text-white border border-gray-600 hover:opacity-90"
-              >
-                Fullscreen
-              </button>
-              <button
-                onClick={() => jigsawControls?.sendLooseToTray?.()}
-                className="w-full sm:w-auto px-3 py-2 rounded bg-yellow-400 text-black border border-yellow-500 hover:opacity-90"
-              >
-                Return Loose Pieces
-              </button>
-              <PuzzleBugReportButton
-                puzzleId={puzzleId}
-                puzzleTitle={puzzle.title || "This puzzle"}
-                className="w-full sm:w-auto px-3 py-2 rounded bg-gray-800 text-white border border-gray-600 hover:opacity-90"
-              />
-            </div>
-          </div>
-        )}
+      <div className="h-full min-h-0">
         {!jigsawPlayable ? (
           <div className="p-4 rounded-lg border" style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.4)", color: "#fca5a5" }}>
             This jigsaw puzzle is missing its image. Upload an image in the admin puzzle creator.
@@ -163,11 +135,9 @@ export function PuzzleTypeRenderer({
         ) : !jigsawBoardDims ? (
           <div className="p-8 text-center text-gray-400">Loading puzzle image…</div>
         ) : (
-          <div
-            className="rounded-none overflow-hidden border border-gray-700"
-            style={{ margin: "0 -2rem" }}
-          >
+          <div className="h-full min-h-0 overflow-hidden">
             <JigsawPuzzle
+              ref={jigsawRef}
               puzzleId={puzzleId}
               puzzleTitle={puzzle.title || "This puzzle"}
               imageUrl={jigsawPlayable.imageUrl}
@@ -180,8 +150,12 @@ export function PuzzleTypeRenderer({
               pieceNHalfFrac={typeof jigsawExtra?.pieceNHalfFrac === 'number' ? jigsawExtra.pieceNHalfFrac : undefined}
               pieceShoulderStart={typeof jigsawExtra?.pieceShoulderStart === 'number' ? jigsawExtra.pieceShoulderStart : undefined}
               funFact={typeof jigsawExtra?.funFact === 'string' ? jigsawExtra.funFact : undefined}
-              onControlsReady={(api) => setJigsawControls(api)}
               suppressInternalCongrats={true}
+              displayMode="app-shell"
+              mode="catalog"
+              persistenceScope="catalog"
+              rotationEnabled={false}
+              onPresentationChange={onJigsawPresentationChange}
               onComplete={onJigsawComplete}
               onShowRatingModal={onJigsawShowRatingModal}
             />

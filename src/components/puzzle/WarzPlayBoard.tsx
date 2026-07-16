@@ -237,7 +237,9 @@ export default function WarzPlayBoard({ puzzle, instanceId, wager, onDone, submi
             alreadySolved={false}
             warzMode
             persistenceScope="none"
-            puzzleInstanceId={instanceId}
+            // The challenger solves before a challenge record/id exists. Puzzle identity is
+            // therefore the shared deterministic seed both sides can derive.
+            puzzleInstanceId={`shared:${puzzle.id}`}
             onSolved={() => handleSolved()}
           />
         );
@@ -275,8 +277,16 @@ export default function WarzPlayBoard({ puzzle, instanceId, wager, onDone, submi
             boardHeight={jigsawBoardDims.h}
             neighborSnapTolerance={puzzle.jigsaw.snapTolerance}
             puzzleId={puzzle.id}
+            puzzleInstanceId={instanceId}
+            mode="warz"
+            persistenceScope="none"
+            displayMode="standalone"
+            rotationEnabled={false}
             suppressInternalCongrats
-            onComplete={(secs) => handleSolved(secs)}
+            onComplete={async (secs) => {
+              handleSolved(secs);
+              return { success: true };
+            }}
           />
         );
       }

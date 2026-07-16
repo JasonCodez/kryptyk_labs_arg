@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import StreakTimer from "@/components/StreakTimer";
-import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
+import JigsawPuzzle, { type JigsawPresentationState, type JigsawPuzzleHandle } from "@/components/puzzle/JigsawPuzzle";
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
+import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
 import { useJigsawBoardDims } from "@/hooks/useJigsawBoardDims";
 
@@ -16,19 +16,26 @@ export default function DailyJigsawPage() {
     useDailyPuzzle("jigsaw");
   const [reward, setReward] = useState<{ points: number; xp: number } | null>(null);
   const [solved, setSolved] = useState(false);
+  const [presentation, setPresentation] = useState<JigsawPresentationState | null>(null);
+  const puzzleRef = useRef<JigsawPuzzleHandle>(null);
+  const [completionStarted, setCompletionStarted] = useState(false);
   const boardDims = useJigsawBoardDims(content?.imageUrl);
 
-  const isDone = completedToday || solved;
+  const isDone = (completedToday && !completionStarted) || solved;
+  const elapsed = Math.floor((presentation?.elapsedMs ?? 0) / 1000);
+  const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
   return (
     <PuzzlePlayShell
       backHref="/daily"
       title="Daily Jigsaw"
-      subtitle={`#${dayNumber || "---"}`}
-      actions={streak > 0 ? <StreakTimer streak={streak} solvedToday={isDone} size="sm" /> : null}
+      subtitle={`#${dayNumber || "---"}${streak > 0 ? ` · ${streak} day streak` : ""}`}
+      progress={!isDone && presentation ? `${elapsedLabel} · ${presentation.placedPieces}/${presentation.totalPieces}` : undefined}
+      actions={!isDone && content?.imageUrl ? <PuzzleHeaderActions onHelp={() => puzzleRef.current?.openInstructions()} helpLabel="How to play Jigsaw" /> : undefined}
       contentMode="fixed"
+      contentClassName="pw-jigsaw-shell-content"
     >
-      <div className="flex flex-col items-center px-3 pt-4 pb-6">
+      <div className="flex h-full min-h-0 flex-col items-center px-0">
         {!isAuthenticated ? (
           <div className="mt-16 text-center">
             <p className="text-white font-bold mb-3">Sign in to play the daily jigsaw</p>
@@ -57,25 +64,35 @@ export default function DailyJigsawPage() {
             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="w-full max-w-3xl">
-            {nextReward && (
+          <div className="w-full max-w-3xl h-full min-h-0">
+            {nextReward && isDone && (
               <p className="text-xs text-center mb-3" style={{ color: "#DDDBF1" }}>
                 Day {nextReward.streakDay} reward: +{nextReward.points} pts · +{nextReward.xp} xp
               </p>
             )}
             <JigsawPuzzle
+              ref={puzzleRef}
               puzzleId={content.puzzleId}
               imageUrl={content.imageUrl}
               rows={content.gridRows}
               cols={content.gridCols}
               boardWidth={boardDims.w}
               boardHeight={boardDims.h}
+              displayMode="app-shell"
+              mode="daily"
+              persistenceScope="daily"
+              dailyDayNumber={dayNumber}
+              rotationEnabled={false}
+              onPresentationChange={setPresentation}
               onComplete={async (timeSpentSeconds) => {
-                setSolved(true);
+                setCompletionStarted(true);
                 const result = await submitCompletion({ elapsedSeconds: timeSpentSeconds });
                 if (result?.reward) setReward(result.reward);
-                return result?.reward?.points ?? 0;
+                return result?.success
+                  ? { success: true, pointsAwarded: result.reward?.points ?? 0 }
+                  : { success: false, error: result?.error || result?.message || "Daily completion could not be recorded." };
               }}
+              onCelebrationComplete={() => setSolved(true)}
             />
           </div>
         )}

@@ -430,14 +430,14 @@ export async function PUT(
           gridRows: Number(puzzleData.gridRows) || 3,
           gridCols: Number(puzzleData.gridCols) || 4,
           snapTolerance: Number(puzzleData.snapTolerance) || 12,
-          rotationEnabled: Boolean(puzzleData.rotationEnabled),
+          rotationEnabled: false,
         },
         create: {
           puzzleId,
           gridRows: Number(puzzleData.gridRows) || 3,
           gridCols: Number(puzzleData.gridCols) || 4,
           snapTolerance: Number(puzzleData.snapTolerance) || 12,
-          rotationEnabled: Boolean(puzzleData.rotationEnabled),
+          rotationEnabled: false,
         },
       });
     }

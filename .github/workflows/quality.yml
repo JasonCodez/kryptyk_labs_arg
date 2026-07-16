@@ -56,6 +56,9 @@ jobs:
       - name: Lint Word Trove changes
         run: npm run lint:word-search
 
+      - name: Lint Jigsaw changes
+        run: npm run lint:jigsaw
+
       - name: Run crossword browser tests
         run: npm run test:crossword
 
@@ -67,3 +70,6 @@ jobs:
 
       - name: Run Word Trove browser tests
         run: npm run test:word-search
+
+      - name: Run Jigsaw browser tests
+        run: npm run test:jigsaw

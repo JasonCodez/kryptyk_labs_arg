@@ -23,16 +23,38 @@ import React, {
   useCallback,
   useMemo,
   useLayoutEffect,
+  forwardRef,
+  useImperativeHandle,
 } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import PuzzleBugReportButton from "./PuzzleBugReportButton";
+import JigsawControls from "./jigsaw/JigsawControls";
+import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
+import JigsawPreviewDialog from "./jigsaw/JigsawPreviewDialog";
+import JigsawResetDialog from "./jigsaw/JigsawResetDialog";
+import {
+  buildJigsawEdges,
+  calculateJigsawCompletion,
+  jigsawGenerationSeed,
+  jigsawPuzzleSignature,
+  shuffledJigsawIds,
+  uniqueLooseGroupIds,
+  type JigsawEdgeMap,
+} from "@/lib/jigsawCore";
+import {
+  jigsawStorageKey,
+  restoreJigsawProgress,
+  serializeJigsawProgress,
+  type JigsawPersistenceScope,
+} from "@/lib/jigsawPersistence";
+import "@/styles/jigsaw.css";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface EdgeMap { top: number; right: number; bottom: number; left: number }
+type EdgeMap = JigsawEdgeMap;
 
 interface PiecePos { x: number; y: number }
 
@@ -60,88 +82,12 @@ type PathOpts = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Local-storage helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface SavedProgress {
-  pieces: Record<string, { relX: number; relY: number; groupId: string; snapped: boolean; z: number }>;
-  // groupIds resident in the tray at save time. Absent on saves from before the tray existed
-  // (scatter-era) — treated as an incompatible/stale save rather than remapped.
-  tray?: string[];
-  elapsedMs: number;
-  savedAt: number;
-}
-
-function getStorageKey(
-  puzzleId: string | undefined, imageUrl: string, rows: number, cols: number
-): string {
-  if (puzzleId) return `jigsaw-progress-${puzzleId}`;
-  const slug = (imageUrl ?? "").replace(/[^a-zA-Z0-9]/g, "").slice(-24);
-  return `jigsaw-progress-${rows}x${cols}-${slug}`;
-}
-
-function saveJigsawProgress(key: string, pieces: Piece[], tray: string[], elapsedMs: number) {
-  try {
-    const data: SavedProgress = {
-      pieces: Object.fromEntries(pieces.map(p => [p.id, {
-        relX: p.pos.x - p.correct.x, relY: p.pos.y - p.correct.y,
-        groupId: p.groupId, snapped: p.snapped, z: p.z,
-      }])),
-      tray, elapsedMs, savedAt: Date.now(),
-    };
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch { /* quota / SSR */ }
-}
-
-function loadJigsawProgress(key: string): SavedProgress | null {
-  try {
-    if (typeof window === "undefined") return null;
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as SavedProgress) : null;
-  } catch { return null; }
-}
-
-function clearJigsawProgress(key: string) {
-  try { localStorage.removeItem(key); } catch { /* noop */ }
-}
-
-function applyProgress(base: Piece[], saved: SavedProgress): Piece[] {
-  return base.map(p => {
-    const s = saved.pieces[p.id];
-    if (!s) return p;
-    return { ...p, pos: { x: p.correct.x + s.relX, y: p.correct.y + s.relY },
-      groupId: s.groupId, snapped: s.snapped, z: s.z };
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Edge generation  (identical logic as old SVG version)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function buildEdges(rows: number, cols: number): Map<string, EdgeMap> {
-  const map = new Map<string, EdgeMap>();
-  const rnd = () => (Math.random() < 0.5 ? 1 : -1);
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const id = `${r}-${c}`;
-      const e: EdgeMap = { top: 0, right: 0, bottom: 0, left: 0 };
-      if (r > 0) e.top = -map.get(`${r - 1}-${c}`)!.bottom;
-      if (c > 0) e.left = -map.get(`${r}-${c - 1}`)!.right;
-      e.right = c < cols - 1 ? rnd() : 0;
-      e.bottom = r < rows - 1 ? rnd() : 0;
-      map.set(id, e);
-    }
-  }
-  return map;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Path2D builder  — mirrors `piecePath()` SVG math but into a Path2D object
 // ─────────────────────────────────────────────────────────────────────────────
 
 type EdgeCmd = ["L", number, number] | ["C", number, number, number, number, number, number];
 
-function edgeProfile(L: number, dir: number, opts: PathOpts, sizeRef: number): EdgeCmd[] {
+function edgeProfile(L: number, dir: number, opts: PathOpts): EdgeCmd[] {
   if (dir === 0) return [["L", L, 0]];
   const sign = dir;
   const K    = 0.5523; // cubic bezier circle approximation constant
@@ -212,7 +158,7 @@ function buildPath2D(pw: number, ph: number, edges: EdgeMap, opts: PathOpts): Pa
     ox: number, oy: number, // "out" unit vector (tab protrudes this way)
     L: number, dir: number
   ) {
-    for (const cmd of edgeProfile(L, dir, opts, sizeRef)) {
+    for (const cmd of edgeProfile(L, dir, opts)) {
       if (cmd[0] === "L") {
         path.lineTo(sx + ax * cmd[1] + ox * cmd[2], sy + ay * cmd[1] + oy * cmd[2]);
       } else {
@@ -274,7 +220,43 @@ function roundedRectPath(x: number, y: number, w: number, h: number, r: number):
 // Props interface  (identical to old SVG component — all call-sites unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface JigsawPuzzleProps {
+export type JigsawStatus = "loading" | "playing" | "completing" | "completion-pending" | "won" | "image-error";
+
+export interface JigsawPresentationState {
+  status: JigsawStatus;
+  elapsedMs: number;
+  placedPieces: number;
+  totalPieces: number;
+  trayGroups: number;
+  totalGroups: number;
+  zoom: number;
+  previewOpen: boolean;
+  fullscreen: boolean;
+  resumed: boolean;
+  completionPending: boolean;
+}
+
+export interface JigsawCompletionResult {
+  success: boolean;
+  pointsAwarded?: number;
+  error?: string;
+}
+
+export interface JigsawPuzzleHandle {
+  openInstructions(): void;
+  openPreview(): void;
+  closePreview(): void;
+  focusBoard(): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  resetZoom(): void;
+  returnLooseToTray(): void;
+  requestReset(): void;
+  enterFullscreen(): void;
+  exitFullscreen(): void;
+}
+
+export interface JigsawPuzzleProps {
   imageUrl: string;
   rows?: number;
   cols?: number;
@@ -300,20 +282,21 @@ interface JigsawPuzzleProps {
   pieceNHalfFrac?: number;
   pieceShoulderStart?: number;
   containerStyle?: React.CSSProperties;
-  onComplete?: (t?: number) => Promise<number | void> | number | void;
+  onComplete?: (elapsedSeconds: number) => Promise<JigsawCompletionResult>;
+  onCelebrationComplete?: (result: JigsawCompletionResult) => void;
   onShowRatingModal?: () => void;
   suppressInternalCongrats?: boolean;
-  onControlsReady?: (api: {
-    reset: () => void;
-    sendLooseToTray: () => void;
-    enterFullscreen: () => void;
-    exitFullscreen: () => void;
-    isFullscreen: boolean;
-  }) => void;
   puzzleId?: string;
   puzzleTitle?: string;
   tableBackground?: string;
   funFact?: string;
+  displayMode?: "standalone" | "app-shell";
+  mode?: "catalog" | "daily" | "warz";
+  persistenceScope?: JigsawPersistenceScope;
+  dailyDayNumber?: number;
+  puzzleInstanceId?: string;
+  rotationEnabled?: boolean;
+  onPresentationChange?: (state: JigsawPresentationState) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -369,28 +352,35 @@ function useSfxBuffer(url: string, volume: number, enabled: () => boolean) {
   const bufferRef = useRef<AudioBuffer | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const AudioCtxCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtxCtor) return;
-    const ctx = new AudioCtxCtor();
-    ctxRef.current = ctx;
     let cancelled = false;
+    let ctx: AudioContext | null = null;
+    const initialize = () => {
+      if (!enabled() || ctx || typeof window === "undefined") return;
+      const AudioCtxCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtxCtor) return;
+      ctx = new AudioCtxCtor();
+      ctxRef.current = ctx;
 
-    fetch(url)
-      .then((res) => res.arrayBuffer())
-      .then((data) => ctx.decodeAudioData(data))
-      .then((buf) => { if (!cancelled) bufferRef.current = buf; })
-      .catch(() => {
+      fetch(url)
+        .then((res) => res.arrayBuffer())
+        .then((data) => ctx!.decodeAudioData(data))
+        .then((buf) => { if (!cancelled) bufferRef.current = buf; })
+        .catch(() => {
         // Ignore load/decode failures — playback just becomes a no-op.
-      });
+        });
+    };
+    window.addEventListener("pointerdown", initialize, { once: true });
+    window.addEventListener("keydown", initialize, { once: true });
 
     return () => {
       cancelled = true;
+      window.removeEventListener("pointerdown", initialize);
+      window.removeEventListener("keydown", initialize);
       bufferRef.current = null;
       ctxRef.current = null;
-      void ctx.close().catch(() => {});
+      if (ctx) void ctx.close().catch(() => {});
     };
-  }, [url]);
+  }, [enabled, url]);
 
   return useCallback(() => {
     if (!enabled()) return;
@@ -554,7 +544,7 @@ function drawTrayThumbnail(
 
 function TrayPieceThumb({
   groupId, members, pw, ph, pathCache, img, gridW, gridH, rows, cols, cellPx, onPick,
-  registerNode, shiftPx,
+  registerNode, shiftPx, index, selected, onSelect,
 }: {
   groupId: string;
   members: Piece[];
@@ -570,6 +560,9 @@ function TrayPieceThumb({
   registerNode: (groupId: string, node: HTMLCanvasElement | null) => void;
   /** Animated horizontal offset (px) opening a gap for a piece currently hovering the tray. */
   shiftPx: number;
+  index: number;
+  selected: boolean;
+  onSelect: (groupId: string) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -580,15 +573,35 @@ function TrayPieceThumb({
     return () => registerNode(groupId, null);
   }, [groupId, registerNode]);
   return (
-    <canvas
-      ref={ref}
-      onPointerDown={(e) => onPick(groupId, e)}
+    <button
+      type="button"
+      className="jigsaw-tray-piece"
+      data-jigsaw-tray-index={index}
+      aria-label={members.length === 1
+        ? `Loose puzzle piece, row ${members[0].row + 1} column ${members[0].col + 1}`
+        : `Connected group containing ${members.length} pieces`}
+      aria-pressed={selected}
+      aria-grabbed={selected}
+      onClick={() => onSelect(groupId)}
+      onKeyDown={(event) => {
+        if (selected || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+        event.preventDefault();
+        const nextIndex = index + (event.key === "ArrowLeft" ? -1 : 1);
+        const next = event.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-jigsaw-tray-index="${nextIndex}"]`);
+        next?.focus();
+      }}
       style={{
-        display: "block", touchAction: "none", cursor: "grab", flexShrink: 0,
         transform: `translateX(${shiftPx}px)`,
         transition: "transform 160ms ease",
       }}
-    />
+    >
+      <canvas
+        ref={ref}
+        aria-hidden="true"
+        onPointerDown={(e) => { onSelect(groupId); onPick(groupId, e); }}
+        style={{ display: "block", touchAction: "none", cursor: "grab", flexShrink: 0 }}
+      />
+    </button>
   );
 }
 
@@ -596,7 +609,7 @@ function TrayPieceThumb({
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function JigsawPuzzleSVGWithTray({
+const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(function JigsawPuzzleCanvas({
   imageUrl, rows = 4, cols = 6,
   boardWidth = 640, boardHeight = 480,
   trayHeight: trayHeightProp = 160,
@@ -606,10 +619,14 @@ export default function JigsawPuzzleSVGWithTray({
   shoulderLen = 0.22, shoulderDepth = 0.08,
   cornerInset = 1, smooth = 0.55,
   pieceExtFrac, pieceRFrac, pieceNHalfFrac, pieceShoulderStart,
-  onComplete, onShowRatingModal,
-  suppressInternalCongrats = false, onControlsReady,
-  puzzleId, puzzleTitle, tableBackground, funFact, containerStyle = {},
-}: JigsawPuzzleProps) {
+  onComplete, onCelebrationComplete, onShowRatingModal,
+  suppressInternalCongrats = false,
+  puzzleId = "anonymous-jigsaw", puzzleTitle, tableBackground, funFact, containerStyle = {},
+  displayMode = "standalone", mode = "catalog", persistenceScope,
+  dailyDayNumber, puzzleInstanceId, onPresentationChange,
+  // Rotation is intentionally forced off until the Canvas2D engine implements it.
+  rotationEnabled: _rotationEnabled = false,
+}: JigsawPuzzleProps, forwardedRef) {
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const canvasRef       = useRef<HTMLCanvasElement>(null);
@@ -633,12 +650,6 @@ export default function JigsawPuzzleSVGWithTray({
   const isJigsawSfxEnabled = useCallback(() => {
     if (typeof window === "undefined") return false;
     try {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
-      const userPrefsRaw = window.localStorage.getItem("userPreferences");
-      if (userPrefsRaw) {
-        const prefs = JSON.parse(userPrefsRaw) as { reduceAnimations?: boolean };
-        if (prefs?.reduceAnimations) return false;
-      }
       if (window.localStorage.getItem("jigsawSoundEffectsEnabled") === "false") return false;
     } catch {
       // Fall through to enabled.
@@ -694,6 +705,7 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Path2D cache keyed by piece id (rebuilt whenever rows/cols/opts change)
   const pathCacheRef = useRef<Map<string, Path2D>>(new Map());
+  const requestCanvasRenderRef = useRef<() => void>(() => {});
 
   // Render-order cache — avoids re-sorting every piece on every single animation frame.
   // The sort order (z-index, dragged group on top) only actually changes when the pieces
@@ -717,6 +729,21 @@ export default function JigsawPuzzleSVGWithTray({
     nHalfFrac:     pieceNHalfFrac,
     shoulderStart: pieceShoulderStart,
   }), [tabRadius, tabDepth, neckWidth, neckDepth, shoulderLen, shoulderDepth, cornerInset, smooth, pw, ph, pieceExtFrac, pieceRFrac, pieceNHalfFrac, pieceShoulderStart]);
+  void _rotationEnabled;
+  const effectivePersistenceScope = persistenceScope ?? (mode === "warz" ? "none" : mode);
+  const generationSeed = useMemo(() => jigsawGenerationSeed({ mode, puzzleId, dailyDayNumber, puzzleInstanceId }), [dailyDayNumber, mode, puzzleId, puzzleInstanceId]);
+  const puzzleSignature = useMemo(() => jigsawPuzzleSignature({
+    puzzleId,
+    imageIdentity: imageUrl,
+    rows,
+    cols,
+    shape: {
+      tabRadius, tabDepth, neckWidth, neckDepth, shoulderLen, shoulderDepth,
+      cornerInset, smooth, pieceExtFrac, pieceRFrac, pieceNHalfFrac, pieceShoulderStart,
+    },
+    rotationEnabled: false,
+    generationSeed,
+  }), [cornerInset, cols, generationSeed, imageUrl, neckDepth, neckWidth, pieceExtFrac, pieceNHalfFrac, pieceRFrac, pieceShoulderStart, puzzleId, rows, shoulderDepth, shoulderLen, smooth, tabDepth, tabRadius]);
 
   // Pieces state (live copy in ref for renderer, React state for UI)
   const piecesRef = useRef<Piece[]>([]);
@@ -726,6 +753,7 @@ export default function JigsawPuzzleSVGWithTray({
       const next = typeof fn === "function" ? fn(prev) : fn;
       piecesRef.current = next;
       dirtyRef.current = true;
+      requestCanvasRenderRef.current();
       return next;
     });
   }, []);
@@ -745,6 +773,7 @@ export default function JigsawPuzzleSVGWithTray({
       trayOrderRef.current = next;
       trayGroupSetRef.current = new Set(next);
       dirtyRef.current = true;
+      requestCanvasRenderRef.current();
       return next;
     });
   }, []);
@@ -889,17 +918,25 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Completion
   const completedRef  = useRef(false);
+  const restoredCompletionPendingRef = useRef(false);
+  const completionRequestInFlightRef = useRef(false);
+  const completionConfirmedRef = useRef(false);
+  const celebrationCompleteRef = useRef(false);
+  const completionResultRef = useRef<JigsawCompletionResult | null>(null);
+  const finalHandoffRef = useRef(false);
+  const completionElapsedRef = useRef(0);
   // When the decorative frame should start fading in — set once the living-photo reveal
   // (which fully covers the board while it plays) begins dissolving away, not the instant
   // the puzzle is solved, since the frame would otherwise finish fading in while still
   // hidden underneath that overlay and the fade would never actually be seen.
   const frameFadeStartRef = useRef<number | null>(null);
   const FRAME_FADE_DUR = 3200;
-  const [showCongrats, setShowCongrats]     = useState(false);
   const [awardedPoints, setAwardedPoints]   = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const startTimeRef  = useRef(Date.now());
+  const startTimeRef  = useRef(0);
   const storageKeyRef = useRef("");
+  const [status, setStatus] = useState<JigsawStatus>("loading");
+  const [completionError, setCompletionError] = useState("");
 
   // Save/resume
   const [resumed, setResumed]       = useState(false);
@@ -907,14 +944,17 @@ export default function JigsawPuzzleSVGWithTray({
 
   // Fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const isFullscreenRef = useRef(false);
   const [portalReady, setPortalReady]   = useState(false);
 
   // UI helpers
   const [isTouchDevice, setIsTouchDevice]               = useState(false);
   const [mobileHintDismissed, setMobileHintDismissed]   = useState(false);
   const [showPreview, setShowPreview]                   = useState(false);
-  const controlsAssignedRef = useRef(false);
+  const [showHelp, setShowHelp]                         = useState(false);
+  const [showReset, setShowReset]                       = useState(false);
+  const [screenReaderStatus, setScreenReaderStatus]     = useState("");
+  const [selectedGroupId, setSelectedGroupId]           = useState<string | null>(null);
+  const lastPresentationRef = useRef("");
 
   // Viewport: pinch-zoom/pan lets a player inspect fine detail on the (always fully visible)
   // board. viewOff is the top-left corner of the viewport in stage logical coordinates.
@@ -1027,16 +1067,6 @@ export default function JigsawPuzzleSVGWithTray({
   // Every piece starts tray-resident (no more scatter spawn) — pos is a placeholder until
   // the piece is dragged out of the tray onto the stage.
 
-  function shuffledIds(rows: number, cols: number): string[] {
-    const ids: string[] = [];
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) ids.push(`${r}-${c}`);
-    for (let i = ids.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [ids[i], ids[j]] = [ids[j], ids[i]];
-    }
-    return ids;
-  }
-
   const buildInitial = useCallback((
     edgesMap: Map<string, EdgeMap>,
   ): { pieces: Piece[]; trayOrder: string[] } => {
@@ -1057,34 +1087,46 @@ export default function JigsawPuzzleSVGWithTray({
         });
       }
     }
-    return { pieces: list, trayOrder: shuffledIds(rows, cols) };
-  }, [rows, cols]);
+    return { pieces: list, trayOrder: shuffledJigsawIds(rows, cols, generationSeed) };
+  }, [rows, cols, generationSeed]);
 
   // ── Initialize / re-initialize ───────────────────────────────────────────
 
   const edgesMapRef = useRef<Map<string, EdgeMap>>(new Map());
 
   useEffect(() => {
-    const edgesMap = buildEdges(rows, cols);
+    const edgesMap = buildJigsawEdges(rows, cols, generationSeed);
     edgesMapRef.current = edgesMap;
     rebuildCache(edgesMap);
 
-    const key = getStorageKey(puzzleId, imageUrl, rows, cols);
-    storageKeyRef.current = key;
+    const key = jigsawStorageKey(effectivePersistenceScope, puzzleId, dailyDayNumber);
+    storageKeyRef.current = key ?? "";
 
     const initial = buildInitial(edgesMap);
-    const saved   = loadJigsawProgress(key);
+    const saved = restoreJigsawProgress({
+      storage: typeof window === "undefined" ? null : localStorage,
+      scope: effectivePersistenceScope,
+      puzzleId,
+      dailyDayNumber,
+      signature: puzzleSignature,
+      basePieces: initial.pieces,
+      stageWidth: stageDimsRef.current.w,
+      stageHeight: stageDimsRef.current.h,
+    });
     let finalPieces: Piece[];
     let finalTray: string[];
 
     // saved.tray is only present in the tray-based save format — an older scatter-era save
     // (no tray field) is treated as incompatible and discarded rather than remapped, since
     // its positions assumed a scatter field that no longer exists.
-    if (saved && saved.tray && Object.keys(saved.pieces).length === rows * cols) {
-      savedElapsedRef.current = saved.elapsedMs ?? 0;
+    if (saved) {
+      savedElapsedRef.current = saved.progress.elapsedMs;
       startTimeRef.current = Date.now() - savedElapsedRef.current;
-      finalPieces = applyProgress(initial.pieces, saved);
-      finalTray = saved.tray;
+      finalPieces = saved.pieces as Piece[];
+      finalTray = saved.progress.tray;
+      restoredCompletionPendingRef.current = Boolean(saved.progress.completionPending);
+      userZoomRef.current = saved.progress.zoom;
+      setUserZoom(saved.progress.zoom);
       setResumed(true);
       setTimeout(() => setResumed(false), 3500);
     } else {
@@ -1092,20 +1134,32 @@ export default function JigsawPuzzleSVGWithTray({
       startTimeRef.current = Date.now();
       finalPieces = initial.pieces;
       finalTray = initial.trayOrder;
+      restoredCompletionPendingRef.current = false;
+      userZoomRef.current = 1;
+      setUserZoom(1);
     }
 
     setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000)));
 
     completedRef.current = false;
+    completionRequestInFlightRef.current = false;
+    completionConfirmedRef.current = false;
+    celebrationCompleteRef.current = false;
+    completionResultRef.current = null;
+    finalHandoffRef.current = false;
     frameFadeStartRef.current = null;
     piecesRef.current = finalPieces;
     setPiecesState(finalPieces);
     trayOrderRef.current = finalTray;
     trayGroupSetRef.current = new Set(finalTray);
     setTrayOrderState(finalTray);
+    setCompletionError("");
+    setStatus(imageOk === true
+      ? (restoredCompletionPendingRef.current ? "completion-pending" : "playing")
+      : "loading");
     dirtyRef.current = true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, cols, imageUrl]);
+  }, [puzzleSignature]);
 
   // ── Rebuild path cache when shape opts change (slider adjustments) ───────
   useEffect(() => {
@@ -1182,6 +1236,17 @@ export default function JigsawPuzzleSVGWithTray({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveUrl, reloadKey, proxyTried, cols, rows]);
 
+  useEffect(() => {
+    if (imageOk === false) {
+      setStatus("image-error");
+      return;
+    }
+    if (imageOk !== true) return;
+    setStatus((current) => current === "loading"
+      ? (restoredCompletionPendingRef.current ? "completion-pending" : "playing")
+      : current);
+  }, [imageOk]);
+
   // Decorative completion-frame image — static asset, loaded once regardless of which
   // puzzle image is in play.
   useEffect(() => {
@@ -1212,20 +1277,27 @@ export default function JigsawPuzzleSVGWithTray({
       const viewportW = Math.round(window.visualViewport?.width ?? window.innerWidth ?? window.screen.width ?? boardWidth);
       const viewportH = Math.round(window.visualViewport?.height ?? window.innerHeight ?? window.screen.height ?? boardHeight);
       const availW = Math.min(wrapper.clientWidth || boardWidth, viewportW);
+      const wrapperH = Math.min(wrapper.clientHeight || viewportH, viewportH);
+      const shortLandscape = !isFullscreen && viewportW > viewportH && viewportH <= 520;
 
       // Always the same portrait-style layout — a square board sized to fit whatever space
       // is available, with room reserved below it for the tray strip — regardless of device
       // orientation or fullscreen state.
-      let boardSide: number;
+      let boardAvailW: number;
+      let boardAvailH: number;
       if (isFullscreen) {
-        const availH = Math.max(160, viewportH - TRAY_H - 24);
-        boardSide = Math.min(viewportW * 0.94, availH * 0.94);
+        boardAvailW = viewportW * 0.94;
+        boardAvailH = Math.max(160, viewportH - TRAY_H - 24) * 0.94;
+      } else if (shortLandscape) {
+        const sideRail = Math.min(viewportW * 0.32, 280);
+        boardAvailW = Math.max(160, availW - sideRail - 12);
+        boardAvailH = Math.max(160, wrapperH - 12);
       } else {
-        const availH = Math.max(160, Math.min(viewportH * 0.7, viewportH - TRAY_H - 160));
-        boardSide = Math.min(availW, availH);
+        boardAvailW = availW;
+        boardAvailH = Math.max(160, wrapperH - TRAY_H - (displayMode === "app-shell" ? 54 : 0));
       }
 
-      const s = boardSide / boardWidth; // boardWidth === boardHeight (always square)
+      const s = Math.max(0.1, Math.min(boardAvailW / stageW, boardAvailH / stageH));
       scaleRef.current = s;
 
       const rw = Math.round(stageW * s);
@@ -1270,27 +1342,45 @@ export default function JigsawPuzzleSVGWithTray({
       window.removeEventListener("orientationchange", onOrient);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFullscreen, boardWidth, boardHeight]);
+  }, [displayMode, isFullscreen, boardWidth, boardHeight]);
 
   // ── Auto-save (debounced) ────────────────────────────────────────────────
+
+  const saveCurrentProgress = useCallback((completionPending = false) => {
+    const key = storageKeyRef.current;
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(serializeJigsawProgress({
+        signature: puzzleSignature,
+        pieces: piecesRef.current,
+        tray: trayOrderRef.current,
+        elapsedMs: Math.max(0, Date.now() - startTimeRef.current),
+        zoom: userZoomRef.current,
+        completionPending,
+      })));
+    } catch {}
+  }, [puzzleSignature]);
+
+  const clearCurrentProgress = useCallback(() => {
+    if (!storageKeyRef.current) return;
+    try { localStorage.removeItem(storageKeyRef.current); } catch {}
+  }, []);
 
   useEffect(() => {
     if (completedRef.current || !storageKeyRef.current) return;
     const id = setTimeout(() => {
       if (!completedRef.current) {
-        saveJigsawProgress(storageKeyRef.current, piecesRef.current, trayOrderRef.current, Math.max(0, Date.now() - startTimeRef.current));
+        saveCurrentProgress(false);
       }
     }, 800);
     return () => clearTimeout(id);
-  }, [pieces, trayOrder]);
+  }, [pieces, saveCurrentProgress, trayOrder, userZoom]);
 
   // ── Solved check ─────────────────────────────────────────────────────────
 
   const isSolved = useMemo(() => {
-    if (!pieces.length) return false;
-    if (trayOrder.length > 0) return false; // pieces still in the tray can't be "on the board"
-    const g = pieces[0].groupId;
-    return pieces.every(p => p.groupId === g) &&
+    const completion = calculateJigsawCompletion(pieces, trayOrder);
+    return completion.solved &&
            pieces.every(p => dist2(p.pos.x - p.correct.x, p.pos.y - p.correct.y) < 1);
   }, [pieces, trayOrder]);
   const isSolvedRef = useRef(false);
@@ -1311,7 +1401,10 @@ export default function JigsawPuzzleSVGWithTray({
 
   useEffect(() => {
     const render = (now: number) => {
-      rafRef.current = requestAnimationFrame(render);
+      rafRef.current = null;
+      if (document.hidden) {
+        return;
+      }
 
       // Advance snap spring
       const snap = snapRef.current;
@@ -1684,13 +1777,37 @@ export default function JigsawPuzzleSVGWithTray({
       }
 
       ctx.restore(); // undo scale
+
+      if (
+        dirtyRef.current || snapRef.current || snapPopRef.current.size > 0 ||
+        snapGlowRef.current.size > 0 || solveScaleRef.current.size > 0 ||
+        burstParticlesRef.current.length > 0
+      ) {
+        rafRef.current = requestAnimationFrame(render);
+      }
     };
 
-    rafRef.current = requestAnimationFrame(render);
-    return () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); };
+    const requestRender = () => {
+      dirtyRef.current = true;
+      if (!document.hidden && rafRef.current == null) rafRef.current = requestAnimationFrame(render);
+    };
+    requestCanvasRenderRef.current = requestRender;
+
+    const onVisibilityChange = () => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000)));
+      if (!document.hidden) requestRender();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    requestRender();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      requestCanvasRenderRef.current = () => {};
+    };
   }, [boardWidth, boardHeight, gridW, gridH, rows, cols, imageOk, tableBackground, pathOpts]);
 
-  useEffect(() => { dirtyRef.current = true; }, [imageOk, pieces]);
+  useEffect(() => { requestCanvasRenderRef.current(); }, [canvasH, canvasW, imageOk, pieces, trayOrder, userZoom]);
 
   // ── Hit testing ──────────────────────────────────────────────────────────
 
@@ -2047,7 +2164,7 @@ export default function JigsawPuzzleSVGWithTray({
       ghosting: false, // grabbed from the board — starts in normal on-canvas drag mode
     };
     dirtyRef.current = true;
-  }, [clientToLogical, hitTest, clampViewport, hideGhost]);
+  }, [clientToLogical, hitTest, hideGhost]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     // Update tracked pointer position
@@ -2309,6 +2426,8 @@ export default function JigsawPuzzleSVGWithTray({
 
     if (s1.snapped || s2.snapped) {
       playPieceConnectSfx();
+      const placed = next.filter((piece) => piece.snapped).length;
+      setScreenReaderStatus(`Piece snapped. ${placed} of ${next.length} pieces placed.`);
     }
 
     // Snap-to-board → pop + gold glow + particle burst (single piece only — not a multi-piece group)
@@ -2353,17 +2472,71 @@ export default function JigsawPuzzleSVGWithTray({
     }
 
     setPieces(next);
+  // snapToBoardIfClose reads only refs and the current array supplied above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardSnapTolerance, neighborSnapTolerance, snapMergeNeighbours, setPieces, setTrayOrder, hideGhost, playPieceConnectSfx]);
 
   const onPointerLeave = useCallback(() => {
     dirtyRef.current = true;
   }, []);
 
+  const finishConfirmedCompletion = useCallback(() => {
+    if (!completionConfirmedRef.current || !celebrationCompleteRef.current || finalHandoffRef.current) return;
+    finalHandoffRef.current = true;
+    setStatus("won");
+    setCompletionError("");
+    const result = completionResultRef.current ?? { success: true };
+    onCelebrationComplete?.(result);
+    onShowRatingModal?.();
+  }, [onCelebrationComplete, onShowRatingModal]);
+
+  const requestCompletion = useCallback(async () => {
+    if (completionRequestInFlightRef.current || completionConfirmedRef.current) return;
+    completionRequestInFlightRef.current = true;
+    setStatus("completing");
+    setCompletionError("");
+    try {
+      const result = onComplete ? await onComplete(completionElapsedRef.current) : { success: true };
+      if (!result.success) {
+        setStatus("completion-pending");
+        setCompletionError(result.error || "Completion could not be saved.");
+        setScreenReaderStatus("Puzzle complete. Completion save failed; retry is available.");
+        saveCurrentProgress(true);
+        return;
+      }
+      completionConfirmedRef.current = true;
+      completionResultRef.current = result;
+      setAwardedPoints(result.pointsAwarded ?? null);
+      clearCurrentProgress();
+      finishConfirmedCompletion();
+    } catch (cause) {
+      setStatus("completion-pending");
+      setCompletionError(cause instanceof Error ? cause.message : "Completion could not be saved.");
+      setScreenReaderStatus("Puzzle complete. Completion save failed; retry is available.");
+      saveCurrentProgress(true);
+    } finally {
+      completionRequestInFlightRef.current = false;
+    }
+  }, [clearCurrentProgress, finishConfirmedCompletion, onComplete, saveCurrentProgress]);
+
   // ── Completion effect ────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!isSolved || completedRef.current) return;
     completedRef.current = true;
+    const elapsed = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
+    completionElapsedRef.current = elapsed;
+    setElapsedSeconds(elapsed);
+    saveCurrentProgress(true);
+    setScreenReaderStatus("Puzzle complete. Saving completion.");
+    if (restoredCompletionPendingRef.current) {
+      celebrationCompleteRef.current = true;
+      setStatus("completion-pending");
+      setCompletionError("This completed puzzle still needs to be recorded.");
+      return;
+    }
+    setStatus("completing");
+    void requestCompletion();
     playPuzzleCompleteSfx();
     // Smooth piece scale-up on solve
     // Scatter each piece with a random delay (0–600 ms) and random peak scale (4–12%)
@@ -2376,10 +2549,6 @@ export default function JigsawPuzzleSVGWithTray({
     }
     dirtyRef.current = true;
     dirtyRef.current = true;
-    clearJigsawProgress(storageKeyRef.current);
-    const elapsed = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
-    setElapsedSeconds(elapsed);
-
     (async () => {
       try {
         const reduced = typeof window !== "undefined" &&
@@ -2429,12 +2598,7 @@ export default function JigsawPuzzleSVGWithTray({
 
         // Kick off scoring in the background — don't make the player wait on it
         // before the living-photo reveal plays.
-        let pts: number | void | undefined;
-        const scored = (async () => {
-          if (onComplete) {
-            try { const r = onComplete(elapsed); pts = r instanceof Promise ? await r : r; } catch { /* noop */ }
-          }
-        })();
+        // Completion persistence started immediately when the solved board was detected.
 
         // ── Living photo reveal — slow Ken Burns zoom/pan on the completed image ──
         if (!reduced && livingPhotoOuterRef.current && livingPhotoImgRef.current) {
@@ -2452,52 +2616,36 @@ export default function JigsawPuzzleSVGWithTray({
           // still-opaque overlay either way, so starting early just means a slower fade has
           // enough time to finish before the overlay clears, instead of still visibly
           // fading once the photo is already dissolving away.
-          kbTl.call(() => { frameFadeStartRef.current = performance.now(); dirtyRef.current = true; }, undefined, 0);
+          kbTl.call(() => { frameFadeStartRef.current = performance.now(); requestCanvasRenderRef.current(); }, undefined, 0);
           kbTl.to(outer, { autoAlpha: 0, duration: 0.5, ease: "power1.in" }, "-=0.4");
           await new Promise<void>(res => kbTl.eventCallback("onComplete", res));
         } else {
           frameFadeStartRef.current = performance.now();
-          dirtyRef.current = true;
+          requestCanvasRenderRef.current();
           await new Promise(r => setTimeout(r, 1000));
         }
 
-        await scored;
+        celebrationCompleteRef.current = true;
 
-        if (!suppressInternalCongrats) {
-          setShowCongrats(true);
+        if (completionConfirmedRef.current && !suppressInternalCongrats) {
           if (messageRef.current)
             gsap.fromTo(messageRef.current, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 1, ease: "power2.out" });
         }
 
-        if (typeof pts === "number") {
-          setAwardedPoints(0);
-          await new Promise<void>(resolve => {
-            const obj = { val: 0 };
-            gsap.to(obj, { val: pts as number, duration: 0.9, ease: "power2.out",
-              onUpdate: () => setAwardedPoints(Math.round(obj.val)),
-              onComplete: () => { setAwardedPoints(pts as number); resolve(); },
-            });
-          });
-        } else {
-          setAwardedPoints(null);
-        }
-
-        await new Promise(r => setTimeout(r, 1700));
-        if (messageRef.current)
+        if (completionConfirmedRef.current && !suppressInternalCongrats) await new Promise(r => setTimeout(r, 1700));
+        if (completionConfirmedRef.current && messageRef.current)
           await new Promise<void>(res =>
             gsap.to(messageRef.current!, { autoAlpha: 0, y: 8, duration: 0.45, ease: "power2.in", onComplete: res }));
-        if (!suppressInternalCongrats) setShowCongrats(false);
         if (isFullscreen) { setIsFullscreen(false); await new Promise(r => setTimeout(r, 200)); }
-        if (onShowRatingModal) onShowRatingModal();
+        finishConfirmedCompletion();
       } catch (err) {
         console.error("Jigsaw completion error:", err);
-        if (onComplete) { try { onComplete(elapsed); } catch { /* noop */ } }
+        celebrationCompleteRef.current = true;
         if (isFullscreen) setIsFullscreen(false);
-        if (onShowRatingModal) onShowRatingModal();
+        finishConfirmedCompletion();
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSolved]);
+  }, [finishConfirmedCompletion, gridH, gridW, isFullscreen, isSolved, playPuzzleCompleteSfx, requestCompletion, saveCurrentProgress, suppressInternalCongrats]);
 
   // ── Controls API ─────────────────────────────────────────────────────────
 
@@ -2505,44 +2653,32 @@ export default function JigsawPuzzleSVGWithTray({
   // field to declutter, this is just "any group not on the board goes to the tray" — the
   // anti-overlap re-pack algorithm this used to be is gone entirely.
   const sendLooseToTray = useCallback(() => {
-    const looseGroupIds = [...new Set(
-      piecesRef.current.filter(p => !p.snapped).map(p => p.groupId)
-    )];
-    if (!looseGroupIds.length) return;
-    setTrayOrder(prev => [...prev, ...looseGroupIds.filter(gid => !prev.includes(gid))]);
+    const next = uniqueLooseGroupIds(piecesRef.current, trayOrderRef.current);
+    if (next.length === trayOrderRef.current.length) return;
+    setTrayOrder(next);
+    setScreenReaderStatus("Loose pieces returned to the tray.");
   }, [setTrayOrder]);
-  const sendLooseRef = useRef(sendLooseToTray);
-  useEffect(() => { sendLooseRef.current = sendLooseToTray; }, [sendLooseToTray]);
-
-  useEffect(() => {
-    if (!onControlsReady || controlsAssignedRef.current) return;
-    const api = {
-      reset: () => {
-        clearJigsawProgress(storageKeyRef.current);
-        const fresh = buildInitial(edgesMapRef.current);
-        completedRef.current = false;
-    frameFadeStartRef.current = null;
-        startTimeRef.current = Date.now();
-        savedElapsedRef.current = 0;
-        setElapsedSeconds(0);
-        setPieces(fresh.pieces);
-        setTrayOrder(fresh.trayOrder);
-      },
-      sendLooseToTray: () => sendLooseRef.current(),
-      enterFullscreen: () => setIsFullscreen(true),
-      exitFullscreen:  () => setIsFullscreen(false),
-      get isFullscreen() { return isFullscreenRef.current; },
-    };
-    try { onControlsReady(api as never); controlsAssignedRef.current = true; } catch { /* noop */ }
-  }, [onControlsReady, buildInitial, setPieces, setTrayOrder]);
-
   // One-time setup
   useEffect(() => {
     setPortalReady(true);
     setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window);
   }, []);
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const requestRender = () => requestCanvasRenderRef.current();
+    wrapper.addEventListener("pointerdown", requestRender);
+    wrapper.addEventListener("pointermove", requestRender);
+    wrapper.addEventListener("pointerup", requestRender);
+    wrapper.addEventListener("pointercancel", requestRender);
+    return () => {
+      wrapper.removeEventListener("pointerdown", requestRender);
+      wrapper.removeEventListener("pointermove", requestRender);
+      wrapper.removeEventListener("pointerup", requestRender);
+      wrapper.removeEventListener("pointercancel", requestRender);
+    };
+  }, []);
   // Cleanup on unmount
-  useEffect(() => { isFullscreenRef.current = isFullscreen; }, [isFullscreen]);
   useEffect(() => {
     if (!isFullscreen) return;
     const fn = (e: KeyboardEvent) => e.key === "Escape" && setIsFullscreen(false);
@@ -2561,11 +2697,132 @@ export default function JigsawPuzzleSVGWithTray({
     return m;
   }, [pieces]);
 
+  const resetPuzzle = useCallback(() => {
+    clearCurrentProgress();
+    const fresh = buildInitial(edgesMapRef.current);
+    completedRef.current = false;
+    restoredCompletionPendingRef.current = false;
+    completionRequestInFlightRef.current = false;
+    completionConfirmedRef.current = false;
+    celebrationCompleteRef.current = false;
+    completionResultRef.current = null;
+    finalHandoffRef.current = false;
+    frameFadeStartRef.current = null;
+    startTimeRef.current = Date.now();
+    savedElapsedRef.current = 0;
+    setElapsedSeconds(0);
+    setCompletionError("");
+    setSelectedGroupId(null);
+    setPieces(fresh.pieces);
+    setTrayOrder(fresh.trayOrder);
+    resetZoom();
+    setStatus(imageOk === true ? "playing" : "loading");
+    setScreenReaderStatus("Puzzle reset. All pieces are back in the tray.");
+    canvasRef.current?.focus();
+  }, [buildInitial, clearCurrentProgress, imageOk, resetZoom, setPieces, setTrayOrder]);
+
+  useImperativeHandle(forwardedRef, () => ({
+    openInstructions: () => setShowHelp(true),
+    openPreview: () => setShowPreview(true),
+    closePreview: () => setShowPreview(false),
+    focusBoard: () => canvasRef.current?.focus(),
+    zoomIn: () => applyZoom(1.25),
+    zoomOut: () => applyZoom(0.8),
+    resetZoom,
+    returnLooseToTray: sendLooseToTray,
+    requestReset: () => setShowReset(true),
+    enterFullscreen: () => setIsFullscreen(true),
+    exitFullscreen: () => setIsFullscreen(false),
+  }), [applyZoom, resetZoom, sendLooseToTray]);
+
+  useEffect(() => {
+    if (!onPresentationChange) return;
+    const next: JigsawPresentationState = {
+      status,
+      elapsedMs: elapsedSeconds * 1000,
+      placedPieces: pieces.filter((piece) => piece.snapped).length,
+      totalPieces: pieces.length,
+      trayGroups: trayOrder.length,
+      totalGroups: groupCount,
+      zoom: userZoom,
+      previewOpen: showPreview,
+      fullscreen: isFullscreen,
+      resumed,
+      completionPending: status === "completion-pending",
+    };
+    const signature = JSON.stringify(next);
+    if (signature === lastPresentationRef.current) return;
+    lastPresentationRef.current = signature;
+    onPresentationChange(next);
+  }, [elapsedSeconds, groupCount, isFullscreen, onPresentationChange, pieces, resumed, showPreview, status, trayOrder.length, userZoom]);
+
+  const onKeyboardCommand = useCallback((event: React.KeyboardEvent) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    if (key === "p") { event.preventDefault(); setShowPreview(true); return; }
+    if (key === "+" || key === "=") { event.preventDefault(); applyZoom(1.25); return; }
+    if (key === "-") { event.preventDefault(); applyZoom(0.8); return; }
+    if (key === "0") { event.preventDefault(); resetZoom(); return; }
+    if (key === "?") { event.preventDefault(); setShowHelp(true); return; }
+    if (key === "escape" && selectedGroupId) {
+      event.preventDefault();
+      setSelectedGroupId(null);
+      setScreenReaderStatus("Piece selection cancelled.");
+      canvasRef.current?.focus();
+      return;
+    }
+    if (!selectedGroupId) return;
+    if (key === "t") {
+      event.preventDefault();
+      if (piecesRef.current.some((piece) => piece.groupId === selectedGroupId && piece.snapped)) return;
+      setTrayOrder((order) => order.includes(selectedGroupId) ? order : [...order, selectedGroupId]);
+      setScreenReaderStatus("Selected group returned to the tray.");
+      return;
+    }
+    if (key === "enter" || key === " ") {
+      event.preventDefault();
+      const snappedGroup = piecesRef.current.find((piece) => piece.snapped)?.groupId ?? selectedGroupId;
+      const next = piecesRef.current.map((piece) => piece.groupId === selectedGroupId
+        ? { ...piece, groupId: snappedGroup, snapped: true, pos: { ...piece.correct } }
+        : piece);
+      setTrayOrder((order) => order.filter((groupId) => groupId !== selectedGroupId));
+      setPieces(next);
+      setSelectedGroupId(null);
+      setScreenReaderStatus("Selected group placed on the board.");
+      return;
+    }
+    const movement = event.shiftKey ? 40 : 10;
+    const delta = key === "arrowleft" ? { x: -movement, y: 0 }
+      : key === "arrowright" ? { x: movement, y: 0 }
+      : key === "arrowup" ? { x: 0, y: -movement }
+      : key === "arrowdown" ? { x: 0, y: movement }
+      : null;
+    if (!delta) return;
+    event.preventDefault();
+    setTrayOrder((order) => order.filter((groupId) => groupId !== selectedGroupId));
+    const wasInTray = trayGroupSetRef.current.has(selectedGroupId);
+    const members = piecesRef.current.filter((piece) => piece.groupId === selectedGroupId);
+    const anchor = members[0];
+    const baseDx = wasInTray && anchor ? stageDimsRef.current.w / 2 - anchor.pos.x : 0;
+    const baseDy = wasInTray && anchor ? stageDimsRef.current.h / 2 - anchor.pos.y : 0;
+    setPieces(piecesRef.current.map((piece) => piece.groupId === selectedGroupId
+      ? { ...piece, pos: { x: piece.pos.x + baseDx + delta.x, y: piece.pos.y + baseDy + delta.y } }
+      : piece));
+    setScreenReaderStatus("Selected group moved on the board.");
+    queueMicrotask(() => canvasRef.current?.focus());
+  }, [applyZoom, resetZoom, selectedGroupId, setPieces, setTrayOrder]);
+
   // ── JSX ──────────────────────────────────────────────────────────────────
 
   const ui = (
     <div
       ref={wrapperRef}
+      className="jigsaw-root"
+      data-display-mode={displayMode}
+      data-mode={mode}
+      data-status={status}
+      data-fullscreen={isFullscreen}
+      onKeyDown={onKeyboardCommand}
       style={{
         position: isFullscreen ? "fixed" : "relative",
         inset: isFullscreen ? 0 : undefined,
@@ -2580,10 +2837,14 @@ export default function JigsawPuzzleSVGWithTray({
       }}
     >
       {/* ── Canvas area ──────────────────────────────── */}
-      <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div className="jigsaw-board-area">
         <canvas
           ref={canvasRef}
+          className="jigsaw-board-canvas"
           width={canvasW} height={canvasH}
+          tabIndex={0}
+          role="application"
+          aria-label={`${puzzleTitle || "Jigsaw puzzle"} board. ${pieces.filter((piece) => piece.snapped).length} of ${pieces.length} pieces placed.`}
           style={{
             display: "block", position: "relative",
             touchAction: "none", userSelect: "none", cursor: "default",
@@ -2615,6 +2876,7 @@ export default function JigsawPuzzleSVGWithTray({
         <div ref={livingPhotoOuterRef}
              style={{ position: "absolute", pointerEvents: "none", opacity: 0, zIndex: 1002, overflow: "hidden" }}>
           {effectiveUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img ref={livingPhotoImgRef} src={effectiveUrl} alt=""
                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%",
                           objectFit: "cover", transformOrigin: "50% 50%", willChange: "transform" }} />
@@ -2663,7 +2925,7 @@ export default function JigsawPuzzleSVGWithTray({
             (rather than a strict single line) and capped to the viewport width so it can't
             overflow off narrower screens either. */}
         {isTouchDevice && !isFullscreen && !mobileHintDismissed && !isSolved && (
-          <div style={{ position: "absolute", bottom: 58, left: "50%", transform: "translateX(-50%)",
+          <div className="jigsaw-mobile-hint" style={{ position: "absolute", bottom: 58, left: "50%", transform: "translateX(-50%)",
                         zIndex: 9100, display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8,
                         background: "rgba(10,20,40,0.88)", color: "white", fontSize: 12, fontWeight: 500,
                         padding: "7px 12px", borderRadius: 22, boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
@@ -2687,7 +2949,7 @@ export default function JigsawPuzzleSVGWithTray({
         {/* Zoom controls — horizontal rather than a stacked column: a 3-button-tall column ate
             up a large vertical strip of an already-small mobile board, covering pieces near the
             bottom-left corner. A single row is much shorter and stays out of the way. */}
-        {!isSolved && (
+        {false && !isSolved && (
           <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 9100,
                         display: "flex", flexDirection: "row", gap: 4 }}>
             <button
@@ -2727,7 +2989,7 @@ export default function JigsawPuzzleSVGWithTray({
         )}
 
         {/* Preview button */}
-        {imageOk && effectiveUrl && !isSolved && (
+        {false && imageOk && effectiveUrl && !isSolved && (
           <button type="button" onClick={() => setShowPreview(v => !v)}
                   style={{ position: "absolute", bottom: 12, right: 12, zIndex: 9100,
                            background: showPreview ? "rgba(99,102,241,0.9)" : "rgba(10,20,40,0.85)",
@@ -2739,7 +3001,7 @@ export default function JigsawPuzzleSVGWithTray({
         )}
 
         {/* Preview overlay */}
-        {showPreview && effectiveUrl && (
+        {false && showPreview && effectiveUrl && (
           <div onClick={() => setShowPreview(false)}
                style={{ position: "fixed", inset: 0, zIndex: 9500, display: "flex",
                         alignItems: "center", justifyContent: "center",
@@ -2754,6 +3016,31 @@ export default function JigsawPuzzleSVGWithTray({
                           fontSize: 13, fontWeight: 600 }}>
               Tap to close
             </div>
+          </div>
+        )}
+
+        {displayMode !== "app-shell" && !isSolved && (
+          <JigsawControls
+            zoom={userZoom}
+            canInteract={imageOk === true && status !== "loading"}
+            fullscreen={isFullscreen}
+            showUtilities
+            onZoomIn={() => applyZoom(1.25)}
+            onZoomOut={() => applyZoom(0.8)}
+            onResetZoom={resetZoom}
+            onPreview={() => setShowPreview(true)}
+            onFullscreen={() => setIsFullscreen(true)}
+            onExitFullscreen={() => setIsFullscreen(false)}
+            onHelp={() => setShowHelp(true)}
+            onReturn={sendLooseToTray}
+            onReset={() => setShowReset(true)}
+          />
+        )}
+
+        {status === "completion-pending" && (
+          <div className="jigsaw-completion-error" role="alert">
+            {completionError || "This completed puzzle still needs to be recorded."}
+            <button type="button" onClick={() => void requestCompletion()}>Retry Completion</button>
           </div>
         )}
 
@@ -2776,7 +3063,7 @@ export default function JigsawPuzzleSVGWithTray({
         {/* Fullscreen-only controls — the page's own toolbar (Fullscreen / Return Loose
             Pieces) lives outside this component and is unreachable once fullscreen portals
             everything into document.body, so it needs its own entry point here too. */}
-        {isFullscreen && (
+        {false && isFullscreen && (
           <div style={{ position: "absolute", right: 12, top: 12, zIndex: 13000,
                         display: "flex", gap: 8 }}>
             {!isSolved && (
@@ -2807,7 +3094,7 @@ export default function JigsawPuzzleSVGWithTray({
         {/* Stats — hidden once solved: there's nothing left to track, and on a small mobile
             screen this corner is exactly where the post-completion modal (rating/XP, rendered
             by the parent page above this component) needs the space instead. */}
-        {!isSolved && (
+        {displayMode !== "app-shell" && !isSolved && (
         <div style={{ position: "absolute", top: 10, left: 10, zIndex: 200,
                       display: "flex", gap: 8, alignItems: "center", pointerEvents: "none" }}>
           <div style={{ background: "rgba(0,0,0,0.55)", color: "rgba(255,255,255,0.86)", fontSize: 11,
@@ -2832,10 +3119,31 @@ export default function JigsawPuzzleSVGWithTray({
       </div>
 
       {/* ── Tray strip ───────────────────────────────── */}
-      <div style={{ position: "relative", flexShrink: 0 }}>
+      {displayMode === "app-shell" && !isSolved && (
+        <div className="jigsaw-app-control-bar">
+          <JigsawControls
+            zoom={userZoom}
+            canInteract={imageOk === true && status !== "loading"}
+            fullscreen={isFullscreen}
+            showUtilities={isFullscreen}
+            onZoomIn={() => applyZoom(1.25)}
+            onZoomOut={() => applyZoom(0.8)}
+            onResetZoom={resetZoom}
+            onPreview={() => setShowPreview(true)}
+            onFullscreen={() => setIsFullscreen(true)}
+            onExitFullscreen={() => setIsFullscreen(false)}
+            onHelp={() => setShowHelp(true)}
+            onReturn={sendLooseToTray}
+            onReset={() => setShowReset(true)}
+          />
+        </div>
+      )}
+      <div className="jigsaw-tray-wrap">
         <div
           ref={trayStripRef}
-          className="no-scrollbar"
+          className="jigsaw-tray no-scrollbar"
+          role="list"
+          aria-label="Loose puzzle pieces"
           style={{
             flexShrink: 0,
             height: TRAY_H,
@@ -2870,6 +3178,12 @@ export default function JigsawPuzzleSVGWithTray({
               onPick={beginDragFromTray}
               registerNode={registerTrayNode}
               shiftPx={trayInsertIndex !== null && i >= trayInsertIndex ? ghostTraySizeRef.current.w + 10 : 0}
+              index={i}
+              selected={selectedGroupId === groupId}
+              onSelect={(selected) => {
+                setSelectedGroupId(selected);
+                setScreenReaderStatus(`Selected piece group ${i + 1}. Use arrow keys to move it, Enter to place it, or T to return it.`);
+              }}
             />
           ))}
         </div>
@@ -2925,6 +3239,11 @@ export default function JigsawPuzzleSVGWithTray({
         />
       </div>
 
+      <div className="sr-only" aria-live="polite" aria-atomic="true">{screenReaderStatus}</div>
+      {showHelp && <JigsawHelpDialog onClose={() => { setShowHelp(false); canvasRef.current?.focus(); }} />}
+      {showPreview && effectiveUrl && <JigsawPreviewDialog imageUrl={effectiveUrl} puzzleTitle={puzzleTitle || "this puzzle"} onClose={() => { setShowPreview(false); canvasRef.current?.focus(); }} />}
+      {showReset && <JigsawResetDialog onClose={() => setShowReset(false)} onReset={resetPuzzle} />}
+
     </div>
   );
 
@@ -2932,4 +3251,6 @@ export default function JigsawPuzzleSVGWithTray({
     return createPortal(ui, document.body);
   }
   return ui;
-}
+});
+
+export default JigsawPuzzleCanvas;

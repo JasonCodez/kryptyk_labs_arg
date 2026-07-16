@@ -1497,7 +1497,10 @@ export default function AdminPuzzlesPage() {
                               pieceNHalfFrac={typeof formData.puzzleData.pieceNHalfFrac === 'number' ? formData.puzzleData.pieceNHalfFrac : undefined}
                               pieceShoulderStart={typeof formData.puzzleData.pieceShoulderStart === 'number' ? formData.puzzleData.pieceShoulderStart : undefined}
                               containerStyle={{ maxHeight: '420px' }}
-                              onComplete={() => {}}
+                              mode="catalog"
+                              persistenceScope="none"
+                              rotationEnabled={false}
+                              onComplete={async () => ({ success: true })}
                             />
                           </div>
                         </div>

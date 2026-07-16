@@ -368,7 +368,7 @@ export async function POST(request: NextRequest) {
                 gridRows: Number(puzzleData?.gridRows) || 3,
                 gridCols: Number(puzzleData?.gridCols) || 4,
                 snapTolerance: Number(puzzleData?.snapTolerance) || 12,
-                rotationEnabled: Boolean(puzzleData?.rotationEnabled),
+                rotationEnabled: false,
                 // imageUrl is set automatically when an image is uploaded via /api/admin/media
               },
             }

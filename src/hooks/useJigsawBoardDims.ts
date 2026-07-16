@@ -11,11 +11,10 @@ const JIGSAW_BOARD_MAX = 640;
 // until the probe resolves, so callers can defer mounting the board until then —
 // JigsawPuzzleCanvas reads boardWidth/boardHeight only at mount.
 export function useJigsawBoardDims(imageUrl: string | null | undefined): { w: number; h: number } | null {
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [resolved, setResolved] = useState<{ imageUrl: string; dims: { w: number; h: number } } | null>(null);
 
   useEffect(() => {
     if (!imageUrl) {
-      setDims(null);
       return;
     }
 
@@ -25,7 +24,7 @@ export function useJigsawBoardDims(imageUrl: string | null | undefined): { w: nu
       if (cancelled) return;
       const { naturalWidth: nw, naturalHeight: nh } = img;
       if (!nw || !nh) {
-        setDims({ w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX });
+        setResolved({ imageUrl, dims: { w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX } });
         return;
       }
       // The board is always a perfect square — source images are authored 1:1. Scale off
@@ -34,10 +33,10 @@ export function useJigsawBoardDims(imageUrl: string | null | undefined): { w: nu
       // rather than a stretched/distorted one.
       const scale = Math.min(JIGSAW_BOARD_MAX / nw, JIGSAW_BOARD_MAX / nh, 1);
       const side = Math.round(Math.min(nw, nh) * scale);
-      setDims({ w: side, h: side });
+      setResolved({ imageUrl, dims: { w: side, h: side } });
     };
     img.onerror = () => {
-      if (!cancelled) setDims({ w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX });
+      if (!cancelled) setResolved({ imageUrl, dims: { w: JIGSAW_BOARD_MAX, h: JIGSAW_BOARD_MAX } });
     };
     img.src = imageUrl;
 
@@ -46,5 +45,5 @@ export function useJigsawBoardDims(imageUrl: string | null | undefined): { w: nu
     };
   }, [imageUrl]);
 
-  return dims;
+  return imageUrl && resolved?.imageUrl === imageUrl ? resolved.dims : null;
 }

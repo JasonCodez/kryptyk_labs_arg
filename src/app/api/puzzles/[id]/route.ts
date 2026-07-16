@@ -73,7 +73,7 @@ export async function GET(
             gridRows: true,
             gridCols: true,
             snapTolerance: true,
-            rotationEnabled: true,
+            rotationEnabled: false,
           },
         },
         solutions: {

@@ -14,6 +14,11 @@ import { calcLevel } from "@/lib/levels";
 import { FEATURE_TOKENS_ENABLED } from "@/lib/featureFlags";
 import Toasts from '@/components/Toast';
 import type { JigsawPuzzle as JigsawPuzzleType } from "@/lib/puzzle-types";
+import type {
+  JigsawCompletionResult,
+  JigsawPresentationState,
+  JigsawPuzzleHandle,
+} from "@/components/puzzle/JigsawPuzzle";
 import type { Socket } from "socket.io-client";
 import CodeMasterIDE from "@/components/puzzle/CodeMasterIDE";
 import { getSkinTokens } from "@/lib/puzzleSkins";
@@ -301,14 +306,8 @@ export default function PuzzleDetailPage() {
   const effectiveHintTokens = FEATURE_TOKENS_ENABLED ? hintTokens : 0;
   const effectiveSkipTokens = FEATURE_TOKENS_ENABLED ? skipTokens : 0;
 
-  type JigsawControlsApi = {
-    reset: () => void;
-    sendLooseToTray: () => void;
-    enterFullscreen: () => void;
-    exitFullscreen: () => void;
-    isFullscreen: boolean;
-  };
-  const [jigsawControls, setJigsawControls] = useState<JigsawControlsApi | null>(null);
+  const jigsawRef = useRef<JigsawPuzzleHandle>(null);
+  const [jigsawPresentation, setJigsawPresentation] = useState<JigsawPresentationState | null>(null);
   const [activeSkin, setActiveSkin] = useState<string>("default");
   const [activeCompletionAnimation, setActiveCompletionAnimation] = useState<string>("default");
 
@@ -712,29 +711,31 @@ export default function PuzzleDetailPage() {
       .catch(() => {});
   };
 
-  const handleJigsawComplete = async (timeSpentSeconds?: number): Promise<number> => {
+  const handleJigsawComplete = async (timeSpentSeconds?: number): Promise<JigsawCompletionResult> => {
+    if (progress?.solved) return { success: true, pointsAwarded: 0 };
     const prevPoints = progress?.pointsEarned || 0;
     try {
       const resp = await fetch(`/api/puzzles/${puzzleId}/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({ action: 'attempt_success', durationSeconds: timeSpentSeconds || 0 }),
       });
       if (resp.ok) {
         const updated = await resp.json();
         setProgress(updated);
-        setSuccess(true);
         const newPoints = updated?.pointsEarned ?? prevPoints;
         const pointsAwarded = Math.max(0, newPoints - prevPoints);
         setJustAwardedPoints(pointsAwarded);
         setCompletionSeconds(timeSpentSeconds ?? null);
-        return pointsAwarded;
+        return { success: true, pointsAwarded };
       }
+      const data = await resp.json().catch(() => null) as { error?: string } | null;
+      return { success: false, error: data?.error || "Completion could not be recorded." };
     } catch (err) {
       console.error('Failed to log jigsaw success:', err);
+      return { success: false, error: "Completion could not be recorded. Check your connection and retry." };
     }
-    setSuccess(true);
-    return 0;
   };
 
   const handlePuzzleTypeComplete = async (
@@ -1125,6 +1126,8 @@ export default function PuzzleDetailPage() {
         ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? normalizedAnagramConfig.words.length} solved`
         : puzzle.puzzleType === "sudoku"
           ? `${sudokuPresentation?.attemptsLeft ?? puzzle.sudoku?.maxAttempts ?? 5} attempts left`
+          : puzzle.puzzleType === "jigsaw"
+            ? `${jigsawPresentation?.placedPieces ?? 0} / ${jigsawPresentation?.totalPieces ?? (puzzle.jigsaw ? puzzle.jigsaw.gridRows * puzzle.jigsaw.gridCols : 0)} pieces placed`
           : undefined}
       progress={puzzle.puzzleType === "crossword"
         ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}`}>
@@ -1142,6 +1145,10 @@ export default function PuzzleDetailPage() {
               ? <span aria-label={`${wordSearchPresentation?.foundCount ?? 0} of ${wordSearchPresentation?.totalWords ?? 0} words found`}>
                   {wordSearchPresentation?.foundCount ?? 0}/{wordSearchPresentation?.totalWords ?? 0} found
                 </span>
+              : puzzle.puzzleType === "jigsaw"
+                ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(jigsawPresentation?.elapsedMs ?? 0)}`}>
+                    {formatCrosswordHeaderTime(jigsawPresentation?.elapsedMs ?? 0)}
+                  </span>
               : undefined}
       actions={puzzle.puzzleType === "crossword"
         ? <PuzzleHeaderCrosswordActions
@@ -1184,6 +1191,19 @@ export default function PuzzleDetailPage() {
                     <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
                   ]}
                 />
+            : puzzle.puzzleType === "jigsaw"
+              ? <PuzzleHeaderActions
+                  onHelp={() => jigsawRef.current?.openInstructions()}
+                  helpLabel="How to play Jigsaw"
+                  overflow={[
+                    <button type="button" key="preview" onClick={() => jigsawRef.current?.openPreview()}>Preview Image</button>,
+                    <button type="button" key="return" onClick={() => jigsawRef.current?.returnLooseToTray()}>Return Loose Pieces</button>,
+                    <button type="button" key="reset" onClick={() => jigsawRef.current?.requestReset()}>Reset Puzzle</button>,
+                    <button type="button" key="fullscreen" onClick={() => jigsawRef.current?.enterFullscreen()}>Fullscreen</button>,
+                    skipControl,
+                    <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
+                  ]}
+                />
           : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
       contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" || puzzle.puzzleType === "word_search" ? "fixed" : "scroll"}
       contentClassName={puzzle.puzzleType === "crossword"
@@ -1194,6 +1214,8 @@ export default function PuzzleDetailPage() {
             ? "pw-sudoku-shell-content"
             : puzzle.puzzleType === "word_search"
               ? "pw-word-search-shell-content"
+            : puzzle.puzzleType === "jigsaw"
+              ? "pw-jigsaw-shell-content"
               : undefined}
     >
     <div
@@ -1545,14 +1567,17 @@ export default function PuzzleDetailPage() {
               teamIdParam={teamIdParam}
               lobbyIdParam={lobbyIdParam}
               jigsawPlayable={jigsawPlayable}
-              jigsawControls={jigsawControls}
-              setJigsawControls={setJigsawControls}
               effectiveHintTokens={effectiveHintTokens}
               onHintUsed={handleSudokuHintUsed}
               onSolved={handlePuzzleTypeComplete}
               onAnagramSolved={(elapsedSeconds) => handlePuzzleTypeComplete(elapsedSeconds, undefined, { modalDelayMs: 900 })}
               onJigsawComplete={handleJigsawComplete}
-              onJigsawShowRatingModal={handlePuzzleSolved}
+              jigsawRef={jigsawRef}
+              onJigsawPresentationChange={setJigsawPresentation}
+              onJigsawShowRatingModal={() => {
+                setSuccess(true);
+                void handlePuzzleSolved();
+              }}
               crosswordRef={crosswordRef}
               onCrosswordPresentationChange={setCrosswordPresentation}
               anagramRef={anagramRef}

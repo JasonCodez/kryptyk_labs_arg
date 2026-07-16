@@ -16,3 +16,10 @@
  */
 
 export { default } from "./JigsawPuzzleCanvas";
+export type {
+  JigsawCompletionResult,
+  JigsawPresentationState,
+  JigsawPuzzleHandle,
+  JigsawPuzzleProps,
+  JigsawStatus,
+} from "./JigsawPuzzleCanvas";
