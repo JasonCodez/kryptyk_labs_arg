@@ -9,6 +9,7 @@ import SudokuGrid from "./SudokuGrid";
 import SudokuNumberPad from "./sudoku/SudokuNumberPad";
 import SudokuUtilityBar from "./sudoku/SudokuUtilityBar";
 import SudokuHelpDialog from "./sudoku/SudokuHelpDialog";
+import SudokuConfirmDialog from "./sudoku/SudokuConfirmDialog";
 import {
   cloneSudokuGrid, findSudokuConflicts, isSudokuComplete, normalizeSudokuGrid, normalizeSudokuNotes,
   restoreSudokuGrid, sudokuCellKey, sudokuPeers, type SudokuCell, type SudokuNotes,
@@ -72,8 +73,8 @@ export interface SudokuPuzzleProps {
   onIncorrectAttempt?: (grid: number[][]) => Promise<SudokuCheckResult>;
   onComplete: (grid: number[][], elapsedSeconds: number) => Promise<SudokuCheckResult>;
   onHintUsed?: () => Promise<boolean>;
-  onGiveUp?: () => Promise<void> | void;
-  onTimeout?: () => Promise<void> | void;
+  onGiveUp?: () => Promise<void>;
+  onTimeout?: () => Promise<void>;
   onRetry?: () => Promise<SudokuRoundState>;
   onCelebrationComplete?: () => void;
   onPresentationChange?: (state: SudokuPresentationState) => void;
@@ -103,6 +104,11 @@ const SudokuPuzzle = forwardRef<SudokuPuzzleHandle, SudokuPuzzleProps>(function 
   const [giveUpOpen, setGiveUpOpen] = useState(false);
   const [status, setStatus] = useState<SudokuStatus>(() => serverLockedAt ? "lost" : mode === "daily" ? "playing" : "ready");
   const [message, setMessage] = useState("");
+  const [startError, setStartError] = useState("");
+  const [completionError, setCompletionError] = useState("");
+  const [timeoutError, setTimeoutError] = useState("");
+  const [timeoutPending, setTimeoutPending] = useState(false);
+  const [timeoutCommitted, setTimeoutCommitted] = useState(false);
   const [attemptsUsed, setAttemptsUsed] = useState(attemptsUsedProp);
   const [startedAt, setStartedAt] = useState(serverStartedAt);
   const [expiresAt, setExpiresAt] = useState(serverExpiresAt);
@@ -112,14 +118,19 @@ const SudokuPuzzle = forwardRef<SudokuPuzzleHandle, SudokuPuzzleProps>(function 
   const gameRef = useRef<HTMLDivElement>(null);
   const completionRef = useRef(false);
   const timeoutRef = useRef(false);
+  const timeoutCommitRef = useRef<Promise<void> | null>(null);
   const hintPendingRef = useRef(false);
   const startRoundRef = useRef(onStartRound);
+  const timeoutCallbackRef = useRef(onTimeout);
+  const giveUpCallbackRef = useRef(onGiveUp);
   const restoredRef = useRef(false);
   const lastPresentationRef = useRef("");
   startRoundRef.current = onStartRound;
+  timeoutCallbackRef.current = onTimeout;
+  giveUpCallbackRef.current = onGiveUp;
   const totalEditableCells = useMemo(() => givens.flat().filter((value) => value === 0).length, [givens]);
   const filledCells = useMemo(() => grid.flatMap((row, r) => row.map((value, c) => givens[r][c] === 0 && value !== 0)).filter(Boolean).length, [givens, grid]);
-  const disabled = status === "starting" || status === "validating" || status === "won" || status === "lost";
+  const disabled = status !== "playing" || Boolean(completionError);
 
   const snapshot = useCallback((): SudokuSnapshot => ({
     grid: cloneSudokuGrid(grid), notes: JSON.parse(JSON.stringify(notes)) as SudokuNotes,
@@ -202,6 +213,26 @@ const SudokuPuzzle = forwardRef<SudokuPuzzleHandle, SudokuPuzzleProps>(function 
     window.setTimeout(() => { setCelebrating(false); onCelebrationComplete?.(); }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1500);
   }, [onCelebrationComplete]);
 
+  const completionElapsedSeconds = useCallback(() => {
+    const startMs = startedAt ? Date.parse(startedAt) : Number.NaN;
+    const elapsedMs = Number.isFinite(startMs) ? Date.now() - startMs : mode === "daily" ? timeMs : 0;
+    return Math.max(0, Math.round((Number.isFinite(elapsedMs) ? elapsedMs : 0) / 1000));
+  }, [mode, startedAt, timeMs]);
+
+  const submitCompletion = useCallback(async () => {
+    if (completionRef.current) return;
+    completionRef.current = true; setCompletionError(""); setStatus("validating"); setMessage("Checking puzzle…");
+    try {
+      const result = await onComplete(cloneSudokuGrid(grid), completionElapsedSeconds());
+      if (!result.success) throw new Error(result.error || "Completion was not confirmed.");
+      localStorage.removeItem(storageKey(puzzleId)); setStatus("won"); setMessage("Puzzle solved!"); finishCelebration();
+    } catch (error) {
+      completionRef.current = false; setStatus("error");
+      const detail = error instanceof Error ? error.message : "Completion failed. Retry submission.";
+      setCompletionError(detail); setMessage(detail);
+    }
+  }, [completionElapsedSeconds, finishCelebration, grid, onComplete, puzzleId]);
+
   const checkPuzzle = useCallback(async () => {
     if (disabled || completionRef.current) return;
     if (!isSudokuComplete(grid)) { setMessage("Fill every cell before checking the puzzle."); return; }
@@ -211,24 +242,16 @@ const SudokuPuzzle = forwardRef<SudokuPuzzleHandle, SudokuPuzzleProps>(function 
       if (mode === "daily") { setStatus("playing"); setMessage("Not quite yet. Check the highlighted rule conflicts and try again."); juice.error(); return; }
       try {
         const result = await onIncorrectAttempt?.(cloneSudokuGrid(grid));
-        const nextAttempts = result?.attemptsUsed ?? attemptsUsed + 1; setAttemptsUsed(nextAttempts);
+        const nextAttempts = result?.attemptsUsed ?? attemptsUsed + 1; setAttemptsUsed((current) => Math.max(current, nextAttempts));
         if (nextAttempts >= attemptsAllowed) { setLockReason("max_attempts"); setStatus("lost"); localStorage.removeItem(storageKey(puzzleId)); }
         else { setStatus("playing"); setMessage(result?.error || `That solution is incorrect. ${attemptsAllowed - nextAttempts} attempts left.`); }
-      } catch { setStatus("playing"); setMessage("We could not record that check. Please try again."); }
+      } catch (error) { setStatus("playing"); setMessage(error instanceof Error ? error.message : "We could not record that check. Please try again."); }
       juice.error(); return;
     }
-    completionRef.current = true;
-    try {
-      const elapsedSeconds = Math.max(0, Math.round((timeMs || 0) / 1000));
-      const result = await onComplete(cloneSudokuGrid(grid), elapsedSeconds);
-      if (!result.success) throw new Error(result.error || "Completion was not confirmed.");
-      localStorage.removeItem(storageKey(puzzleId)); setStatus("won"); setMessage("Puzzle solved!"); finishCelebration();
-    } catch (error) {
-      completionRef.current = false; setStatus("error"); setMessage(error instanceof Error ? error.message : "Completion failed. Retry submission.");
-    }
-  }, [attemptsAllowed, attemptsUsed, disabled, finishCelebration, grid, mode, onComplete, onIncorrectAttempt, puzzleId, safeSolution, timeMs]);
+    await submitCompletion();
+  }, [attemptsAllowed, attemptsUsed, disabled, grid, mode, onIncorrectAttempt, puzzleId, safeSolution, submitCompletion]);
 
-  const retrySubmission = useCallback(() => { if (status === "error") { setStatus("playing"); setMessage(""); void checkPuzzle(); } }, [checkPuzzle, status]);
+  const retrySubmission = useCallback(() => { if (completionError && !completionRef.current) void submitCompletion(); }, [completionError, submitCompletion]);
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (helpOpen || giveUpOpen || event.key === "Tab") return;
@@ -267,26 +290,68 @@ const SudokuPuzzle = forwardRef<SudokuPuzzleHandle, SudokuPuzzleProps>(function 
     localStorage.setItem(storageKey(puzzleId), JSON.stringify({ version: 2, grid, notes, selectedCell, notesMode, hintedCells: [...hintedCells], lockedCells: [...lockedCells], started: status !== "ready" }));
   }, [grid, hintedCells, lockedCells, notes, notesMode, puzzleId, selectedCell, status]);
 
+  const applyRound = useCallback((round: SudokuRoundState) => {
+    const roundStartedAt = round.startedAt ?? null; const roundExpiresAt = round.expiresAt ?? null;
+    if (round.lockedAt) {
+      setStartedAt(roundStartedAt); setExpiresAt(roundExpiresAt); setLockReason(round.lockReason ?? "locked");
+      setAttemptsUsed((current) => Math.max(current, round.attemptsUsed ?? 0)); setTimeoutCommitted(true); setStatus("lost"); return;
+    }
+    if (!roundStartedAt || !roundExpiresAt || !Number.isFinite(Date.parse(roundStartedAt)) || !Number.isFinite(Date.parse(roundExpiresAt))) {
+      throw new Error("The server did not return a valid Sudoku timer.");
+    }
+    setStartedAt(roundStartedAt); setExpiresAt(roundExpiresAt); setAttemptsUsed(round.attemptsUsed ?? 0);
+    setLockReason(null); setStartError(""); setTimeoutError(""); setTimeoutCommitted(false); timeoutRef.current = false; setStatus("playing");
+  }, []);
+
+  const beginRound = useCallback(async () => {
+    if (!startRoundRef.current) { setStartError("The timed round cannot be started right now."); setStatus("error"); return; }
+    setStartError(""); setStatus("starting");
+    try { applyRound(await startRoundRef.current()); }
+    catch (error) {
+      const detail = error instanceof Error ? error.message : "Could not start the timed round. Try again.";
+      setStartError(detail); setMessage(detail); setStatus("error");
+    }
+  }, [applyRound]);
+
   useEffect(() => {
-    if (mode !== "catalog" || status !== "ready") return;
-    if (serverLockedAt) { setStatus("lost"); return; }
-    if (serverExpiresAt) { setStatus("playing"); return; }
-    if (!startRoundRef.current) { setStatus("playing"); return; }
-    let live = true; setStatus("starting");
-    void startRoundRef.current().then((round) => { if (!live) return; setStartedAt(round.startedAt ?? null); setExpiresAt(round.expiresAt ?? null); setAttemptsUsed(round.attemptsUsed ?? attemptsUsedProp); setStatus(round.lockedAt ? "lost" : "playing"); setLockReason(round.lockReason ?? null); })
-      .catch(() => { if (live) { setStatus("error"); setMessage("Could not start the timed round. Try again."); } });
-    return () => { live = false; };
-    // Status intentionally is not a dependency: moving ready -> starting is this
-    // effect's own transition and must not cancel its in-flight server request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, puzzleId]);
+    setAttemptsUsed((current) => Math.max(current, attemptsUsedProp));
+    if (mode !== "catalog") return;
+    if (serverLockedAt) {
+      setStartedAt(serverStartedAt); setExpiresAt(serverExpiresAt); setLockReason(serverLockReason ?? "locked");
+      setTimeoutCommitted(true); setStatus("lost"); return;
+    }
+    if (serverExpiresAt && Number.isFinite(Date.parse(serverExpiresAt))) {
+      if (serverStartedAt && Number.isFinite(Date.parse(serverStartedAt))) setStartedAt(serverStartedAt);
+      setExpiresAt(serverExpiresAt); setStartError("");
+      timeoutRef.current = false; setStatus((current) => current === "won" || current === "lost" ? current : "playing");
+    }
+  }, [attemptsUsedProp, mode, serverExpiresAt, serverLockedAt, serverLockReason, serverStartedAt]);
+
+  useEffect(() => {
+    if (mode !== "catalog" || serverLockedAt || serverExpiresAt) return;
+    const timer = window.setTimeout(() => { if (!startedAt && !expiresAt) void beginRound(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [beginRound, expiresAt, mode, serverExpiresAt, serverLockedAt, startedAt]);
+
+  const commitTimeout = useCallback(() => {
+    if (timeoutCommitRef.current) return timeoutCommitRef.current;
+    setTimeoutPending(true); setTimeoutError("");
+    const request = (async () => {
+      try { await timeoutCallbackRef.current?.(); setTimeoutCommitted(true); }
+      catch (error) { setTimeoutCommitted(false); setTimeoutError(error instanceof Error ? error.message : "Could not confirm the timeout. Try again."); }
+      finally { setTimeoutPending(false); timeoutCommitRef.current = null; }
+    })();
+    timeoutCommitRef.current = request; return request;
+  }, []);
 
   const updateTime = useCallback(() => {
     if (status !== "playing" && status !== "validating") return;
     if (mode === "daily") { setTimeMs(startedAt ? Math.max(0, Date.now() - Date.parse(startedAt)) : 0); return; }
     const remaining = expiresAt ? Math.max(0, Date.parse(expiresAt) - Date.now()) : 0; setTimeMs(remaining);
-    if (expiresAt && remaining <= 0 && !timeoutRef.current) { timeoutRef.current = true; setLockReason("time_limit"); setStatus("lost"); localStorage.removeItem(storageKey(puzzleId)); void onTimeout?.(); }
-  }, [expiresAt, mode, onTimeout, puzzleId, startedAt, status]);
+    if (expiresAt && remaining <= 0 && !timeoutRef.current) {
+      timeoutRef.current = true; setLockReason("time_limit"); setStatus("lost"); localStorage.removeItem(storageKey(puzzleId)); void commitTimeout();
+    }
+  }, [commitTimeout, expiresAt, mode, puzzleId, startedAt, status]);
 
   useEffect(() => {
     if (mode === "daily" && !startedAt) setStartedAt(new Date().toISOString());
@@ -307,36 +372,58 @@ const SudokuPuzzle = forwardRef<SudokuPuzzleHandle, SudokuPuzzleProps>(function 
   }, [onPresentationChange, presentation]);
 
   const retryRound = async () => {
-    if (!onRetry) return; setStatus("starting"); setMessage("");
-    try { const round = await onRetry(); localStorage.removeItem(storageKey(puzzleId)); setGrid(cloneSudokuGrid(givens)); setNotes({}); setSelectedCell(null); setHistory([]); setHintedCells(new Set()); setLockedCells(new Set()); setAttemptsUsed(round.attemptsUsed ?? 0); setStartedAt(round.startedAt ?? null); setExpiresAt(round.expiresAt ?? null); setLockReason(null); timeoutRef.current = false; completionRef.current = false; setStatus("playing"); }
-    catch { setStatus("lost"); setMessage("Could not start a fresh round."); }
+    if (!onRetry || timeoutPending || (lockReason === "time_limit" && !timeoutCommitted)) return;
+    setStatus("starting"); setMessage(""); setStartError("");
+    try {
+      const round = await onRetry(); localStorage.removeItem(storageKey(puzzleId));
+      setGrid(cloneSudokuGrid(givens)); setNotes({}); setSelectedCell(null); setHistory([]); setHintedCells(new Set()); setLockedCells(new Set());
+      completionRef.current = false; setCompletionError(""); applyRound(round);
+    } catch (error) {
+      setStatus("lost"); setMessage(error instanceof Error ? error.message : "Could not start a fresh round.");
+    }
+  };
+
+  const confirmGiveUp = async () => {
+    if (!giveUpCallbackRef.current) throw new Error("Give Up is unavailable right now.");
+    await giveUpCallbackRef.current();
+    localStorage.removeItem(storageKey(puzzleId)); setGiveUpOpen(false); setLockReason("given_up"); setStatus("lost");
   };
 
   return (
     <div className={`sudoku-puzzle sudoku-${displayMode}`} data-status={status} data-testid="sudoku-root">
       {displayMode === "standalone" && <div className="sudoku-internal-header"><h2>SUDOKU</h2><button type="button" onClick={() => setHelpOpen(true)}>Help</button></div>}
+      {startError && status === "error" && <div className="sudoku-status-card" role="alert"><p>{startError}</p><button type="button" className="sudoku-dialog-primary" onClick={() => void beginRound()}>Retry Start</button></div>}
       {status === "starting" && <div className="sudoku-status-card" role="status"><span className="sudoku-spinner" />Starting your round…</div>}
       {status === "lost" ? (
         <section className="sudoku-result-card" aria-labelledby="sudoku-loss-title">
           <span aria-hidden>⌛</span><h2 id="sudoku-loss-title">Round over</h2>
           <p>{lockReason === "max_attempts" ? "You used all available attempts." : lockReason === "given_up" ? "You gave up this round." : "The time limit expired."}</p>
-          <div><button type="button" onClick={() => void retryRound()} disabled={!onRetry}>Try Again</button><Link href="/puzzles">Back to Puzzles</Link></div>
+          {timeoutError && <p className="sudoku-dialog-error" role="alert">{timeoutError}</p>}
+          {timeoutError && <button type="button" onClick={() => void commitTimeout()} disabled={timeoutPending}>{timeoutPending ? "Confirming…" : "Retry Timeout"}</button>}
+          <div><button type="button" onClick={() => void retryRound()} disabled={!onRetry || timeoutPending || (lockReason === "time_limit" && !timeoutCommitted)}>Try Again</button><Link href="/puzzles">Back to Puzzles</Link></div>
         </section>
-      ) : status !== "starting" ? (
+      ) : status !== "starting" && !startError ? (
         <div ref={gameRef} className="sudoku-game-surface" data-testid="sudoku-game-surface" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Sudoku game. Use arrow keys to select a cell and number keys to enter digits.">
           <div className="sudoku-board-region"><SudokuGrid puzzle={givens} givens={givens} grid={grid} notes={notes} selectedCell={selectedCell} lockedCells={lockedCells} hintedCells={hintedCells} disabled={disabled} celebrating={celebrating} onSelectCell={selectCell} /></div>
           <div className="sudoku-controls">
-            <SudokuUtilityBar notesMode={notesMode} canUndo={history.length > 0} canHint={Boolean(safeSolution)} disabled={disabled} onNotes={toggleNotes} onUndo={undo} onErase={erase} onHint={() => void revealHint()} />
+            <SudokuUtilityBar notesMode={notesMode} canUndo={history.length > 0} canHint={Boolean(safeSolution)} showHint={mode === "catalog"} disabled={disabled} onNotes={toggleNotes} onUndo={undo} onErase={erase} onHint={() => void revealHint()} />
             <SudokuNumberPad onDigit={enterDigit} disabled={disabled} />
             <div className="sudoku-validation-row">
               <p role="status" aria-live="polite">{message || (notesMode ? "Notes mode is on" : "Select a cell to begin")}</p>
-              {status === "error" ? <button type="button" onClick={retrySubmission}>Retry Submission</button> : <button type="button" onClick={() => void checkPuzzle()} disabled={disabled || !isSudokuComplete(grid)}>Check Puzzle</button>}
+              {completionError ? <button type="button" onClick={retrySubmission}>Retry Submission</button> : <button type="button" onClick={() => void checkPuzzle()} disabled={disabled || !isSudokuComplete(grid)}>Check Puzzle</button>}
             </div>
           </div>
         </div>
       ) : null}
       <SudokuHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
-      {giveUpOpen && <div className="sudoku-dialog-backdrop"><div className="sudoku-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="sudoku-giveup-title"><h2 id="sudoku-giveup-title">Give up this round?</h2><p>Your current round will end and saved board state will be cleared.</p><div><button type="button" onClick={() => setGiveUpOpen(false)}>Keep playing</button><button type="button" onClick={async () => { setGiveUpOpen(false); await onGiveUp?.(); localStorage.removeItem(storageKey(puzzleId)); setLockReason("given_up"); setStatus("lost"); }}>Give Up</button></div></div></div>}
+      <SudokuConfirmDialog
+        open={giveUpOpen}
+        title="Give up this round?"
+        description="Your current round will end and saved board state will be cleared."
+        confirmLabel="Give Up"
+        onClose={() => setGiveUpOpen(false)}
+        onConfirm={confirmGiveUp}
+      />
     </div>
   );
 });

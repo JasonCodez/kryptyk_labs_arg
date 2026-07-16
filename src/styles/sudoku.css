@@ -20,7 +20,7 @@
 .sudoku-candidates { position: absolute; inset: 2px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); font-size: clamp(6px, 1.8vw, 11px); color: #dbeafe; }
 .sudoku-candidates > span { display: grid; place-items: center; }
 .sudoku-controls { display: grid; gap: 7px; }
-.sudoku-utility-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sudoku-utility-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
 .sudoku-tool, .sudoku-number-key, .sudoku-validation-row button, .sudoku-result-card button, .sudoku-result-card a { min-height: 44px; border: 1px solid rgba(134,216,232,.32); border-radius: 10px; background: rgba(9,49,58,.88); color: #fff; font-weight: 750; }
 .sudoku-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; line-height: 1.05; }
 .sudoku-tool span { color: #fde74c; font-size: 10px; margin-top: 2px; }
@@ -41,6 +41,7 @@
 .sudoku-dialog-close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border: 0; background: transparent; color: #fff; font-size: 28px; }
 .sudoku-dialog-primary, .sudoku-confirm-dialog button { min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 750; }
 .sudoku-confirm-dialog > div { display: flex; justify-content: flex-end; gap: 8px; }
+.sudoku-confirm-dialog .sudoku-dialog-error, .sudoku-result-card .sudoku-dialog-error { color: #fecaca; font-weight: 700; }
 .sudoku-status-card, .sudoku-result-card { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 24px; }
 .sudoku-result-card > span { font-size: 48px; }.sudoku-result-card h2, .sudoku-result-card p { margin: 0; }.sudoku-result-card > div { display: flex; gap: 10px; }.sudoku-result-card button, .sudoku-result-card a { display: grid; place-items: center; padding: 0 18px; text-decoration: none; }
 .sudoku-spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.25); border-top-color: #fde74c; border-radius: 50%; animation: sudoku-spin .8s linear infinite; }

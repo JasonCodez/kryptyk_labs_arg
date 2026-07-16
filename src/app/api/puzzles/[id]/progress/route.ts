@@ -8,6 +8,7 @@ import { validateSameOrigin } from "@/lib/requestSecurity";
 
 import { startSession, endSession } from "@/lib/puzzle-progress/session-actions";
 import { startSudokuTimer, lockSudoku, clearSudokuState } from "@/lib/puzzle-progress/sudoku-actions";
+import { validateSudokuAttempt } from "@/lib/puzzle-progress/sudoku-attempt-validation";
 import { logAttempt, handleAttemptSuccess, recordGameLoss } from "@/lib/puzzle-progress/attempt-actions";
 import { MAX_PUZZLE_ATTEMPTS, WORD_CRACK_MAX_ATTEMPTS } from "@/lib/puzzleConstants";
 
@@ -152,7 +153,7 @@ export async function POST(
     const debug = process.env.DEBUG_PROGRESS === '1';
 
     // Debug logging (opt-in): set DEBUG_PROGRESS=1
-    let rawBody: any = null;
+    let rawBody: unknown = null;
     try {
       // Parse as text first to sidestep body stream issues on some clients (e.g., curl on Windows)
       const bodyText = await request.text();
@@ -161,19 +162,20 @@ export async function POST(
       console.warn('[PROGRESS] failed to parse JSON body', e);
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
+    const bodyRecord = rawBody && typeof rawBody === "object" ? rawBody as Record<string, unknown> : null;
     if (debug) {
       try {
         console.log('[PROGRESS] request received', {
           puzzleId: id,
           userId: user.id,
-          action: rawBody?.action ?? null,
+          action: bodyRecord?.action ?? null,
         });
       } catch (e) {
         console.warn('[PROGRESS] failed reading request headers/body', e);
       }
     }
 
-    if (!rawBody || typeof rawBody.action === 'undefined') {
+    if (!bodyRecord || typeof bodyRecord.action === 'undefined') {
       console.warn('[PROGRESS] Missing request body or action');
       return NextResponse.json({ error: 'Missing action in request body' }, { status: 400 });
     }
@@ -182,7 +184,6 @@ export async function POST(
     const action = parsed.action;
     const durationSeconds = typeof parsed.durationSeconds === 'number' ? parsed.durationSeconds : undefined;
     const hintUsed = typeof parsed.hintUsed === 'boolean' ? parsed.hintUsed : undefined;
-    const successful = typeof parsed.successful === 'boolean' ? parsed.successful : undefined;
     const clientStartedAtMs = typeof parsed.clientStartedAtMs === 'number' ? parsed.clientStartedAtMs : undefined;
     const lockReason = typeof parsed.reason === 'string' ? parsed.reason : undefined;
 
@@ -222,24 +223,16 @@ export async function POST(
 
       case "log_attempt":
         if (puzzleRecord.puzzleType === "sudoku") {
-          const submitted = parsed.grid;
-          const validCompletedGrid = Array.isArray(submitted) && submitted.length === 9 && submitted.every((row) =>
-            Array.isArray(row) && row.length === 9 && row.every((value) => Number.isInteger(value) && value >= 1 && value <= 9)
-          );
-          if (!validCompletedGrid) {
-            return NextResponse.json({ error: "A completed Sudoku grid is required" }, { status: 400 });
-          }
-          try {
-            const solution = puzzleRecord.sudoku?.solutionGrid ? JSON.parse(puzzleRecord.sudoku.solutionGrid) as number[][] : null;
-            if (solution && submitted!.every((row, rowIndex) => row.every((value, colIndex) => value === solution[rowIndex]?.[colIndex]))) {
-              return NextResponse.json({ error: "Correct Sudoku grids must use attempt_success" }, { status: 400 });
-            }
-          } catch {
-            return NextResponse.json({ error: "Server missing Sudoku solution" }, { status: 500 });
-          }
           const maxAttempts = Math.max(1, Number((puzzleRecord.sudoku as { maxAttempts?: number | null } | null)?.maxAttempts ?? 5));
-          if (progress.attempts >= maxAttempts) {
-            return NextResponse.json({ error: "Maximum Sudoku attempts reached" }, { status: 403 });
+          const submitted = parsed.grid;
+          let solution: number[][] | null = null;
+          try {
+            solution = puzzleRecord.sudoku?.solutionGrid ? JSON.parse(puzzleRecord.sudoku.solutionGrid) as number[][] : null;
+          } catch { /* handled by authoritative validation below */ }
+          const rejection = validateSudokuAttempt(progress, maxAttempts, submitted, solution);
+          if (rejection) {
+            if (rejection.lockReason) await lockSudoku(progress, rejection.lockReason);
+            return NextResponse.json({ error: rejection.error }, { status: rejection.status });
           }
           await logAttempt(progress, durationSeconds);
           if (progress.attempts + 1 >= maxAttempts) await lockSudoku(progress, "max_attempts");
@@ -249,7 +242,7 @@ export async function POST(
         break;
 
       case "attempt_success": {
-        const earlyReturn = await handleAttemptSuccess(progress, puzzleRecord, rawBody.grid, durationSeconds, user.id);
+        const earlyReturn = await handleAttemptSuccess(progress, puzzleRecord, bodyRecord.grid, durationSeconds, user.id);
         if (earlyReturn) return earlyReturn;
         break;
       }

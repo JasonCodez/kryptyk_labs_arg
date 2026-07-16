@@ -118,3 +118,121 @@ test("catalog timer derives from server expiry and time-out fires once", async (
   expect(onPresentationChange.mock.calls.length).toBeLessThanOrEqual(5);
   await act(async () => { jest.advanceTimersByTime(2_000); }); expect(onTimeout).toHaveBeenCalledTimes(1); jest.useRealTimers();
 });
+
+test("catalog completion derives elapsed time from authoritative serverStartedAt", async () => {
+  jest.useFakeTimers();
+  const now = new Date("2026-07-15T12:00:30.000Z"); jest.setSystemTime(now);
+  localStorage.setItem("sudoku-state:v2:sudoku-test", JSON.stringify({ version: 2, grid: SOLUTION, notes: {} }));
+  const onComplete = jest.fn(async () => ({ success: true }));
+  renderGame({ mode: "catalog", timeLimitSeconds: 900, serverStartedAt: new Date(now.getTime() - 30_000).toISOString(), serverExpiresAt: new Date(now.getTime() + 870_000).toISOString(), onComplete });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Check Puzzle" }));
+  await act(async () => {});
+  expect(onComplete).toHaveBeenCalledWith(SOLUTION, 30);
+});
+
+test("daily elapsed completion timing remains correct", async () => {
+  jest.useFakeTimers();
+  const now = new Date("2026-07-15T12:00:30.000Z"); jest.setSystemTime(now);
+  localStorage.setItem("sudoku-state:v2:sudoku-test", JSON.stringify({ version: 2, grid: SOLUTION, notes: {} }));
+  const onComplete = jest.fn(async () => ({ success: true }));
+  renderGame({ serverStartedAt: new Date(now.getTime() - 30_000).toISOString(), onComplete });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Check Puzzle" }));
+  await act(async () => {});
+  expect(onComplete).toHaveBeenCalledWith(SOLUTION, 30);
+});
+
+test("refresh restoration preserves authoritative completion duration", async () => {
+  jest.useFakeTimers();
+  const now = new Date("2026-07-15T12:00:30.000Z"); jest.setSystemTime(now);
+  const startedAt = new Date(now.getTime() - 30_000).toISOString();
+  localStorage.setItem("sudoku-state:v2:sudoku-test", JSON.stringify({ version: 2, grid: SOLUTION, notes: {} }));
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const game = renderGame({ mode: "catalog", serverStartedAt: startedAt, serverExpiresAt: new Date(now.getTime() + 870_000).toISOString(), onComplete });
+  game.unmount();
+  renderGame({ mode: "catalog", serverStartedAt: startedAt, serverExpiresAt: new Date(now.getTime() + 870_000).toISOString(), onComplete });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Check Puzzle" }));
+  await act(async () => {});
+  expect(onComplete).toHaveBeenCalledWith(SOLUTION, 30);
+});
+
+test("late authoritative progress resumes an active catalog round", async () => {
+  const onStartRound = jest.fn(() => new Promise<never>(() => {}));
+  const game = renderGame({ mode: "catalog", onStartRound });
+  const now = Date.now();
+  game.rerender(<SudokuPuzzle puzzleId="sudoku-test" puzzle={PUZZLE} solution={SOLUTION} mode="catalog" displayMode="app-shell" onComplete={game.onComplete} onStartRound={onStartRound} serverStartedAt={new Date(now - 10_000).toISOString()} serverExpiresAt={new Date(now + 890_000).toISOString()} />);
+  await waitFor(() => expect(screen.getByTestId("sudoku-root").getAttribute("data-status")).toBe("playing"));
+});
+
+test("late authoritative lock always enters the loss screen", async () => {
+  const game = renderGame({ mode: "catalog", onStartRound: jest.fn(() => new Promise<never>(() => {})) });
+  game.rerender(<SudokuPuzzle puzzleId="sudoku-test" puzzle={PUZZLE} solution={SOLUTION} mode="catalog" displayMode="app-shell" onComplete={game.onComplete} serverLockedAt={new Date().toISOString()} serverLockReason="max_attempts" />);
+  expect(await screen.findByRole("heading", { name: "Round over" })).toBeTruthy();
+});
+
+test("failed start keeps play disabled and Retry Start retries only the start request", async () => {
+  const now = Date.now();
+  const onStartRound = jest.fn()
+    .mockRejectedValueOnce(new Error("Start unavailable"))
+    .mockResolvedValueOnce({ startedAt: new Date(now).toISOString(), expiresAt: new Date(now + 900_000).toISOString(), attemptsUsed: 0 });
+  renderGame({ mode: "catalog", onStartRound });
+  expect(await screen.findByText("Start unavailable")).toBeTruthy();
+  expect(screen.queryByTestId("sudoku-game-surface")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry Start" }));
+  await waitFor(() => expect(screen.getByTestId("sudoku-root").getAttribute("data-status")).toBe("playing"));
+  expect(onStartRound).toHaveBeenCalledTimes(2);
+});
+
+test("Retry Submission retries completion without starting a new round", async () => {
+  localStorage.setItem("sudoku-state:v2:sudoku-test", JSON.stringify({ version: 2, grid: SOLUTION, notes: {} }));
+  const onComplete = jest.fn().mockResolvedValueOnce({ success: false, error: "Offline" }).mockResolvedValueOnce({ success: true });
+  const onStartRound = jest.fn();
+  renderGame({ onComplete, onStartRound });
+  fireEvent.click(await screen.findByRole("button", { name: "Check Puzzle" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry Submission" }));
+  await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(2));
+  expect(onStartRound).not.toHaveBeenCalled();
+});
+
+test("Give Up focuses the safe action, traps focus, closes with Escape, and restores focus", async () => {
+  const ref = createRef<SudokuPuzzleHandle>(); renderGame({ ref, onGiveUp: jest.fn(async () => {}) });
+  const surface = screen.getByTestId("sudoku-game-surface"); surface.focus();
+  act(() => ref.current?.requestGiveUp());
+  const safe = await screen.findByRole("button", { name: "Keep playing" });
+  await waitFor(() => expect(document.activeElement).toBe(safe));
+  fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Give Up" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(surface));
+});
+
+test("failed Give Up request keeps the active round and exposes an error", async () => {
+  const ref = createRef<SudokuPuzzleHandle>();
+  renderGame({ ref, onGiveUp: jest.fn(async () => { throw new Error("Lock failed"); }) });
+  act(() => ref.current?.requestGiveUp());
+  fireEvent.click(await screen.findByRole("button", { name: "Give Up" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Lock failed");
+  expect(screen.getByTestId("sudoku-root").getAttribute("data-status")).toBe("playing");
+});
+
+test("daily mode hides the unavailable Hint action", () => {
+  renderGame({ hintTokens: 0 });
+  expect(screen.queryByRole("button", { name: "Hint" })).toBeNull();
+});
+
+test("retry cannot race a pending timeout lock", async () => {
+  jest.useFakeTimers(); const now = new Date("2026-07-15T12:00:00.000Z"); jest.setSystemTime(now);
+  let finishTimeout!: () => void;
+  const onTimeout = jest.fn(() => new Promise<void>((resolve) => { finishTimeout = resolve; }));
+  const onRetry = jest.fn(async () => ({ startedAt: new Date(now.getTime() + 2_000).toISOString(), expiresAt: new Date(now.getTime() + 902_000).toISOString(), attemptsUsed: 0 }));
+  renderGame({ mode: "catalog", serverStartedAt: now.toISOString(), serverExpiresAt: new Date(now.getTime() + 1_000).toISOString(), onTimeout, onRetry });
+  await act(async () => { jest.advanceTimersByTime(1_250); });
+  const retry = screen.getByRole("button", { name: "Try Again" }) as HTMLButtonElement;
+  expect(retry.disabled).toBe(true); fireEvent.click(retry); expect(onRetry).not.toHaveBeenCalled();
+  await act(async () => { finishTimeout(); });
+  expect(retry.disabled).toBe(false); fireEvent.click(retry);
+  await act(async () => {}); expect(onRetry).toHaveBeenCalledTimes(1);
+});

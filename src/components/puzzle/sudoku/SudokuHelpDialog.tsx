@@ -6,12 +6,14 @@ import { createPortal } from "react-dom";
 export default function SudokuHelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return;
     returnFocusRef.current = document.activeElement as HTMLElement;
     const frame = requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>("button")?.focus());
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
       if (event.key !== "Tab" || !dialogRef.current) return;
       const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>('button,[href],[tabindex]:not([tabindex="-1"])')];
       if (!focusable.length) return;
@@ -21,7 +23,7 @@ export default function SudokuHelpDialog({ open, onClose }: { open: boolean; onC
     };
     document.addEventListener("keydown", onKey);
     return () => { cancelAnimationFrame(frame); document.removeEventListener("keydown", onKey); returnFocusRef.current?.focus(); };
-  }, [onClose, open]);
+  }, [open]);
   if (!open || typeof document === "undefined") return null;
   return createPortal(
     <div className="sudoku-dialog-backdrop" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
