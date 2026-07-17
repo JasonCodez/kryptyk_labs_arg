@@ -1677,8 +1677,10 @@ export default function PuzzleDetailPage() {
               </form>
             )}
 
-            {/* Hints / Progress Section Wrapper */}
-            {puzzle.puzzleType !== "word_search" && <div className="puzzle-detail-progress-section">
+            {/* Hints / Progress Section Wrapper — Jigsaw already has its own Skip control in
+                the header's "More puzzle actions" overflow menu, so this section would just
+                duplicate it below the board. */}
+            {puzzle.puzzleType !== "word_search" && puzzle.puzzleType !== "jigsaw" && <div className="puzzle-detail-progress-section">
             <PuzzleProgressSection
               progress={progress}
               puzzleTitle={puzzle?.title}

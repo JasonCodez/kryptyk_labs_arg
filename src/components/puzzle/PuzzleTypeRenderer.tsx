@@ -127,7 +127,7 @@ export function PuzzleTypeRenderer({
   if (puzzle.puzzleType === 'jigsaw') {
     const jigsawExtra = jigsawPlayable?.data as JigsawExtraData | undefined;
     return (
-      <div className="h-full min-h-0">
+      <div className="jigsaw-renderer-shell">
         {!jigsawPlayable ? (
           <div className="p-4 rounded-lg border" style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.4)", color: "#fca5a5" }}>
             This jigsaw puzzle is missing its image. Upload an image in the admin puzzle creator.

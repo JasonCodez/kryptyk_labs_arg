@@ -4,7 +4,10 @@
 // environments where a native binary dependency has real cold-start/deployment cost). Only
 // the three raster formats a jigsaw source image would realistically be are supported —
 // PNG, JPEG, and WebP. Unsupported/unrecognized formats return null (callers should treat
-// that as "couldn't verify," not as a rejection).
+// that as "couldn't verify," not as a rejection) — EXCEPT the jigsaw upload/import square-check
+// call sites (src/app/api/admin/media/route.ts, src/app/api/admin/import-image/route.ts), which
+// deliberately escalate "couldn't verify" to "reject," since a jigsaw source image that can't be
+// dimension-checked (GIF, SVG, or a corrupt/malformed file) can't be trusted to be square either.
 
 export interface ImageDimensions {
   width: number;

@@ -346,6 +346,16 @@ interface BurstParticle {
 // pieces instead). Piece/tab overflow just resolves within the board itself.
 const BOARD_SIZE = 640;
 
+// A jigsaw grid reaching the player must be a square N×N grid within this supported range
+// (matches the admin-side allowed sizes) — a corrupt/out-of-range record (e.g. rows=0, a
+// non-integer, or an absurdly large value) must never reach geometry math (NaN/Infinity, or
+// an expensive/hanging edge-generation loop) before this check runs.
+const MIN_GRID_SIZE = 2;
+const MAX_GRID_SIZE = 15;
+function isValidJigsawGrid(r: number, c: number): boolean {
+  return Number.isInteger(r) && Number.isInteger(c) && r === c && r >= MIN_GRID_SIZE && r <= MAX_GRID_SIZE;
+}
+
 const BURST_COLORS = ["#FFD700", "#FFE873", "#FFF6D8", "#FDBA2A"];
 
 // ── Sound effects ────────────────────────────────────────────────────────────
@@ -699,7 +709,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // exactly filled by the grid with no letterboxing and no scatter-field margin around it —
   // the tray holds every unplaced piece instead, so the stage doesn't need spare room to
   // scatter pieces onto.
-  const cellSize = BOARD_SIZE / rows;
+  //
+  // rows/cols are player-facing config (ultimately sourced from the DB) and must be validated
+  // before any geometry is derived from them — hooks must still run in the same order every
+  // render, so an invalid grid can't skip this calculation entirely; instead it's neutralized
+  // with a safe fallback used only for hook/ref stability, while `configValid` (below) drives
+  // the actual "config-error" status the player sees.
+  const configValid = isValidJigsawGrid(rows, cols);
+  const safeRows = configValid ? rows : 4;
+  const cellSize = BOARD_SIZE / safeRows;
   const pw = cellSize;
   const ph = cellSize;
   const gridW = BOARD_SIZE;
@@ -965,7 +983,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startTimeRef  = useRef(0);
   const storageKeyRef = useRef("");
-  const [status, setStatus] = useState<JigsawStatus>("loading");
+  const [status, setStatus] = useState<JigsawStatus>(() => (configValid ? "loading" : "config-error"));
   // Set synchronously at every point that decides the puzzle is (or isn't) completion-pending
   // — NOT derived from the `status` state, which only updates a render later than the
   // decision itself. The periodic/visibility/pagehide/unmount save effects below read this
@@ -1127,11 +1145,12 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const edgesMapRef = useRef<Map<string, EdgeMap>>(new Map());
 
   useEffect(() => {
-    // Every jigsaw grid is square (enforced at creation time) — a mismatched rows/cols pair
-    // reaching the player (e.g. a stale Warz challenge, or a record from before validation
-    // existed) must show a clear configuration error rather than building a distorted or
+    // Every jigsaw grid must be a square N×N grid within the supported size range (enforced at
+    // creation time) — a mismatched, non-integer, or out-of-range rows/cols pair reaching the
+    // player (e.g. a stale Warz challenge, or a record from before validation existed) must
+    // show a clear configuration error rather than building a distorted, degenerate, or
     // letterboxed board from it.
-    if (rows !== cols) {
+    if (!isValidJigsawGrid(rows, cols)) {
       setStatus("config-error");
       return;
     }
@@ -1277,7 +1296,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   }, [effectiveUrl, reloadKey, proxyTried, puzzleId]);
 
   useEffect(() => {
-    if (rows !== cols) return; // config-error already set by the init effect above
+    if (!isValidJigsawGrid(rows, cols)) return; // config-error already set by the init effect above
     if (imageOk === false) {
       setStatus("image-error");
       return;

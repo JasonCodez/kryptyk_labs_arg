@@ -43,7 +43,7 @@ async function installDailyFixture(page: Page, failCompletions = 0, grid = { row
   return { requests: () => requests, successfulRecords: () => successfulRecords };
 }
 
-async function installCatalogFixture(page: Page, failCompletions = 0) {
+async function installCatalogFixture(page: Page, failCompletions = 0, skipTokens = 0) {
   let solved = false;
   let attempts = 0;
   const progress = () => ({ id: "jigsaw-progress", userId: "e2e-user", puzzleId: PUZZLE_ID, solved, attempts, pointsEarned: solved ? 100 : 0, successfulAttempts: solved ? 1 : 0, completionPercentage: solved ? 100 : 0, sessionLogs: [], partProgress: [] });
@@ -64,7 +64,7 @@ async function installCatalogFixture(page: Page, failCompletions = 0) {
       }
       return fulfill(progress());
     }
-    if (path === `/api/puzzles/${PUZZLE_ID}/hints`) return fulfill({ hints: [], hintTokens: 0, skipTokens: 0 });
+    if (path === `/api/puzzles/${PUZZLE_ID}/hints`) return fulfill({ hints: [], hintTokens: 0, skipTokens });
     if (path === `/api/puzzles/${PUZZLE_ID}/comparison-stats`) return fulfill({ percentile: 50, averageTime: 60, totalSolves: 1 });
     if (path === "/api/user/info") return fulfill({ id: "e2e-user", totalXp: 0, totalPoints: 1000, activeSkin: "default" });
     if (path === "/api/user/profile") return fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
@@ -170,6 +170,60 @@ for (const viewport of [
     const isLandscapeLayout = viewport.width > viewport.height && viewport.height <= 520;
     if (!isLandscapeLayout) expect(canvasBox!.y - boardAreaBox!.y).toBeLessThanOrEqual(20);
     await expect(page.locator(".jigsaw-tray")).toBeVisible();
+  });
+}
+
+// Catalog uses a different wrapper (puzzle-detail-play-* / pw-jigsaw-shell-content) than Daily's
+// app-shell (pw-play-shell / pw-play-content) — exercise the real catalog structure directly
+// rather than relying only on Daily's fixture/DOM, since the two chains can (and did) drift.
+for (const viewport of [
+  { width: 360, height: 800 },
+  { width: 390, height: 844 },
+  { width: 430, height: 932 },
+]) {
+  test(`Catalog Jigsaw stays contained at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installCatalogFixture(page, 0, 3);
+    await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-mode", "catalog", { timeout: 15_000 });
+    await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing");
+
+    const dimensions = await page.evaluate(() => ({ viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth, viewportHeight: innerHeight, documentHeight: document.documentElement.scrollHeight }));
+    expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
+    expect(dimensions.documentHeight).toBeLessThanOrEqual(dimensions.viewportHeight + 1);
+
+    const canvasBox = await page.locator(".jigsaw-board-canvas").boundingBox();
+    const boardAreaBox = await page.locator(".jigsaw-board-area").boundingBox();
+    const cardBox = await page.locator(".puzzle-detail-play-card").boundingBox();
+    expect(canvasBox).not.toBeNull(); expect(boardAreaBox).not.toBeNull(); expect(cardBox).not.toBeNull();
+
+    // Square canvas, using most of the available width.
+    expect(Math.abs(canvasBox!.width - canvasBox!.height)).toBeLessThanOrEqual(1);
+    const availableSide = Math.min(boardAreaBox!.width, boardAreaBox!.height);
+    expect(canvasBox!.width).toBeGreaterThanOrEqual(availableSide * 0.94);
+
+    // The board must begin directly beneath the shared header (no large dead region above it —
+    // the exact regression the broken puzzle-detail-play-* height chain caused).
+    const headerBox = await page.locator(".pw-play-header").boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(canvasBox!.y - (headerBox!.y + headerBox!.height)).toBeLessThanOrEqual(20);
+
+    // The card itself must not reserve dead vertical space beyond header+board+tray — i.e. no
+    // large unused region below/around the actual playable content.
+    const trayBox = await page.locator(".jigsaw-tray").boundingBox();
+    expect(trayBox).not.toBeNull();
+    expect(trayBox!.y).toBeGreaterThanOrEqual(canvasBox!.y + canvasBox!.height - 1); // tray directly beneath the board
+    expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(trayBox!.y + trayBox!.height + 24);
+
+    await expect(page.locator(".jigsaw-tray")).toBeVisible();
+
+    // No duplicate Skip control below the tray (PuzzleProgressSection removed for jigsaw).
+    await expect(page.locator(".puzzle-detail-progress-section")).toHaveCount(0);
+    await expect(page.getByText("Skip Puzzle", { exact: false })).toHaveCount(0);
+
+    // Skip remains available through the header's "More puzzle actions" menu.
+    await page.getByRole("button", { name: "More puzzle actions" }).click();
+    await expect(page.getByRole("menuitem", { name: "⏭️ Skip (3)" })).toBeVisible();
   });
 }
 

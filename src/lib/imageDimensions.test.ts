@@ -54,6 +54,26 @@ describe("imageDimensions", () => {
     expect(readImageDimensions(Buffer.from("not an image"))).toBeNull();
   });
 
+  test("returns null for SVG bytes (not a supported raster format)", () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"></svg>');
+    expect(readImageDimensions(svg)).toBeNull();
+  });
+
+  test("returns null for GIF bytes (not a supported raster format)", () => {
+    // Minimal GIF87a header — signature + logical screen descriptor, dims encoded but never
+    // read since GIF isn't one of the three supported formats.
+    const gif = Buffer.alloc(13);
+    gif.write("GIF87a", 0, "ascii");
+    gif.writeUInt16LE(640, 6); // width
+    gif.writeUInt16LE(640, 8); // height
+    expect(readImageDimensions(gif)).toBeNull();
+  });
+
+  test("returns null for a truncated/malformed PNG (valid signature, no IHDR payload)", () => {
+    const truncated = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect(readImageDimensions(truncated)).toBeNull();
+  });
+
   describe("isSquareAspect", () => {
     test("a square image is square", () => {
       expect(isSquareAspect(1024, 1024)).toBe(true);

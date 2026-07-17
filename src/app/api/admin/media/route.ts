@@ -168,10 +168,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Every jigsaw source image must be square — checked server-side (not just client-side)
-      // by reading pixel dimensions straight out of the file header.
+      // by reading pixel dimensions straight out of the file header. A jigsaw upload that
+      // can't be dimension-verified (GIF, SVG, or a corrupt/malformed file — readImageDimensions
+      // only recognizes PNG/JPEG/WebP) is rejected outright rather than silently let through;
+      // that's a deliberate escalation from the reader's general "null = couldn't verify, not a
+      // rejection" contract, scoped to this jigsaw-only gate.
       if (puzzle?.puzzleType === "jigsaw" && mediaType === "image") {
         const dims = readImageDimensions(Buffer.from(buffer));
-        if (dims && !isSquareAspect(dims.width, dims.height)) {
+        if (!dims || !isSquareAspect(dims.width, dims.height)) {
           return NextResponse.json(
             { error: "Jigsaw images must use a 1:1 square aspect ratio." },
             { status: 400 }
@@ -247,10 +251,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Every jigsaw source image must be square — checked server-side.
+      // Every jigsaw source image must be square — checked server-side. A file that can't be
+      // dimension-verified (GIF/SVG/corrupt) is rejected, not silently allowed through.
       if (puzzle?.puzzleType === "jigsaw" && mediaType === "image") {
         const dims = readImageDimensions(Buffer.from(buffer));
-        if (dims && !isSquareAspect(dims.width, dims.height)) {
+        if (!dims || !isSquareAspect(dims.width, dims.height)) {
           return NextResponse.json(
             { error: "Jigsaw images must use a 1:1 square aspect ratio." },
             { status: 400 }

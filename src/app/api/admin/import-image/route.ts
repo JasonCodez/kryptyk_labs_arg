@@ -54,8 +54,10 @@ export async function POST(request: NextRequest) {
     if (buf.length > MAX_BYTES) return NextResponse.json({ error: 'Image too large' }, { status: 413 });
 
     // Every jigsaw source image must be square — checked server-side (this route is jigsaw-only).
+    // A file that can't be dimension-verified (GIF/SVG/corrupt — readImageDimensions only
+    // recognizes PNG/JPEG/WebP) is rejected outright rather than silently allowed through.
     const dims = readImageDimensions(buf);
-    if (dims && !isSquareAspect(dims.width, dims.height)) {
+    if (!dims || !isSquareAspect(dims.width, dims.height)) {
       return NextResponse.json({ error: 'Jigsaw images must use a 1:1 square aspect ratio.' }, { status: 400 });
     }
 
