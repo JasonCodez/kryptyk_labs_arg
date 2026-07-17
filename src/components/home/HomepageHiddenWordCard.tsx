@@ -184,23 +184,23 @@ export default function HomepageHiddenWordCard() {
       <div style={{ display: 'grid', gap: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38D399', marginBottom: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#3ED97A', marginBottom: 8 }}>
               Play today's word now
             </p>
-            <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.7, maxWidth: 420 }}>
+            <p style={{ color: 'var(--pw-text-dim)', fontSize: 14, lineHeight: 1.7, maxWidth: 420 }}>
               {statusCopy}
             </p>
           </div>
           <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
-            <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(253,231,76,0.08)', border: '1px solid rgba(253,231,76,0.25)', color: '#FDE74C', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(255,201,60,0.08)', border: '1px solid rgba(255,201,60,0.25)', color: '#FFC93C', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
               #{dayNum || '---'} · resets in {countdown}
             </div>
             {isAuthenticated && dailyStreak > 0 ? (
-              <div style={{ fontSize: 12, color: '#38D399', fontWeight: 700 }}>
+              <div style={{ fontSize: 12, color: '#3ED97A', fontWeight: 700 }}>
                 🔥 {dailyStreak}-day streak
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: '#9BD6E4', fontWeight: 700 }}>
+              <div style={{ fontSize: 12, color: '#2FE6E0', fontWeight: 700 }}>
                 No account required
               </div>
             )}
@@ -208,20 +208,20 @@ export default function HomepageHiddenWordCard() {
         </div>
 
         {isAuthenticated && nextReward && gameStatus === 'playing' && (
-          <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(56,211,153,0.05)', border: '1px solid rgba(56,211,153,0.18)', color: '#D1FAE5', fontSize: 13, lineHeight: 1.6 }}>
-            Win here and today's streak adds <strong style={{ color: '#38D399' }}>+{nextReward.points} points</strong> and{' '}
-            <strong style={{ color: '#FDE74C' }}>+{nextReward.xp} XP</strong>.
+          <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(62,217,122,0.05)', border: '1px solid rgba(62,217,122,0.18)', color: '#D7FBE3', fontSize: 13, lineHeight: 1.6 }}>
+            Win here and today's streak adds <strong style={{ color: '#3ED97A' }}>+{nextReward.points} points</strong> and{' '}
+            <strong style={{ color: '#FFC93C' }}>+{nextReward.xp} XP</strong>.
           </div>
         )}
 
         {notice && (
-          <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#E5E7EB', fontSize: 13 }}>
+          <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--pw-text)', fontSize: 13 }}>
             {notice}
           </div>
         )}
 
         {loading ? (
-          <div style={{ minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9BD6E4', fontSize: 14 }}>
+          <div style={{ minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2FE6E0', fontSize: 14 }}>
             Loading today's Hidden Word…
           </div>
         ) : (
@@ -273,10 +273,10 @@ export default function HomepageHiddenWordCard() {
 
             <div style={{ display: 'grid', gap: 12, marginTop: gameStatus !== 'playing' ? 12 : 8 }}>
               <div style={{ padding: '14px 16px', borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 8 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--pw-text-dim)', marginBottom: 8 }}>
                   {gameStatus === 'playing' ? 'Live on the homepage' : 'Next move'}
                 </p>
-                <p style={{ color: '#E5E7EB', fontSize: 14, lineHeight: 1.7, margin: 0 }}>
+                <p style={{ color: 'var(--pw-text)', fontSize: 14, lineHeight: 1.7, margin: 0 }}>
                   {gameStatus === 'playing'
                     ? 'Solve here first, then jump into Gridlock files, crosswords, Word Troves, and the rest of your longer session stack.'
                     : gameStatus === 'won'
@@ -285,18 +285,18 @@ export default function HomepageHiddenWordCard() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                <Link href="/daily/word" className="hw-btn-primary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#020202', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em', background: 'linear-gradient(135deg, #38D399 0%, #FDE74C 100%)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s' }}>
+                <Link href="/daily/word" className="hw-btn-primary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#170B26', fontWeight: 900, fontSize: 14, letterSpacing: '0.04em', background: 'linear-gradient(135deg, #3ED97A 0%, #FFC93C 100%)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s' }}>
                   Open Full Daily Page →
                 </Link>
                 {!isAuthenticated && (
-                  <Link href="/auth/register?reason=rewards" className="hw-btn-secondary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#fff', fontWeight: 800, fontSize: 14, letterSpacing: '0.03em', background: 'rgba(56,145,166,0.12)', border: '1px solid rgba(56,145,166,0.35)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s, background 0.15s' }}>
+                  <Link href="/auth/register?reason=rewards" className="hw-btn-secondary" style={{ flex: '1 1 180px', padding: '14px 18px', borderRadius: 14, textDecoration: 'none', color: '#fff', fontWeight: 800, fontSize: 14, letterSpacing: '0.03em', background: 'rgba(47,230,224,0.12)', border: '1px solid rgba(47,230,224,0.35)', textAlign: 'center', transition: 'opacity 0.15s, transform 0.15s, background 0.15s' }}>
                     Save rewards and streak →
                   </Link>
                 )}
               </div>
               <style>{`
                 .hw-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
-                .hw-btn-secondary:hover { background: rgba(56,145,166,0.22) !important; transform: translateY(-1px); }
+                .hw-btn-secondary:hover { background: rgba(47,230,224,0.22) !important; transform: translateY(-1px); }
               `}</style>
             </div>
           </>
@@ -312,7 +312,7 @@ export default function HomepageHiddenWordCard() {
           signupLabel="Sign Up to Save Streak + Rewards"
           message={(
             <>
-              Your <span style={{ color: '#FDE74C', fontWeight: 700 }}>{guestReward.xp} XP</span> and <span style={{ color: '#7DF9AA', fontWeight: 700 }}>{guestReward.points} points</span> are saved for this guest solve. Sign up free to <span style={{ color: '#FFD700', fontWeight: 700 }}>keep your streak alive</span>, collect today's rewards, and carry them into day {guestReward.streakDay}.
+              Your <span style={{ color: '#FFC93C', fontWeight: 700 }}>{guestReward.xp} XP</span> and <span style={{ color: '#3ED97A', fontWeight: 700 }}>{guestReward.points} points</span> are saved for this guest solve. Sign up free to <span style={{ color: '#FFC93C', fontWeight: 700 }}>keep your streak alive</span>, collect today's rewards, and carry them into day {guestReward.streakDay}.
             </>
           )}
           onDismiss={() => setGuestReward(null)}

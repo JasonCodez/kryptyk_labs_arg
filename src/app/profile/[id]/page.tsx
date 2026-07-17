@@ -11,6 +11,7 @@ import { THEME_CONFIGS, FRAME_CONFIGS, getThemeConfig, getTopBarGradient } from 
 import AvatarFrame, { type FrameConfig } from '@/components/AvatarFrame';
 import { normalizeUserImageUrl } from '@/lib/userImage';
 import FollowListModal from '@/components/FollowListModal';
+import GameButton from '@/components/game-ui/GameButton';
 import {
   UserPlus,
   UserMinus,
@@ -349,15 +350,15 @@ export default function PublicProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#020202' }}>
-        <div style={{ color: '#FDE74C' }} className="text-lg">Loading profile...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#170B26' }}>
+        <div style={{ color: '#FFC93C' }} className="text-lg">Loading profile...</div>
       </div>
     );
   }
 
   if (error || !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#020202' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#170B26' }}>
         <div style={{ color: '#AB9F9D' }} className="text-lg">{error || "Profile not found"}</div>
       </div>
     );
@@ -441,20 +442,18 @@ export default function PublicProfilePage() {
         {/* Action buttons for visitors */}
         {!isOwnProfile && (
           <div className="flex flex-wrap items-center gap-2 mb-8">
-            <button
+            <GameButton
               onClick={handleFollowToggle}
-              className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-              style={{
-                backgroundColor: isFollowing ? '#EF4444' : '#38A169',
-                color: 'white',
-              }}
+              variant={isFollowing ? 'ember' : 'grass'}
+              size="sm"
+              icon={isFollowing ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
             >
-              {isFollowing ? <><UserMinus className="w-4 h-4" /> Unfollow</> : <><UserPlus className="w-4 h-4" /> Follow</>}
-            </button>
+              {isFollowing ? 'Unfollow' : 'Follow'}
+            </GameButton>
             <button
               onClick={() => { setShowInviteModal(true); fetchUserTeams(); }}
               className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-              style={{ backgroundColor: '#2563EB', color: 'white' }}
+              style={{ backgroundColor: '#8B3DFF', color: 'white' }}
             >
               <Users className="w-4 h-4" /> Invite to Team
             </button>
@@ -470,7 +469,7 @@ export default function PublicProfilePage() {
             <Link
               href={`/warz?invite=${userId}`}
               className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-              style={{ backgroundColor: '#7c3aed', color: 'white' }}
+              style={{ backgroundColor: '#8B3DFF', color: 'white' }}
             >
               ⚔️ Challenge to Warz
             </Link>
@@ -490,12 +489,12 @@ export default function PublicProfilePage() {
                     <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                     <div
                       className="absolute right-0 top-full mt-1 w-48 rounded-xl overflow-hidden z-50"
-                      style={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}
+                      style={{ background: '#241640', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}
                     >
                       <button
                         onClick={() => { setShowMoreMenu(false); setShowBlockConfirm(true); }}
                         className="flex items-center gap-2.5 w-full px-4 py-3 text-sm transition-colors hover:bg-white/5"
-                        style={{ color: isBlocked ? '#10B981' : '#EF4444' }}
+                        style={{ color: isBlocked ? '#3ED97A' : '#FF5A5A' }}
                       >
                         <Ban className="w-4 h-4" />
                         {isBlocked ? 'Unblock User' : 'Block User'}
@@ -503,7 +502,7 @@ export default function PublicProfilePage() {
                       <button
                         onClick={() => { setShowMoreMenu(false); setShowReportModal(true); }}
                         className="flex items-center gap-2.5 w-full px-4 py-3 text-sm transition-colors hover:bg-white/5"
-                        style={{ color: '#F59E0B' }}
+                        style={{ color: '#FFC93C' }}
                       >
                         <Flag className="w-4 h-4" />
                         Report Abuse
@@ -569,7 +568,7 @@ export default function PublicProfilePage() {
                 <p style={{ color: t.subtleText }} className="text-sm mb-1">Followers</p>
                 <p className="text-2xl font-bold text-white">{profile.social.followers}</p>
               </div>
-              <Heart className="w-8 h-8" style={{ color: '#EF4444' }} />
+              <Heart className="w-8 h-8" style={{ color: '#FF5A5A' }} />
             </div>
           </button>
           <button
@@ -637,7 +636,7 @@ export default function PublicProfilePage() {
                               <p className="text-xs" style={{ color: t.subtleText }}>{p.category?.name || 'General'} · {p.difficulty}</p>
                             </div>
                             <div className="text-right">
-                              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: p.solved ? 'rgba(56, 201, 153, 0.12)' : 'rgba(239, 68, 68, 0.08)', color: p.solved ? '#38D399' : '#EF4444' }}>
+                              <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: p.solved ? 'rgba(62, 217, 122, 0.12)' : 'rgba(255, 90, 90, 0.08)', color: p.solved ? '#3ED97A' : '#FF5A5A' }}>
                                 {p.solved ? '✓ Solved' : '✗ Failed'}
                               </span>
                               <div className="text-xs mt-1" style={{ color: t.subtleText }}>{p.attempts ?? 0} attempts</div>
@@ -742,7 +741,7 @@ export default function PublicProfilePage() {
             <div
               className="w-full max-w-md rounded-lg shadow-xl border p-6"
               style={{
-                backgroundColor: "rgba(2, 2, 2, 0.97)",
+                backgroundColor: "rgba(23, 11, 38, 0.97)",
                 borderColor: t.primary,
               }}
             >
@@ -755,10 +754,10 @@ export default function PublicProfilePage() {
                 <div
                   className="p-3 rounded-lg text-sm mb-4"
                   style={{
-                    backgroundColor: "rgba(239, 68, 68, 0.1)",
-                    borderColor: "#EF4444",
+                    backgroundColor: "rgba(255, 90, 90, 0.1)",
+                    borderColor: "#FF5A5A",
                     borderWidth: "1px",
-                    color: "#FCA5A5",
+                    color: "#FFB3B3",
                   }}
                 >
                   {inviteError}
@@ -910,9 +909,9 @@ function DirectMessageModal({
   targetUserId,
   targetUserName,
   onClose,
-  accentColor = '#3891A6',
-  accentMuted = 'rgba(56,145,166,0.15)',
-  btnBg = '#3891A6',
+  accentColor = '#2FE6E0',
+  accentMuted = 'rgba(47,230,224,0.15)',
+  btnBg = '#2FE6E0',
   btnText = '#fff',
 }: {
   targetUserId: string;
@@ -972,7 +971,7 @@ function DirectMessageModal({
         <div
           className="w-full max-w-md rounded-lg shadow-xl border p-6"
           style={{
-            backgroundColor: "rgba(2, 2, 2, 0.97)",
+            backgroundColor: "rgba(23, 11, 38, 0.97)",
             borderColor: accentColor,
           }}
         >
@@ -985,10 +984,10 @@ function DirectMessageModal({
               <div
                 className="p-3 rounded-lg text-sm"
                 style={{
-                  backgroundColor: "rgba(239, 68, 68, 0.1)",
-                  borderColor: "#EF4444",
+                  backgroundColor: "rgba(255, 90, 90, 0.1)",
+                  borderColor: "#FF5A5A",
                   borderWidth: "1px",
-                  color: "#FCA5A5",
+                  color: "#FFB3B3",
                 }}
               >
                 {error}
@@ -999,10 +998,10 @@ function DirectMessageModal({
               <div
                 className="p-3 rounded-lg text-sm"
                 style={{
-                  backgroundColor: "rgba(34, 197, 94, 0.1)",
-                  borderColor: "#22C55E",
+                  backgroundColor: "rgba(62, 217, 122, 0.1)",
+                  borderColor: "#3ED97A",
                   borderWidth: "1px",
-                  color: "#86EFAC",
+                  color: "#9AF0C0",
                 }}
               >
                 Message sent!
@@ -1102,12 +1101,12 @@ function ReportModal({
     <div className="fixed inset-0 z-[80] flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }} onClick={onClose}>
       <div
         className="w-full max-w-sm mx-4 rounded-2xl overflow-hidden"
-        style={{ background: "#0d0d0d", border: "1px solid rgba(245,158,11,0.35)", boxShadow: "0 0 48px rgba(0,0,0,0.8)" }}
+        style={{ background: "#170B26", border: "1px solid rgba(255,201,60,0.35)", boxShadow: "0 0 48px rgba(0,0,0,0.8)" }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "rgba(245,158,11,0.15)" }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "rgba(255,201,60,0.15)" }}>
           <div className="flex items-center gap-2">
-            <Flag className="w-4 h-4" style={{ color: "#F59E0B" }} />
+            <Flag className="w-4 h-4" style={{ color: "#FFC93C" }} />
             <h2 className="font-bold text-white text-base">Report {targetUserName}</h2>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none transition-colors">✕</button>
@@ -1122,7 +1121,7 @@ function ReportModal({
         ) : (
           <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
             <div>
-              <label className="block text-xs font-bold mb-2 tracking-widest uppercase" style={{ color: "#F59E0B" }}>
+              <label className="block text-xs font-bold mb-2 tracking-widest uppercase" style={{ color: "#FFC93C" }}>
                 Reason
               </label>
               <div className="space-y-2">
@@ -1170,7 +1169,7 @@ function ReportModal({
                 type="submit"
                 disabled={loading || !reason}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
-                style={{ background: "#F59E0B", color: "#000" }}
+                style={{ background: "#FFC93C", color: "#000" }}
               >
                 {loading ? "Submitting…" : "Submit Report"}
               </button>

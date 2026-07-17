@@ -71,13 +71,13 @@ export default function ContinuePlayingCard() {
             </p>
           </div>
           <div
-            className="shrink-0 px-4 py-2 rounded-xl text-sm font-bold"
-            style={{ background: "var(--pw-teal)", color: "#0B0E1A" }}
+            className="shrink-0 px-4 py-2 rounded-xl text-sm font-bold shadow-skeu-pill"
+            style={{ background: "var(--pw-teal)", color: "#170B26" }}
           >
             Resume
           </div>
         </div>
-        <div className="mt-4 h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(61,127,255,0.14)" }}>
+        <div className="mt-4 h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(255,79,163,0.14)" }}>
           <div
             className="h-full rounded-full"
             style={{ width: `${Math.min(100, Math.round(puzzle.completionPercentage))}%`, background: "var(--pw-teal)" }}

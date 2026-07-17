@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import GameButton from "@/components/game-ui/GameButton";
 
 interface ForumRulesModalProps {
   open: boolean;
@@ -50,7 +51,7 @@ export default function ForumRulesModal({ open, accepting = false, onAccept, onC
       {open && (
         <motion.div
           className="fixed inset-0 z-[200] overflow-y-auto"
-          style={{ backgroundColor: "rgba(2,2,2,0.72)", backdropFilter: "blur(4px)" }}
+          style={{ backgroundColor: "rgba(23,11,38,0.78)", backdropFilter: "blur(4px)" }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -62,9 +63,9 @@ export default function ForumRulesModal({ open, accepting = false, onAccept, onC
               style={{
                 maxWidth: 560,
                 maxHeight: "min(720px, 88vh)",
-                background: "linear-gradient(160deg, rgba(20,16,4,0.94) 0%, rgba(4,4,2,0.96) 60%, rgba(2,2,2,0.97) 100%)",
-                border: "1px solid rgba(255,208,0,0.3)",
-                boxShadow: "0 0 80px rgba(255,208,0,0.12), 0 32px 80px rgba(0,0,0,0.7)",
+                background: "linear-gradient(160deg, #32205A 0%, #241640 60%, #170B26 100%)",
+                border: "1px solid rgba(255,201,60,0.3)",
+                boxShadow: "0 0 80px rgba(255,201,60,0.12), 0 32px 80px rgba(0,0,0,0.7)",
               }}
               initial={{ scale: 0.9, opacity: 0, y: 30 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -74,18 +75,18 @@ export default function ForumRulesModal({ open, accepting = false, onAccept, onC
               {/* Top glow bar */}
               <div
                 className="absolute top-0 left-0 right-0 h-[2px]"
-                style={{ background: "linear-gradient(90deg, transparent, #FFD700, transparent)" }}
+                style={{ background: "linear-gradient(90deg, transparent, #FFC93C, transparent)" }}
               />
 
               {/* Header */}
-              <div className="px-7 pt-7 pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#FFD700" }}>
+              <div className="px-7 pt-7 pb-4" style={{ borderBottom: "1px solid rgba(255,79,163,0.15)" }}>
+                <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#FFC93C" }}>
                   Before you post
                 </p>
                 <h2 className="text-2xl font-black text-white" style={{ letterSpacing: "-0.02em" }}>
                   Forum Rules
                 </h2>
-                <p className="text-sm mt-2" style={{ color: "#9ca3af" }}>
+                <p className="text-sm mt-2" style={{ color: "#C8B8E0" }}>
                   Please read through — you'll be able to accept once you've reached the bottom.
                 </p>
               </div>
@@ -97,18 +98,18 @@ export default function ForumRulesModal({ open, accepting = false, onAccept, onC
                     <li key={rule.title} className="flex gap-3">
                       <span
                         className="flex items-center justify-center shrink-0 rounded-full text-xs font-bold"
-                        style={{ width: 24, height: 24, background: "rgba(255,208,0,0.12)", color: "#FFD700", border: "1px solid rgba(255,208,0,0.3)" }}
+                        style={{ width: 24, height: 24, background: "rgba(255,201,60,0.12)", color: "#FFC93C", border: "1px solid rgba(255,201,60,0.3)" }}
                       >
                         {i + 1}
                       </span>
                       <div>
                         <p className="text-sm font-bold text-white mb-1">{rule.title}</p>
-                        <p className="text-sm leading-relaxed" style={{ color: "#9ca3af" }}>{rule.body}</p>
+                        <p className="text-sm leading-relaxed" style={{ color: "#C8B8E0" }}>{rule.body}</p>
                       </div>
                     </li>
                   ))}
                 </ol>
-                <p className="text-xs mt-6 pt-5" style={{ color: "#4B5563", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <p className="text-xs mt-6 pt-5" style={{ color: "#8C7BAD", borderTop: "1px solid rgba(255,79,163,0.15)" }}>
                   Violating these rules may result in content removal, posting restrictions, or account suspension.
                 </p>
               </div>
@@ -116,31 +117,25 @@ export default function ForumRulesModal({ open, accepting = false, onAccept, onC
               {/* Footer actions */}
               <div
                 className="px-7 py-5 flex items-center gap-3"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.015)" }}
+                style={{ borderTop: "1px solid rgba(255,79,163,0.15)", background: "rgba(255,255,255,0.015)" }}
               >
                 <button
                   onClick={onClose}
                   disabled={accepting}
                   className="text-sm font-semibold"
-                  style={{ color: "#9ca3af", background: "none", border: "none", cursor: accepting ? "default" : "pointer" }}
+                  style={{ color: "#C8B8E0", background: "none", border: "none", cursor: accepting ? "default" : "pointer" }}
                 >
                   Cancel
                 </button>
                 <div style={{ flex: 1 }} />
-                <button
+                <GameButton
                   onClick={onAccept}
                   disabled={!scrolledToBottom || accepting}
-                  className="rounded-xl py-3 px-6 text-sm font-bold transition-all duration-200"
-                  style={{
-                    background: scrolledToBottom ? "#FFD700" : "rgba(255,255,255,0.06)",
-                    color: scrolledToBottom ? "#000" : "#6B7280",
-                    letterSpacing: "0.02em",
-                    border: "none",
-                    cursor: scrolledToBottom && !accepting ? "pointer" : "not-allowed",
-                  }}
+                  variant="gold"
+                  size="sm"
                 >
                   {accepting ? "Saving…" : scrolledToBottom ? "I Agree — Continue" : "Scroll to the bottom to continue"}
-                </button>
+                </GameButton>
               </div>
             </motion.div>
           </div>

@@ -4,6 +4,7 @@
 @import "../styles/anagram.css";
 @import "../styles/sudoku.css";
 @import "../styles/word-search.css";
+@import "../styles/game-ui.css";
 
 /* AppBottomNav — the primary mobile nav bar. Visible below the "nav:" breakpoint
    (1032px), the same width Navbar switches from its mobile layout to the full
@@ -139,7 +140,7 @@
   padding-right: 8px;
   min-height: calc(56px + env(safe-area-inset-top, 0px));
   background: rgba(2, 2, 2, 0.96);
-  border-bottom: 1px solid rgba(178, 75, 243, 0.18);
+  border-bottom: 1px solid rgba(139, 61, 255, 0.18);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   overflow-x: hidden;
@@ -319,24 +320,28 @@
   --background: #ffffff;
   --foreground: #171717;
 
-  /* ── Battle-pass token system — one job per color ─────────────── */
-  --pw-ink: #10121F;
-  --pw-ink-2: #141828;
-  --pw-surface: #131829;
-  --pw-surface-hi: #1C2340;
-  --pw-line: rgba(178,75,243, 0.16);
-  --pw-line-hi: rgba(178,75,243, 0.34);
-  --pw-gold: #FFC94A;      /* earned / XP / claimed / premium */
-  --pw-gold-dim: #AD8932;
-  --pw-violet: #B24BF3;    /* rare / next-up / identity */
-  --pw-violet-dim: #7933A5;
-  --pw-teal: #3D7FFF;      /* primary action / info */
-  --pw-success: #2ED991;   /* solved — the one green */
-  --pw-ember: #FF3B5C;     /* failed / danger */
-  --pw-locked: #454E68;
-  --pw-text: #EEF1FA;
-  --pw-text-dim: #8891AC;
-  --pw-text-faint: #5B6483;
+  /* ── Battle-pass token system — one job per color ───────────────
+     Candy/skeuomorphic palette: kept the dark "board" background so
+     the bright candy pieces (buttons, cards, badges) still pop, but
+     every accent below now maps to theme.extend.colors.candy in
+     tailwind.config.ts instead of the old muted brand hues. */
+  --pw-ink: #170B26;
+  --pw-ink-2: #1E1033;
+  --pw-surface: #241640;
+  --pw-surface-hi: #32205A;
+  --pw-line: rgba(255,79,163, 0.18);
+  --pw-line-hi: rgba(255,79,163, 0.36);
+  --pw-gold: #FFC93C;      /* earned / XP / claimed / premium */
+  --pw-gold-dim: #E0960B;
+  --pw-violet: #8B3DFF;    /* rare / next-up / identity */
+  --pw-violet-dim: #5B1FB0;
+  --pw-teal: #FF4FA3;      /* primary action / info */
+  --pw-success: #3ED97A;   /* solved — the one green */
+  --pw-ember: #FF5A5A;     /* failed / danger */
+  --pw-locked: #4A3D66;
+  --pw-text: #FFF6FB;
+  --pw-text-dim: #C8B8E0;
+  --pw-text-faint: #8C7BAD;
 }
 
 @theme inline {
@@ -465,9 +470,9 @@
 
 body {
   background:
-    radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243, 0.20), transparent 62%),
-    radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74, 0.12), transparent 58%),
-    radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145, 0.09), transparent 60%),
+    radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255, 0.24), transparent 62%),
+    radial-gradient(1100px 700px at 90% 0%, rgba(255,79,163, 0.16), transparent 58%),
+    radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122, 0.10), transparent 60%),
     var(--pw-ink);
   color: var(--foreground);
   font-family: var(--font-geist-sans, Arial, sans-serif);
@@ -760,22 +765,23 @@ body {
 .pw-surface {
   background: linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 60%);
   border: 1px solid var(--pw-line);
+  box-shadow: 0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.08), inset 0 -6px 14px rgba(0,0,0,0.18);
 }
 .pw-bevel {
   clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
 }
 .pw-glow-gold {
-  box-shadow: 0 0 22px rgba(255,201,74, 0.45);
+  box-shadow: 0 0 22px rgba(255,201,60, 0.45);
 }
 .pw-glow-violet {
-  box-shadow: 0 0 0 4px rgba(178,75,243, 0.14), 0 0 20px rgba(178,75,243, 0.5);
+  box-shadow: 0 0 0 4px rgba(139,61,255, 0.14), 0 0 20px rgba(139,61,255, 0.5);
 }
 .pw-pulse-violet {
   animation: pw-pulse-ring 2.2s ease-in-out infinite;
 }
 @keyframes pw-pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(178,75,243, 0.14), 0 0 16px rgba(178,75,243, 0.4); }
-  50%      { box-shadow: 0 0 0 8px rgba(178,75,243, 0.07), 0 0 28px rgba(178,75,243, 0.65); }
+  0%, 100% { box-shadow: 0 0 0 4px rgba(139,61,255, 0.14), 0 0 16px rgba(139,61,255, 0.4); }
+  50%      { box-shadow: 0 0 0 8px rgba(139,61,255, 0.07), 0 0 28px rgba(139,61,255, 0.65); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pw-pulse-violet { animation: none; }
@@ -787,7 +793,7 @@ body {
   height: 9px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 12px 4px rgba(255,201,74, 0.9);
+  box-shadow: 0 0 12px 4px rgba(255,201,60, 0.9);
   animation: pw-bead-travel 2.6s linear infinite;
 }
 @keyframes pw-bead-travel {
@@ -814,7 +820,7 @@ body {
 }
 .pw-arcade-card:hover {
   transform: translateY(-4px) scale(1.015);
-  box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent, #3D7FFF) 55%, transparent);
+  box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent, #FF4FA3) 55%, transparent);
 }
 .pw-arcade-card:active:not(.pw-arcade-card-inert) {
   transform: translateY(-1px) scale(0.985);
@@ -830,8 +836,8 @@ body {
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: .04em;
-  color: #0B0E1A;
-  background: #FFC94A;
+  color: #170B26;
+  background: #FFC93C;
   padding: 4px 9px;
   border-radius: 7px;
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
@@ -842,8 +848,8 @@ body {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .04em;
-  color: #0B0E1A;
-  background: #FFC94A;
+  color: #170B26;
+  background: #FFC93C;
   padding: 3px 7px;
   border-radius: 6px;
   white-space: nowrap;
@@ -861,8 +867,8 @@ body {
   justify-content: center;
   font-size: 32px;
   flex-shrink: 0;
-  background: radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--accent, #3D7FFF) 55%, var(--pw-surface-hi)), var(--pw-surface-hi));
-  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent, #3D7FFF) 70%, transparent), inset 0 0 0 1px rgba(255,255,255,0.08);
+  background: radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--accent, #FF4FA3) 55%, var(--pw-surface-hi)), var(--pw-surface-hi));
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent, #FF4FA3) 70%, transparent), inset 0 0 0 1px rgba(255,255,255,0.08);
 }
 .pw-arcade-card-inert .pw-arcade-icon, .pw-arcade-row-inert .pw-arcade-icon { filter: grayscale(0.7); }
 
@@ -873,7 +879,7 @@ body {
   font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
   font-size: 9px;
   font-weight: 800;
-  color: #0B0E1A;
+  color: #170B26;
   padding: 3px 7px;
   border-radius: 7px;
   letter-spacing: .05em;
@@ -930,8 +936,8 @@ body {
   color: var(--pw-text);
   white-space: nowrap;
 }
-.pw-arcade-chip-gold { color: #FFC94A; }
-.pw-arcade-chip-em { color: #2ED991; }
+.pw-arcade-chip-gold { color: #FFC93C; }
+.pw-arcade-chip-em { color: #3ED97A; }
 
 .pw-arcade-perf {
   display: flex;
@@ -973,7 +979,7 @@ body {
 }
 .pw-arcade-row:hover {
   transform: translateX(3px);
-  box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--accent, #3D7FFF) 55%, transparent);
+  box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--accent, #FF4FA3) 55%, transparent);
 }
 .pw-arcade-row:active:not(.pw-arcade-row-inert) {
   transform: translateX(3px) scale(0.99);
@@ -1047,8 +1053,8 @@ body {
 .pw-pop-in { animation: pw-pop-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
 @keyframes pw-glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 201, 74, 0); }
-  50% { box-shadow: 0 0 18px 2px rgba(255, 201, 74, 0.35); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 201, 60, 0); }
+  50% { box-shadow: 0 0 18px 2px rgba(255, 201, 60, 0.35); }
 }
 .pw-glow-pulse { animation: pw-glow-pulse 2.2s ease-in-out infinite; }
 

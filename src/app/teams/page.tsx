@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Mail } from "lucide-react";
 import { CreateTeamModal } from "@/components/teams/CreateTeamModal";
 import PendingInvitations from "@/components/teams/PendingInvitations";
+import GameButton from "@/components/game-ui/GameButton";
 
 interface TeamMember {
   user: {
@@ -84,8 +85,8 @@ export default function TeamsPage() {
 
   if (status === "loading" || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#020202' }}>
-        <div style={{ color: '#FDE74C' }} className="text-lg">Loading teams...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#170B26' }}>
+        <div style={{ color: '#FFC93C' }} className="text-lg">Loading teams...</div>
       </div>
     );
   }
@@ -97,12 +98,12 @@ export default function TeamsPage() {
 
   return (
     <>
-      <div style={{ backgroundColor: '#020202', backgroundImage: 'linear-gradient(135deg, #020202 0%, #0a0a0a 50%, #020202 100%)' }} className="min-h-screen pt-20 sm:pt-24">
+      <div style={{ backgroundColor: '#170B26', backgroundImage: 'linear-gradient(135deg, #170B26 0%, #241640 50%, #170B26 100%)' }} className="min-h-screen pt-20 sm:pt-24">
         <div className="max-w-6xl mx-auto px-4 py-12">
           <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between">
             <div>
               <h1 className="text-4xl font-bold text-white mb-2">👥 Teams</h1>
-              <p style={{ color: '#DDDBF1' }}>
+              <p style={{ color: '#E4D9FF' }}>
                 Collaborate with other players and solve puzzles together
               </p>
             </div>
@@ -112,14 +113,14 @@ export default function TeamsPage() {
                 {session?.user?.email && (
                   <button
                     onClick={() => setViewMode('mine')}
-                    className={`px-4 py-2 rounded-lg font-semibold ${viewMode === 'mine' ? 'bg-indigo-600 text-white' : 'bg-transparent text-white border border-white/10'}`}
+                    className={`px-4 py-2 rounded-lg font-semibold ${viewMode === 'mine' ? 'bg-[#8B3DFF] text-white' : 'bg-transparent text-white border border-white/10'}`}
                   >
                     My teams
                   </button>
                 )}
                 <button
                   onClick={() => setViewMode('public')}
-                  className={`px-4 py-2 rounded-lg font-semibold ${viewMode === 'public' ? 'bg-indigo-600 text-white' : 'bg-transparent text-white border border-white/10'}`}
+                  className={`px-4 py-2 rounded-lg font-semibold ${viewMode === 'public' ? 'bg-[#8B3DFF] text-white' : 'bg-transparent text-white border border-white/10'}`}
                 >
                   View public teams
                 </button>
@@ -128,27 +129,27 @@ export default function TeamsPage() {
                 <button
                   onClick={() => setShowInvitations(true)}
                   className="relative w-full sm:w-auto px-6 py-3 rounded-lg font-semibold transition-colors hover:opacity-90 flex items-center gap-2"
-                  style={{ backgroundColor: 'rgba(253, 231, 76, 0.2)', color: '#FDE74C' }}
+                  style={{ backgroundColor: 'rgba(255, 201, 60, 0.2)', color: '#FFC93C' }}
                 >
                   <Mail className="w-5 h-5" />
                   Invitations
-                  <span className="ml-2 px-2 py-1 rounded-full text-xs font-bold bg-orange-500">
+                  <span className="ml-2 px-2 py-1 rounded-full text-xs font-bold bg-[#FF5A5A]">
                     {invitationCount}
                   </span>
                 </button>
               )}
-              <button
+              <GameButton
+                variant="pink"
                 onClick={() => setShowCreateModal(true)}
-                className="w-full sm:w-auto px-6 py-3 rounded-lg text-white font-semibold transition-colors hover:opacity-90"
-                style={{ backgroundColor: '#FDE74C', color: '#000' }}
+                className="w-full sm:w-auto"
               >
                 + Create Team
-              </button>
+              </GameButton>
             </div>
           </div>
 
           {error && (
-            <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: 'rgba(171, 159, 157, 0.2)', borderColor: '#AB9F9D' }}>
+            <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: 'rgba(255, 90, 90, 0.15)', borderColor: '#FF5A5A' }}>
               {error}
             </div>
           )}
@@ -157,48 +158,54 @@ export default function TeamsPage() {
             // when filtered list is empty
             <div className="text-center py-16">
               <div className="text-6xl mb-4">👥</div>
-              <p style={{ color: '#DDDBF1' }} className="text-lg mb-6">
+              <p style={{ color: '#E4D9FF' }} className="text-lg mb-6">
                 {viewMode === 'mine' ? "You haven't joined any teams yet" : "No public teams found"}
               </p>
-              <button
+              <GameButton
+                variant="pink"
+                size="sm"
                 onClick={() => setShowCreateModal(true)}
-                className="px-6 py-2 rounded-lg text-white font-semibold transition-colors hover:opacity-90"
-                style={{ backgroundColor: '#FDE74C', color: '#000' }}
               >
                 Create Your First Team
-              </button>
+              </GameButton>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredTeams
                 .map((team) => (
                 <Link key={team.id} href={`/teams/${team.id}`}>
-                  <div className="h-full border rounded-lg p-6 hover:shadow-lg transition-all cursor-pointer group" style={{ backgroundColor: 'rgba(56, 145, 166, 0.1)', borderColor: '#3891A6' }}>
-                    <div className="mb-4">
-                      <h2 className="text-xl font-bold text-white group-hover:opacity-80 transition-colors">
-                        {team.name}
-                      </h2>
-                      {team.description && (
-                        <p style={{ color: '#DDDBF1' }} className="text-sm mt-2 line-clamp-2">
-                          {team.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-4" style={{ borderTopColor: '#3891A6', borderTopWidth: '1px' }}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold" style={{ color: '#3891A6' }}>
-                          {team.members.length} member{team.members.length !== 1 ? "s" : ""}
-                        </span>
-                        {team.isPublic && (
-                          <span className="px-2 py-1 rounded text-xs bg-green-500/20 text-green-300">
-                            Public
-                          </span>
+                  <div
+                    className="relative overflow-hidden h-full border rounded-lg p-6 shadow-skeu-raised-sm hover:-translate-y-0.5 transition-all cursor-pointer group"
+                    style={{ backgroundColor: 'rgba(47, 230, 224, 0.08)', borderColor: '#0FA6A1' }}
+                  >
+                    <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
+                    <div className="relative">
+                      <div className="mb-4">
+                        <h2 className="text-xl font-bold text-white group-hover:opacity-80 transition-colors">
+                          {team.name}
+                        </h2>
+                        {team.description && (
+                          <p style={{ color: '#E4D9FF' }} className="text-sm mt-2 line-clamp-2">
+                            {team.description}
+                          </p>
                         )}
                       </div>
-                      <span style={{ color: '#FDE74C' }} className="group-hover:opacity-80 transition-colors">
-                        View →
-                      </span>
+
+                      <div className="flex items-center justify-between pt-4" style={{ borderTopColor: '#0FA6A1', borderTopWidth: '1px' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold" style={{ color: '#2FE6E0' }}>
+                            {team.members.length} member{team.members.length !== 1 ? "s" : ""}
+                          </span>
+                          {team.isPublic && (
+                            <span className="px-2 py-1 rounded text-xs bg-[#3ED97A]/20 text-[#3ED97A]">
+                              Public
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ color: '#FFC93C' }} className="group-hover:opacity-80 transition-colors">
+                          View →
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </Link>

@@ -8,7 +8,7 @@ const HIDDEN_PREFIXES = ["/auth", "/admin", "/coming-soon"];
 
 function HomeIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? "#3891A6" : "none"} stroke={active ? "#3891A6" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? "#FF4FA3" : "none"} stroke={active ? "#FF4FA3" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <polyline points="9 22 9 12 15 12 15 22" />
     </svg>
@@ -17,19 +17,19 @@ function HomeIcon({ active }: { active: boolean }) {
 
 function CalendarIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#3891A6" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#FF4FA3" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
       <line x1="16" y1="2" x2="16" y2="6" />
       <line x1="8" y1="2" x2="8" y2="6" />
       <line x1="3" y1="10" x2="21" y2="10" />
-      {active && <circle cx="12" cy="16" r="2" fill="#3891A6" stroke="none" />}
+      {active && <circle cx="12" cy="16" r="2" fill="#FF4FA3" stroke="none" />}
     </svg>
   );
 }
 
 function GridIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#3891A6" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#FF4FA3" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" />
       <rect x="14" y="3" width="7" height="7" />
       <rect x="3" y="14" width="7" height="7" />
@@ -40,7 +40,7 @@ function GridIcon({ active }: { active: boolean }) {
 
 function TrophyIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#3891A6" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#FF4FA3" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="8 21 12 21 16 21" />
       <line x1="12" y1="17" x2="12" y2="21" />
       <path d="M7 4H17L17 11a5 5 0 0 1-10 0V4z" />
@@ -52,7 +52,7 @@ function TrophyIcon({ active }: { active: boolean }) {
 
 function UserIcon({ active }: { active: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#3891A6" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? "#FF4FA3" : "#6b7280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
     </svg>
@@ -87,7 +87,7 @@ export default function AppBottomNav() {
         right: 0,
         zIndex: 200,
         background: "rgba(8,8,8,0.97)",
-        borderTop: "1px solid rgba(56,145,166,0.18)",
+        borderTop: "1px solid rgba(255,79,163,0.18)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
@@ -126,16 +126,17 @@ export default function AppBottomNav() {
                 top: 0,
                 left: "20%",
                 right: "20%",
-                height: 2,
-                borderRadius: "0 0 2px 2px",
-                background: "linear-gradient(90deg, #3891A6, #38D399)",
+                height: 3,
+                borderRadius: "0 0 3px 3px",
+                background: "linear-gradient(90deg, #FF4FA3, #FFC93C)",
+                boxShadow: "0 0 8px rgba(255,79,163,0.7)",
               }} />
             )}
             <Icon active={isActive} />
             <span style={{
               fontSize: 10,
               fontWeight: isActive ? 700 : 500,
-              color: isActive ? "#3891A6" : "#6b7280",
+              color: isActive ? "#FF4FA3" : "#6b7280",
               letterSpacing: "0.02em",
             }}>
               {label}

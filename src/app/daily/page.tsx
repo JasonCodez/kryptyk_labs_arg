@@ -22,9 +22,9 @@ type DailySummary = {
 type Accent = "teal" | "gold" | "violet";
 
 const ACCENT_HEX: Record<Accent, string> = {
-  teal: "#3D7FFF",
-  gold: "#FFC94A",
-  violet: "#B24BF3",
+  teal: "#FF4FA3",
+  gold: "#FFC93C",
+  violet: "#8B3DFF",
 };
 
 const CARDS: { key: keyof DailySummary; slug: string; title: string; emoji: string; signInRequired: boolean; accent: Accent }[] = [
@@ -108,21 +108,21 @@ export default function DailyHubPage() {
     <div
       style={{
         background:
-          "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F",
+          "radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26",
         minHeight: "100vh",
       }}
     >
       <main className="pt-24 pb-16 flex flex-col items-center px-3">
         <div className="w-full max-w-5xl mt-6 mb-6 text-center">
-          <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#3D7FFF" }}>Daily Puzzles</p>
+          <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "#FF4FA3" }}>Daily Puzzles</p>
           <h1 className="text-white text-3xl font-black tracking-tight mt-1">Six fresh puzzles, every day</h1>
-          <p className="text-xs font-mono mt-2 font-bold" style={{ color: "#FFC94A", textShadow: "0 0 14px rgba(255,201,74,0.4)" }}>
+          <p className="text-xs font-mono mt-2 font-bold" style={{ color: "#FFC93C", textShadow: "0 0 14px rgba(255,201,60,0.4)" }}>
             Resets in {countdown}
           </p>
         </div>
 
         {loading ? (
-          <div className="flex items-center gap-2 mt-16" style={{ color: "#3D7FFF" }}>
+          <div className="flex items-center gap-2 mt-16" style={{ color: "#FF4FA3" }}>
             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
             <span className="text-sm">Loading today&apos;s puzzles…</span>
           </div>
@@ -136,13 +136,14 @@ export default function DailyHubPage() {
                 <Link
                   key={key}
                   href={`/daily/${slug}`}
-                  className="pw-bevel pw-press rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5"
+                  className="pw-bevel pw-press rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5 relative overflow-hidden shadow-skeu-raised-sm"
                   style={cardShellStyle(accent, locked || notReady)}
                 >
+                  <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
                   <div className="flex items-center justify-between">
                     <span className="text-3xl select-none">{emoji}</span>
                     {entry?.completedToday && (
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(46,217,145,0.15)", color: "#2ED991", boxShadow: "0 0 8px rgba(46,217,145,0.3)" }}>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(62,217,122,0.15)", color: "#3ED97A", boxShadow: "0 0 8px rgba(62,217,122,0.3)" }}>
                         ✓ Done
                       </span>
                     )}
@@ -171,13 +172,14 @@ export default function DailyHubPage() {
                 than through CARDS. Violet to match its "featured/special" treatment on the dashboard. */}
             <Link
               href="/debrief"
-              className="pw-bevel pw-press rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5"
+              className="pw-bevel pw-press rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5 relative overflow-hidden shadow-skeu-raised-sm"
               style={cardShellStyle("violet", !isAuthenticated)}
             >
+              <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
               <div className="flex items-center justify-between">
                 <span className="text-3xl select-none">🔍</span>
                 {debriefCompleted && (
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(46,217,145,0.15)", color: "#2ED991", boxShadow: "0 0 8px rgba(46,217,145,0.3)" }}>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(62,217,122,0.15)", color: "#3ED97A", boxShadow: "0 0 8px rgba(62,217,122,0.3)" }}>
                     ✓ Done
                   </span>
                 )}
@@ -191,7 +193,7 @@ export default function DailyHubPage() {
               ) : debriefCompleted ? (
                 <p className="text-xs mt-auto" style={{ color: "#5B6483" }}>Come back tomorrow for a new case</p>
               ) : (
-                <div className="mt-auto flex items-center gap-2 text-xs font-semibold" style={{ color: "#B24BF3" }}>
+                <div className="mt-auto flex items-center gap-2 text-xs font-semibold" style={{ color: "#8B3DFF" }}>
                   🕵️ Read the report →
                 </div>
               )}

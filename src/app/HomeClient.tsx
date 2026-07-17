@@ -43,7 +43,7 @@ export default function HomeClient() {
   return (
     <main
       style={{
-        backgroundColor: "#010101",
+        backgroundColor: "var(--pw-ink)",
         minHeight: "100vh",
         paddingTop: "calc(56px + env(safe-area-inset-top, 0px))",
         fontFamily: "system-ui, -apple-system, sans-serif",

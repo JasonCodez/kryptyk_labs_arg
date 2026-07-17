@@ -71,8 +71,8 @@ function DrawerItemPreview({ item }: { item: DrawerItem }) {
   const sub = item.subcategory;
 
   if (sub === 'theme') {
-    const p = meta?.primaryColor ?? '#FDE74C';
-    const a = meta?.accentColor ?? '#FFB86B';
+    const p = meta?.primaryColor ?? '#FFC93C';
+    const a = meta?.accentColor ?? '#FF4FA3';
     return (
       <div className="rounded-lg h-10 mb-3 flex items-center px-3 gap-2 overflow-hidden"
         style={{ background: `linear-gradient(135deg, ${p}22, ${a}18, rgba(10,12,16,0.9))`, border: `1px solid ${p}33` }}>
@@ -86,7 +86,7 @@ function DrawerItemPreview({ item }: { item: DrawerItem }) {
   }
   if (sub === 'frame') {
     const fs: Record<string, { ring: string; glow: string }> = {
-      gold:  { ring: 'linear-gradient(135deg, #FDE74C, #FFB86B, #FDE74C)', glow: 'rgba(253,231,76,0.55)' },
+      gold:  { ring: 'linear-gradient(135deg, #FFC93C, #FFE58A, #FFC93C)', glow: 'rgba(255,201,60,0.55)' },
       neon:  { ring: 'linear-gradient(135deg, #00FFFF, #CC00FF, #00FFFF)',  glow: 'rgba(0,255,255,0.45)' },
       flame: { ring: 'linear-gradient(135deg, #FF4500, #FDE74C, #FF4500)',  glow: 'rgba(255,69,0,0.55)' },
     };
@@ -95,7 +95,7 @@ function DrawerItemPreview({ item }: { item: DrawerItem }) {
       <div className="h-10 flex items-center gap-3 mb-3">
         <div className="relative w-8 h-8 shrink-0">
           <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs"
-            style={{ border: `3px solid ${meta?.color ?? '#FDE74C'}`, boxShadow: `0 0 10px ${f.glow}`, background: '#0d1117' }}>
+            style={{ border: `3px solid ${meta?.color ?? '#FFC93C'}`, boxShadow: `0 0 10px ${f.glow}`, background: '#170B26' }}>
             👤
           </div>
         </div>
@@ -444,7 +444,7 @@ export default function ProfilePage() {
                     LVL {profile?.level ?? 1} &middot; {profile?.xpTitle ?? 'Newcomer'}
                   </span>
                   {profile?.activeTitle === 'founder' && (
-                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(253,231,76,0.12)', color: '#FDE74C', border: '1px solid rgba(253,231,76,0.4)', boxShadow: '0 0 8px rgba(253,231,76,0.25)' }}>
+                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(255,201,60,0.12)', color: '#FFC93C', border: '1px solid rgba(255,201,60,0.4)', boxShadow: '0 0 8px rgba(255,201,60,0.25)' }}>
                       ⚜️ Founder
                     </span>
                   )}
@@ -743,7 +743,7 @@ export default function ProfilePage() {
                           <p className="text-xs" style={{ color: t.subtleText }}>{p.category?.name || 'General'} &middot; {p.difficulty}</p>
                         </div>
                         <div className="text-right">
-                          <span className="text-xs px-2 py-1 rounded font-semibold" style={{ backgroundColor: p.solved ? 'rgba(56,201,153,0.12)' : 'rgba(239,68,68,0.08)', color: p.solved ? '#38D399' : '#EF4444' }}>
+                          <span className="text-xs px-2 py-1 rounded font-semibold" style={{ backgroundColor: p.solved ? 'rgba(62,217,122,0.12)' : 'rgba(255,90,90,0.08)', color: p.solved ? '#3ED97A' : '#FF5A5A' }}>
                             {p.solved ? '✔ Solved' : '✘ Failed'}
                           </span>
                           <div className="text-xs mt-1" style={{ color: t.subtleText }}>{p.attempts ?? 0} attempts</div>
@@ -828,7 +828,7 @@ export default function ProfilePage() {
             cue="tap"
             onClick={() => signOut({ callbackUrl: '/auth/signin?logout=true' })}
             className="flex items-center gap-2.5 w-full px-4 py-3 rounded-xl text-sm font-semibold transition-colors"
-            style={{ color: '#fca5a5', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)' }}
+            style={{ color: '#FFB3B3', backgroundColor: 'rgba(255,90,90,0.08)', border: '1px solid rgba(255,90,90,0.2)' }}
           >
             <span className="text-base w-5 text-center">🚪</span> Sign Out
           </Pressable>
@@ -880,7 +880,7 @@ export default function ProfilePage() {
                     onClick={() => setDrawerTab(tab)}
                     className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
                     style={drawerTab === tab
-                      ? { backgroundColor: (tab === 'exclusive' || tab === 'title') ? 'rgba(253,231,76,0.12)' : t.primaryMuted, color: (tab === 'exclusive' || tab === 'title') ? '#FDE74C' : t.primary, border: `1px solid ${(tab === 'exclusive' || tab === 'title') ? 'rgba(253,231,76,0.4)' : t.primaryBorder}` }
+                      ? { backgroundColor: (tab === 'exclusive' || tab === 'title') ? 'rgba(255,201,60,0.12)' : t.primaryMuted, color: (tab === 'exclusive' || tab === 'title') ? '#FFC93C' : t.primary, border: `1px solid ${(tab === 'exclusive' || tab === 'title') ? 'rgba(255,201,60,0.4)' : t.primaryBorder}` }
                       : { color: t.subtleText, backgroundColor: 'transparent', border: '1px solid transparent' }}
                   >
                     {icons[tab]}{count > 0 && <span className="ml-0.5 opacity-60">({count})</span>}
@@ -900,24 +900,24 @@ export default function ProfilePage() {
                 const equipped = profile.activeTitle === 'founder';
                 return (
                   <div className="rounded-xl border p-4 transition-colors"
-                    style={{ backgroundColor: equipped ? 'rgba(253,231,76,0.08)' : t.cardBg, borderColor: equipped ? 'rgba(253,231,76,0.4)' : `${t.primaryBorder}30` }}>
+                    style={{ backgroundColor: equipped ? 'rgba(255,201,60,0.08)' : t.cardBg, borderColor: equipped ? 'rgba(255,201,60,0.4)' : `${t.primaryBorder}30` }}>
                     <div className="h-10 flex items-center gap-2 mb-3 rounded-lg px-3"
-                      style={{ background: 'rgba(253,231,76,0.08)', border: '1px solid rgba(253,231,76,0.2)' }}>
+                      style={{ background: 'rgba(255,201,60,0.08)', border: '1px solid rgba(255,201,60,0.2)' }}>
                       <span className="text-base">⚜️</span>
-                      <span className="text-sm font-extrabold" style={{ color: '#FDE74C' }}>Founder</span>
-                      <span className="text-xs ml-1 px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: 'rgba(253,231,76,0.15)', color: '#FDE74C' }}>#1–1000</span>
+                      <span className="text-sm font-extrabold" style={{ color: '#FFC93C' }}>Founder</span>
+                      <span className="text-xs ml-1 px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: 'rgba(255,201,60,0.15)', color: '#FFC93C' }}>#1–1000</span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-white">Founder</p>
                         <p className="text-xs" style={{ color: t.subtleText }}>One of the first 1,000 members</p>
-                        {equipped && <p className="text-xs font-bold mt-0.5" style={{ color: '#FDE74C' }}>● Equipped</p>}
+                        {equipped && <p className="text-xs font-bold mt-0.5" style={{ color: '#FFC93C' }}>● Equipped</p>}
                       </div>
                       <button
                         onClick={() => handleDrawerEquip('equip_founder_title', 'title', equipped)}
                         disabled={!!drawerEquipping}
                         className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 hover:opacity-90"
-                        style={{ background: equipped ? 'rgba(255,255,255,0.08)' : 'rgba(253,231,76,0.15)', color: equipped ? t.subtleText : '#FDE74C', border: `1px solid ${equipped ? 'transparent' : 'rgba(253,231,76,0.3)'}` }}
+                        style={{ background: equipped ? 'rgba(255,255,255,0.08)' : 'rgba(255,201,60,0.15)', color: equipped ? t.subtleText : '#FFC93C', border: `1px solid ${equipped ? 'transparent' : 'rgba(255,201,60,0.3)'}` }}
                       >
                         {drawerEquipping === 'equip_founder_title' ? '…' : equipped ? 'Unequip' : 'Equip'}
                       </button>
@@ -937,7 +937,7 @@ export default function ProfilePage() {
                         <p className="text-2xl mb-2">⭐</p>
                         <p className="text-sm font-semibold text-white/70">No exclusive items yet.</p>
                         <p className="text-xs mt-1" style={{ color: t.subtleText }}>Earn them by completing Season Pass tiers.</p>
-                        <a href="/season-pass" className="text-xs mt-2 inline-block underline" style={{ color: '#FDE74C' }}>View Season Pass →</a>
+                        <a href="/season-pass" className="text-xs mt-2 inline-block underline" style={{ color: '#FFC93C' }}>View Season Pass →</a>
                       </>
                     ) : (
                       <>

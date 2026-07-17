@@ -93,7 +93,7 @@ export default function PuzzlesHub() {
     <div
       style={{
         background:
-          "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F",
+          "radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26",
       }}
       className="min-h-screen"
     >
@@ -120,19 +120,21 @@ export default function PuzzlesHub() {
                 <Link
                   key={s.puzzleType}
                   href={`/puzzles/type/${s.puzzleType}`}
-                  className="group pw-surface pw-bevel pw-press p-5 transition-all duration-300 hover:scale-[1.02] block"
+                  className="group pw-surface pw-bevel pw-press relative overflow-hidden p-5 transition-all duration-300 hover:scale-[1.02] block shadow-skeu-raised-sm"
                   style={{
-                    borderColor: complete ? "rgba(255,201,74,0.4)" : "rgba(178,75,243,0.3)",
+                    borderColor: complete ? "rgba(255,201,60,0.4)" : "rgba(139,61,255,0.3)",
                     borderWidth: "1px",
                   }}
                 >
+                  <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
+                  <div className="relative">
                   <div className="flex items-start justify-between mb-3">
                     <span className="text-3xl">{TYPE_ICONS[s.puzzleType] || "🧩"}</span>
                     <span
                       className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded"
                       style={{
-                        backgroundColor: s.gated ? "rgba(255,201,74,0.15)" : "rgba(61,127,255,0.15)",
-                        color: s.gated ? "#FFC94A" : "#3D7FFF",
+                        backgroundColor: s.gated ? "rgba(255,201,60,0.15)" : "rgba(255,79,163,0.15)",
+                        color: s.gated ? "#FFC93C" : "#FF4FA3",
                       }}
                     >
                       {s.gated ? "Campaign" : "Open Set"}
@@ -142,17 +144,18 @@ export default function PuzzlesHub() {
                   <p className="text-xs font-semibold mb-3" style={{ color: "#8891AC" }}>
                     {s.solved} of {s.total} cleared
                   </p>
-                  <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(178,75,243,0.12)" }}>
+                  <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(139,61,255,0.12)" }}>
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${pct}%`,
                         background: complete
-                          ? "#FFC94A"
-                          : "linear-gradient(90deg, #B24BF3, #FFC94A)",
-                        boxShadow: pct > 0 ? "0 0 8px rgba(255,201,74,0.4)" : undefined,
+                          ? "#FFC93C"
+                          : "linear-gradient(90deg, #8B3DFF, #FFC93C)",
+                        boxShadow: pct > 0 ? "0 0 8px rgba(255,201,60,0.4)" : undefined,
                       }}
                     />
+                  </div>
                   </div>
                 </Link>
               );

@@ -1,0 +1,103 @@
+/* ── game-ui/* shared visual primitives ───────────────────────────────────────
+   "Casual Cartoon Skeuomorphism" building blocks: chunky outlined text and the
+   glossy top-highlight overlay every raised surface (buttons, HUD pills, panels)
+   layers on top of its Tailwind box-shadow (shadow-skeu-*). Tailwind has no
+   text-stroke utility, so that lives here as plain CSS custom properties. */
+
+.game-text-stroke {
+  -webkit-text-stroke-width: var(--stroke-width, 2px);
+  -webkit-text-stroke-color: var(--stroke-color, rgba(0, 0, 0, 0.55));
+  paint-order: stroke fill;
+}
+
+.game-text-pop {
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25),
+    0 3px 0 rgba(0, 0, 0, 0.25),
+    0 6px 10px rgba(0, 0, 0, 0.35);
+}
+
+/* A soft, curved glass highlight across the top ~55% of a raised element —
+   sits above the background gradient, below any content, purely decorative
+   (pointer-events:none) so it never intercepts clicks/taps. */
+.game-gloss-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.18) 35%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Thinner, brighter gloss for small pill-shaped HUD chips. */
+.game-gloss-overlay--pill {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.65) 0%,
+    rgba(255, 255, 255, 0.12) 45%,
+    rgba(255, 255, 255, 0) 70%
+  );
+}
+
+/* ── JuicyText — physical, shiny-candy typography ─────────────────────────────
+   A heavier technique than .game-text-stroke/.game-text-pop above: the fill
+   itself is a vertical gradient clipped to the glyphs (not a flat color), so
+   the letters read as a solid, lit object (gold bar / candy shell / glass)
+   rather than colored text. Each variant only sets the three custom
+   properties below; the mechanics (stroke, clip, shadow) live once in
+   .juicy-text so every variant stays visually consistent. */
+.juicy-text {
+  -webkit-text-stroke-width: var(--juicy-stroke-width, 3px);
+  -webkit-text-stroke-color: var(--juicy-stroke-color, #170B26);
+  paint-order: stroke fill;
+  background-image: var(--juicy-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: var(--juicy-stroke-color, #170B26); /* fallback fill if background-clip:text is unsupported */
+  -webkit-text-fill-color: transparent;
+  text-shadow: var(--juicy-shadow);
+  letter-spacing: 0.01em;
+}
+/* Browsers without background-clip:text support (rare, but real) get a solid,
+   still-fully-legible fill instead of invisible text. */
+@supports not (background-clip: text) {
+  .juicy-text {
+    -webkit-text-fill-color: var(--juicy-stroke-color, #170B26);
+  }
+}
+
+.juicy-text--gold {
+  --juicy-gradient: linear-gradient(180deg, #FFF3B0 0%, #FFC93C 45%, #E0960B 100%);
+  --juicy-stroke-color: #7A4A00;
+  --juicy-shadow: 0 2px 0 #7A4A00, 0 4px 0 #7A4A00, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+.juicy-text--candy {
+  --juicy-gradient: linear-gradient(180deg, #FFD9EC 0%, #FF4FA3 50%, #C7157A 100%);
+  --juicy-stroke-color: #6E0E45;
+  --juicy-shadow: 0 2px 0 #6E0E45, 0 4px 0 #6E0E45, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+.juicy-text--blue-glass {
+  --juicy-gradient: linear-gradient(180deg, #DFFFFE 0%, #2FE6E0 50%, #0FA6A1 100%);
+  --juicy-stroke-color: #063F3D;
+  --juicy-shadow: 0 2px 0 #063F3D, 0 4px 0 #063F3D, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+.juicy-text--purple {
+  --juicy-gradient: linear-gradient(180deg, #E4D4FF 0%, #8B3DFF 50%, #5B1FB0 100%);
+  --juicy-stroke-color: #3A1266;
+  --juicy-shadow: 0 2px 0 #3A1266, 0 4px 0 #3A1266, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+.juicy-text--grass {
+  --juicy-gradient: linear-gradient(180deg, #DFFFE9 0%, #3ED97A 50%, #1F9E52 100%);
+  --juicy-stroke-color: #0E4B27;
+  --juicy-shadow: 0 2px 0 #0E4B27, 0 4px 0 #0E4B27, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+.juicy-text--ember {
+  --juicy-gradient: linear-gradient(180deg, #FFDADA 0%, #FF5A5A 50%, #C72A2A 100%);
+  --juicy-stroke-color: #6B1414;
+  --juicy-shadow: 0 2px 0 #6B1414, 0 4px 0 #6B1414, 0 8px 16px rgba(0, 0, 0, 0.45);
+}

@@ -11,6 +11,7 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import { getPuzzleTypeLabel, getPuzzleTypeIcon } from "@/lib/puzzleTypeLabels";
 import CampaignPath from "@/components/puzzle/CampaignPath";
 import SolvedIconOverlay from "@/components/puzzle/SolvedIconOverlay";
+import GameButton from "@/components/game-ui/GameButton";
 
 interface Puzzle {
   id: string;
@@ -66,8 +67,8 @@ interface Category {
 const DIFFICULTY_COLORS: Record<string, string> = {
   easy: "#10B981",
   medium: "#F59E0B",
-  hard: "#FF3B5C",
-  extreme: "#3D7FFF",
+  hard: "#FF5A5A",
+  extreme: "#FF4FA3",
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -151,9 +152,9 @@ function getCardStatus(puzzle: Puzzle): CardStatus {
 }
 
 function getStatusAccent(status: CardStatus, difficultyColor: string): string {
-  if (status === "solved") return "#FFC94A";
+  if (status === "solved") return "#FFC93C";
   if (status === "locked") return "#5B6483";
-  if (status === "failed") return "#FF3B5C";
+  if (status === "failed") return "#FF5A5A";
   return difficultyColor;
 }
 
@@ -677,7 +678,7 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
     <div
       style={{
         background:
-          'radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F',
+          'radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26',
       }}
       className="min-h-screen"
     >
@@ -685,7 +686,7 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
       <div className="pt-24 pb-8 md:pb-16 px-4">
         <div className="max-w-7xl mx-auto">
           {puzzleType && (
-            <Link href="/puzzles" className="inline-block text-sm font-semibold mb-3 hover:underline" style={{ color: '#B24BF3' }}>
+            <Link href="/puzzles" className="inline-block text-sm font-semibold mb-3 hover:underline" style={{ color: '#8B3DFF' }}>
               ← All Campaigns
             </Link>
           )}
@@ -738,8 +739,8 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                       : "opacity-70 hover:opacity-100"
                   }`}
                   style={{
-                    backgroundColor: selectedCategory === "all" ? "#3D7FFF" : "rgba(61,127,255, 0.2)",
-                    color: selectedCategory === "all" ? "#0B0E1A" : "#EEF1FA",
+                    backgroundColor: selectedCategory === "all" ? "#FF4FA3" : "rgba(255,79,163, 0.2)",
+                    color: selectedCategory === "all" ? "#170B26" : "#EEF1FA",
                   }}
                 >
                   All
@@ -754,8 +755,8 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                         : "opacity-70 hover:opacity-100"
                     }`}
                     style={{
-                      backgroundColor: selectedCategory === cat.id ? (cat.color || "#3D7FFF") : "rgba(61,127,255, 0.2)",
-                      color: selectedCategory === cat.id ? "#0B0E1A" : "#EEF1FA",
+                      backgroundColor: selectedCategory === cat.id ? (cat.color || "#FF4FA3") : "rgba(255,79,163, 0.2)",
+                      color: selectedCategory === cat.id ? "#170B26" : "#EEF1FA",
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -778,9 +779,9 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                 onClick={() => setViewMode("grid")}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-all`}
                 style={{
-                  backgroundColor: viewMode === "grid" ? "#3D7FFF" : "rgba(61,127,255, 0.2)",
-                  color: viewMode === "grid" ? "#0B0E1A" : "#EEF1FA",
-                  boxShadow: viewMode === "grid" ? "0 0 0 2px #FFC94A" : "none",
+                  backgroundColor: viewMode === "grid" ? "#FF4FA3" : "rgba(255,79,163, 0.2)",
+                  color: viewMode === "grid" ? "#170B26" : "#EEF1FA",
+                  boxShadow: viewMode === "grid" ? "0 0 0 2px #FFC93C" : "none",
                   opacity: viewMode === "grid" ? 1 : 0.6,
                 }}
               >
@@ -790,9 +791,9 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                 onClick={() => setViewMode("list")}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-all`}
                 style={{
-                  backgroundColor: viewMode === "list" ? "#3D7FFF" : "rgba(61,127,255, 0.2)",
-                  color: viewMode === "list" ? "#0B0E1A" : "#EEF1FA",
-                  boxShadow: viewMode === "list" ? "0 0 0 2px #FFC94A" : "none",
+                  backgroundColor: viewMode === "list" ? "#FF4FA3" : "rgba(255,79,163, 0.2)",
+                  color: viewMode === "list" ? "#170B26" : "#EEF1FA",
+                  boxShadow: viewMode === "list" ? "0 0 0 2px #FFC93C" : "none",
                   opacity: viewMode === "list" ? 1 : 0.6,
                 }}
               >
@@ -839,7 +840,7 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
       {showTeamModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black opacity-60" onClick={closeTeamModal}></div>
-          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ border: '1px solid rgba(255,201,74, 0.15)' }}>
+          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ border: '1px solid rgba(255,201,60, 0.15)' }}>
             <h3 className="text-lg font-bold text-white mb-2">{teamModalTitle}</h3>
             <p style={{ color: '#EEF1FA' }} className="mb-4">{teamModalMessage}</p>
             <div className="flex justify-end gap-2">
@@ -852,7 +853,7 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                   {teamModalCancelText}
                 </button>
               )}
-              <button onClick={onTeamModalConfirm} className="px-4 py-2 rounded bg-[#3D7FFF] text-black font-semibold">{teamModalConfirmText}</button>
+              <GameButton onClick={onTeamModalConfirm} variant="pink" size="sm">{teamModalConfirmText}</GameButton>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Kalam } from "next/font/google";
+import { Geist, Geist_Mono, Kalam, Baloo_2, Nunito } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/providers";
 import CookieBanner from "@/components/CookieBanner";
@@ -23,6 +23,25 @@ const handwriting = Kalam({
   variable: "--font-handwriting",
   subsets: ["latin"],
   weight: ["400", "700"],
+  display: "swap",
+  preload: false,
+});
+
+// "Casual Cartoon Skeuomorphism" typography — see JuicyText.tsx.
+// Baloo 2: heavy, bubbly display face for scores/titles/big alerts.
+const display = Baloo_2({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  display: "swap",
+  preload: false,
+});
+
+// Nunito: soft rounded edges but stays legible at small UI sizes.
+const ui = Nunito({
+  variable: "--font-ui",
+  subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
   display: "swap",
   preload: false,
 });
@@ -140,7 +159,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${handwriting.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${handwriting.variable} ${display.variable} ${ui.variable} antialiased`}
       >
         <Providers>{children}</Providers>
         <CookieBanner />

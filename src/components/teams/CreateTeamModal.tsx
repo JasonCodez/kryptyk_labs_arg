@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import GameButton from "@/components/game-ui/GameButton";
 
 interface CreateTeamModalProps {
   onClose: () => void;
@@ -45,7 +46,7 @@ export function CreateTeamModal({ onClose, onSuccess }: CreateTeamModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-slate-800 border rounded-lg p-8 w-full sm:max-w-md" style={{ borderColor: 'rgba(56, 145, 166, 0.2)' }}>
+      <div className="bg-[#241640] border rounded-lg p-8 w-full sm:max-w-md" style={{ borderColor: 'rgba(139, 61, 255, 0.25)' }}>
         <h2 className="text-2xl font-bold text-white mb-6">Create New Team</h2>
 
         {error && (
@@ -67,7 +68,7 @@ export function CreateTeamModal({ onClose, onSuccess }: CreateTeamModalProps) {
               }
               placeholder="Enter team name"
               required
-              className="w-full px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-[#3891A6]"
+              className="w-full px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-[#8B3DFF]"
             />
           </div>
 
@@ -82,7 +83,7 @@ export function CreateTeamModal({ onClose, onSuccess }: CreateTeamModalProps) {
               }
               placeholder="Optional team description"
               rows={3}
-              className="w-full px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-[#3891A6]"
+              className="w-full px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-[#8B3DFF]"
             />
           </div>
 
@@ -109,13 +110,15 @@ export function CreateTeamModal({ onClose, onSuccess }: CreateTeamModalProps) {
             >
               Cancel
             </button>
-            <button
+            <GameButton
               type="submit"
+              variant="pink"
+              size="sm"
               disabled={loading}
-              className="flex-1 px-4 py-2 rounded-lg bg-[#3891A6] hover:bg-[#2a7f8f] disabled:opacity-50 text-white font-semibold transition-colors"
+              className="flex-1"
             >
               {loading ? "Creating..." : "Create Team"}
-            </button>
+            </GameButton>
           </div>
         </form>
       </div>

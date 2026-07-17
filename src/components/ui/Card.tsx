@@ -3,14 +3,15 @@ import type { CSSProperties, ReactNode } from "react";
 export type CardAccent = "gold" | "violet" | "teal" | "success" | "none";
 export type CardPadding = "sm" | "md" | "lg";
 
-// RGB channels of the jewel-tone tokens (globals.css), so the accent border and
-// glow can use valid rgba() with alpha. Appending hex alpha to a var() —
-// `var(--pw-gold)55` — produces an invalid color the browser silently drops.
+// RGB channels of the candy-palette tokens (globals.css / tailwind.config.ts),
+// so the accent border and glow can use valid rgba() with alpha. Appending hex
+// alpha to a var() — `var(--pw-gold)55` — produces an invalid color the
+// browser silently drops.
 const ACCENT_RGB: Record<Exclude<CardAccent, "none">, string> = {
-  gold: "255, 201, 74", // #FFC94A
-  violet: "178, 75, 243", // #B24BF3
-  teal: "61, 127, 255", // #3D7FFF
-  success: "46, 217, 145", // #2ED991
+  gold: "255, 201, 60", // #FFC93C
+  violet: "139, 61, 255", // #8B3DFF
+  teal: "255, 79, 163", // #FF4FA3 (candy-pink — primary action)
+  success: "62, 217, 122", // #3ED97A
 };
 
 const PADDING: Record<CardPadding, number> = {
@@ -44,7 +45,7 @@ export default function Card({
 
   return (
     <div
-      className={`pw-surface${className ? ` ${className}` : ""}`}
+      className={`pw-surface relative overflow-hidden${className ? ` ${className}` : ""}`}
       style={{
         borderRadius: 20,
         padding: PADDING[padding],
@@ -56,7 +57,8 @@ export default function Card({
         ...style,
       }}
     >
-      {children}
+      <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
+      <span className="relative">{children}</span>
     </div>
   );
 }

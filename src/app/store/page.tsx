@@ -8,6 +8,7 @@ import Tooltip from "@/components/Tooltip";
 import CosmeticPreviewModal from "@/components/CosmeticPreviewModal";
 import { FEATURE_STORE_ENABLED } from "@/lib/featureFlags";
 import { juice } from "@/lib/juice";
+import GameButton from "@/components/game-ui/GameButton";
 
 /** Smoothly counts from one number to another over `duration` ms */
 function useAnimatedCounter(target: number, duration = 1200) {
@@ -130,9 +131,9 @@ function AnimatedBalance({ value }: { value: number }) {
 function getRarity(price: number): { label: string; color: string; glow: string } | null {
   // Thresholds scale with the 5x store price increase -- keep these in sync
   // with that multiplier so the rarity mix doesn't drift again next time.
-  if (price >= 3500) return { label: "Legendary", color: "#FDE74C", glow: "rgba(253,231,76,0.3)" };
-  if (price >= 2500) return { label: "Epic",       color: "#c084fc", glow: "rgba(192,132,252,0.25)" };
-  if (price >= 1750) return { label: "Rare",       color: "#38bdf8", glow: "rgba(56,189,248,0.2)" };
+  if (price >= 3500) return { label: "Legendary", color: "#FFC93C", glow: "rgba(255,201,60,0.3)" };
+  if (price >= 2500) return { label: "Epic",       color: "#8B3DFF", glow: "rgba(139,61,255,0.25)" };
+  if (price >= 1750) return { label: "Rare",       color: "#2FE6E0", glow: "rgba(47,230,224,0.2)" };
   return null;
 }
 
@@ -495,7 +496,7 @@ function StorePageInner() {
   if (status === "unauthenticated") return null;
 
   return (
-    <div className="min-h-screen px-4 pt-28 pb-12" style={{ backgroundColor: "#0a0c10" }}>
+    <div className="min-h-screen px-4 pt-28 pb-12" style={{ backgroundColor: "#170B26" }}>
       <div className="max-w-5xl mx-auto">
 
         {/* Header */}
@@ -507,7 +508,7 @@ function StorePageInner() {
         {/* Gift Points Modal */}
         {showGiftModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowGiftModal(false)}>
-            <div className="bg-gray-900 rounded-2xl border p-6 w-full max-w-sm mx-4" style={{ borderColor: "rgba(253,231,76,0.3)", backgroundColor: "rgba(10,12,16,0.98)" }} onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl border p-6 w-full max-w-sm mx-4" style={{ borderColor: "rgba(255,201,60,0.3)", backgroundColor: "rgba(23,11,38,0.98)" }} onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-bold text-white">🎁 Gift Points</h3>
                 <button onClick={() => setShowGiftModal(false)} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
@@ -538,14 +539,15 @@ function StorePageInner() {
                     style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}
                   />
                 </div>
-                <button
+                <GameButton
+                  variant="gold"
+                  size="sm"
+                  fullWidth
                   disabled={sendingGift}
                   onClick={handleSendGift}
-                  className="w-full py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50"
-                  style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
                 >
                   {sendingGift ? "Sending…" : "🎁 Send Gift"}
-                </button>
+                </GameButton>
               </div>
             </div>
           </div>
@@ -553,72 +555,73 @@ function StorePageInner() {
 
         {/* Balance bar */}
         <motion.div
-          className="flex flex-wrap items-center gap-4 rounded-xl px-4 sm:px-6 py-4 mb-8"
-          style={{ backgroundColor: "rgba(15,18,25,0.95)", border: "1px solid rgba(253,231,76,0.25)" }}
+          className="flex flex-wrap items-center gap-4 rounded-xl px-4 sm:px-6 py-4 mb-8 relative overflow-hidden shadow-skeu-panel"
+          style={{ backgroundColor: "rgba(36,22,64,0.95)", border: "1px solid rgba(255,201,60,0.25)" }}
           animate={showGlow ? {
-            boxShadow: ["0 0 0px rgba(253,231,76,0)", "0 0 40px rgba(253,231,76,0.5)", "0 0 16px rgba(253,231,76,0.15)"],
-            borderColor: ["rgba(253,231,76,0.25)", "rgba(253,231,76,0.9)", "rgba(253,231,76,0.35)"],
+            boxShadow: ["0 0 0px rgba(255,201,60,0)", "0 0 40px rgba(255,201,60,0.5)", "0 0 16px rgba(255,201,60,0.15)"],
+            borderColor: ["rgba(255,201,60,0.25)", "rgba(255,201,60,0.9)", "rgba(255,201,60,0.35)"],
           } : {}}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
-          <div>
+          <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
+          <div className="relative">
             <p className="text-sm font-semibold" style={{ color: "#AB9F9D" }}>Your Balance</p>
-            <p className="text-3xl font-extrabold" style={{ color: "#FDE74C" }}>
+            <p className="text-3xl font-extrabold" style={{ color: "#FFC93C" }}>
               <AnimatedBalance value={balancePoints} /> <span className="text-lg font-semibold">pts</span>
             </p>
           </div>
           {user && (
-            <div className="flex flex-wrap gap-3 text-sm">
+            <div className="relative flex flex-wrap gap-3 text-sm">
               {user.streakShields > 0 && (
                 <Tooltip content={
-                  <><strong style={{ color: "#4ade80" }}>🛡️ Streak Shield</strong><br />Protects your daily streak if you miss a day. Consumed automatically.</>
+                  <><strong style={{ color: "#3ED97A" }}>🛡️ Streak Shield</strong><br />Protects your daily streak if you miss a day. Consumed automatically.</>
                 }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(34,197,94,0.12)", color: "#4ade80" }}>
+                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(62,217,122,0.12)", color: "#3ED97A" }}>
                     🛡️ {user.streakShields} streak shield{user.streakShields !== 1 ? 's' : ''}
                   </span>
                 </Tooltip>
               )}
               {user.hintTokens > 0 && (
                 <Tooltip content={
-                  <><strong style={{ color: "#FDE74C" }}>💡 Hint Token</strong><br />Reveals a hint on any puzzle without a point penalty.</>
+                  <><strong style={{ color: "#FFC93C" }}>💡 Hint Token</strong><br />Reveals a hint on any puzzle without a point penalty.</>
                 }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(253,231,76,0.1)", color: "#FDE74C" }}>
+                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(255,201,60,0.1)", color: "#FFC93C" }}>
                     💡 {user.hintTokens} hint token{user.hintTokens !== 1 ? 's' : ''}
                   </span>
                 </Tooltip>
               )}
               {user.skipTokens > 0 && (
                 <Tooltip content={
-                  <><strong style={{ color: "#a78bfa" }}>⏭️ Skip Token</strong><br />Skip a puzzle entirely and still earn a small point reward.</>
+                  <><strong style={{ color: "#B98CFF" }}>⏭️ Skip Token</strong><br />Skip a puzzle entirely and still earn a small point reward.</>
                 }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
+                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(139,61,255,0.12)", color: "#B98CFF" }}>
                     ⏭️ {user.skipTokens} skip token{user.skipTokens !== 1 ? 's' : ''}
                   </span>
                 </Tooltip>
               )}
               {user.warzChallengeSlots > 3 && (
                 <Tooltip content={
-                  <><strong style={{ color: "#fca5a5" }}>⚔️ Warz Slots</strong><br />Extra simultaneous challenge slots beyond the default 3.</>
+                  <><strong style={{ color: "#FF8F8F" }}>⚔️ Warz Slots</strong><br />Extra simultaneous challenge slots beyond the default 3.</>
                 }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>
+                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(255,90,90,0.1)", color: "#FF8F8F" }}>
                     ⚔️ {user.warzChallengeSlots} warz slots
                   </span>
                 </Tooltip>
               )}
               {user.xpBoostExpiresAt && new Date(user.xpBoostExpiresAt).getTime() > Date.now() && (
                 <Tooltip content={
-                  <><strong style={{ color: "#818cf8" }}>⚡ XP Boost Active</strong><br />All XP earned is doubled! Expires {new Date(user.xpBoostExpiresAt).toLocaleTimeString()}.</>
+                  <><strong style={{ color: "#B98CFF" }}>⚡ XP Boost Active</strong><br />All XP earned is doubled! Expires {new Date(user.xpBoostExpiresAt).toLocaleTimeString()}.</>
                 }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(129,140,248,0.15)", color: "#818cf8" }}>
+                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(139,61,255,0.15)", color: "#B98CFF" }}>
                     ⚡ 2× XP Boost active
                   </span>
                 </Tooltip>
               )}
               {user.tripleOrNothingTokens > 0 && (
                 <Tooltip content={
-                  <><strong style={{ color: "#fb923c" }}>🎲 Triple-or-Nothing</strong><br />Solve a puzzle on your first attempt for 3× rewards!{user.tripleOrNothingActive ? " 🔥 ACTIVE" : ""}</>
+                  <><strong style={{ color: "#FFC93C" }}>🎲 Triple-or-Nothing</strong><br />Solve a puzzle on your first attempt for 3× rewards!{user.tripleOrNothingActive ? " 🔥 ACTIVE" : ""}</>
                 }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(251,146,60,0.12)", color: "#fb923c" }}>
+                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(255,201,60,0.12)", color: "#FFC93C" }}>
                     🎲 {user.tripleOrNothingTokens} triple-or-nothing{user.tripleOrNothingActive ? " (active)" : ""}
                   </span>
                 </Tooltip>
@@ -628,8 +631,8 @@ function StorePageInner() {
           {/* Gift Points button */}
           <button
             onClick={() => setShowGiftModal(true)}
-            className="ml-auto px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-            style={{ backgroundColor: "rgba(253,231,76,0.1)", color: "#FDE74C", border: "1px solid rgba(253,231,76,0.25)" }}
+            className="relative ml-auto px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+            style={{ backgroundColor: "rgba(255,201,60,0.1)", color: "#FFC93C", border: "1px solid rgba(255,201,60,0.25)" }}
           >
             🎁 Gift Points
           </button>
@@ -640,7 +643,7 @@ function StorePageInner() {
           <div className="flex items-center gap-2 mb-4">
             <h2 className="text-lg font-bold text-white">💳 Buy Points</h2>
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
-              style={{ backgroundColor: "rgba(56,145,166,0.15)", color: "#7dd3fc" }}>
+              style={{ backgroundColor: "rgba(47,230,224,0.15)", color: "#2FE6E0" }}>
               Real money → in-game points
             </span>
           </div>
@@ -648,42 +651,43 @@ function StorePageInner() {
             {POINT_BUNDLES.map((bundle) => (
               <div
                 key={bundle.key}
-                className="relative rounded-2xl p-4 flex flex-col gap-2"
+                className="relative overflow-hidden rounded-2xl p-4 flex flex-col gap-2 shadow-skeu-panel"
                 style={{
-                  backgroundColor: bundle.popular ? "rgba(56,145,166,0.12)" : "rgba(15,18,25,0.95)",
-                  border: `1px solid ${bundle.popular ? "rgba(56,145,166,0.5)" : "rgba(255,255,255,0.1)"}`,
-                  boxShadow: bundle.popular ? "0 0 16px rgba(56,145,166,0.1)" : "none",
+                  backgroundColor: bundle.popular ? "rgba(47,230,224,0.12)" : "rgba(36,22,64,0.95)",
+                  border: `1px solid ${bundle.popular ? "rgba(47,230,224,0.5)" : "rgba(255,255,255,0.1)"}`,
+                  boxShadow: bundle.popular ? "0 0 16px rgba(47,230,224,0.1)" : undefined,
                 }}
               >
+                <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
                 {bundle.popular && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap"
-                    style={{ backgroundColor: "#3891A6", color: "#fff" }}>
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap z-10"
+                    style={{ backgroundColor: "#2FE6E0", color: "#0B2E2C" }}>
                     Most Popular
                   </span>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="relative flex items-center gap-2">
                   <span className="text-2xl">{bundle.emoji}</span>
                   <div>
                     <p className="font-bold text-white text-sm">{bundle.name}</p>
                     {bundle.bonus && (
-                      <p className="text-xs font-semibold" style={{ color: "#4ade80" }}>{bundle.bonus}</p>
+                      <p className="text-xs font-semibold" style={{ color: "#3ED97A" }}>{bundle.bonus}</p>
                     )}
                   </div>
                 </div>
-                <p className="text-xl font-extrabold" style={{ color: "#FDE74C" }}>
+                <p className="relative text-xl font-extrabold" style={{ color: "#FFC93C" }}>
                   {bundle.points.toLocaleString()} <span className="text-sm font-semibold">pts</span>
                 </p>
-                <button
+                <GameButton
+                  variant="gold"
+                  size="sm"
+                  fullWidth
+                  pulse={bundle.popular}
                   disabled={buyingBundle === bundle.key}
                   onClick={() => handleBuyBundle(bundle.key)}
-                  className="w-full py-2 rounded-xl text-sm font-bold transition-all mt-1 disabled:opacity-50"
-                  style={{
-                    background: "linear-gradient(135deg, #3891A6, #2d7a8f)",
-                    color: "#fff",
-                  }}
+                  className="relative mt-1"
                 >
                   {buyingBundle === bundle.key ? "Redirecting…" : bundle.price}
-                </button>
+                </GameButton>
               </div>
             ))}
           </div>
@@ -697,7 +701,7 @@ function StorePageInner() {
             <div>
               <p className="text-sm font-semibold text-white">Fair Play Guarantee</p>
               <p className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
-                Points acquired through purchases are <span className="font-semibold" style={{ color: "#FDE74C" }}>never counted on the leaderboards</span>. Only points earned through solving puzzles and gameplay contribute to your rank — keeping competition fair for everyone.
+                Points acquired through purchases are <span className="font-semibold" style={{ color: "#FFC93C" }}>never counted on the leaderboards</span>. Only points earned through solving puzzles and gameplay contribute to your rank — keeping competition fair for everyone.
               </p>
             </div>
           </div>
@@ -711,9 +715,9 @@ function StorePageInner() {
               onClick={() => setActiveCategory(cat.key)}
               className="px-4 py-2 rounded-xl text-sm font-semibold transition-all"
               style={{
-                backgroundColor: activeCategory === cat.key ? "rgba(253,231,76,0.18)" : "rgba(255,255,255,0.05)",
-                border: `1px solid ${activeCategory === cat.key ? "rgba(253,231,76,0.5)" : "rgba(255,255,255,0.1)"}`,
-                color: activeCategory === cat.key ? "#FDE74C" : "#9ca3af",
+                backgroundColor: activeCategory === cat.key ? "rgba(255,201,60,0.18)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${activeCategory === cat.key ? "rgba(255,201,60,0.5)" : "rgba(255,255,255,0.1)"}`,
+                color: activeCategory === cat.key ? "#FFC93C" : "#9ca3af",
               }}
             >
               {cat.emoji} {cat.label}
@@ -739,14 +743,14 @@ function StorePageInner() {
               const rarity = isCosmetic ? getRarity(item.price) : null;
               const accent = getItemAccent(item);
               const borderColor = equipped
-                ? "rgba(253,231,76,0.6)"
+                ? "rgba(255,201,60,0.6)"
                 : rarity
                   ? `${rarity.color}55`
                   : owned
-                    ? "rgba(74,222,128,0.25)"
+                    ? "rgba(62,217,122,0.25)"
                     : "rgba(255,255,255,0.1)";
               const glowColor = equipped
-                ? "0 0 20px rgba(253,231,76,0.18)"
+                ? "0 0 20px rgba(255,201,60,0.18)"
                 : rarity && owned
                   ? `0 0 20px ${rarity.glow}`
                   : "none";
@@ -758,18 +762,19 @@ function StorePageInner() {
                   animate={{ opacity: 1, y: 0 }}
                   whileHover={{ y: -3, scale: 1.012 }}
                   transition={{ type: "spring", stiffness: 300, damping: 24 }}
-                  className="rounded-2xl p-5 flex flex-col gap-3 relative"
+                  className="rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden shadow-skeu-panel"
                   style={{
-                    backgroundColor: "rgba(15,18,25,0.97)",
+                    backgroundColor: "rgba(36,22,64,0.97)",
                     border: `1px solid ${borderColor}`,
-                    boxShadow: glowColor,
+                    boxShadow: glowColor !== "none" ? glowColor : undefined,
                   }}
                 >
+                  <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
                   {/* Cosmetic preview strip */}
-                  {isCosmetic && <CosmeticPreview item={item} />}
+                  {isCosmetic && <div className="relative"><CosmeticPreview item={item} /></div>}
 
                   {/* Top row */}
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="relative flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{item.iconEmoji}</span>
                       <div>
@@ -789,32 +794,32 @@ function StorePageInner() {
                       )}
                       {equipped && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-bold"
-                          style={{ backgroundColor: "rgba(253,231,76,0.2)", color: "#FDE74C" }}>
+                          style={{ backgroundColor: "rgba(255,201,60,0.2)", color: "#FFC93C" }}>
                           Equipped
                         </span>
                       )}
                       {!equipped && owned && !item.isConsumable && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-bold"
-                          style={{ backgroundColor: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                          style={{ backgroundColor: "rgba(62,217,122,0.12)", color: "#3ED97A" }}>
                           Owned
                         </span>
                       )}
                       {item.isConsumable && owned && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-bold"
-                          style={{ backgroundColor: "rgba(139,92,246,0.15)", color: "#a78bfa" }}>
+                          style={{ backgroundColor: "rgba(139,61,255,0.15)", color: "#B98CFF" }}>
                           ×{item.owned}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <p className="text-xs leading-relaxed flex-1" style={{ color: "#DDDBF1" }}>
+                  <p className="relative text-xs leading-relaxed flex-1" style={{ color: "#DDDBF1" }}>
                     {item.description}
                   </p>
 
                   {/* Price + actions */}
-                  <div className="flex items-center justify-between gap-2 mt-1">
-                    <span className="font-extrabold text-sm" style={{ color: canAfford ? "#FFB86B" : "#9ca3af" }}>
+                  <div className="relative flex items-center justify-between gap-2 mt-1">
+                    <span className="font-extrabold text-sm" style={{ color: canAfford ? "#FFC93C" : "#9ca3af" }}>
                       {item.price.toLocaleString()} pts
                     </span>
 
@@ -832,14 +837,14 @@ function StorePageInner() {
 
                       {/* Buy button — always shown for consumables, only if not owned for non-consumable */}
                       {(item.isConsumable || !owned) && (
-                        <button
+                        <GameButton
+                          variant="gold"
+                          size="sm"
                           disabled={!canAfford || isBuying}
                           onClick={() => handlePurchase(item)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
-                          style={{ background: canAfford ? "linear-gradient(135deg, #FDE74C, #FFB86B)" : "rgba(255,255,255,0.08)", color: canAfford ? "#1a1400" : "#9ca3af" }}
                         >
                           {isBuying ? "…" : "Buy"}
-                        </button>
+                        </GameButton>
                       )}
 
                       {/* Equip/Unequip button for owned cosmetics (not team themes — those equip on team page) */}
@@ -854,14 +859,14 @@ function StorePageInner() {
                             {isEquipping ? "…" : "Unequip"}
                           </button>
                         ) : (
-                          <button
+                          <GameButton
+                            variant="gold"
+                            size="sm"
                             disabled={!!isEquipping}
                             onClick={() => handleEquip(item)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                            style={{ backgroundColor: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}
                           >
                             {isEquipping ? "…" : "Equip"}
-                          </button>
+                          </GameButton>
                         )
                       )}
 
@@ -872,7 +877,7 @@ function StorePageInner() {
                             disabled={activatingTriple}
                             onClick={handleDeactivateTriple}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                            style={{ backgroundColor: "rgba(251,146,60,0.15)", color: "#fb923c", border: "1px solid rgba(251,146,60,0.3)" }}
+                            style={{ backgroundColor: "rgba(255,90,90,0.15)", color: "#FF5A5A", border: "1px solid rgba(255,90,90,0.3)" }}
                           >
                             🔥 Active — Cancel
                           </button>
@@ -881,7 +886,7 @@ function StorePageInner() {
                             disabled={activatingTriple}
                             onClick={handleActivateTriple}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                            style={{ backgroundColor: "rgba(251,146,60,0.12)", color: "#fb923c", border: "1px solid rgba(251,146,60,0.25)" }}
+                            style={{ backgroundColor: "rgba(255,201,60,0.12)", color: "#FFC93C", border: "1px solid rgba(255,201,60,0.25)" }}
                           >
                             {activatingTriple ? "…" : "🎲 Activate"}
                           </button>
@@ -926,9 +931,9 @@ function StorePageInner() {
             className="fixed left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-sm font-semibold shadow-xl z-50"
             style={{
               bottom: "max(2rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))",
-              backgroundColor: toast.type === "success" ? "rgba(15,18,25,0.98)" : "rgba(60,0,0,0.95)",
-              border: `1px solid ${toast.type === "success" ? "rgba(253,231,76,0.4)" : "rgba(239,68,68,0.4)"}`,
-              color: toast.type === "success" ? "#FDE74C" : "#fca5a5",
+              backgroundColor: toast.type === "success" ? "rgba(36,22,64,0.98)" : "rgba(50,10,10,0.95)",
+              border: `1px solid ${toast.type === "success" ? "rgba(255,201,60,0.4)" : "rgba(255,90,90,0.4)"}`,
+              color: toast.type === "success" ? "#FFC93C" : "#FF8F8F",
             }}
           >
             {toast.msg}
@@ -962,7 +967,7 @@ function StorePageInner() {
                 transition={{ duration: 1.2 + i * 0.08, ease: "easeOut", delay: i * 0.04 }}
                 style={{
                   width: 12, height: 12,
-                  background: i % 3 === 0 ? "#FDE74C" : i % 3 === 1 ? "#FFB86B" : "#3891A6",
+                  background: i % 3 === 0 ? "#FFC93C" : i % 3 === 1 ? "#FF4FA3" : "#2FE6E0",
                   rotate: `${i * 30}deg`,
                   originX: "50%", originY: "50%",
                   left: "calc(50% - 6px)", top: "calc(50% - 6px)",
@@ -996,18 +1001,19 @@ function StorePageInner() {
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ type: "spring", stiffness: 320, damping: 22 }}
-              className="relative text-center px-10 py-10 rounded-3xl max-w-sm w-full mx-4"
+              className="relative text-center px-10 py-10 rounded-3xl max-w-sm w-full mx-4 overflow-hidden shadow-skeu-panel"
               style={{
-                background: "linear-gradient(145deg, rgba(15,18,25,0.98) 0%, rgba(20,28,40,0.98) 100%)",
-                border: "2px solid rgba(253,231,76,0.6)",
-                boxShadow: "0 0 60px rgba(253,231,76,0.25), 0 0 120px rgba(253,231,76,0.1)",
+                background: "linear-gradient(145deg, rgba(36,22,64,0.98) 0%, rgba(50,32,90,0.98) 100%)",
+                border: "2px solid rgba(255,201,60,0.6)",
+                boxShadow: "0 0 60px rgba(255,201,60,0.25), 0 0 120px rgba(255,201,60,0.1)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
+              <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.4 }} />
               {/* Glow ring */}
               <motion.div
                 className="absolute inset-0 rounded-3xl pointer-events-none"
-                animate={{ boxShadow: ["0 0 30px rgba(253,231,76,0.3)", "0 0 60px rgba(253,231,76,0.6)", "0 0 30px rgba(253,231,76,0.3)"] }}
+                animate={{ boxShadow: ["0 0 30px rgba(255,201,60,0.3)", "0 0 60px rgba(255,201,60,0.6)", "0 0 30px rgba(255,201,60,0.3)"] }}
                 transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
               />
 
@@ -1025,7 +1031,7 @@ function StorePageInner() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.25 }}
                 className="text-sm font-semibold mb-1"
-                style={{ color: "#3891A6" }}
+                style={{ color: "#2FE6E0" }}
               >
                 Thank you for your purchase!
               </motion.p>
@@ -1045,7 +1051,7 @@ function StorePageInner() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.4, type: "spring", stiffness: 280 }}
                 className="text-6xl font-black mb-1"
-                style={{ color: "#FDE74C", textShadow: "0 0 30px rgba(253,231,76,0.6)" }}
+                style={{ color: "#FFC93C", textShadow: "0 0 30px rgba(255,201,60,0.6)" }}
               >
                 +{purchaseSuccess.points.toLocaleString()}
               </motion.p>
@@ -1055,7 +1061,7 @@ function StorePageInner() {
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.55 }}
                 className="text-sm font-semibold mb-6"
-                style={{ color: "#FFB86B" }}
+                style={{ color: "#E0960B" }}
               >
                 points added to your balance
               </motion.p>
@@ -1074,9 +1080,9 @@ function StorePageInner() {
                 }}
                 className="px-8 py-3 rounded-xl font-extrabold text-sm"
                 style={{
-                  background: "linear-gradient(135deg, #FDE74C, #FFB86B)",
+                  background: "linear-gradient(135deg, #FFE58A, #FFC93C)",
                   color: "#1a1400",
-                  boxShadow: "0 4px 20px rgba(253,231,76,0.35)",
+                  boxShadow: "0 4px 20px rgba(255,201,60,0.35)",
                 }}
               >
                 Awesome! 🚀
@@ -1092,7 +1098,7 @@ function StorePageInner() {
 export default function StorePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#0a0c10" }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#170B26" }}>
         <div className="text-white text-xl">Loading store...</div>
       </div>
     }>
