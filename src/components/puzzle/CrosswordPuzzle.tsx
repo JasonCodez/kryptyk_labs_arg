@@ -10,6 +10,8 @@ import { juice } from "@/lib/juice";
 import ActiveClueDock from "@/components/puzzle/crossword/ActiveClueDock";
 import CrosswordKeyboard from "@/components/puzzle/crossword/CrosswordKeyboard";
 import CrosswordClueSheet from "@/components/puzzle/crossword/CrosswordClueSheet";
+import GameButton from "@/components/game-ui/GameButton";
+import JuicyText from "@/components/game-ui/JuicyText";
 
 const LavaBackground = dynamic(() => import("@/components/LavaBackground"), { ssr: false });
 const GalaxyBackground = dynamic(() => import("@/components/GalaxyBackground"), { ssr: false });
@@ -489,28 +491,25 @@ function InstructionsModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="max-w-md w-full rounded-xl p-6 shadow-2xl"
-        style={{ background: "#0f0f1a", border: "1px solid rgba(255,255,255,0.12)" }}
+        className="max-w-md w-full rounded-xl p-6 shadow-skeu-panel"
+        style={{ position: "relative", overflow: "hidden", background: "#241640", border: "1px solid rgba(139,61,255,0.35)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between mb-4">
-          <h2 className="text-lg font-extrabold" style={{ color: "#FDE74C" }}>How to Play — Crossword</h2>
+        <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
+        <div className="relative flex items-start justify-between mb-4">
+          <h2 className="text-lg font-extrabold" style={{ color: "#FFC93C" }}>How to Play — Crossword</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-4">✕</button>
         </div>
-        <div className="space-y-3 text-sm text-gray-300">
+        <div className="relative space-y-3 text-sm text-gray-300">
           <p><strong className="text-white">Click a white cell</strong> to select it. Click again to toggle between Across and Down.</p>
-          <p>The <strong className="text-white">active clue</strong> is highlighted in blue. Type letters to fill in the cells.</p>
+          <p>The <strong className="text-white">active clue</strong> is highlighted in purple. Type letters to fill in the cells.</p>
           <p>Press <strong className="text-white">Backspace</strong> to erase the previous letter. Press <strong className="text-white">Tab</strong> or <strong className="text-white">Enter</strong> to jump to the next clue.</p>
-          <p>When you complete a word correctly it <strong className="text-white" style={{ color: "#38D399" }}>turns green</strong>. Solve every word to finish the puzzle.</p>
+          <p>When you complete a word correctly it <strong className="text-white" style={{ color: "#3ED97A" }}>turns green</strong>. Solve every word to finish the puzzle.</p>
           <p><strong className="text-white">Hint tokens</strong> reveal a letter in the selected cell.</p>
         </div>
-        <button
-          onClick={onClose}
-          className="mt-6 w-full py-3 rounded-xl font-black text-lg tracking-widest transition-all duration-150 active:scale-95"
-          style={{ background: "linear-gradient(135deg, #10b981, #38D399)", color: "#020202" }}
-        >
+        <GameButton onClick={onClose} variant="pink" size="lg" fullWidth className="relative mt-6 tracking-widest">
           START ⚡
-        </button>
+        </GameButton>
       </div>
     </div>
   );
@@ -521,30 +520,40 @@ function CrosswordCompletionOverlay() {
     <div
       aria-hidden
       className="pointer-events-none fixed inset-0 flex items-center justify-center px-4"
-      style={{ zIndex: 2147483647, background: "rgba(2,6,23,0.78)", backdropFilter: "blur(6px)" }}
+      style={{ zIndex: 2147483647, background: "rgba(23,11,38,0.82)", backdropFilter: "blur(6px)" }}
     >
       <div style={{ position: "relative", width: "min(560px, 94vw)", minHeight: 220, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div className="crossword-completion-ring" style={{ position: "absolute", inset: 4, border: "2px solid rgba(74,222,128,0.56)", borderRadius: 16 }} />
-        <div className="crossword-completion-ring" style={{ position: "absolute", inset: 34, border: "1px solid rgba(253,231,76,0.36)", borderRadius: 14, animationDelay: "220ms" }} />
+        <div className="crossword-completion-ring" style={{ position: "absolute", inset: 4, border: "2px solid rgba(62,217,122,0.56)", borderRadius: 16 }} />
+        <div className="crossword-completion-ring" style={{ position: "absolute", inset: 34, border: "1px solid rgba(255,201,60,0.36)", borderRadius: 14, animationDelay: "220ms" }} />
         <div
-          className="crossword-completion-card"
+          className="crossword-completion-card shadow-skeu-panel"
           style={{
             position: "relative",
+            overflow: "hidden",
             width: "100%",
             padding: "28px 30px",
             borderRadius: 14,
-            background: "linear-gradient(135deg, rgba(15,23,42,0.98), rgba(6,78,59,0.94))",
-            border: "2px solid rgba(134,239,172,0.9)",
-            boxShadow: "0 26px 90px rgba(0,0,0,0.65), 0 0 54px rgba(34,197,94,0.42)",
+            background: "linear-gradient(135deg, rgba(23,11,38,0.98), rgba(20,74,49,0.92))",
+            border: "2px solid rgba(62,217,122,0.9)",
+            boxShadow: "0 26px 90px rgba(0,0,0,0.65), 0 0 54px rgba(62,217,122,0.42)",
             textAlign: "center",
             opacity: 1,
           }}
         >
-          <div style={{ color: "#bbf7d0", fontWeight: 900, fontSize: "0.72rem", letterSpacing: "0.22em", textTransform: "uppercase" }}>Puzzle Solved</div>
-          <div style={{ color: "#f8fafc", fontWeight: 900, fontSize: "clamp(1.7rem, 6vw, 3.1rem)", letterSpacing: 0, lineHeight: 1.05, marginTop: 7 }}>Crossword Complete</div>
-          <div style={{ color: "#d1fae5", fontSize: "0.95rem", fontWeight: 800, marginTop: 12, letterSpacing: 0 }}>Preparing your XP and points</div>
-          <div style={{ height: 6, marginTop: 20, borderRadius: 999, background: "rgba(255,255,255,0.16)", overflow: "hidden" }}>
-            <div className="crossword-completion-bar" style={{ height: "100%", width: "100%", borderRadius: 999, background: "linear-gradient(90deg, #38d399, #fde74c)" }} />
+          <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
+          <div className="relative" style={{ color: "#B9F5CE", fontWeight: 900, fontSize: "0.72rem", letterSpacing: "0.22em", textTransform: "uppercase" }}>Puzzle Solved</div>
+          <div className="relative" style={{ marginTop: 7 }}>
+            <JuicyText
+              as="span"
+              variant="grass"
+              className="inline-block text-[clamp(1.7rem,6vw,3.1rem)] leading-[1.05]"
+            >
+              Crossword Complete
+            </JuicyText>
+          </div>
+          <div className="relative" style={{ color: "#CFF9DE", fontSize: "0.95rem", fontWeight: 800, marginTop: 12, letterSpacing: 0 }}>Preparing your XP and points</div>
+          <div className="relative" style={{ height: 6, marginTop: 20, borderRadius: 999, background: "rgba(255,255,255,0.16)", overflow: "hidden" }}>
+            <div className="crossword-completion-bar" style={{ height: "100%", width: "100%", borderRadius: 999, background: "linear-gradient(90deg, #3ED97A, #FFC93C)" }} />
           </div>
         </div>
       </div>
@@ -1976,8 +1985,8 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
       border: `2px solid ${palette.borderColor}`,
       boxShadow: palette.isActive
         ? palette.isSolved
-          ? "0 0 0 2px rgba(34,197,94,0.28)"
-          : "0 0 0 2px rgba(79,70,229,0.28)"
+          ? "0 0 0 2px rgba(62,217,122,0.28)"
+          : "0 0 0 2px rgba(139,61,255,0.28)"
         : undefined,
       cursor: "pointer",
       position: "relative",
@@ -1986,7 +1995,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
 
   if (!data) {
     return (
-      <div className="p-8 text-center" style={{ color: "#ef4444" }}>
+      <div className="p-8 text-center" style={{ color: "#FF5A5A" }}>
         Invalid crossword data — check puzzle configuration.
       </div>
     );
@@ -2006,16 +2015,16 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
     <>
       <style jsx global>{`
         @keyframes crossword-cell-success {
-          0% { filter: brightness(1); box-shadow: 0 0 0 rgba(74, 222, 128, 0); }
-          18% { filter: brightness(1.75); box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.35), 0 0 26px rgba(74, 222, 128, 0.95); }
-          42% { filter: brightness(1.35); box-shadow: 0 0 0 2px rgba(253, 231, 76, 0.26), 0 0 18px rgba(253, 231, 76, 0.42); }
-          100% { filter: brightness(1); box-shadow: 0 0 0 rgba(74, 222, 128, 0); }
+          0% { filter: brightness(1); box-shadow: 0 0 0 rgba(62, 217, 122, 0); }
+          18% { filter: brightness(1.75); box-shadow: 0 0 0 4px rgba(62, 217, 122, 0.35), 0 0 26px rgba(62, 217, 122, 0.95); }
+          42% { filter: brightness(1.35); box-shadow: 0 0 0 2px rgba(255, 201, 60, 0.26), 0 0 18px rgba(255, 201, 60, 0.42); }
+          100% { filter: brightness(1); box-shadow: 0 0 0 rgba(62, 217, 122, 0); }
         }
 
         @keyframes crossword-cell-burst {
-          0% { opacity: 0; transform: scale(0.4); box-shadow: 0 0 0 rgba(16,185,129,0); }
-          22% { opacity: 1; transform: scale(1.08); box-shadow: 0 0 20px rgba(16,185,129,0.45), 0 0 10px rgba(253,231,76,0.42); }
-          100% { opacity: 0; transform: scale(1.3); box-shadow: 0 0 0 rgba(16,185,129,0); }
+          0% { opacity: 0; transform: scale(0.4); box-shadow: 0 0 0 rgba(62,217,122,0); }
+          22% { opacity: 1; transform: scale(1.08); box-shadow: 0 0 20px rgba(62,217,122,0.45), 0 0 10px rgba(255,201,60,0.42); }
+          100% { opacity: 0; transform: scale(1.3); box-shadow: 0 0 0 rgba(62,217,122,0); }
         }
 
         @keyframes crossword-cell-shine {
@@ -2090,7 +2099,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
           position: absolute;
           inset: -2px;
           border-radius: inherit;
-          border: 2px solid rgba(52, 211, 153, 0.7);
+          border: 2px solid rgba(62, 217, 122, 0.7);
           pointer-events: none;
           animation: crossword-cell-burst 760ms ease-out both;
           animation-delay: calc(var(--cw-cell-delay) + 80ms);
@@ -2142,7 +2151,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
 
         .crossword-clue-success {
           animation: crossword-clue-success ${WORD_SOLVED_ANIMATION_MS}ms ease-out;
-          box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.45), 0 0 24px rgba(74, 222, 128, 0.18);
+          box-shadow: 0 0 0 1px rgba(62, 217, 122, 0.45), 0 0 24px rgba(62, 217, 122, 0.18);
         }
 
         .crossword-completion-card {
@@ -2165,7 +2174,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
         .crossword-clue-panel-scroll {
           max-height: min(340px, 42vh);
           scrollbar-width: thin;
-          scrollbar-color: rgba(129, 140, 248, 0.5) rgba(15, 23, 42, 0.35);
+          scrollbar-color: rgba(139, 61, 255, 0.5) rgba(23, 11, 38, 0.35);
         }
 
         .crossword-clue-panel-scroll::-webkit-scrollbar {
@@ -2173,12 +2182,12 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
         }
 
         .crossword-clue-panel-scroll::-webkit-scrollbar-track {
-          background: rgba(15, 23, 42, 0.35);
+          background: rgba(23, 11, 38, 0.35);
           border-radius: 999px;
         }
 
         .crossword-clue-panel-scroll::-webkit-scrollbar-thumb {
-          background: rgba(129, 140, 248, 0.5);
+          background: rgba(139, 61, 255, 0.5);
           border-radius: 999px;
         }
 
@@ -2256,22 +2265,13 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
         >
           {/* Standalone chrome; PuzzleHeader owns this information in app-shell mode. */}
           {displayMode === "standalone" && <div className="crossword-standalone-header text-center relative w-full px-8 pt-4">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-[0.2em] mb-1"
-              style={{
-                display: "inline-block",
-                backgroundImage: "linear-gradient(135deg, #818cf8, #c084fc, #f472b6)",
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                color: "transparent",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
+            <JuicyText as="h2" variant="candy" className="text-2xl sm:text-3xl tracking-[0.2em] mb-1 inline-block">
               CROSSWORD
-            </h2>
+            </JuicyText>
             <button
               onClick={() => setShowInstructions(true)}
               className="absolute right-4 top-4 w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center"
-              style={{ background: "rgba(129,140,248,0.2)", border: "1px solid rgba(129,140,248,0.4)", color: "#818cf8" }}
+              style={{ background: "rgba(139,61,255,0.2)", border: "1px solid rgba(139,61,255,0.4)", color: "#8B3DFF" }}
             >?</button>
             <p className="text-xs mt-1 font-medium" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8)" }}>
               {acrossClues.length + downClues.length} clues · {solvedClues.size} solved
@@ -2284,23 +2284,23 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
           {/* Win banner */}
           {gameStatus === "won" && (
             <div className="px-6 py-4 rounded-2xl text-center"
-              style={{ background: "linear-gradient(135deg,rgba(56,211,153,.15),rgba(16,185,129,.15))", border: "1px solid #38D39955" }}>
+              style={{ background: "linear-gradient(135deg,rgba(62,217,122,.15),rgba(31,158,82,.15))", border: "1px solid #3ED97A55" }}>
               <div style={{ fontSize: "2rem" }}>⚡</div>
-              <div className="font-black text-lg mt-1" style={{ color: "#38D399" }}>CROSSWORD CRACKED!</div>
+              <div className="font-black text-lg mt-1" style={{ color: "#3ED97A" }}>CROSSWORD CRACKED!</div>
               <div className="text-sm mt-1" style={{ color: "#9ca3af" }}>All words solved</div>
             </div>
           )}
 
           {error && (
             <div className="px-5 py-2 rounded-full text-sm font-bold"
-              style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.5)", color: "#fca5a5" }}>
+              style={{ background: "rgba(255,90,90,0.15)", border: "1px solid rgba(255,90,90,0.5)", color: "#FFB3B3" }}>
               {error}
             </div>
           )}
 
           {showRestoreNotice && gameStatus === "playing" && (
             <div className="px-4 py-2 rounded-full text-xs font-black tracking-wide"
-              style={{ background: "rgba(56,211,153,0.14)", border: "1px solid rgba(56,211,153,0.45)", color: "#bbf7d0" }}>
+              style={{ background: "rgba(62,217,122,0.14)", border: "1px solid rgba(62,217,122,0.45)", color: "#B9F5CE" }}>
               Progress restored from your last session
             </div>
           )}
@@ -2324,10 +2324,10 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                     maxWidth: "100%",
                     padding: "6px 12px",
                     borderRadius: 999,
-                    background: "rgba(20,83,45,0.94)",
-                    border: "1px solid rgba(134,239,172,0.7)",
-                    boxShadow: "0 10px 28px rgba(0,0,0,0.28), 0 0 18px rgba(34,197,94,0.32)",
-                    color: "#bbf7d0",
+                    background: "rgba(15,74,49,0.94)",
+                    border: "1px solid rgba(62,217,122,0.7)",
+                    boxShadow: "0 10px 28px rgba(0,0,0,0.28), 0 0 18px rgba(62,217,122,0.32)",
+                    color: "#B9F5CE",
                     fontSize: "0.72rem",
                     fontWeight: 900,
                     letterSpacing: "0.08em",
@@ -2339,7 +2339,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                 </div>
               )}
               <div className="w-full min-h-[2.5rem] px-3 py-1.5 rounded-lg text-sm text-center"
-                style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", color: "#c7d2fe" }}>
+                style={{ background: "rgba(139,61,255,0.14)", border: "1px solid rgba(139,61,255,0.32)", color: "#E4D6FF" }}>
                 {activeClue ? (
                   <>
                     <span className="font-black">{activeClue.number} {activeClue.direction.toUpperCase()} </span>
@@ -2348,7 +2348,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                       : downClues.find((c) => c.number === activeClue.number)?.text}
                   </>
                 ) : (
-                  <span style={{ color: "#6b7280" }}>Click a cell to begin</span>
+                  <span style={{ color: "#9F8FC9" }}>Click a cell to begin</span>
                 )}
               </div>
               </div>}
@@ -2378,7 +2378,7 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                   gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
                   gridTemplateRows: `repeat(${rows}, ${cellSize}px)`,
                   gap: gridGap,
-                  background: "#1a1a2e",
+                  background: "#241640",
                   border: `${GRID_BORDER_PX}px solid ${skin.boardBorder ?? "rgba(255,255,255,0.12)"}`,
                   borderRadius: "8px",
                   padding: GRID_PADDING_PX,
@@ -2567,18 +2567,15 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
               {/* Hint button */}
               <div className="crossword-utility-row">
               {gameStatus === "playing" && (
-                <button
+                <GameButton
                   onClick={useHintToken}
                   disabled={hintLoading || hintTokens < 1 || !cursorCell}
-                  className="mt-1 px-4 py-1.5 rounded-full text-sm font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    background: hintTokens < 1 ? "rgba(255,107,107,0.1)" : "rgba(56,145,166,0.15)",
-                    border: `1px solid ${hintTokens < 1 ? "rgba(255,107,107,0.5)" : "rgba(56,145,166,0.4)"}`,
-                    color: hintTokens < 1 ? "#FF6B6B" : "#3891A6",
-                  }}
+                  variant={hintTokens < 1 ? "ember" : "gold"}
+                  size="sm"
+                  className="mt-1"
                 >
                   {hintLoading ? "..." : hintTokens < 1 ? "🔤 No Hint Tokens" : `🔤 Reveal Letter (${hintTokens} token${hintTokens !== 1 ? "s" : ""})`}
-                </button>
+                </GameButton>
               )}
               </div>
 
@@ -2593,23 +2590,25 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
 
             {/* Clue panel */}
             <div
-              className="crossword-desktop-clue-panel w-full min-w-0 max-w-full"
+              className="crossword-desktop-clue-panel w-full min-w-0 max-w-full shadow-skeu-panel"
               style={{
+                position: "relative",
                 borderRadius: 12,
-                border: "1px solid rgba(129,140,248,0.28)",
-                background: "rgba(15,23,42,0.58)",
+                border: "1px solid rgba(139,61,255,0.32)",
+                background: "rgba(36,22,64,0.72)",
                 boxShadow: "0 14px 38px rgba(0,0,0,0.18)",
                 overflow: "hidden",
               }}
             >
-              <div className="flex items-center justify-between gap-2 px-3 py-2" style={{ borderBottom: "1px solid rgba(148,163,184,0.18)" }}>
+              <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.4 }} />
+              <div className="relative flex items-center justify-between gap-2 px-3 py-2" style={{ borderBottom: "1px solid rgba(139,61,255,0.2)" }}>
                 <div>
                   <div className="text-xs font-black tracking-widest" style={{ color: "#e2e8f0" }}>CLUES</div>
                   <div className="text-[11px] font-semibold" style={{ color: "#94a3b8" }}>
                     {panelSolvedCount}/{panelClues.length} {cluePanelDirection}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 rounded-lg p-1" style={{ background: "rgba(2,6,23,0.5)", border: "1px solid rgba(148,163,184,0.18)" }}>
+                <div className="grid grid-cols-2 rounded-lg p-1" style={{ background: "rgba(23,11,38,0.5)", border: "1px solid rgba(139,61,255,0.2)" }}>
                   {(["across", "down"] as const).map((direction) => {
                     const active = cluePanelDirection === direction;
                     const solvedCount = direction === "across" ? acrossSolvedCount : downSolvedCount;
@@ -2622,10 +2621,10 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                         className="px-2.5 py-1 rounded-md text-[11px] font-black uppercase transition-all"
                         style={{
                           background: active
-                            ? direction === "across" ? "rgba(99,102,241,0.32)" : "rgba(192,132,252,0.28)"
+                            ? direction === "across" ? "rgba(255,79,163,0.32)" : "rgba(139,61,255,0.28)"
                             : "transparent",
                           color: active ? "#f8fafc" : "#94a3b8",
-                          border: `1px solid ${active ? direction === "across" ? "rgba(129,140,248,0.5)" : "rgba(216,180,254,0.45)" : "transparent"}`,
+                          border: `1px solid ${active ? direction === "across" ? "rgba(255,79,163,0.5)" : "rgba(139,61,255,0.45)" : "transparent"}`,
                         }}
                       >
                         {direction} {solvedCount}/{totalCount}
@@ -2635,15 +2634,16 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                 </div>
               </div>
 
-              <div className="crossword-clue-panel-scroll overflow-y-auto p-2">
+              <div className="relative crossword-clue-panel-scroll overflow-y-auto p-2">
                 <div className="grid gap-1">
                   {panelClues.map((clue) => {
                     const key = `${cluePanelDirection}-${clue.number}`;
                     const solved = solvedClues.has(key);
                     const justSolved = justSolvedClues.has(key);
                     const isActive = activeClue?.direction === cluePanelDirection && activeClue.number === clue.number;
-                    const activeBorder = cluePanelDirection === "across" ? "rgba(129,140,248,0.55)" : "rgba(216,180,254,0.5)";
-                    const activeText = cluePanelDirection === "across" ? "#c7d2fe" : "#e9d5ff";
+                    const activeBorder = cluePanelDirection === "across" ? "rgba(255,79,163,0.55)" : "rgba(139,61,255,0.5)";
+                    const activeText = cluePanelDirection === "across" ? "#FFD1EC" : "#E4D6FF";
+                    const activeBg = cluePanelDirection === "across" ? "rgba(255,79,163,0.18)" : "rgba(139,61,255,0.18)";
 
                     return (
                       <button
@@ -2656,16 +2656,16 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
                         onClick={() => handleClueClick(cluePanelDirection, clue.number)}
                         className={`text-left px-2.5 py-2 rounded-lg text-xs transition-all${justSolved ? " crossword-clue-success" : ""}`}
                         style={{
-                          background: isActive ? "rgba(99,102,241,0.18)" : solved ? "rgba(34,197,94,0.1)" : "rgba(15,23,42,0.26)",
-                          border: `1px solid ${isActive ? activeBorder : solved ? "rgba(34,197,94,0.3)" : "rgba(148,163,184,0.12)"}`,
-                          color: solved ? "#4ade80" : isActive ? activeText : "#cbd5e1",
+                          background: isActive ? activeBg : solved ? "rgba(62,217,122,0.1)" : "rgba(23,11,38,0.26)",
+                          border: `1px solid ${isActive ? activeBorder : solved ? "rgba(62,217,122,0.3)" : "rgba(139,61,255,0.14)"}`,
+                          color: solved ? "#7CF0A6" : isActive ? activeText : "#cbd5e1",
                           textDecoration: solved ? "line-through" : undefined,
                           overflowWrap: "anywhere",
                           width: "100%",
                           lineHeight: 1.25,
                         }}
                       >
-                        <span className="font-black mr-1" style={{ color: solved ? "#4ade80" : isActive ? activeText : "#94a3b8" }}>{clue.number}.</span>
+                        <span className="font-black mr-1" style={{ color: solved ? "#7CF0A6" : isActive ? activeText : "#94a3b8" }}>{clue.number}.</span>
                         {clue.text}
                       </button>
                     );
