@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   getGridlockFileData,
-  validateGridlockAnswer,
   validateLawDeclaration,
   calcGridlockRank,
 } from '@/lib/gridlockFile';
 import type { GridCellValue, RuleFamily, RuleAxis } from '@/lib/gridlockFile';
+import { validateGridlockSubmission } from '@/lib/gridlockCore';
 
 // POST /api/gridlock/guest/[id]/submit
 // Public — no auth required.
@@ -32,29 +32,43 @@ export async function POST(
       return NextResponse.json({ error: 'Not configured' }, { status: 500 });
     }
 
-    const body = await req.json() as {
+    const body = await req.json().catch(() => null) as {
       answers: GridCellValue[];
       declaredFamily?: RuleFamily;
       declaredAxis?: RuleAxis;
       submissionCount?: number;
       elapsedSeconds?: number;
       anonId?: string;
-    };
+    } | null;
+
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Malformed JSON submission' }, { status: 400 });
+    }
 
     const { answers, declaredFamily, declaredAxis, submissionCount = 1, elapsedSeconds = 0, anonId } = body;
 
-    if (!Array.isArray(answers)) {
-      return NextResponse.json({ error: 'Missing answers array' }, { status: 400 });
+    const checkedSubmission = validateGridlockSubmission(
+      fileData as unknown as Parameters<typeof validateGridlockSubmission>[0],
+      { answers },
+    );
+    if (!checkedSubmission.valid) {
+      return NextResponse.json({ error: checkedSubmission.errors[0]?.message ?? 'Invalid Gridlock submission', issues: checkedSubmission.errors }, { status: 400 });
+    }
+    if (submissionCount > (fileData.maximumAttempts ?? 999)) {
+      return NextResponse.json({ error: 'Maximum attempts reached' }, { status: 429 });
     }
 
-    const answerResult = validateGridlockAnswer(fileData, answers);
+    const answerResult = {
+      correct: checkedSubmission.correct,
+      correctCount: checkedSubmission.correctCount,
+      totalMissing: checkedSubmission.requiredCount,
+    };
 
     let lawResult = 'not-declared';
     if (declaredFamily && declaredAxis) {
       lawResult = validateLawDeclaration(fileData, declaredFamily, declaredAxis);
     }
 
-    const lawCorrect = lawResult === 'confirmed' || lawResult === 'alternate'; // retained for future use
     const rank = calcGridlockRank(submissionCount, 0);
 
     const partialHint =
@@ -86,8 +100,8 @@ export async function POST(
       partialHint,
       submissionCount,
       rank,
-      xpReward: puzzle.xpReward ?? 100,
-      pointsReward: 100,
+      xpReward: fileData.rewardSettings?.xp ?? puzzle.xpReward ?? 100,
+      pointsReward: fileData.rewardSettings?.points ?? 100,
       ruleExplanation: answerResult.correct ? fileData.ruleExplanation : undefined,
       retentionUnlock: answerResult.correct ? (fileData.retentionUnlock ?? null) : null,
       arcDay: fileData.arcDay,

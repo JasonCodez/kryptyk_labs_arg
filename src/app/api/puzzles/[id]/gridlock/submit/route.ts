@@ -5,12 +5,12 @@ import prisma from '@/lib/prisma';
 import { ensureGridlockArcAchievement } from '@/lib/ensureCoreAchievements';
 import {
   getGridlockFileData,
-  validateGridlockAnswer,
   validateLawDeclaration,
   calcGridlockRank,
 } from '@/lib/gridlockFile';
 import type { GridCellValue, RuleFamily, RuleAxis } from '@/lib/gridlockFile';
 import { getXpMultiplier } from '@/lib/getXpMultiplier';
+import { validateGridlockSubmission } from '@/lib/gridlockCore';
 
 export async function POST(
   req: NextRequest,
@@ -37,7 +37,7 @@ export async function POST(
       select: { id: true },
     });
     if (alreadySolved) {
-      return NextResponse.json({ error: 'Already solved', alreadySolved: true }, { status: 400 });
+      return NextResponse.json({ correct: true, alreadySolved: true });
     }
 
     const puzzle = await prisma.puzzle.findUnique({
@@ -56,25 +56,60 @@ export async function POST(
       return NextResponse.json({ error: 'Gridlock File is not configured' }, { status: 500 });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Malformed JSON submission' }, { status: 400 });
+    }
     const {
       answers,
       declaredFamily,
       declaredAxis,
       elapsedSeconds = 0,
+      submissionId,
     } = body as {
       answers: GridCellValue[];
       declaredFamily?: RuleFamily;
       declaredAxis?: RuleAxis;
       elapsedSeconds?: number;
+      submissionId?: string;
     };
 
-    if (!Array.isArray(answers)) {
-      return NextResponse.json({ error: 'Missing answers array' }, { status: 400 });
+    if (submissionId != null && (typeof submissionId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(submissionId))) {
+      return NextResponse.json({ error: 'Invalid submission ID' }, { status: 400 });
     }
 
     // ── Validate answer (ALWAYS determines win/loss) ──────────────────────────
-    const answerResult = validateGridlockAnswer(fileData, answers);
+    const checkedSubmission = validateGridlockSubmission(
+      fileData as unknown as Parameters<typeof validateGridlockSubmission>[0],
+      { answers },
+    );
+    if (!checkedSubmission.valid) {
+      return NextResponse.json({ error: checkedSubmission.errors[0]?.message ?? 'Invalid Gridlock submission', issues: checkedSubmission.errors }, { status: 400 });
+    }
+    const answerResult = {
+      correct: checkedSubmission.correct,
+      correctCount: checkedSubmission.correctCount,
+      totalMissing: checkedSubmission.requiredCount,
+    };
+
+    if (submissionId) {
+      const previous = await prisma.puzzleSubmission.findFirst({
+        where: { puzzleId, userId: user.id, feedback: { contains: `\"submissionId\":\"${submissionId}\"` } },
+        select: { isCorrect: true, feedback: true },
+      });
+      if (previous) {
+        let prior: Record<string, unknown> = {};
+        try { prior = previous.feedback ? JSON.parse(previous.feedback) as Record<string, unknown> : {}; } catch {}
+        return NextResponse.json({
+          correct: previous.isCorrect,
+          answerResult: prior.answerResult ?? answerResult,
+          lawResult: prior.lawResult ?? 'not-declared',
+          submissionCount: prior.submissionCount,
+          rank: prior.rank,
+          idempotent: true,
+        });
+      }
+    }
 
     // ── Validate Law Declaration (BONUS ONLY — never blocks correct answer) ──
     let lawResult: string = 'not-declared';
@@ -85,18 +120,23 @@ export async function POST(
     const prevAttempts = await prisma.puzzleSubmission.count({
       where: { puzzleId, userId: user.id },
     });
+    if (prevAttempts >= (fileData.maximumAttempts ?? 999)) {
+      return NextResponse.json({ error: 'Maximum attempts reached' }, { status: 429 });
+    }
     const hintsUsed = await prisma.hintUsage.count({
       where: { userId: user.id, hint: { puzzleId } },
     });
 
     const submissionCount = prevAttempts + 1;
-    const lawCorrect = lawResult === 'confirmed' || lawResult === 'alternate'; // retained for future use
     const rank = calcGridlockRank(submissionCount, hintsUsed);
 
     const feedbackJson = JSON.stringify({
       answerResult,
       lawResult,
       submittedAnswers: answers,
+      submissionId: submissionId ?? null,
+      submissionCount,
+      rank,
     });
 
     if (answerResult.correct) {
@@ -143,7 +183,8 @@ export async function POST(
 
       // Arc completion bonus XP (Day 7 = full arc done)
       const arcXpBonus = fileData.arcDay === 7 ? 240 : 0;
-      const baseXp = typeof puzzle.xpReward === 'number' ? puzzle.xpReward : 100;
+      const baseXp = fileData.rewardSettings?.xp ?? (typeof puzzle.xpReward === 'number' ? puzzle.xpReward : 100);
+      const basePoints = fileData.rewardSettings?.points ?? 100;
 
       // Consecutive daily solve streak bonus: day N = N*50 pts, N*25 XP
       const streakBonusPoints = newStreakCount * 50;
@@ -151,7 +192,26 @@ export async function POST(
 
       const totalXp = (baseXp + arcXpBonus + streakBonusXp) * (await getXpMultiplier(user.id));
 
-      await prisma.$transaction(async (tx) => {
+      await prisma.userPuzzleProgress.upsert({
+        where: { userId_puzzleId: { userId: user.id, puzzleId } },
+        create: { userId: user.id, puzzleId, solved: false, attempts: prevAttempts, successfulAttempts: 0, pointsEarned: 0, completionPercentage: 0 },
+        update: {},
+      });
+
+      const claimed = await prisma.$transaction(async (tx) => {
+        const claim = await tx.userPuzzleProgress.updateMany({
+          where: { userId: user.id, puzzleId, solved: false },
+          data: {
+            solved: true,
+            solvedAt: new Date(),
+            successfulAttempts: { increment: 1 },
+            attempts: { increment: 1 },
+            pointsEarned: basePoints,
+            completionPercentage: 100,
+          },
+        });
+        if (claim.count === 0) return false;
+
         await tx.puzzleSubmission.create({
           data: {
             puzzleId,
@@ -162,33 +222,11 @@ export async function POST(
           },
         });
 
-        await tx.userPuzzleProgress.upsert({
-          where: { userId_puzzleId: { userId: user.id, puzzleId } },
-          create: {
-            userId: user.id,
-            puzzleId,
-            solved: true,
-            solvedAt: new Date(),
-            attempts: submissionCount,
-            successfulAttempts: 1,
-            pointsEarned: 100,
-            completionPercentage: 100,
-          },
-          update: {
-            solved: true,
-            solvedAt: new Date(),
-            successfulAttempts: { increment: 1 },
-            attempts: { increment: 1 },
-            pointsEarned: 100,
-            completionPercentage: 100,
-          },
-        });
-
         await tx.user.update({
           where: { id: user.id },
           data: {
             xp: { increment: totalXp },
-            totalPoints: { increment: 100 + streakBonusPoints },
+            totalPoints: { increment: basePoints + streakBonusPoints },
             ...(shieldConsumed ? { streakShields: { decrement: 1 } } : {}),
           },
         });
@@ -218,7 +256,12 @@ export async function POST(
             submissionCount,
           },
         });
+        return true;
       });
+
+      if (!claimed) {
+        return NextResponse.json({ correct: true, alreadySolved: true, submissionCount, rank });
+      }
 
       // Award arc completion achievement when Day 7 is solved (idempotent)
       let arcAchievement: { id: string; title: string; description: string; icon: string; rarity: string } | null = null;

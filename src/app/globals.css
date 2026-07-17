@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../styles/crossword.css";
+@import "../styles/gridlock.css";
 @import "../styles/anagram.css";
 @import "../styles/sudoku.css";
 @import "../styles/word-search.css";
@@ -69,6 +70,15 @@
     padding-bottom: 0;
   }
   html[data-app-mode="play"] .pw-cookie-banner {
+    display: none;
+  }
+  /* Route transitions can paint the play shell before AppChrome updates the
+     data attribute. The structural fallback prevents a one-frame 64px page
+     overflow and keeps browser automation/mobile keyboards stable. */
+  body:has(.pw-play-shell) {
+    padding-bottom: 0;
+  }
+  html:has(.pw-play-shell) .pw-cookie-banner {
     display: none;
   }
 }

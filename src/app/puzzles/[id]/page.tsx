@@ -42,6 +42,10 @@ import type {
   WordSearchPresentationState,
   WordSearchPuzzleHandle,
 } from "@/components/puzzle/WordSearchPuzzle";
+import type {
+  GridlockPresentationState,
+  GridlockPuzzleHandle,
+} from "@/components/puzzle/GridlockFilePuzzle";
 import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
@@ -235,10 +239,12 @@ export default function PuzzleDetailPage() {
   const anagramRef = useRef<AnagramBlitzHandle | null>(null);
   const sudokuRef = useRef<SudokuPuzzleHandle | null>(null);
   const wordSearchRef = useRef<WordSearchPuzzleHandle | null>(null);
+  const gridlockRef = useRef<GridlockPuzzleHandle | null>(null);
   const [crosswordPresentation, setCrosswordPresentation] = useState<CrosswordPresentationState | null>(null);
   const [anagramPresentation, setAnagramPresentation] = useState<AnagramPresentationState | null>(null);
   const [sudokuPresentation, setSudokuPresentation] = useState<SudokuPresentationState | null>(null);
   const [wordSearchPresentation, setWordSearchPresentation] = useState<WordSearchPresentationState | null>(null);
+  const [gridlockPresentation, setGridlockPresentation] = useState<GridlockPresentationState | null>(null);
   const [sudokuCelebrationPending, setSudokuCelebrationPending] = useState(false);
   const [showHeaderBugReport, setShowHeaderBugReport] = useState(false);
   const { data: session, status } = useSession();
@@ -1121,13 +1127,15 @@ export default function PuzzleDetailPage() {
     <>
       <PuzzlePlayShell
       backHref="/puzzles"
-      title={displayTitle}
+      title={puzzle.puzzleType === "gridlock_file" ? "GRIDLOCK FILE" : displayTitle}
       subtitle={puzzle.puzzleType === "anagram_blitz"
         ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? normalizedAnagramConfig.words.length} solved`
         : puzzle.puzzleType === "sudoku"
           ? `${sudokuPresentation?.attemptsLeft ?? puzzle.sudoku?.maxAttempts ?? 5} attempts left`
           : puzzle.puzzleType === "jigsaw"
             ? `${jigsawPresentation?.placedPieces ?? 0} / ${jigsawPresentation?.totalPieces ?? (puzzle.jigsaw ? puzzle.jigsaw.gridRows * puzzle.jigsaw.gridCols : 0)} pieces placed`
+          : puzzle.puzzleType === "gridlock_file"
+            ? `${gridlockPresentation?.selectedCount ?? 0} / ${gridlockPresentation?.requiredCount ?? 0} evidence marked`
           : undefined}
       progress={puzzle.puzzleType === "crossword"
         ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(crosswordPresentation?.elapsedMs ?? 0)}`}>
@@ -1148,6 +1156,10 @@ export default function PuzzleDetailPage() {
               : puzzle.puzzleType === "jigsaw"
                 ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(jigsawPresentation?.elapsedMs ?? 0)}`}>
                     {formatCrosswordHeaderTime(jigsawPresentation?.elapsedMs ?? 0)}
+                  </span>
+              : puzzle.puzzleType === "gridlock_file"
+                ? <span aria-label={`Elapsed time ${formatCrosswordHeaderTime(gridlockPresentation?.elapsedMs ?? 0)}`}>
+                    {formatCrosswordHeaderTime(gridlockPresentation?.elapsedMs ?? 0)}
                   </span>
               : undefined}
       actions={puzzle.puzzleType === "crossword"
@@ -1204,8 +1216,18 @@ export default function PuzzleDetailPage() {
                     <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
                   ]}
                 />
+            : puzzle.puzzleType === "gridlock_file"
+              ? <PuzzleHeaderActions
+                  onHelp={() => gridlockRef.current?.openHelp()}
+                  helpLabel="How to play Gridlock"
+                  overflow={[
+                    <button type="button" key="reset" onClick={() => gridlockRef.current?.requestReset()}>Reset File</button>,
+                    skipControl,
+                    <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
+                  ]}
+                />
           : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
-      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" || puzzle.puzzleType === "word_search" ? "fixed" : "scroll"}
+      contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" || puzzle.puzzleType === "word_search" || puzzle.puzzleType === "gridlock_file" ? "fixed" : "scroll"}
       contentClassName={puzzle.puzzleType === "crossword"
         ? "pw-crossword-shell-content"
         : puzzle.puzzleType === "anagram_blitz"
@@ -1214,6 +1236,8 @@ export default function PuzzleDetailPage() {
             ? "pw-sudoku-shell-content"
             : puzzle.puzzleType === "word_search"
               ? "pw-word-search-shell-content"
+            : puzzle.puzzleType === "gridlock_file"
+              ? "pw-gridlock-shell-content"
             : puzzle.puzzleType === "jigsaw"
               ? "pw-jigsaw-shell-content"
               : undefined}
@@ -1585,6 +1609,8 @@ export default function PuzzleDetailPage() {
               wordSearchRef={wordSearchRef}
               onWordSearchPresentationChange={setWordSearchPresentation}
               onWordSearchComplete={handleWordSearchComplete}
+              gridlockRef={gridlockRef}
+              onGridlockPresentationChange={setGridlockPresentation}
               skipControl={skipControl}
             />
 
@@ -1680,7 +1706,7 @@ export default function PuzzleDetailPage() {
             {/* Hints / Progress Section Wrapper — Jigsaw already has its own Skip control in
                 the header's "More puzzle actions" overflow menu, so this section would just
                 duplicate it below the board. */}
-            {puzzle.puzzleType !== "word_search" && puzzle.puzzleType !== "jigsaw" && <div className="puzzle-detail-progress-section">
+            {puzzle.puzzleType !== "word_search" && puzzle.puzzleType !== "jigsaw" && puzzle.puzzleType !== "gridlock_file" && <div className="puzzle-detail-progress-section">
             <PuzzleProgressSection
               progress={progress}
               puzzleTitle={puzzle?.title}

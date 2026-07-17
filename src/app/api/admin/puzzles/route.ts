@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     let { puzzleData } = body;
 
     // Validate input - title is required for most puzzle types but optional for Sudoku, Escape Room, and Hidden Word
-    if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash') {
+    if (!title && puzzleType !== 'sudoku' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'word_crack' && puzzleType !== 'word_search' && puzzleType !== 'anagram_blitz' && puzzleType !== 'arg' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash' && puzzleType !== 'gridlock_file') {
       return NextResponse.json(
         { error: "Missing required field: title" },
         { status: 400 }
@@ -126,8 +126,9 @@ export async function POST(request: NextRequest) {
 
     // Description and content are now optional for all puzzle types
     // Use title as fallback if neither is provided
-    const puzzleContent = content || description || title || '';
-    const puzzleDescription = description || content || title || '';
+    const gridlockObjective = puzzleType === 'gridlock_file' ? puzzleData?.gridlockFile?.objective : '';
+    const puzzleContent = content || description || title || gridlockObjective || '';
+    const puzzleDescription = description || content || title || gridlockObjective || '';
     // Validate Sudoku puzzle
     if (puzzleType === 'sudoku') {
       if (!sudokuGrid || !sudokuSolution) {
@@ -254,6 +255,10 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      puzzleData = {
+        ...(puzzleData && typeof puzzleData === 'object' && !Array.isArray(puzzleData) ? puzzleData : {}),
+        gridlockFile: parsed,
+      };
     }
 
     if (puzzleType === 'parasite_code') {
@@ -278,10 +283,13 @@ export async function POST(request: NextRequest) {
     // For sudoku puzzles, the canonical difficulty comes from sudokuDifficulty (set in the
     // generator), not the generic difficulty field which defaults to 'medium' in the form.
     const validDifficulties = ["easy", "medium", "hard", "expert", "extreme"];
+    const gridlockDifficulty = puzzleType === 'gridlock_file' ? puzzleData?.gridlockFile?.difficulty : undefined;
     const puzzleDifficulty =
       puzzleType === 'sudoku' && sudokuDifficulty && validDifficulties.includes(sudokuDifficulty.toLowerCase())
         ? sudokuDifficulty.toLowerCase()
-        : (difficulty && validDifficulties.includes(difficulty.toLowerCase())
+        : (gridlockDifficulty && validDifficulties.includes(String(gridlockDifficulty).toLowerCase())
+          ? String(gridlockDifficulty).toLowerCase()
+          : difficulty && validDifficulties.includes(difficulty.toLowerCase())
           ? difficulty.toLowerCase()
           : "medium");
 
@@ -316,13 +324,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Provide a fallback title when none is supplied
-    const finalTitle = title ||
+    const finalTitle = (puzzleType === 'gridlock_file' ? puzzleData?.gridlockFile?.fileTitle : title) || title ||
       (puzzleType === 'sudoku' ? `Sudoku (${(sudokuDifficulty || 'medium').toString().toUpperCase()})` :
       puzzleType === 'word_crack' ? 'Hidden Word' :
       puzzleType === 'word_search' ? 'Word Trove' :
       puzzleType === 'anagram_blitz' ? 'Anagram Blitz' :
       puzzleType === 'arg' ? 'ARG' :
       puzzleType === 'jim_wyze_case' ? 'Jim Wyze Case' :
+      puzzleType === 'gridlock_file' ? 'Gridlock File' :
       puzzleType === 'vault' ? 'The Vault' :
       puzzleType === 'cipher_clash' ? 'Cipher Clash' :
       'Untitled Puzzle');
@@ -337,7 +346,9 @@ export async function POST(request: NextRequest) {
       },
       difficulty: puzzleDifficulty,
       puzzleType: puzzleType || 'general',
-      xpReward: typeof xpReward === 'number' && xpReward > 0 ? xpReward : 50,
+      xpReward: puzzleType === 'gridlock_file' && Number.isFinite(Number(puzzleData?.gridlockFile?.rewardSettings?.xp))
+        ? Number(puzzleData.gridlockFile.rewardSettings.xp)
+        : typeof xpReward === 'number' && xpReward > 0 ? xpReward : 50,
       isWarzExclusive: isWarzExclusive === true,
       order: typeof order === 'number' && Number.isFinite(order) ? order : 0,
       isBossPuzzle: isBossPuzzle === true,

@@ -1,0 +1,131 @@
+.gridlock-console {
+  --gridlock-ink: #d9e6e2;
+  --gridlock-muted: #82918e;
+  --gridlock-line: rgba(130, 170, 160, .22);
+  --gridlock-green: #65f0ae;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 640px;
+  overflow: hidden;
+  color: var(--gridlock-ink);
+  border: 1px solid var(--gridlock-line);
+  border-radius: 18px;
+  background: radial-gradient(circle at 50% -15%, rgba(49, 105, 90, .28), transparent 42%), #070c0d;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .38), inset 0 0 80px rgba(29, 66, 59, .13);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.gridlock-console::before {
+  position: absolute; inset: 0; pointer-events: none; content: '';
+  opacity: .12; background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.045) 4px);
+}
+
+.gridlock-console--app-shell { min-height: 100%; height: 100%; border: 0; border-radius: 0; }
+.pw-gridlock-shell-content,
+.pw-gridlock-shell-content > div,
+.pw-gridlock-shell-content .puzzle-detail-play-stage,
+.pw-gridlock-shell-content .puzzle-detail-play-inner,
+.pw-gridlock-shell-content .puzzle-detail-play-container,
+.pw-gridlock-shell-content .puzzle-detail-play-card,
+.pw-gridlock-shell-content .puzzle-detail-play-card-body,
+.pw-gridlock-shell-content .gridlock-renderer-shell { min-height: 0; height: 100%; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: hidden; }
+.pw-gridlock-shell-content .puzzle-detail-play-card-body { display: flex; flex-direction: column; }
+.gridlock-file-header, .gridlock-status-strip, .gridlock-panel-title, .gridlock-command-bar { position: relative; z-index: 1; display: flex; align-items: center; }
+.gridlock-file-header { justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--gridlock-line); letter-spacing: .14em; }
+.gridlock-file-header div { display: flex; flex-direction: column; gap: 4px; }
+.gridlock-file-header span, .gridlock-brief span, .gridlock-help-dialog > span { color: var(--gridlock-green); font: 700 10px/1.2 ui-monospace, monospace; letter-spacing: .18em; }
+.gridlock-file-header strong { font: 500 13px/1.2 ui-monospace, monospace; }
+.gridlock-file-header button, .gridlock-panel-title button { min-width: 40px; min-height: 40px; border: 1px solid var(--gridlock-line); border-radius: 10px; color: var(--gridlock-ink); background: rgba(255,255,255,.035); }
+.gridlock-status-strip { min-height: 38px; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--gridlock-line); color: var(--gridlock-muted); font: 700 10px/1 ui-monospace, monospace; letter-spacing: .09em; }
+.gridlock-status-strip time { margin-left: auto; color: var(--gridlock-ink); }
+.gridlock-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #8b9694; }
+.gridlock-status-dot--ready, .gridlock-status-dot--playing { background: var(--gridlock-green); box-shadow: 0 0 9px var(--gridlock-green); }
+.gridlock-status-dot--completion-pending, .gridlock-status-dot--network-error { background: #f4c35d; }
+.gridlock-status-dot--won { background: #70e6ff; box-shadow: 0 0 9px #70e6ff; }
+.gridlock-status-dot--failed, .gridlock-status-dot--config-error { background: #ff6b6b; }
+.gridlock-workspace { position: relative; z-index: 1; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) 280px; min-height: 0; }
+.gridlock-board-panel { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: clamp(18px, 4vw, 42px); }
+.gridlock-brief { width: min(100%, 680px); margin: 0 auto 22px; }
+.gridlock-brief h2 { margin: 7px 0 6px; color: #f2f8f6; font-size: clamp(22px, 4vw, 36px); line-height: 1.05; letter-spacing: -.025em; }
+.gridlock-brief p { max-width: 60ch; margin: 0; color: var(--gridlock-muted); font-size: 13px; line-height: 1.55; }
+.gridlock-grid { width: min(100%, 680px); margin: 0 auto; display: grid; grid-template-columns: repeat(var(--gridlock-columns), minmax(0, 1fr)); gap: clamp(5px, 1vw, 10px); }
+.gridlock-cell { position: relative; min-width: 0; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; overflow: hidden; border: 1px solid rgba(159, 190, 181, .24); border-radius: 9px; color: #e2ece9; background: linear-gradient(145deg, rgba(28, 43, 41, .94), rgba(10, 17, 18, .96)); box-shadow: inset 0 1px rgba(255,255,255,.025); transition: border-color .16s, background .16s, transform .12s; touch-action: manipulation; }
+button.gridlock-cell { cursor: pointer; }
+button.gridlock-cell:hover:not(.gridlock-cell--locked) { border-color: rgba(101, 240, 174, .62); }
+.gridlock-cell:focus-visible { outline: 3px solid rgba(112, 230, 255, .75); outline-offset: 2px; z-index: 2; }
+.gridlock-cell--selected { border-color: var(--gridlock-green); background: radial-gradient(circle, rgba(62, 173, 123, .28), rgba(12, 31, 27, .98)); box-shadow: inset 0 0 22px rgba(101, 240, 174, .12), 0 0 16px rgba(101, 240, 174, .13); transform: translateY(-1px); }
+.gridlock-cell--selected::after { position: absolute; top: 6px; right: 7px; content: '✓'; color: var(--gridlock-green); font: 800 11px ui-monospace, monospace; }
+.gridlock-cell--locked { cursor: not-allowed; opacity: .44; }
+.gridlock-cell strong { max-width: 92%; font-size: clamp(12px, 2.2vw, 19px); line-height: 1.05; overflow-wrap: anywhere; }
+.gridlock-cell small { color: var(--gridlock-green); font: 700 8px ui-monospace, monospace; text-transform: uppercase; letter-spacing: .09em; }
+.gridlock-cell-evidence { display: -webkit-box; max-width: 88%; color: var(--gridlock-muted); font-size: clamp(7px, 1.1vw, 10px); line-height: 1.2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gridlock-cell-icon { font-size: clamp(14px, 2vw, 22px); }
+.gridlock-cell-lock { position: absolute; bottom: 5px; color: #aab4b2; font: 700 7px ui-monospace, monospace; letter-spacing: .08em; }
+.gridlock-cell--input input { width: 70%; min-height: 44px; border: 0; border-bottom: 2px solid var(--gridlock-green); outline: 0; color: #f0faf7; background: transparent; text-align: center; text-transform: uppercase; font: 800 clamp(18px, 3vw, 30px) ui-monospace, monospace; }
+.gridlock-rule-panel { border-left: 1px solid var(--gridlock-line); background: rgba(5, 10, 11, .5); padding: 20px 18px; }
+.gridlock-panel-title { justify-content: space-between; margin-bottom: 15px; color: var(--gridlock-green); font: 700 10px ui-monospace, monospace; letter-spacing: .15em; }
+.gridlock-panel-title button { min-height: 34px; font: 700 9px ui-monospace, monospace; }
+.gridlock-rule-panel article { display: grid; grid-template-columns: 28px 1fr; gap: 8px; padding: 13px 0; border-top: 1px solid var(--gridlock-line); }
+.gridlock-rule-panel article > span { color: var(--gridlock-green); font: 700 9px ui-monospace, monospace; }
+.gridlock-rule-panel article p, .gridlock-declassified p { margin: 0; color: #aebbb8; font-size: 12px; line-height: 1.55; }
+.gridlock-rule-panel article.gridlock-hint { border-color: rgba(101,240,174,.3); }
+.gridlock-hint-button { width: 100%; min-height: 44px; margin-top: 10px; border: 1px solid rgba(101,240,174,.4); border-radius: 8px; color: var(--gridlock-green); background: rgba(101,240,174,.06); font: 800 9px ui-monospace, monospace; letter-spacing: .08em; }
+.gridlock-attempts { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--gridlock-line); color: var(--gridlock-muted); font: 700 10px ui-monospace, monospace; text-transform: uppercase; }
+.gridlock-attempts strong { color: var(--gridlock-ink); }
+.gridlock-declassified { margin-top: 18px; padding: 13px; border: 1px solid rgba(101,240,174,.3); border-radius: 9px; background: rgba(101,240,174,.06); }
+.gridlock-declassified strong { display: block; margin-bottom: 7px; color: var(--gridlock-green); font: 700 9px ui-monospace, monospace; letter-spacing: .1em; }
+.gridlock-command-bar { min-height: 72px; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--gridlock-line); background: rgba(4, 8, 9, .88); }
+.gridlock-live-message { flex: 1; color: var(--gridlock-muted); font-size: 12px; }
+.gridlock-command-bar button, .gridlock-state-panel button, .gridlock-overlay button { min-height: 44px; border-radius: 9px; padding: 0 18px; font: 800 10px ui-monospace, monospace; letter-spacing: .08em; cursor: pointer; }
+.gridlock-secondary { border: 1px solid var(--gridlock-line); color: var(--gridlock-ink); background: rgba(255,255,255,.035); }
+.gridlock-primary, .gridlock-overlay button { border: 1px solid #72e9b3; color: #06110d; background: var(--gridlock-green); box-shadow: 0 0 20px rgba(101,240,174,.14); }
+.gridlock-command-bar button:disabled { cursor: not-allowed; opacity: .42; }
+.gridlock-overlay, .gridlock-completion { position: absolute; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(2, 6, 7, .86); backdrop-filter: blur(9px); }
+.gridlock-overlay > div { width: min(100%, 500px); padding: clamp(24px, 6vw, 48px); border: 1px solid var(--gridlock-line); border-radius: 14px; color: var(--gridlock-ink); background: #0a1112; box-shadow: 0 24px 80px rgba(0,0,0,.55); }
+.gridlock-overlay h2 { margin: 8px 0; font-size: 25px; }
+.gridlock-overlay p, .gridlock-overlay li { color: #a5b3b0; font-size: 13px; line-height: 1.6; }
+.gridlock-overlay ol { padding-left: 20px; }
+.gridlock-overlay button { margin-top: 14px; }
+.gridlock-completion { z-index: 30; gap: 9px; align-content: center; color: var(--gridlock-green); }
+.gridlock-completion span { width: 74px; height: 74px; border: 2px solid var(--gridlock-green); border-radius: 50%; animation: gridlock-pulse .7s ease-out infinite alternate; }
+.gridlock-completion strong { font: 900 20px ui-monospace, monospace; letter-spacing: .15em; }
+.gridlock-completion small { color: var(--gridlock-muted); font: 700 9px ui-monospace, monospace; letter-spacing: .15em; }
+.gridlock-state-panel { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; border: 1px solid var(--gridlock-line, rgba(130,170,160,.22)); border-radius: 16px; color: #b8c5c2; background: #070c0d; text-align: center; }
+.gridlock-state-panel--error strong { color: #ff8e8e; }
+.gridlock-state-panel button { border: 1px solid rgba(101,240,174,.6); color: #65f0ae; background: transparent; }
+.gridlock-spinner { width: 28px; height: 28px; border: 2px solid rgba(101,240,174,.2); border-top-color: #65f0ae; border-radius: 50%; animation: gridlock-spin .8s linear infinite; }
+@keyframes gridlock-spin { to { transform: rotate(360deg); } }
+@keyframes gridlock-pulse { to { transform: scale(1.14); box-shadow: 0 0 38px rgba(101,240,174,.38); } }
+
+@media (max-width: 720px) {
+  .gridlock-console { min-height: 100%; border-radius: 0; }
+  .gridlock-workspace { display: flex; flex-direction: column; min-height: 0; }
+  .gridlock-board-panel { flex: 1 1 auto; min-height: 0; padding: 12px; overflow: auto; }
+  .gridlock-brief { margin-bottom: 14px; }
+  .gridlock-brief h2 { font-size: 22px; }
+  .gridlock-grid { max-width: min(100%, calc(100dvh - 330px)); gap: 5px; }
+  .gridlock-rule-panel { flex: 0 1 118px; max-height: 118px; overflow: auto; border: 0; border-top: 1px solid var(--gridlock-line); padding: 10px 12px; }
+  .gridlock-panel-title { margin-bottom: 5px; }
+  .gridlock-rule-panel article { padding: 9px 0; }
+  .gridlock-rule-panel article p { font-size: 11px; }
+  .gridlock-status-strip { padding: 0 12px; }
+  .gridlock-command-bar { position: sticky; z-index: 8; bottom: 0; min-height: calc(66px + env(safe-area-inset-bottom)); padding: 9px 10px calc(9px + env(safe-area-inset-bottom)); }
+  .gridlock-live-message { position: absolute; left: 12px; right: 12px; top: -25px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gridlock-command-bar button { padding: 0 13px; }
+  .gridlock-primary { flex: 1; }
+  .gridlock-cell-evidence { display: none; }
+}
+
+@media (max-width: 390px) {
+  .gridlock-file-header { padding: 12px; }
+  .gridlock-board-panel { padding-left: 8px; padding-right: 8px; }
+  .gridlock-cell strong { font-size: 11px; }
+  .gridlock-cell small { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gridlock-spinner, .gridlock-completion span { animation: none; }
+  .gridlock-cell { transition: none; }
+}

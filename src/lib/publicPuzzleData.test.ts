@@ -42,4 +42,35 @@ describe("sanitizePublicPuzzleData", () => {
     expect(sanitized.cols).toBe(3);
     expect(sanitized.blackSquareRatio).toBe(0);
   });
+
+  test("strips every Gridlock answer-bearing field from the general puzzle payload", () => {
+    const sanitized = sanitizePublicPuzzleData("gridlock_file", { gridlockFile: {
+      schemaVersion: 2,
+      answerMode: "selection",
+      fileNumber: 3,
+      fileTitle: "Public Matrix",
+      flavorText: "Trace the signal.",
+      objective: "Select one record.",
+      gridType: "logic",
+      rows: 2,
+      columns: 2,
+      requiredSelections: 1,
+      maximumAttempts: 3,
+      grid: [[{ id: "alpha", label: "Alpha", value: "Alpha" }, { id: "beta", label: "Beta", value: "Beta" }], [{ id: "gamma", label: "Gamma", value: "Gamma" }, { id: "delta", label: "Delta", value: "Delta" }]],
+      correctAnswers: ["alpha"],
+      ruleExplanation: "Alpha is correct.",
+      primaryRuleFamily: "constraint",
+      primaryRuleAxis: "both",
+      retentionUnlock: "secret lore",
+      rewardSettings: { xp: 100 },
+      rules: [{ id: "visible", type: "constraint", text: "Match the signal.", relatedCellIds: [], displayOrder: 0, initiallyVisible: true }],
+    } }) as { gridlockFile: Record<string, unknown> };
+
+    expect(sanitized.gridlockFile.correctAnswers).toBeUndefined();
+    expect(sanitized.gridlockFile.ruleExplanation).toBeUndefined();
+    expect(sanitized.gridlockFile.primaryRuleFamily).toBeUndefined();
+    expect(sanitized.gridlockFile.retentionUnlock).toBeUndefined();
+    expect(sanitized.gridlockFile.rewardSettings).toBeUndefined();
+    expect(JSON.stringify(sanitized)).not.toContain("Alpha is correct");
+  });
 });

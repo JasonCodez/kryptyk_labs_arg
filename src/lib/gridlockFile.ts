@@ -11,14 +11,48 @@
 //   is purely cosmetic / bonus — it never blocks or penalises a correct answer.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import {
+  GRIDLOCK_CORE_LIMITS,
+  GRIDLOCK_SUPPORTED_RULE_AXES,
+  GRIDLOCK_SUPPORTED_RULE_TYPES,
+  normalizeGridlockData,
+  validateGridlockData,
+  validateGridlockSubmission,
+} from './gridlockCore';
+
 export type GridCellValue = string | number;
 
 export type GridCell = {
-  /** The display value — can be a letter, number, or word */
-  value: GridCellValue;
-  /** True for the cell(s) the player must solve */
+  /** Legacy display value. New visual-builder cells also mirror label here. */
+  value?: GridCellValue;
+  /** Legacy value-entry marker. */
   isMissing?: boolean;
+  /** Stable visual-builder identity. Generated deterministically for legacy cells. */
+  id?: string;
+  row?: number;
+  column?: number;
+  label?: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  disabled?: boolean;
+  locked?: boolean;
+  evidence?: string;
 };
+
+export const GRIDLOCK_SIZE_LIMITS = {
+  ...GRIDLOCK_CORE_LIMITS,
+  mobileComfortableCellSize: 44,
+} as const;
+
+export function getGridlockCellSize(columns: number, containerWidth: number): number {
+  const safeColumns = Math.max(1, columns);
+  const ideal = safeColumns <= 3 ? 84 : safeColumns <= 5 ? 68 : 54;
+  const gap = 8;
+  return containerWidth > 0
+    ? Math.max(28, Math.min(ideal, Math.floor((containerWidth - gap * (safeColumns - 1)) / safeColumns)))
+    : ideal;
+}
 
 // ── Grid types ────────────────────────────────────────────────────────────────
 
@@ -51,6 +85,48 @@ export type RuleAxis =
   | 'spiral'
   | 'cell-position';
 
+export const GRIDLOCK_RULE_TYPES = [
+  ...GRIDLOCK_SUPPORTED_RULE_TYPES,
+] as const satisfies readonly RuleFamily[];
+
+export const GRIDLOCK_RULE_TYPE_LABELS: Record<RuleFamily, string> = {
+  arithmetic: 'Arithmetic (constant step)', geometric: 'Geometric (constant ratio)',
+  fibonacci: 'Fibonacci / Recursive sum', polynomial: 'Polynomial / Power rule',
+  alphabetic: 'Alphabetic position', 'compound-word': 'Compound word structure',
+  constraint: 'Logical constraint', positional: 'Positional encoding',
+  semantic: 'Semantic / Word meaning', hybrid: 'Hybrid (multiple systems)',
+};
+
+export const GRIDLOCK_RULE_AXES: readonly RuleAxis[] = GRIDLOCK_SUPPORTED_RULE_AXES;
+
+export const GRIDLOCK_RULE_AXIS_LABELS: Record<RuleAxis, string> = {
+  rows: 'Rows', columns: 'Columns', both: 'Both rows and columns', diagonal: 'Diagonal',
+  spiral: 'Spiral / outward', 'cell-position': 'Cell position (row x column)',
+};
+
+export type GridlockRule = {
+  id: string;
+  type: RuleFamily;
+  text: string;
+  relatedCellIds?: string[];
+  displayOrder: number;
+  initiallyVisible: boolean;
+  unlock?: { afterAttempts?: number; afterRuleId?: string };
+};
+
+export type GridlockValidationIssue = {
+  path: string;
+  message: string;
+  severity: 'error' | 'warning';
+  code: string;
+};
+
+export type GridlockValidationResult = {
+  valid: boolean;
+  errors: GridlockValidationIssue[];
+  warnings: GridlockValidationIssue[];
+};
+
 // ── Hint ──────────────────────────────────────────────────────────────────────
 
 export type GridlockHint = {
@@ -64,6 +140,8 @@ export type GridlockHint = {
 // ── The full puzzle data shape (server-side, stored in puzzle.data.gridlockFile) ──
 
 export type GridlockFileData = {
+  schemaVersion?: 2;
+  answerMode?: 'selection' | 'value-entry';
   fileNumber: number;
   fileTitle: string;
   /** One-line redacted-brief flavor text shown under the grid */
@@ -102,13 +180,24 @@ export type GridlockFileData = {
   /** Arc number (1–N) and day within arc (1–7) */
   arcNumber?: number;
   arcDay?: number;
+  rows?: number;
+  columns?: number;
+  requiredSelections?: number;
+  maximumAttempts?: number;
+  difficulty?: 'easy' | 'medium' | 'hard' | 'expert' | 'extreme';
+  objective?: string;
+  rules?: GridlockRule[];
+  rewardSettings?: { points?: number; xp?: number; [key: string]: unknown };
+  legacyUnsupportedValues?: Record<string, unknown>;
 };
 
 // ── Client-safe shape (secrets stripped) ─────────────────────────────────────
 
 export type GridlockFileClientData = Omit<
   GridlockFileData,
-  'correctAnswers' | 'shadowRuleNote' | 'seasonKeyIndex' | 'ruleExplanation'
+  'correctAnswers' | 'shadowRuleNote' | 'seasonKeyIndex' | 'ruleExplanation' |
+  'primaryRuleFamily' | 'primaryRuleAxis' | 'secondaryRuleFamily' | 'secondaryRuleAxis' |
+  'retentionUnlock' | 'rewardSettings' | 'legacyUnsupportedValues'
 >;
 
 export const DEFAULT_GRIDLOCK_FILE_TEMPLATE: GridlockFileData = {
@@ -145,52 +234,56 @@ export const DEFAULT_GRIDLOCK_FILE_TEMPLATE: GridlockFileData = {
 };
 
 export function createDefaultGridlockFileData(): GridlockFileData {
-  return JSON.parse(JSON.stringify(DEFAULT_GRIDLOCK_FILE_TEMPLATE)) as GridlockFileData;
+  const clone = JSON.parse(JSON.stringify(DEFAULT_GRIDLOCK_FILE_TEMPLATE)) as GridlockFileData;
+  return normalizeGridlockFileData(clone) ?? clone;
 }
 
 // ── Parser ────────────────────────────────────────────────────────────────────
 
-function parseGridlockRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value === 'string') {
-    try {
-      return parseGridlockRecord(JSON.parse(value));
-    } catch {
-      return null;
-    }
-  }
+export function createGridlockCellId(row: number, column: number): string {
+  return `cell-r${row + 1}-c${column + 1}`;
+}
 
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
+export function normalizeGridlockFileData(puzzleData: unknown): GridlockFileData | null {
+  return normalizeGridlockData(puzzleData) as unknown as GridlockFileData | null;
+}
 
-  return value as Record<string, unknown>;
+export function validateGridlockFileData(puzzleData: unknown): GridlockValidationResult {
+  const result = validateGridlockData(puzzleData);
+  return { valid: result.valid, errors: result.errors, warnings: result.warnings };
 }
 
 export function getGridlockFileData(puzzleData: unknown): GridlockFileData | null {
-  const root = parseGridlockRecord(puzzleData);
-  if (!root) return null;
-
-  const nested = parseGridlockRecord(root.gridlockFile);
-  const g = nested ?? root;
-
-  if (
-    !Array.isArray(g.grid) ||
-    !Array.isArray(g.correctAnswers) ||
-    typeof g.ruleExplanation !== 'string' ||
-    typeof g.primaryRuleFamily !== 'string'
-  ) {
-    return null;
-  }
-
-  return g as unknown as GridlockFileData;
+  const normalized = normalizeGridlockFileData(puzzleData);
+  return normalized && validateGridlockFileData(normalized).valid ? normalized : null;
 }
 
 // ── Sanitiser ──────────────────────────────────────────────────────────────────
 
 export function sanitizeGridlockForClient(data: GridlockFileData): GridlockFileClientData {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { correctAnswers: _ca, shadowRuleNote: _sn, seasonKeyIndex: _ski, ruleExplanation: _re, ...rest } = data;
-  return rest;
+  const grid = data.grid.map(row => row.map(cell => {
+    const { isMissing, ...safe } = cell;
+    return data.answerMode === 'value-entry' && isMissing ? { ...safe, isMissing: true } : safe;
+  }));
+  return {
+    schemaVersion: data.schemaVersion,
+    answerMode: data.answerMode,
+    fileNumber: data.fileNumber,
+    fileTitle: data.fileTitle,
+    flavorText: data.flavorText,
+    objective: data.objective,
+    gridType: data.gridType,
+    grid,
+    hints: data.hints,
+    arcNumber: data.arcNumber,
+    arcDay: data.arcDay,
+    rows: data.rows,
+    columns: data.columns,
+    requiredSelections: data.requiredSelections,
+    maximumAttempts: data.maximumAttempts,
+    difficulty: data.difficulty,
+    rules: data.rules?.filter(rule => rule.initiallyVisible).map(rule => ({ ...rule, unlock: undefined })),
+  };
 }
 
 // ── Answer validator ──────────────────────────────────────────────────────────
@@ -206,20 +299,11 @@ export function validateGridlockAnswer(
   data: GridlockFileData,
   submittedAnswers: GridCellValue[],
 ): AnswerResult {
-  const total = data.correctAnswers.length;
-  let correctCount = 0;
-
-  for (let i = 0; i < total; i++) {
-    const canonical = String(data.correctAnswers[i]).trim().toUpperCase();
-    const submitted = String(submittedAnswers[i] ?? '').trim().toUpperCase();
-    if (canonical === submitted) correctCount++;
-  }
-
-  return {
-    correct: correctCount === total,
-    correctCount,
-    totalMissing: total,
-  };
+  const result = validateGridlockSubmission(
+    data as unknown as Parameters<typeof validateGridlockSubmission>[0],
+    { answers: submittedAnswers },
+  );
+  return { correct: result.valid && result.correct, correctCount: result.correctCount, totalMissing: result.requiredCount };
 }
 
 // ── Law Declaration validator (BONUS ONLY — never blocks a correct answer) ────
@@ -493,3 +577,15 @@ export const SAMPLE_WEEK: GridlockFileData[] = [
     retentionUnlock: 'ARC 1 COMPLETE. The six frequencies were: positional cipher, recursive sum, lexical compound, polynomial offset, multi-encoding, and arithmetic modular. Arc 2 begins tomorrow. The rules will not stay the same.',
   },
 ];
+
+/** Canonical seed entry point; seed scripts should never persist SAMPLE_WEEK directly. */
+export function getNormalizedGridlockSeedData(): GridlockFileData[] {
+  return SAMPLE_WEEK.map((entry, index) => {
+    const normalized = normalizeGridlockFileData(entry);
+    const validation = validateGridlockFileData(normalized);
+    if (!normalized || !validation.valid) {
+      throw new Error(`Gridlock seed ${index + 1} is invalid: ${validation.errors.map(issue => issue.message).join(' ')}`);
+    }
+    return normalized;
+  });
+}

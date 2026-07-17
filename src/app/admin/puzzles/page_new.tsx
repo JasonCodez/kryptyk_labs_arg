@@ -8,7 +8,8 @@ import PuzzleTypeFields from "@/components/admin/PuzzleTypeFields";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
 import { useJigsawImageInfo } from "@/hooks/useJigsawImageInfo";
 import SudokuGenerator from "@/components/puzzle/SudokuGenerator";
-import { createDefaultGridlockFileData, getGridlockFileData } from "@/lib/gridlockFile";
+import { getGridlockFileData, validateGridlockFileData } from "@/lib/gridlockFile";
+import { createGridlockDraft } from "@/lib/gridlockBuilder";
 import { validateCrosswordPuzzleData } from "@/lib/crosswordCore";
 import { getTodayDayNumber } from "@/lib/dailyPuzzle";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -423,7 +424,7 @@ export default function AdminPuzzlesPage() {
         const parsedGridlock = getGridlockFileData(prev.puzzleData);
         nextState.puzzleData = {
           ...prev.puzzleData,
-          gridlockFile: parsedGridlock ?? createDefaultGridlockFileData(),
+          gridlockFile: parsedGridlock ?? createGridlockDraft(),
         };
       }
 
@@ -1285,8 +1286,8 @@ export default function AdminPuzzlesPage() {
                     </>
                   ) : (
                     <>
-                      {/* Title is now always optional */}
-                      <div>
+                      {/* Gridlock owns its canonical title inside the guided setup panel. */}
+                      {formData.puzzleType !== 'gridlock_file' && <div>
                         <label className="block text-sm font-semibold text-gray-300 mb-2">
                           Puzzle Title <span className="text-xs text-gray-400">(optional)</span>
                         </label>
@@ -1298,7 +1299,7 @@ export default function AdminPuzzlesPage() {
                           placeholder="Give your puzzle a captivating title"
                           className="w-full px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder-gray-500"
                         />
-                      </div>
+                      </div>}
                       {/* Type-Specific Fields (exclude riddle, general, sudoku) */}
                       {formData.puzzleType !== 'general' && formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'riddle' && (
                         <PuzzleTypeFields
@@ -1666,7 +1667,7 @@ export default function AdminPuzzlesPage() {
                   )}
 
                   {/* Points */}
-                  <div className="grid grid-cols-2 gap-4">
+                  {formData.puzzleType !== 'gridlock_file' && <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         Points Reward
@@ -1694,10 +1695,10 @@ export default function AdminPuzzlesPage() {
                       />
                       <p className="text-xs text-gray-500 mt-1">Easy=25 · Medium=50 · Hard=100 · Extreme=175</p>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Hints (hidden for Sudoku) */}
-                  {formData.puzzleType !== 'sudoku' && (
+                  {formData.puzzleType !== 'sudoku' && formData.puzzleType !== 'gridlock_file' && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-300 mb-2">
                         Hints ({formData.hints.filter(h => h.text.trim()).length})
@@ -1739,7 +1740,7 @@ export default function AdminPuzzlesPage() {
                   {formData.puzzleType !== 'escape_room' && formData.puzzleType !== 'jim_wyze_case' && (
                     <button
                       type="submit"
-                      disabled={submitting}
+                      disabled={submitting || (formData.puzzleType === 'gridlock_file' && !validateGridlockFileData(formData.puzzleData).valid)}
                       className="w-full px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold transition"
                     >
                       {submitting ? (editingId ? "Saving..." : "Creating...") : editingId ? "💾 Update Puzzle" : "🚀 Create Puzzle"}

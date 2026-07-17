@@ -8,7 +8,10 @@ import JimWyzePuzzle from "@/components/puzzle/JimWyzePuzzle";
 import DetectiveCasePuzzle from "@/components/puzzle/DetectiveCasePuzzle";
 import CrimeCasePuzzle from "@/components/puzzle/CrimeCasePuzzle";
 import ParasiteCodePuzzle from "@/components/puzzle/ParasiteCodePuzzle";
-import GridlockFilePuzzle from "@/components/puzzle/GridlockFilePuzzle";
+import GridlockFilePuzzle, {
+  type GridlockPresentationState,
+  type GridlockPuzzleHandle,
+} from "@/components/puzzle/GridlockFilePuzzle";
 import CrackTheSafePuzzle from "@/components/puzzle/CrackTheSafePuzzle";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import WordSearchPuzzle, {
@@ -85,6 +88,8 @@ interface PuzzleTypeRendererProps {
   wordSearchRef?: RefObject<WordSearchPuzzleHandle | null>;
   onWordSearchPresentationChange?: (state: WordSearchPresentationState) => void;
   onWordSearchComplete: () => Promise<WordSearchCompletionResult>;
+  gridlockRef?: RefObject<GridlockPuzzleHandle | null>;
+  onGridlockPresentationChange?: (state: GridlockPresentationState) => void;
   // Skip-token button — normally rendered below the puzzle by PuzzleProgressSection, which gets
   // hidden behind the fullscreen overlay. Passed through to PuzzleFullscreenFrame so it stays
   // reachable while a puzzle is fullscreen.
@@ -118,6 +123,8 @@ export function PuzzleTypeRenderer({
   wordSearchRef,
   onWordSearchPresentationChange,
   onWordSearchComplete,
+  gridlockRef,
+  onGridlockPresentationChange,
   skipControl,
 }: PuzzleTypeRendererProps) {
   // Every jigsaw board is a fixed logical square regardless of the source image's own
@@ -258,13 +265,17 @@ export function PuzzleTypeRenderer({
 
   if (puzzle.puzzleType === 'gridlock_file') {
     return (
-      <div className="mb-8">
-        <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
-          <GridlockFilePuzzle
-            puzzleId={puzzleId}
-            onSolved={() => onSolved()}
-          />
-        </PuzzleFullscreenFrame>
+      <div className="gridlock-renderer-shell">
+        <GridlockFilePuzzle
+          ref={gridlockRef}
+          puzzleId={puzzleId}
+          mode="catalog"
+          persistenceScope="catalog"
+          displayMode="app-shell"
+          hideHeader
+          onPresentationChange={onGridlockPresentationChange}
+          onSolved={() => onSolved()}
+        />
       </div>
     );
   }

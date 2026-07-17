@@ -4,6 +4,7 @@ import {
   validateCrosswordPuzzleData,
 } from "@/lib/crosswordCore";
 import { stripLogicGridSolution, validateLogicGridPuzzleData } from "@/lib/logicGridCore";
+import { getGridlockFileData, sanitizeGridlockForClient } from "@/lib/gridlockFile";
 
 function sanitizeHiddenWordData(rawData: Record<string, unknown>): Record<string, unknown> {
   const safeData = { ...rawData };
@@ -78,6 +79,15 @@ export function sanitizePublicPuzzleData(puzzleType: unknown, rawData: unknown):
 
   if (normalizedType === "logic_grid") {
     return sanitizeLogicGridData(data);
+  }
+
+  if (normalizedType === "gridlock_file") {
+    const normalized = getGridlockFileData(data);
+    if (!normalized) return {};
+    const safe = sanitizeGridlockForClient(normalized) as Record<string, unknown>;
+    return data.gridlockFile && typeof data.gridlockFile === "object"
+      ? { gridlockFile: safe }
+      : safe;
   }
 
   return data;

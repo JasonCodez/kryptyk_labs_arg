@@ -2,7 +2,7 @@
 
 import React, { JSX, useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { createDefaultGridlockFileData, getGridlockFileData } from '@/lib/gridlockFile';
+import GridlockBuilder from '@/components/admin/GridlockBuilder';
 import { createDefaultVaultData, getVaultDerivedLetters, getVaultPuzzleData } from '@/lib/vault';
 import { generateWordSearchGrid, normalizeWordList, type WordSearchGenerationDifficulty } from '@/lib/wordSearchCore';
 import {
@@ -1097,8 +1097,6 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   const [crimeCaseJsonError, setCrimeCaseJsonError] = useState<string>('');
   const [parasiteCodeJson, setParasiteCodeJson] = useState<string>('');
   const [parasiteCodeJsonError, setParasiteCodeJsonError] = useState<string>('');
-  const [gridlockFileJson, setGridlockFileJson] = useState<string>('');
-  const [gridlockFileJsonError, setGridlockFileJsonError] = useState<string>('');
   const [vaultJson, setVaultJson] = useState<string>('');
   const [vaultJsonError, setVaultJsonError] = useState<string>('');
   const [debriefJson, setDebriefJson] = useState<string>('');
@@ -2120,60 +2118,11 @@ export default function PuzzleTypeFields({ puzzleType, puzzleData, onDataChange 
   );
 
   // ── Gridlock File initializer ─────────────────────────────────────────────
-  useEffect(() => {
-    if (puzzleType !== 'gridlock_file') return;
-    const existing = getGridlockFileData(puzzleData?.gridlockFile ?? puzzleData);
-    const template = createDefaultGridlockFileData();
-    try {
-      const next = existing ?? template;
-      setGridlockFileJson(JSON.stringify(next, null, 2));
-      setGridlockFileJsonError('');
-      onDataChange('gridlockFile', next);
-    } catch {
-      setGridlockFileJson(JSON.stringify(template, null, 2));
-      setGridlockFileJsonError('');
-      onDataChange('gridlockFile', template);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [puzzleType]);
-
   const renderGridlockFileFields = () => (
-    <div className="space-y-4">
-      <div className="text-sm text-gray-300">
-        Configure the <span className="font-semibold">Gridlock File</span> puzzle by editing the JSON below.
-        The template shows a fully playable Day 1 puzzle — replace it with your own.
-      </div>
-      <div className="text-xs text-gray-500 space-y-1">
-        <div><span className="text-yellow-400 font-semibold">grid</span> — 2D array of <code>{'{'}value, isMissing?{'}'}</code>. Set <code>isMissing: true</code> on cells the player must solve.</div>
-        <div><span className="text-yellow-400 font-semibold">correctAnswers</span> — ordered array matching each <code>isMissing</code> cell left-to-right, top-to-bottom.</div>
-        <div><span className="text-yellow-400 font-semibold">primaryRuleFamily</span> — one of: <code>arithmetic geometric fibonacci polynomial alphabetic compound-word constraint positional semantic hybrid</code></div>
-        <div><span className="text-yellow-400 font-semibold">primaryRuleAxis</span> — one of: <code>rows columns both diagonal spiral cell-position</code></div>
-        <div><span className="text-yellow-400 font-semibold">ruleExplanation</span> — shown ONLY after the player solves correctly.</div>
-        <div><span className="text-yellow-400 font-semibold">retentionUnlock</span> — optional lore text revealed after solve.</div>
-        <div><span className="text-yellow-400 font-semibold">hints[].cost</span> — XP cost deducted when hint is revealed (default 1).</div>
-      </div>
-      <textarea
-        value={gridlockFileJson}
-        onChange={(e) => {
-          const next = e.target.value;
-          setGridlockFileJson(next);
-          try {
-            const parsed = getGridlockFileData(JSON.parse(next));
-            if (!parsed) {
-              setGridlockFileJsonError('Gridlock JSON must include grid, correctAnswers, ruleExplanation, and primary rule metadata.');
-              return;
-            }
-            onDataChange('gridlockFile', parsed);
-            setGridlockFileJsonError('');
-          } catch {
-            setGridlockFileJsonError('Invalid JSON — fix before saving.');
-          }
-        }}
-        className="w-full px-4 py-2 rounded-lg bg-slate-900/40 border border-slate-600 text-white font-mono text-xs h-96"
-        spellCheck={false}
-      />
-      {gridlockFileJsonError ? <div className="text-sm text-red-300">{gridlockFileJsonError}</div> : null}
-    </div>
+    <GridlockBuilder
+      value={puzzleData?.gridlockFile ?? puzzleData}
+      onChange={(next) => onDataChange('gridlockFile', next)}
+    />
   );
 
   useEffect(() => {

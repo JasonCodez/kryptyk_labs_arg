@@ -259,6 +259,9 @@ export default function GridlockHomepageCard({ autoExpand = false }: { autoExpan
             <GridlockFilePuzzle
               puzzleId={daily.puzzleId}
               guestMode={!isLoggedIn}
+              mode="daily"
+              persistenceScope="daily"
+              dailyIdentity={new Date().toISOString().slice(0, 10)}
               hideHeader
               onSolved={handleSolved}
             />

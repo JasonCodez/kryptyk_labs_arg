@@ -72,8 +72,11 @@ export async function PATCH(
     return NextResponse.json({ error: "isActive must be a boolean" }, { status: 400 });
   }
 
-  const existing = await prisma.puzzle.findUnique({ where: { id: puzzleId }, select: { id: true } });
+  const existing = await prisma.puzzle.findUnique({ where: { id: puzzleId }, select: { id: true, puzzleType: true, data: true } });
   if (!existing) return NextResponse.json({ error: "Puzzle not found" }, { status: 404 });
+  if (body.isActive && existing.puzzleType === 'gridlock_file' && !getGridlockFileData(existing.data)) {
+    return NextResponse.json({ error: 'Fix Gridlock validation errors before publishing.' }, { status: 400 });
+  }
 
   const updated = await prisma.puzzle.update({
     where: { id: puzzleId },
@@ -105,6 +108,7 @@ export async function PUT(
     difficulty,
     correctAnswer,
     pointsReward,
+    xpReward,
     hints,
     puzzleType,
     sudokuGrid,
@@ -152,9 +156,12 @@ export async function PUT(
 
   const validDifficulties = ["easy", "medium", "hard", "expert", "extreme"];
   // For sudoku puzzles use sudokuDifficulty as the source of truth for the badge field.
+  const gridlockDifficulty = puzzleType === 'gridlock_file' ? puzzleData?.gridlockFile?.difficulty : undefined;
   const safeDifficulty =
     puzzleType === 'sudoku' && sudokuDifficulty && validDifficulties.includes(sudokuDifficulty.toLowerCase())
       ? sudokuDifficulty.toLowerCase()
+      : (gridlockDifficulty && validDifficulties.includes(String(gridlockDifficulty).toLowerCase()))
+      ? String(gridlockDifficulty).toLowerCase()
       : (difficulty && validDifficulties.includes(difficulty) ? difficulty : "medium");
 
   const isSpecialType = ["sudoku", "jigsaw", "escape_room", "jim_wyze_case", "code_master", "detective_case", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "vault"].includes(puzzleType);
@@ -167,6 +174,10 @@ export async function PUT(
         { status: 400 }
       );
     }
+    puzzleData = {
+      ...(puzzleData && typeof puzzleData === 'object' && !Array.isArray(puzzleData) ? puzzleData : {}),
+      gridlockFile: parsed,
+    };
   }
 
   if (puzzleType === 'parasite_code') {
@@ -276,10 +287,13 @@ export async function PUT(
   await prisma.$transaction(async (tx) => {
     // 1. Update core puzzle fields
     const puzzleUpdateData: Record<string, unknown> = {
-      title: title || "Untitled Puzzle",
-      description: description || "",
-      content: content || "",
+      title: puzzleType === 'gridlock_file' ? (puzzleData?.gridlockFile?.fileTitle || title || "Untitled Puzzle") : (title || "Untitled Puzzle"),
+      description: puzzleType === 'gridlock_file' ? (puzzleData?.gridlockFile?.objective || description || "") : (description || ""),
+      content: puzzleType === 'gridlock_file' ? (puzzleData?.gridlockFile?.objective || content || "") : (content || ""),
       difficulty: safeDifficulty,
+      ...(puzzleType === 'gridlock_file' && Number.isFinite(Number(puzzleData?.gridlockFile?.rewardSettings?.xp))
+        ? { xpReward: Number(puzzleData.gridlockFile.rewardSettings.xp) }
+        : typeof xpReward === 'number' ? { xpReward } : {}),
       isWarzExclusive: isWarzExclusive === true,
       isBossPuzzle: isBossPuzzle === true,
     };
