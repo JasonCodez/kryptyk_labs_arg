@@ -106,6 +106,11 @@ export async function POST(request: NextRequest) {
     const puzzleIdRaw = formData.get("puzzleId") as string | null;
     const puzzleId = puzzleIdRaw || undefined;
     const externalUrl = (formData.get("url") as string) || null;
+    // A temporary/unattached upload (no puzzleId yet) has no puzzle record to read
+    // puzzleType from, so callers that know the upload is jigsaw-bound (e.g. an image picked
+    // before the puzzle draft is saved) can flag intent explicitly — the square-check below
+    // honors either signal, not just the puzzle's own recorded type.
+    const purpose = (formData.get("purpose") as string) || null;
 
     if (!file && !externalUrl) {
       return NextResponse.json(
@@ -168,12 +173,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Every jigsaw source image must be square — checked server-side (not just client-side)
-      // by reading pixel dimensions straight out of the file header. A jigsaw upload that
-      // can't be dimension-verified (GIF, SVG, or a corrupt/malformed file — readImageDimensions
-      // only recognizes PNG/JPEG/WebP) is rejected outright rather than silently let through;
-      // that's a deliberate escalation from the reader's general "null = couldn't verify, not a
-      // rejection" contract, scoped to this jigsaw-only gate.
-      if (puzzle?.puzzleType === "jigsaw" && mediaType === "image") {
+      // by reading pixel dimensions straight out of the file header. Applies whenever either
+      // the attached puzzle IS jigsaw, or the caller flagged intent via purpose=jigsaw (a
+      // temporary/unattached upload has no puzzle record to read puzzleType from). A jigsaw
+      // upload that can't be dimension-verified (GIF, SVG, or a corrupt/malformed file —
+      // readImageDimensions only recognizes PNG/JPEG/WebP) is rejected outright rather than
+      // silently let through; that's a deliberate escalation from the reader's general
+      // "null = couldn't verify, not a rejection" contract, scoped to this jigsaw-only gate.
+      if ((puzzle?.puzzleType === "jigsaw" || purpose === "jigsaw") && mediaType === "image") {
         const dims = readImageDimensions(Buffer.from(buffer));
         if (!dims || !isSquareAspect(dims.width, dims.height)) {
           return NextResponse.json(
@@ -251,9 +258,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Every jigsaw source image must be square — checked server-side. A file that can't be
-      // dimension-verified (GIF/SVG/corrupt) is rejected, not silently allowed through.
-      if (puzzle?.puzzleType === "jigsaw" && mediaType === "image") {
+      // Every jigsaw source image must be square — checked server-side, for either a jigsaw
+      // puzzle or a purpose=jigsaw temporary upload. A file that can't be dimension-verified
+      // (GIF/SVG/corrupt) is rejected, not silently allowed through.
+      if ((puzzle?.puzzleType === "jigsaw" || purpose === "jigsaw") && mediaType === "image") {
         const dims = readImageDimensions(Buffer.from(buffer));
         if (!dims || !isSquareAspect(dims.width, dims.height)) {
           return NextResponse.json(

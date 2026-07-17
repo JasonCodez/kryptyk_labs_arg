@@ -516,6 +516,10 @@ export default function AdminPuzzlesPage() {
     const formDataUpload = new FormData();
     formDataUpload.append('file', file);
     formDataUpload.append('puzzleId', targetPuzzleId);
+    // Flags intent to the server even if this ever runs before targetPuzzleId resolves to a
+    // saved jigsaw puzzle record (e.g. a future "upload before save" flow) — the square check
+    // in /api/admin/media honors this the same as an already-attached jigsaw puzzleType.
+    formDataUpload.append('purpose', 'jigsaw');
 
     const res = await fetch('/api/admin/media', {
       method: 'POST',
@@ -851,6 +855,7 @@ export default function AdminPuzzlesPage() {
           const formDataUpload = new FormData();
           formDataUpload.append('url', jigsawImageUrl);
           formDataUpload.append('puzzleId', createdPuzzle.id);
+          formDataUpload.append('purpose', 'jigsaw');
 
           const uploadResponse = await fetch('/api/admin/media', {
             method: 'POST',

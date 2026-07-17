@@ -1,10 +1,14 @@
 import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import prisma from "@/lib/prisma";
+import { writeFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
 import { POST } from "./route";
 
 jest.mock("next-auth", () => ({ getServerSession: jest.fn() }));
 jest.mock("@/lib/auth", () => ({ authOptions: {} }));
+jest.mock("fs/promises", () => ({ writeFile: jest.fn(), mkdir: jest.fn() }));
+jest.mock("fs", () => ({ existsSync: jest.fn() }));
 
 jest.mock("@/lib/prisma", () => ({
   __esModule: true,
@@ -17,6 +21,9 @@ jest.mock("@/lib/prisma", () => ({
 }));
 
 const mockedGetServerSession = getServerSession as jest.Mock;
+const mockedWriteFile = writeFile as jest.Mock;
+const mockedMkdir = mkdir as jest.Mock;
+const mockedExistsSync = existsSync as jest.Mock;
 const db = prisma as unknown as {
   user: { findUnique: jest.Mock };
   puzzle: { findUnique: jest.Mock };
@@ -84,6 +91,15 @@ function importRequest(puzzleId: string | null, url: string) {
   return new NextRequest("http://localhost/api/admin/media", { method: "POST", body: formData });
 }
 
+function fileRequest(opts: { puzzleId?: string | null; purpose?: string; buffer: Buffer; name: string; type: string }) {
+  const formData = new FormData();
+  const file = new File([new Uint8Array(opts.buffer)], opts.name, { type: opts.type });
+  formData.append("file", file);
+  if (opts.puzzleId) formData.append("puzzleId", opts.puzzleId);
+  if (opts.purpose) formData.append("purpose", opts.purpose);
+  return new NextRequest("http://localhost/api/admin/media", { method: "POST", body: formData });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   global.fetch = jest.fn();
@@ -95,6 +111,9 @@ beforeEach(() => {
   db.jigsawPuzzle.findUnique.mockResolvedValue({ puzzleId: "jigsaw-puzzle-1" });
   db.jigsawPuzzle.update.mockResolvedValue({});
   db.jigsawPuzzle.create.mockResolvedValue({});
+  mockedExistsSync.mockReturnValue(true);
+  mockedMkdir.mockResolvedValue(undefined);
+  mockedWriteFile.mockResolvedValue(undefined);
 });
 
 describe("POST /api/admin/media — jigsaw square-image validation (external URL import)", () => {
@@ -148,7 +167,7 @@ describe("POST /api/admin/media — jigsaw square-image validation (external URL
     expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
   });
 
-  test("a temporary (no puzzleId) upload of a non-square image succeeds — intent can't be validated without a puzzle — but re-importing that same image to a real jigsaw puzzle is still rejected", async () => {
+  test("a temporary (no puzzleId, no purpose) upload of a non-square image succeeds — intent can't be validated without a puzzle — but re-importing that same image to a real jigsaw puzzle is still rejected", async () => {
     mockFetchOnce(pngBuffer(800, 600), "image/png");
     const temp = await POST(importRequest(null, "https://example.test/nonsquare.png"));
     expect(temp.status).toBe(201);
@@ -159,5 +178,85 @@ describe("POST /api/admin/media — jigsaw square-image validation (external URL
     expect(attach.status).toBe(400);
     const json = await attach.json();
     expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+  });
+});
+
+describe("POST /api/admin/media — jigsaw square-image validation (multipart file upload)", () => {
+  test("accepts a square PNG file", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: pngBuffer(640, 640), name: "square.png", type: "image/png" }));
+    expect(response.status).toBe(201);
+    expect(mockedWriteFile).toHaveBeenCalled();
+  });
+
+  test("accepts a square JPEG file", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: jpegBuffer(1024, 1024), name: "square.jpg", type: "image/jpeg" }));
+    expect(response.status).toBe(201);
+  });
+
+  test("accepts a square WebP file", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: webpVp8xBuffer(800, 800), name: "square.webp", type: "image/webp" }));
+    expect(response.status).toBe(201);
+  });
+
+  test("rejects a non-square PNG file and never writes it to disk", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: pngBuffer(800, 600), name: "wide.png", type: "image/png" }));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+    expect(mockedWriteFile).not.toHaveBeenCalled();
+  });
+
+  test("rejects an SVG file (not dimension-verifiable)", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: svgBuffer, name: "image.svg", type: "image/svg+xml" }));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+  });
+
+  test("rejects a GIF file (not dimension-verifiable)", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: gifBuffer(640, 640), name: "image.gif", type: "image/gif" }));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+  });
+
+  test("rejects a malformed/truncated file", async () => {
+    const response = await POST(fileRequest({ puzzleId: "jigsaw-puzzle-1", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]), name: "broken.png", type: "image/png" }));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+  });
+
+  test("a non-jigsaw puzzle's file upload is not square-checked", async () => {
+    db.puzzle.findUnique.mockResolvedValueOnce({ id: "other-puzzle-1", puzzleType: "crossword" });
+    const response = await POST(fileRequest({ puzzleId: "other-puzzle-1", buffer: pngBuffer(800, 600), name: "wide.png", type: "image/png" }));
+    expect(response.status).toBe(201);
+  });
+});
+
+describe("POST /api/admin/media — purpose=jigsaw flags intent for temporary (no puzzleId) uploads", () => {
+  test("rejects a non-square temporary upload flagged purpose=jigsaw, even with no puzzleId", async () => {
+    const response = await POST(fileRequest({ puzzleId: null, purpose: "jigsaw", buffer: pngBuffer(800, 600), name: "wide.png", type: "image/png" }));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+    expect(db.puzzle.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("accepts a square temporary upload flagged purpose=jigsaw", async () => {
+    const response = await POST(fileRequest({ puzzleId: null, purpose: "jigsaw", buffer: pngBuffer(640, 640), name: "square.png", type: "image/png" }));
+    expect(response.status).toBe(201);
+  });
+
+  test("rejects an SVG temporary upload flagged purpose=jigsaw", async () => {
+    const response = await POST(fileRequest({ puzzleId: null, purpose: "jigsaw", buffer: svgBuffer, name: "image.svg", type: "image/svg+xml" }));
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Jigsaw images must use a 1:1 square aspect ratio.");
+  });
+
+  test("a temporary upload with no purpose and no puzzleId is not square-checked at all", async () => {
+    const response = await POST(fileRequest({ puzzleId: null, buffer: pngBuffer(800, 600), name: "wide.png", type: "image/png" }));
+    expect(response.status).toBe(201);
   });
 });
