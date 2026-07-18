@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { prefersReducedMotion } from "@/lib/juice";
+import { motion } from "framer-motion";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 import PressableCard from "@/components/ui/PressableCard";
 
 type DailyEntry = { dayNumber: number; completedToday: boolean; streak: number; available: boolean };
@@ -22,7 +22,7 @@ type DailySummary = {
  */
 export default function DailyPuzzleHeroCard() {
   const [summary, setSummary] = useState<DailySummary | null>(null);
-  const reduceMotion = useReducedMotion() || prefersReducedMotion();
+  const reduceMotion = useAppReducedMotion();
 
   useEffect(() => {
     fetch("/api/daily/summary")
@@ -45,47 +45,43 @@ export default function DailyPuzzleHeroCard() {
     >
       <PressableCard
         href="/daily"
-        accent="gold"
+        accent="secondary"
         padding="lg"
         bevel
         style={{
           boxShadow:
-            "0 0 24px -8px rgba(255,201,60,0.4), 0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.12)",
+            "0 0 24px -8px color-mix(in srgb, var(--pw-brand-secondary) 40%, transparent), 0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.12)",
         }}
       >
         <div className="flex items-start justify-between gap-4 mb-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "var(--pw-gold)" }}>
+            <p className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "var(--pw-brand-secondary)" }}>
               📅 Daily Puzzles
             </p>
-            <h3 className="text-xl font-extrabold" style={{ color: "var(--pw-text)" }}>
+            <h3 className="text-xl font-extrabold" style={{ color: "var(--pw-text-primary)" }}>
               {allDone ? "All done for today!" : "A fresh set every day"}
             </h3>
           </div>
           {bestStreak > 0 && (
             <div
               className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold"
-              style={{ background: "rgba(255,201,60,0.14)", color: "var(--pw-gold)", border: "1px solid rgba(255,201,60,0.3)" }}
+              style={{ background: "color-mix(in srgb, var(--pw-brand-secondary) 14%, transparent)", color: "var(--pw-brand-secondary)", border: "1px solid color-mix(in srgb, var(--pw-brand-secondary) 30%, transparent)" }}
             >
               🔥 {bestStreak}
             </div>
           )}
         </div>
-        <p className="text-sm mb-4" style={{ color: "var(--pw-text-dim)" }}>
+        <p className="text-sm mb-4" style={{ color: "var(--pw-text-secondary)" }}>
           Hidden Word, Sudoku, Crossword, Word Trove & Jigsaw
           {summary ? ` — ${completedCount}/${availableEntries.length} complete today` : ""}
         </p>
-        {/* Styled to match GameButton's pink/skeu look (gradient, gloss, breathing
-            pulse) without actually rendering a nested <button> — this whole card
-            is already an <a> via PressableCard, and a real <button> inside an <a>
-            is invalid HTML and risks swallowing the card's own click/tap handling. */}
+        {/* Styled to match GameButton's primary skeu look (gradient, gloss,
+            breathing pulse via .game-btn--primary) without actually rendering a
+            nested <button> — this whole card is already an <a> via
+            PressableCard, and a real <button> inside an <a> is invalid HTML and
+            risks swallowing the card's own click/tap handling. */}
         <div
-          className="relative inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-extrabold uppercase tracking-wide game-text-stroke game-text-pop border-b-4 shadow-skeu-raised-sm animate-candy-breathe overflow-hidden"
-          style={{
-            backgroundImage: "linear-gradient(160deg, #FF8FC7 0%, #FF4FA3 45%, #C7157A 100%)",
-            borderColor: "#A80F63",
-            color: "#ffffff",
-          }}
+          className="relative inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-extrabold uppercase tracking-wide game-text-stroke game-text-pop border-b-4 shadow-skeu-raised-sm animate-candy-breathe overflow-hidden game-btn--primary"
         >
           <span className="game-gloss-overlay" aria-hidden />
           <span className="absolute inset-0 rounded-[inherit] animate-candy-spark" aria-hidden />

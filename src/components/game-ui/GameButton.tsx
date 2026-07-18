@@ -2,8 +2,8 @@
 
 import { forwardRef } from "react";
 import type { ReactNode } from "react";
-import { motion, useReducedMotion, type HTMLMotionProps } from "framer-motion";
-import { prefersReducedMotion } from "@/lib/juice/prefs";
+import { motion, type HTMLMotionProps } from "framer-motion";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 
 /** Semantic roles — the preferred API. */
 export type GameButtonSemanticVariant =
@@ -76,12 +76,11 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
   ref
 ) {
   const semantic = resolveGameButtonVariant(variant);
-  // Combined OS setting (framer's media-query hook) + the app's own
-  // data-reduce-animations toggle — the codebase-standard pairing (Pressable,
-  // PressableCard, …). Under reduced motion the spring transforms and the
-  // pulse/spark loops are dropped; hover/pressed still read through the CSS
-  // state colors and the shadow collapse, which are not motion.
-  const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
+  // Reactive: combines the OS media query and the app's data-reduce-animations
+  // toggle, and re-renders when either changes after mount. Under reduced
+  // motion the spring transforms and the pulse/spark loops are dropped;
+  // hover/pressed still read through the CSS state colors and shadow collapse.
+  const reduceMotion = useAppReducedMotion();
   return (
     <motion.button
       ref={ref}

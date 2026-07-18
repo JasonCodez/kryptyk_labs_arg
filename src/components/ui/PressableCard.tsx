@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { prefersReducedMotion } from "@/lib/juice";
+import { motion } from "framer-motion";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 import Card, { type CardAccent, type CardPadding } from "./Card";
 
 interface PressableCardProps {
@@ -30,7 +30,7 @@ export default function PressableCard({
   className,
   style,
 }: PressableCardProps) {
-  const reduceMotion = useReducedMotion() || prefersReducedMotion();
+  const reduceMotion = useAppReducedMotion();
 
   return (
     <Link href={href} className="pw-press" style={{ textDecoration: "none", display: "block" }}>

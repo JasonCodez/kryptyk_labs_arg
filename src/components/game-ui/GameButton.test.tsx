@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import GameButton, { resolveGameButtonVariant } from "./GameButton";
 
 afterEach(cleanup);
@@ -77,5 +77,23 @@ describe("GameButton reduced motion (app accessibility toggle)", () => {
     render(<GameButton onClick={onClick}>Go</GameButton>);
     screen.getByRole("button", { name: "Go" }).click();
     expect(onClick).toHaveBeenCalled();
+  });
+});
+
+describe("GameButton reacts to the reduced-motion toggle changing after mount", () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute("data-reduce-animations");
+  });
+
+  it("drops the pulse live when the setting is enabled mid-session", async () => {
+    render(<GameButton pulse>Play</GameButton>);
+    const button = screen.getByRole("button", { name: "Play" });
+    expect(button.className).toContain("animate-candy-breathe");
+
+    document.documentElement.setAttribute("data-reduce-animations", "true");
+    await waitFor(() => expect(button.className).not.toContain("animate-candy-breathe"));
+
+    document.documentElement.setAttribute("data-reduce-animations", "false");
+    await waitFor(() => expect(button.className).toContain("animate-candy-breathe"));
   });
 });

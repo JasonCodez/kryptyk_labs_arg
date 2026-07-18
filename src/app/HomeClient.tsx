@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { motion, useReducedMotion } from "framer-motion";
-import { prefersReducedMotion } from "@/lib/juice";
+import { motion } from "framer-motion";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 import PressableCard from "@/components/ui/PressableCard";
 import ContinuePlayingCard from "@/components/home/ContinuePlayingCard";
 import DailyPuzzleHeroCard from "@/components/home/DailyPuzzleHeroCard";
 
+// Discovery roles: daily = secondary (streaks/resets are gold territory),
+// catalog = primary (general play), Warz = accent (the one "featured" slot).
 const FEATURES = [
   {
     icon: "🗓️",
     title: "More Daily Puzzles",
-    accent: "gold" as const,
+    accent: "secondary" as const,
     body: "Sudoku, Crossword, Word Trove, and Jigsaw — a fresh set every day.",
     href: "/daily",
     cta: "View Daily Puzzles",
@@ -20,7 +22,7 @@ const FEATURES = [
   {
     icon: "🧩",
     title: "Full Catalog",
-    accent: "teal" as const,
+    accent: "primary" as const,
     body: "Crosswords, Word Troves, jigsaws, anagrams, detective cases, and more.",
     href: "/puzzles",
     cta: "Open Catalog",
@@ -28,7 +30,7 @@ const FEATURES = [
   {
     icon: "⚔",
     title: "Warz Battles",
-    accent: "violet" as const,
+    accent: "accent" as const,
     body: "Head-to-head puzzle battles. Same puzzle, ranked pressure.",
     href: "warz-cta",
     cta: "Enter Warz",
@@ -38,12 +40,12 @@ const FEATURES = [
 export default function HomeClient() {
   const { data: session } = useSession();
   const competeHref = session ? "/warz" : "/auth/register";
-  const reduceMotion = useReducedMotion() || prefersReducedMotion();
+  const reduceMotion = useAppReducedMotion();
 
   return (
     <main
       style={{
-        backgroundColor: "var(--pw-ink)",
+        backgroundColor: "var(--pw-bg-base)",
         minHeight: "100vh",
         paddingTop: "calc(56px + env(safe-area-inset-top, 0px))",
         fontFamily: "system-ui, -apple-system, sans-serif",
@@ -70,9 +72,9 @@ export default function HomeClient() {
             >
               <PressableCard href={feature.href === "warz-cta" ? competeHref : feature.href} accent={feature.accent} padding="md">
                 <span className="text-2xl block mb-2">{feature.icon}</span>
-                <h3 className="text-base font-extrabold mb-1.5" style={{ color: "var(--pw-text)" }}>{feature.title}</h3>
-                <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--pw-text-dim)" }}>{feature.body}</p>
-                <span className="text-sm font-bold" style={{ color: "var(--pw-text)" }}>
+                <h3 className="text-base font-extrabold mb-1.5" style={{ color: "var(--pw-text-primary)" }}>{feature.title}</h3>
+                <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--pw-text-secondary)" }}>{feature.body}</p>
+                <span className="text-sm font-bold" style={{ color: "var(--pw-text-primary)" }}>
                   {feature.href === "warz-cta" ? (session ? feature.cta : "Create Account") : feature.cta} &rarr;
                 </span>
               </PressableCard>
@@ -82,35 +84,36 @@ export default function HomeClient() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="px-4 py-10 lg:max-w-4xl lg:mx-auto" style={{ borderTop: "1px solid var(--pw-line)" }}>
+      <footer className="px-4 py-10 lg:max-w-4xl lg:mx-auto" style={{ borderTop: "1px solid var(--pw-border-subtle)" }}>
         <div className="flex flex-wrap justify-between items-start gap-8 mb-6">
           <div>
             <div className="inline-flex items-center gap-2 mb-2">
               <img src="/images/puzzle_warz_logo.png" alt="PuzzleWarz" className="h-7 w-auto" />
-              <span className="text-xs font-extrabold uppercase tracking-widest" style={{ color: "var(--pw-success)" }}>PuzzleWarz</span>
+              {/* Wordmark = trophy gold, the brand's reward/identity role. */}
+              <span className="text-xs font-extrabold uppercase tracking-widest" style={{ color: "var(--pw-brand-secondary)" }}>PuzzleWarz</span>
             </div>
-            <p className="text-xs max-w-[250px] leading-relaxed" style={{ color: "var(--pw-text-dim)" }}>
+            <p className="text-xs max-w-[250px] leading-relaxed" style={{ color: "var(--pw-text-secondary)" }}>
               Daily puzzles first. Full catalog right behind them.
             </p>
           </div>
           <div className="flex gap-10 flex-wrap text-sm">
             <div className="flex flex-col gap-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-text-dim)" }}>Play</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-text-secondary)" }}>Play</p>
               {[["Daily Puzzles", "/daily"], ["Puzzle Library", "/puzzles"], ["Leaderboards", "/leaderboards"], ["Warz Battles", competeHref]].map(([label, href]) => (
-                <Link key={label} href={href} className="transition-colors hover:text-white" style={{ color: "var(--pw-text-dim)" }}>{label}</Link>
+                <Link key={label} href={href} className="transition-colors hover:text-white" style={{ color: "var(--pw-text-secondary)" }}>{label}</Link>
               ))}
             </div>
             <div className="flex flex-col gap-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-text-dim)" }}>Account</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-text-secondary)" }}>Account</p>
               {[["Sign Up Free", "/auth/register"], ["Sign In", "/auth/signin"], ["Profile", "/profile"]].map(([label, href]) => (
-                <Link key={label} href={href} className="transition-colors hover:text-white" style={{ color: "var(--pw-text-dim)" }}>{label}</Link>
+                <Link key={label} href={href} className="transition-colors hover:text-white" style={{ color: "var(--pw-text-secondary)" }}>{label}</Link>
               ))}
             </div>
           </div>
         </div>
-        <div className="pt-4 flex flex-wrap justify-between items-center gap-2" style={{ borderTop: "1px solid var(--pw-line)" }}>
-          <p className="text-xs" style={{ color: "var(--pw-text-faint)" }}>&copy; 2026 PuzzleWarz &middot; All rights reserved</p>
-          <p className="text-xs" style={{ color: "var(--pw-text-faint)" }}>Start fast. Stay sharp. Finish strong.</p>
+        <div className="pt-4 flex flex-wrap justify-between items-center gap-2" style={{ borderTop: "1px solid var(--pw-border-subtle)" }}>
+          <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>&copy; 2026 PuzzleWarz &middot; All rights reserved</p>
+          <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>Start fast. Stay sharp. Finish strong.</p>
         </div>
       </footer>
     </main>

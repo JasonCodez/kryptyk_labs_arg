@@ -92,15 +92,16 @@ export default function PuzzlesHub() {
   return (
     <div
       style={{
+        // Ambient brand glow over neutral navy — mirrors the app body treatment.
         background:
-          "radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26",
+          "radial-gradient(1300px 800px at 15% -10%, color-mix(in srgb, var(--pw-brand-primary) 12%, transparent), transparent 62%), radial-gradient(1100px 700px at 90% 0%, color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent), transparent 58%), var(--pw-bg-base)",
       }}
       className="min-h-screen"
     >
       <div className="pt-24 pb-8 md:pb-16 px-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">Campaigns</h1>
-          <p style={{ color: "#EEF1FA" }}>
+          <h1 className="text-3xl md:text-5xl font-bold mb-4" style={{ color: "var(--pw-text-primary)" }}>Campaigns</h1>
+          <p style={{ color: "var(--pw-text-secondary)" }}>
             Every puzzle type is its own campaign. Pick one and work through it start to finish.
           </p>
         </div>
@@ -109,7 +110,15 @@ export default function PuzzlesHub() {
       <div className="px-4 py-6 md:py-12 max-w-7xl mx-auto">
         {summaries.length === 0 ? (
           <div className="text-center py-20">
-            <p style={{ color: "#EEF1FA" }} className="text-lg">No campaigns available yet</p>
+            <p style={{ color: "var(--pw-text-primary)" }} className="text-lg mb-2">No campaigns available yet</p>
+            <p style={{ color: "var(--pw-text-secondary)" }} className="text-sm mb-6">New puzzle campaigns are on the way — try today&apos;s daily puzzles in the meantime.</p>
+            <Link
+              href="/daily"
+              className="inline-block px-5 py-2.5 rounded-xl text-sm font-bold"
+              style={{ background: "var(--pw-brand-primary)", color: "var(--pw-text-on-primary)" }}
+            >
+              Play Daily Puzzles
+            </Link>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -120,39 +129,51 @@ export default function PuzzlesHub() {
                 <Link
                   key={s.puzzleType}
                   href={`/puzzles/type/${s.puzzleType}`}
-                  className="group pw-surface pw-bevel pw-press relative overflow-hidden p-5 transition-all duration-300 hover:scale-[1.02] block shadow-skeu-raised-sm"
+                  className="group pw-surface pw-bevel pw-press relative overflow-hidden p-5 min-h-[44px] transition-all duration-300 hover:scale-[1.02] block shadow-skeu-raised-sm"
                   style={{
-                    borderColor: complete ? "rgba(255,201,60,0.4)" : "rgba(139,61,255,0.3)",
+                    borderColor: complete ? "var(--pw-success-border)" : "var(--pw-border-default)",
                     borderWidth: "1px",
                   }}
                 >
                   <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
                   <div className="relative">
                   <div className="flex items-start justify-between mb-3">
-                    <span className="text-3xl">{TYPE_ICONS[s.puzzleType] || "🧩"}</span>
+                    <span className="text-3xl" aria-hidden>{TYPE_ICONS[s.puzzleType] || "🧩"}</span>
+                    {/* Complete beats the gated/open classification; gated
+                        campaigns carry the accent (attention) chip, open sets
+                        the primary chip. */}
                     <span
                       className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded"
-                      style={{
-                        backgroundColor: s.gated ? "rgba(255,201,60,0.15)" : "rgba(255,79,163,0.15)",
-                        color: s.gated ? "#FFC93C" : "#FF4FA3",
-                      }}
+                      style={
+                        complete
+                          ? { backgroundColor: "var(--pw-success-surface)", color: "var(--pw-success)", border: "1px solid var(--pw-success-border)" }
+                          : s.gated
+                            ? { backgroundColor: "color-mix(in srgb, var(--pw-brand-accent) 15%, transparent)", color: "var(--pw-brand-accent-light)" }
+                            : { backgroundColor: "color-mix(in srgb, var(--pw-brand-primary) 15%, transparent)", color: "var(--pw-brand-primary-light)" }
+                      }
                     >
-                      {s.gated ? "Campaign" : "Open Set"}
+                      {complete ? "✓ Complete" : s.gated ? "Campaign" : "Open Set"}
                     </span>
                   </div>
-                  <h3 className="text-lg font-bold text-white mb-1">{getPuzzleTypeLabel(s.puzzleType)}</h3>
-                  <p className="text-xs font-semibold mb-3" style={{ color: "#8891AC" }}>
+                  <h3 className="text-lg font-bold mb-1" style={{ color: "var(--pw-text-primary)" }}>{getPuzzleTypeLabel(s.puzzleType)}</h3>
+                  <p className="text-xs font-semibold mb-3" style={{ color: "var(--pw-text-secondary)" }}>
                     {s.solved} of {s.total} cleared
                   </p>
-                  <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(139,61,255,0.12)" }}>
+                  <div
+                    className="h-1.5 w-full rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-label={`${getPuzzleTypeLabel(s.puzzleType)} progress`}
+                    aria-valuemin={0}
+                    aria-valuemax={s.total}
+                    aria-valuenow={s.solved}
+                    style={{ background: "rgba(255,255,255,0.08)" }}
+                  >
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${pct}%`,
-                        background: complete
-                          ? "#FFC93C"
-                          : "linear-gradient(90deg, #8B3DFF, #FFC93C)",
-                        boxShadow: pct > 0 ? "0 0 8px rgba(255,201,60,0.4)" : undefined,
+                        background: complete ? "var(--pw-success)" : "var(--pw-brand-primary)",
+                        boxShadow: pct > 0 ? `0 0 8px color-mix(in srgb, ${complete ? "var(--pw-success)" : "var(--pw-brand-primary)"} 40%, transparent)` : undefined,
                       }}
                     />
                   </div>

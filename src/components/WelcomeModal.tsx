@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
-import { prefersReducedMotion } from "@/lib/juice/prefs";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 
 /* ── Fireworks canvas ───────────────────────────────────────────────── */
 
@@ -168,10 +168,10 @@ interface WelcomeModalProps {
 export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeModalProps) {
   const [visible, setVisible] = useState(false);
   useRegisterModal('welcome-modal', visible);
-  // OS media query (framer hook) + the app's data-reduce-animations toggle —
-  // the codebase-standard pairing. Gates entrance springs, the border pulse,
-  // and the fireworks loop; the modal stays fully usable without them.
-  const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
+  // Reactive OS + in-app reduced-motion preference — gates entrance springs,
+  // the border pulse, and the fireworks loop (which unmounts live if the
+  // setting changes mid-display); the modal stays fully usable without them.
+  const reduceMotion = useAppReducedMotion();
 
   useEffect(() => {
     const key = `pw_welcomed_${userId}`;

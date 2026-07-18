@@ -64,11 +64,14 @@ interface Category {
   puzzleCount: number;
 }
 
+// Difficulty maps onto semantic tokens (extreme uses the brand accent orange —
+// it's a spotlight, not an error). Values are CSS var references consumed via
+// the arcade-card --accent custom property, so they stay in sync with globals.
 const DIFFICULTY_COLORS: Record<string, string> = {
-  easy: "#10B981",
-  medium: "#F59E0B",
-  hard: "#FF5A5A",
-  extreme: "#FF4FA3",
+  easy: "var(--pw-success)",
+  medium: "var(--pw-warning)",
+  hard: "var(--pw-error)",
+  extreme: "var(--pw-brand-accent)",
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -152,15 +155,15 @@ function getCardStatus(puzzle: Puzzle): CardStatus {
 }
 
 function getStatusAccent(status: CardStatus, difficultyColor: string): string {
-  if (status === "solved") return "#FFC93C";
-  if (status === "locked") return "#5B6483";
-  if (status === "failed") return "#FF5A5A";
+  if (status === "solved") return "var(--pw-success)";
+  if (status === "locked") return "var(--pw-text-disabled)";
+  if (status === "failed") return "var(--pw-error)";
   return difficultyColor;
 }
 
 function GridPuzzleCard({ puzzle, totalUsers, onCardClick, justCompletedId }: PuzzleCardProps) {
   const status = getCardStatus(puzzle);
-  const diffColor = DIFFICULTY_COLORS[puzzle.difficulty] || '#8891AC';
+  const diffColor = DIFFICULTY_COLORS[puzzle.difficulty] || 'var(--pw-text-secondary)';
   const accent = getStatusAccent(status, diffColor);
   const icon = getPuzzleTypeIcon(puzzle.puzzleType || 'general');
   const attemptedPct = totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0;
@@ -226,7 +229,7 @@ function GridPuzzleCard({ puzzle, totalUsers, onCardClick, justCompletedId }: Pu
 
 function ListPuzzleCard({ puzzle, totalUsers, onCardClick, justCompletedId }: PuzzleCardProps) {
   const status = getCardStatus(puzzle);
-  const diffColor = DIFFICULTY_COLORS[puzzle.difficulty] || '#8891AC';
+  const diffColor = DIFFICULTY_COLORS[puzzle.difficulty] || 'var(--pw-text-secondary)';
   const accent = getStatusAccent(status, diffColor);
   const icon = getPuzzleTypeIcon(puzzle.puzzleType || 'general');
   const attemptedPct = totalUsers > 0 ? Math.round((puzzle.attemptCount || 0) / totalUsers * 100) : 0;
@@ -677,8 +680,9 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
   return (
     <div
       style={{
+        // Ambient brand glow over neutral navy — mirrors the app body treatment.
         background:
-          'radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26',
+          'radial-gradient(1300px 800px at 15% -10%, color-mix(in srgb, var(--pw-brand-primary) 12%, transparent), transparent 62%), radial-gradient(1100px 700px at 90% 0%, color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent), transparent 58%), var(--pw-bg-base)',
       }}
       className="min-h-screen"
     >
@@ -686,15 +690,15 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
       <div className="pt-24 pb-8 md:pb-16 px-4">
         <div className="max-w-7xl mx-auto">
           {puzzleType && (
-            <Link href="/puzzles" className="inline-block text-sm font-semibold mb-3 hover:underline" style={{ color: '#8B3DFF' }}>
+            <Link href="/puzzles" className="inline-block text-sm font-semibold mb-3 hover:underline" style={{ color: 'var(--pw-brand-primary)' }}>
               ← All Campaigns
             </Link>
           )}
-          <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">
+          <h1 className="text-3xl md:text-5xl font-bold mb-4" style={{ color: 'var(--pw-text-primary)' }}>
             {puzzleType ? `${getPuzzleTypeLabel(puzzleType)} Master` : 'Puzzles'}
           </h1>
           {!puzzleType && (
-            <p style={{ color: '#EEF1FA' }}>
+            <p style={{ color: 'var(--pw-text-secondary)' }}>
               Tackle challenges at your own pace. Win points solo or team up for collaborative solving
             </p>
           )}
@@ -728,7 +732,7 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
 
           {!puzzleType && (
             <div className="mt-6 mb-8">
-              <h3 className="text-xs font-bold tracking-widest mb-3 uppercase" style={{ color: '#6baabb' }}>Categories</h3>
+              <h3 className="text-xs font-bold tracking-widest mb-3 uppercase" style={{ color: 'var(--pw-text-muted)' }}>Categories</h3>
               <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
                 <div className="flex gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-x-visible sm:pb-0 no-scrollbar">
                 <button
@@ -739,8 +743,8 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                       : "opacity-70 hover:opacity-100"
                   }`}
                   style={{
-                    backgroundColor: selectedCategory === "all" ? "#FF4FA3" : "rgba(255,79,163, 0.2)",
-                    color: selectedCategory === "all" ? "#170B26" : "#EEF1FA",
+                    backgroundColor: selectedCategory === "all" ? "var(--pw-brand-primary)" : "color-mix(in srgb, var(--pw-brand-primary) 16%, transparent)",
+                    color: selectedCategory === "all" ? "var(--pw-text-on-primary)" : "var(--pw-text-primary)",
                   }}
                 >
                   All
@@ -755,8 +759,10 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                         : "opacity-70 hover:opacity-100"
                     }`}
                     style={{
-                      backgroundColor: selectedCategory === cat.id ? (cat.color || "#FF4FA3") : "rgba(255,79,163, 0.2)",
-                      color: selectedCategory === cat.id ? "#170B26" : "#EEF1FA",
+                      // Category rows may carry their own admin-set color; the
+                      // brand primary is the fallback.
+                      backgroundColor: selectedCategory === cat.id ? (cat.color || "var(--pw-brand-primary)") : "color-mix(in srgb, var(--pw-brand-primary) 16%, transparent)",
+                      color: selectedCategory === cat.id ? "var(--pw-text-on-primary)" : "var(--pw-text-primary)",
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -771,17 +777,18 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
 
           {/* View Mode Toggle and Results Count */}
           <div className="flex items-center justify-between mb-4">
-            <p style={{ color: '#8891AC' }} className="text-sm">
+            <p style={{ color: 'var(--pw-text-secondary)' }} className="text-sm">
               {filteredPuzzles.length} puzzle{filteredPuzzles.length !== 1 ? "s" : ""} found
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setViewMode("grid")}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-all`}
+                aria-pressed={viewMode === "grid"}
                 style={{
-                  backgroundColor: viewMode === "grid" ? "#FF4FA3" : "rgba(255,79,163, 0.2)",
-                  color: viewMode === "grid" ? "#170B26" : "#EEF1FA",
-                  boxShadow: viewMode === "grid" ? "0 0 0 2px #FFC93C" : "none",
+                  backgroundColor: viewMode === "grid" ? "var(--pw-brand-primary)" : "color-mix(in srgb, var(--pw-brand-primary) 16%, transparent)",
+                  color: viewMode === "grid" ? "var(--pw-text-on-primary)" : "var(--pw-text-primary)",
+                  boxShadow: viewMode === "grid" ? "0 0 0 2px color-mix(in srgb, var(--pw-brand-primary) 55%, transparent)" : "none",
                   opacity: viewMode === "grid" ? 1 : 0.6,
                 }}
               >
@@ -790,10 +797,11 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
               <button
                 onClick={() => setViewMode("list")}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-all`}
+                aria-pressed={viewMode === "list"}
                 style={{
-                  backgroundColor: viewMode === "list" ? "#FF4FA3" : "rgba(255,79,163, 0.2)",
-                  color: viewMode === "list" ? "#170B26" : "#EEF1FA",
-                  boxShadow: viewMode === "list" ? "0 0 0 2px #FFC93C" : "none",
+                  backgroundColor: viewMode === "list" ? "var(--pw-brand-primary)" : "color-mix(in srgb, var(--pw-brand-primary) 16%, transparent)",
+                  color: viewMode === "list" ? "var(--pw-text-on-primary)" : "var(--pw-text-primary)",
+                  boxShadow: viewMode === "list" ? "0 0 0 2px color-mix(in srgb, var(--pw-brand-primary) 55%, transparent)" : "none",
                   opacity: viewMode === "list" ? 1 : 0.6,
                 }}
               >
@@ -812,7 +820,8 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                 // remove hash from URL
                 try { history.replaceState(null, "", "/puzzles"); } catch {}
               }}
-              className="px-3 py-1 rounded bg-slate-700 text-white text-sm mb-4"
+              className="px-3 py-1 rounded text-sm mb-4"
+              style={{ background: "var(--pw-surface-3)", color: "var(--pw-text-primary)", border: "1px solid var(--pw-border-default)" }}
             >
               Show all puzzles
             </button>
@@ -820,8 +829,8 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
         )}
         {displayed.length === 0 ? (
           <div className="text-center py-20">
-            <p style={{ color: '#EEF1FA' }} className="text-lg mb-2">No puzzles match your filters</p>
-            <p style={{ color: '#8891AC' }} className="text-sm">Try adjusting your search or filters</p>
+            <p style={{ color: 'var(--pw-text-primary)' }} className="text-lg mb-2">No puzzles match your filters</p>
+            <p style={{ color: 'var(--pw-text-secondary)' }} className="text-sm">Try adjusting your search or filters</p>
           </div>
           ) : viewMode === "grid" ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -840,20 +849,20 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
       {showTeamModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black opacity-60" onClick={closeTeamModal}></div>
-          <div className="relative bg-[#0b0b0b] rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ border: '1px solid rgba(255,201,60, 0.15)' }}>
-            <h3 className="text-lg font-bold text-white mb-2">{teamModalTitle}</h3>
-            <p style={{ color: '#EEF1FA' }} className="mb-4">{teamModalMessage}</p>
+          <div className="relative rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ background: 'var(--pw-bg-elevated)', border: '1px solid var(--pw-border-strong)' }}>
+            <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--pw-text-primary)' }}>{teamModalTitle}</h3>
+            <p style={{ color: 'var(--pw-text-secondary)' }} className="mb-4">{teamModalMessage}</p>
             <div className="flex justify-end gap-2">
               {teamModalCancelText && (
                 <button
                   onClick={closeTeamModal}
-                  className="px-4 py-2 rounded bg-transparent text-white font-semibold"
-                  style={{ border: '1px solid rgba(221, 219, 241, 0.25)' }}
+                  className="px-4 py-2 rounded bg-transparent font-semibold"
+                  style={{ border: '1px solid var(--pw-border-strong)', color: 'var(--pw-text-primary)' }}
                 >
                   {teamModalCancelText}
                 </button>
               )}
-              <GameButton onClick={onTeamModalConfirm} variant="pink" size="sm">{teamModalConfirmText}</GameButton>
+              <GameButton onClick={onTeamModalConfirm} variant="primary" size="sm">{teamModalConfirmText}</GameButton>
             </div>
           </div>
         </div>

@@ -103,6 +103,16 @@ describe("legacy candy palette is gone from Phase 8.1-migrated files", () => {
     "src/lib/useUserPreferences.ts",
     "src/app/layout.tsx",
     "src/app/manifest.ts",
+    // Phase 8.2A — discovery surfaces
+    "src/app/HomeClient.tsx",
+    "src/app/daily/page.tsx",
+    "src/app/puzzles/puzzles-hub.tsx",
+    "src/app/puzzles/puzzles-list.tsx",
+    "src/app/puzzles/puzzles-wrapper.tsx",
+    "src/components/home/DailyPuzzleHeroCard.tsx",
+    "src/components/home/ContinuePlayingCard.tsx",
+    "src/components/ui/PressableCard.tsx",
+    "src/hooks/useAppReducedMotion.ts",
   ];
 
   // The unapproved palette: candy pink/purple (and their dims/edges), the
@@ -114,6 +124,7 @@ describe("legacy candy palette is gone from Phase 8.1-migrated files", () => {
     "#C8B8E0", "#8C7BAD", "#9F8FC9",
     "#2FE6E0", "#0FA6A1", "#3891A6",
     "#020202", "#DDDBF1",
+    "#FFC93C", "#EEF1FA", // old candy-gold + old brand.text (canonical are #FED007 / #EEF2FA)
   ];
   const bannedRgbChannels = [
     "139, 61, 255", "139,61,255",
@@ -129,6 +140,38 @@ describe("legacy candy palette is gone from Phase 8.1-migrated files", () => {
     }
     for (const rgb of bannedRgbChannels) {
       expect(source).not.toContain(rgb.toUpperCase());
+    }
+  });
+
+  // Compatibility aliases still exist in globals.css for un-migrated pages, but
+  // files migrated in Phase 8.2A must reference only canonical tokens. Bare
+  // names only — canonical tokens like --pw-surface-2 / --pw-text-primary are
+  // not matched by the (?![\w-]) boundary.
+  const bannedCompatTokens = [
+    /--pw-ink(?![\w-])/, /--pw-ink-2(?![\w-])/,
+    /--pw-surface(?![\w-])/, /--pw-surface-hi(?![\w-])/,
+    /--pw-line(?![\w-])/, /--pw-line-hi(?![\w-])/,
+    /--pw-gold(?![\w-])/, /--pw-gold-dim(?![\w-])/,
+    /--pw-violet(?![\w-])/, /--pw-violet-dim(?![\w-])/,
+    /--pw-teal(?![\w-])/, /--pw-ember(?![\w-])/, /--pw-locked(?![\w-])/,
+    /--pw-text(?![\w-])/, /--pw-text-dim(?![\w-])/, /--pw-text-faint(?![\w-])/,
+  ];
+  const discoveryFiles = [
+    "src/app/HomeClient.tsx",
+    "src/app/daily/page.tsx",
+    "src/app/puzzles/puzzles-hub.tsx",
+    "src/app/puzzles/puzzles-list.tsx",
+    "src/app/puzzles/puzzles-wrapper.tsx",
+    "src/components/home/DailyPuzzleHeroCard.tsx",
+    "src/components/home/ContinuePlayingCard.tsx",
+    "src/components/ui/PressableCard.tsx",
+    "src/hooks/useAppReducedMotion.ts",
+  ];
+
+  it.each(discoveryFiles)("%s has no compatibility-token references", (rel) => {
+    const source = read(rel);
+    for (const pattern of bannedCompatTokens) {
+      expect(source).not.toMatch(pattern);
     }
   });
 

@@ -1,20 +1,35 @@
 import type { CSSProperties, ReactNode } from "react";
 
-export type CardAccent = "gold" | "violet" | "teal" | "success" | "none";
+/** Semantic discovery roles — the preferred API. */
+export type CardSemanticAccent = "primary" | "secondary" | "accent" | "success" | "neutral";
+/** @deprecated Palette-named accents from the pre-brand system; they map onto
+ * semantic roles (gold→secondary, violet/teal→primary). Use semantic names in
+ * new call sites. */
+export type CardLegacyAccent = "gold" | "violet" | "teal";
+export type CardAccent = CardSemanticAccent | CardLegacyAccent | "none";
 export type CardPadding = "sm" | "md" | "lg";
+
+const LEGACY_TO_SEMANTIC: Record<CardLegacyAccent, CardSemanticAccent> = {
+  gold: "secondary",
+  violet: "primary",
+  teal: "primary",
+};
 
 // RGB channels of the logo-derived brand tokens (globals.css), so the accent
 // border and glow can use valid rgba() with alpha. Appending hex alpha to a
-// var() — `var(--pw-gold)55` — produces an invalid color the browser silently
-// drops. Accent names are legacy ("violet"/"teal" pre-date the brand system);
-// both now resolve to the brand primary blue — prefer "teal" in new call sites
-// until the names are migrated in a later phase.
-const ACCENT_RGB: Record<Exclude<CardAccent, "none">, string> = {
-  gold: "254, 208, 7", // --pw-brand-secondary #FED007
-  violet: "3, 172, 244", // --pw-brand-primary #03ACF4
-  teal: "3, 172, 244", // --pw-brand-primary #03ACF4 (primary action)
+// var() — `var(--pw-brand-secondary)55` — produces an invalid color the
+// browser silently drops. These literals must stay in sync with the tokens.
+const ACCENT_RGB: Record<Exclude<CardSemanticAccent, "neutral">, string> = {
+  primary: "3, 172, 244", // --pw-brand-primary #03ACF4
+  secondary: "254, 208, 7", // --pw-brand-secondary #FED007
+  accent: "249, 113, 2", // --pw-brand-accent #F97102
   success: "59, 196, 106", // --pw-success #3BC46A
 };
+
+export function resolveCardAccent(accent: CardAccent): CardSemanticAccent | "none" {
+  if (accent === "none" || accent === "neutral") return accent === "neutral" ? "neutral" : "none";
+  return (LEGACY_TO_SEMANTIC as Partial<Record<CardAccent, CardSemanticAccent>>)[accent] ?? (accent as CardSemanticAccent);
+}
 
 const PADDING: Record<CardPadding, number> = {
   sm: 16, // 2 x 8pt
@@ -43,7 +58,8 @@ export default function Card({
   className,
   style,
 }: CardProps) {
-  const accentRgb = accent !== "none" ? ACCENT_RGB[accent] : null;
+  const semantic = resolveCardAccent(accent);
+  const accentRgb = semantic !== "none" && semantic !== "neutral" ? ACCENT_RGB[semantic] : null;
 
   return (
     <div
