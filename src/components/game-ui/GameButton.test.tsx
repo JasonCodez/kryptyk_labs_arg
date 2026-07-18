@@ -45,4 +45,37 @@ describe("GameButton semantic variants", () => {
     expect(button.disabled).toBe(true);
     expect(button.className).toContain("cursor-not-allowed");
   });
+
+  it("pulses when asked and motion is allowed", () => {
+    render(<GameButton pulse>Play</GameButton>);
+    expect(screen.getByRole("button", { name: "Play" }).className).toContain("animate-candy-breathe");
+  });
+
+  it("does not pulse when disabled", () => {
+    render(<GameButton pulse disabled>Play</GameButton>);
+    expect(screen.getByRole("button", { name: "Play" }).className).not.toContain("animate-candy-breathe");
+  });
+});
+
+describe("GameButton reduced motion (app accessibility toggle)", () => {
+  beforeEach(() => {
+    document.documentElement.setAttribute("data-reduce-animations", "true");
+  });
+  afterEach(() => {
+    document.documentElement.removeAttribute("data-reduce-animations");
+  });
+
+  it("drops the pulse/spark loop entirely", () => {
+    render(<GameButton pulse>Play</GameButton>);
+    const button = screen.getByRole("button", { name: "Play" });
+    expect(button.className).not.toContain("animate-candy-breathe");
+    expect(button.querySelector(".animate-candy-spark")).toBeNull();
+  });
+
+  it("stays fully interactive", () => {
+    const onClick = jest.fn();
+    render(<GameButton onClick={onClick}>Go</GameButton>);
+    screen.getByRole("button", { name: "Go" }).click();
+    expect(onClick).toHaveBeenCalled();
+  });
 });

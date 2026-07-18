@@ -2,7 +2,8 @@
 
 import { forwardRef } from "react";
 import type { ReactNode } from "react";
-import { motion, type HTMLMotionProps } from "framer-motion";
+import { motion, useReducedMotion, type HTMLMotionProps } from "framer-motion";
+import { prefersReducedMotion } from "@/lib/juice/prefs";
 
 /** Semantic roles — the preferred API. */
 export type GameButtonSemanticVariant =
@@ -75,14 +76,20 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
   ref
 ) {
   const semantic = resolveGameButtonVariant(variant);
+  // Combined OS setting (framer's media-query hook) + the app's own
+  // data-reduce-animations toggle — the codebase-standard pairing (Pressable,
+  // PressableCard, …). Under reduced motion the spring transforms and the
+  // pulse/spark loops are dropped; hover/pressed still read through the CSS
+  // state colors and the shadow collapse, which are not motion.
+  const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
   return (
     <motion.button
       ref={ref}
       disabled={disabled}
       // The spring tap is the core of the "juice": a fast, slightly overshooting
       // press-down that snaps back on release, rather than a linear scale tween.
-      whileTap={disabled ? undefined : { scale: 0.92, y: 3 }}
-      whileHover={disabled ? undefined : { scale: 1.035 }}
+      whileTap={disabled || reduceMotion ? undefined : { scale: 0.92, y: 3 }}
+      whileHover={disabled || reduceMotion ? undefined : { scale: 1.035 }}
       transition={{ type: "spring", stiffness: 500, damping: 22 }}
       className={[
         "relative inline-flex items-center justify-center gap-2 select-none",
@@ -93,7 +100,7 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
         SIZE_CLASSES[size],
         fullWidth ? "w-full" : "",
         disabled ? "opacity-50 grayscale cursor-not-allowed" : "cursor-pointer",
-        pulse && !disabled ? "animate-candy-breathe" : "",
+        pulse && !disabled && !reduceMotion ? "animate-candy-breathe" : "",
         className,
       ].join(" ")}
       style={style}
@@ -102,7 +109,7 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
       {/* Glass highlight — decorative, sits above the gradient fill. */}
       <span className="game-gloss-overlay" aria-hidden />
       {/* Pulsing halo ring, only when explicitly requested (Play/Buy/Claim CTAs). */}
-      {pulse && !disabled && (
+      {pulse && !disabled && !reduceMotion && (
         <span
           className="absolute inset-0 rounded-[inherit] animate-candy-spark"
           aria-hidden

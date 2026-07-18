@@ -117,29 +117,100 @@
 /* ── GameButton / HUD pill variant fills ──────────────────────────────────────
    Shared "shiny plastic" gradient fills for the semantic button roles. Text is
    brand ink (--pw-text-on-*) — white fails AA on the bright logo fills; dark
-   glyphs on bright fills also echoes the logo's own outlined lettering. */
+   glyphs on bright fills also echoes the logo's own outlined lettering.
+
+   Mechanics live once below; each variant only sets custom properties:
+     --btn-light / --btn-mid / --btn-dark   gradient stops (default state)
+     --btn-mid-hover / --btn-mid-pressed    the mid stop for interaction states
+     --btn-disabled                          flat fill when disabled
+     --btn-edge / --btn-ink                 border + text
+   Primary/secondary use the canonical --pw-action-* state tokens; the other
+   variants derive hover (+12% white) / pressed (+18% black) / disabled (62%
+   toward surface-1) with the same formula via color-mix. Ink text stays AA in
+   every state (hover is lighter, pressed mids all measure ≥4.5:1 vs ink). */
+.game-btn--primary,
+.game-btn--secondary,
+.game-btn--accent,
+.game-btn--success,
+.game-btn--danger {
+  background-image: linear-gradient(160deg, var(--btn-light) 0%, var(--btn-mid) 45%, var(--btn-dark) 100%);
+  border-color: var(--btn-edge);
+  color: var(--btn-ink);
+}
+.game-btn--primary:hover:not(:disabled),
+.game-btn--secondary:hover:not(:disabled),
+.game-btn--accent:hover:not(:disabled),
+.game-btn--success:hover:not(:disabled),
+.game-btn--danger:hover:not(:disabled) {
+  background-image: linear-gradient(160deg, var(--btn-light) 0%, var(--btn-mid-hover) 45%, var(--btn-dark) 100%);
+}
+/* Pressed reads through color (darker mid) AND the shadow collapse the
+   component applies (active:shadow-skeu-pressed) — never scale alone. */
+.game-btn--primary:active:not(:disabled),
+.game-btn--secondary:active:not(:disabled),
+.game-btn--accent:active:not(:disabled),
+.game-btn--success:active:not(:disabled),
+.game-btn--danger:active:not(:disabled) {
+  background-image: linear-gradient(160deg, var(--btn-light) 0%, var(--btn-mid-pressed) 45%, var(--btn-mid-pressed) 100%);
+}
+.game-btn--primary:disabled,
+.game-btn--secondary:disabled,
+.game-btn--accent:disabled,
+.game-btn--success:disabled,
+.game-btn--danger:disabled {
+  background-image: none;
+  background-color: var(--btn-disabled);
+}
+
 .game-btn--primary {
-  background-image: linear-gradient(160deg, #5BC9FF 0%, #03ACF4 45%, #0054AC 100%);
-  border-color: #013B78;
-  color: var(--pw-text-on-primary);
+  --btn-light: var(--pw-brand-primary-light);
+  --btn-mid: var(--pw-action-primary);
+  --btn-dark: var(--pw-brand-primary-dark);
+  --btn-mid-hover: var(--pw-action-primary-hover);
+  --btn-mid-pressed: var(--pw-action-primary-pressed);
+  --btn-disabled: var(--pw-action-primary-disabled);
+  --btn-edge: #013B78;
+  --btn-ink: var(--pw-text-on-primary);
 }
 .game-btn--secondary {
-  background-image: linear-gradient(160deg, #FFE55C 0%, #FED007 45%, #FDAE03 100%);
-  border-color: #8A5E00;
-  color: var(--pw-text-on-secondary);
+  --btn-light: var(--pw-brand-secondary-light);
+  --btn-mid: var(--pw-action-secondary);
+  --btn-dark: var(--pw-brand-secondary-dark);
+  --btn-mid-hover: var(--pw-action-secondary-hover);
+  --btn-mid-pressed: var(--pw-action-secondary-pressed);
+  --btn-disabled: var(--pw-action-secondary-disabled);
+  --btn-edge: #8A5E00;
+  --btn-ink: var(--pw-text-on-secondary);
 }
 .game-btn--accent {
-  background-image: linear-gradient(160deg, #FFA43D 0%, #F97102 45%, #C25500 100%);
-  border-color: #7A3600;
-  color: var(--pw-text-on-accent);
+  --btn-light: var(--pw-brand-accent-light);
+  --btn-mid: var(--pw-brand-accent);
+  --btn-dark: var(--pw-brand-accent-dark);
+  --btn-mid-hover: color-mix(in srgb, var(--pw-brand-accent) 88%, #FFFFFF);
+  --btn-mid-pressed: color-mix(in srgb, var(--pw-brand-accent) 82%, #000000);
+  --btn-disabled: color-mix(in srgb, var(--pw-brand-accent) 38%, var(--pw-surface-1));
+  --btn-edge: #7A3600;
+  --btn-ink: var(--pw-text-on-accent);
 }
 .game-btn--success {
-  background-image: linear-gradient(160deg, #8CF3AE 0%, #3BC46A 45%, #1F8F4C 100%);
-  border-color: #14612F;
-  color: var(--pw-text-on-success);
+  --btn-light: #8CF3AE;
+  --btn-mid: var(--pw-success);
+  --btn-dark: #1F8F4C;
+  --btn-mid-hover: color-mix(in srgb, var(--pw-success) 88%, #FFFFFF);
+  --btn-mid-pressed: color-mix(in srgb, var(--pw-success) 82%, #000000);
+  --btn-disabled: color-mix(in srgb, var(--pw-success) 38%, var(--pw-surface-1));
+  --btn-edge: #14612F;
+  --btn-ink: var(--pw-text-on-success);
 }
 .game-btn--danger {
-  background-image: linear-gradient(160deg, #FF9C9C 0%, #F0565B 45%, #B0272B 100%);
-  border-color: #7A1A1D;
-  color: #0B1029;
+  --btn-light: #FF9C9C;
+  --btn-mid: #F0565B; /* lightened --pw-error so ink text clears 4.5:1 mid-fill */
+  --btn-dark: #B0272B;
+  --btn-mid-hover: color-mix(in srgb, #F0565B 88%, #FFFFFF);
+  /* Shallower press-darkening than the other variants: red loses ink contrast
+     fastest (82% mix measures 3.91:1 — below AA); 90% holds 4.55:1. */
+  --btn-mid-pressed: color-mix(in srgb, #F0565B 90%, #000000);
+  --btn-disabled: color-mix(in srgb, var(--pw-error) 38%, var(--pw-surface-1));
+  --btn-edge: #7A1A1D;
+  --btn-ink: var(--pw-text-on-error);
 }

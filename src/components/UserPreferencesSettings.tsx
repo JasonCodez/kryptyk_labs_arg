@@ -87,11 +87,13 @@ export default function UserPreferencesSettings() {
     const root = document.documentElement;
 
     // FORCE DARK THEME - never apply light or medium theme colors
-    // This prevents the site from turning white when visiting settings
+    // This prevents the site from turning white when visiting settings.
+    // Values reference the canonical PuzzleWarz brand tokens (globals.css) so
+    // saving preferences can never restore the pre-brand teal palette.
     const enforcedDark = {
-      bg: "#020202",
-      text: "#DDDBF1",
-      border: "#3891A6",
+      bg: "var(--pw-bg-base)",
+      text: "var(--pw-text-primary)",
+      border: "var(--pw-border-default)",
     };
 
     root.style.setProperty("--color-bg-primary", enforcedDark.bg);
@@ -127,6 +129,7 @@ export default function UserPreferencesSettings() {
 
     // Color contrast - always use dark theme text
     if (prefs.colorContrast === "high") {
+      // High contrast keeps the legitimate bump to pure white text.
       root.style.setProperty("--color-text-primary", "#ffffff");
       root.style.setProperty("--border-width", "2px");
     } else {
@@ -401,8 +404,8 @@ export default function UserPreferencesSettings() {
           onClick={savePreferences}
           disabled={saving}
           style={{
-            backgroundColor: saving ? '#666666' : '#FDE74C',
-            color: saving ? '#999999' : '#020202'
+            backgroundColor: saving ? 'var(--pw-surface-3)' : 'var(--pw-brand-secondary)',
+            color: saving ? 'var(--pw-text-disabled)' : 'var(--pw-text-on-secondary)'
           }}
           className="px-6 py-3 text-white font-medium rounded-lg transition-colors hover:opacity-90 disabled:cursor-not-allowed"
         >

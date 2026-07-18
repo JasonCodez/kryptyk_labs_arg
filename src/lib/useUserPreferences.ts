@@ -1,6 +1,13 @@
 /**
  * Hook to manage user preferences persistence and application
  * Loads preferences from localStorage and applies them on component mount
+ *
+ * @deprecated Phase 8.1.1 — nothing imports this module (the live settings
+ * flow is src/components/UserPreferencesSettings.tsx, which owns the same
+ * localStorage key and DOM application). Kept only so stale references can't
+ * silently break; its enforced palette now points at the canonical PuzzleWarz
+ * brand tokens, so even a revived caller cannot restore the pre-brand teal
+ * theme. Delete once the settings workflow is confirmed to never need it.
  */
 
 import { useEffect } from "react";
@@ -73,14 +80,16 @@ function applyPreferencesToDOM(preferences: UserPreferences) {
   root.setAttribute("data-reduce-animations", String(preferences.reduceAnimations));
   root.setAttribute("data-color-contrast", preferences.colorContrast);
 
-  // Set CSS variables for theme brightness (enforce original dark theme)
-  // NOTE: we intentionally enforce the original site theme to avoid accidental user changes to theme colors.
+  // Set CSS variables for theme brightness (enforce the site dark theme).
+  // NOTE: we intentionally enforce the site theme to avoid accidental user
+  // changes to theme colors. Values reference the canonical brand tokens
+  // (globals.css) — never reintroduce literal pre-brand hexes here.
   const enforced = {
-    bg: "#020202",
-    text: "#DDDBF1",
-    border: "#3891A6",
-    accent: "#FDE74C",
-    accentBg: "rgba(253, 231, 76, 0.06)",
+    bg: "var(--pw-bg-base)",
+    text: "var(--pw-text-primary)",
+    border: "var(--pw-border-default)",
+    accent: "var(--pw-brand-secondary)",
+    accentBg: "color-mix(in srgb, var(--pw-brand-secondary) 6%, transparent)",
   };
 
   root.style.setProperty("--color-bg-primary", enforced.bg);

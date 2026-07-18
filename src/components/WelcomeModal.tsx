@@ -1,10 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
+import { prefersReducedMotion } from "@/lib/juice/prefs";
 
 /* ── Fireworks canvas ───────────────────────────────────────────────── */
+
+// Canvas can't resolve CSS variables directly, so the palette is read from the
+// canonical custom properties at mount, with static fallbacks that mirror the
+// token values in globals.css (documented duplication — keep in sync there).
+const FIREWORK_TOKEN_FALLBACKS: [token: string, fallback: string][] = [
+  ["--pw-brand-primary", "#03ACF4"],
+  ["--pw-brand-primary-light", "#5BC9FF"],
+  ["--pw-brand-secondary", "#FED007"],
+  ["--pw-brand-accent", "#F97102"],
+  ["--pw-success", "#3BC46A"],
+  ["--pw-error", "#E5484D"],
+];
+
+function readFireworkPalette(): string[] {
+  const styles = typeof window !== "undefined"
+    ? getComputedStyle(document.documentElement)
+    : null;
+  const colors = FIREWORK_TOKEN_FALLBACKS.map(([token, fallback]) => {
+    const value = styles?.getPropertyValue(token).trim();
+    return value || fallback;
+  });
+  // White spark highlights round out the set (see burst()'s 30% white mix).
+  colors.push("#ffffff");
+  return colors;
+}
+
 function WelcomeFireworks() {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -12,13 +39,15 @@ function WelcomeFireworks() {
     const canvas = ref.current;
     if (!canvas) return;
     const c = canvas as HTMLCanvasElement;
-    const g = c.getContext("2d") as CanvasRenderingContext2D;
+    const context = c.getContext("2d");
+    if (!context) return; // jsdom / very old browsers — no fireworks, modal still works
+    const g: CanvasRenderingContext2D = context;
 
     const resize = () => { c.width = c.offsetWidth; c.height = c.offsetHeight; };
     resize();
     window.addEventListener("resize", resize);
 
-    const palette = ["#3891A6", "#60a5fa", "#FDE74C", "#f59e0b", "#a855f7", "#ec4899", "#ffffff", "#fb7185", "#34d399"];
+    const palette = readFireworkPalette();
 
     type Spark = { x: number; y: number; vx: number; vy: number; alpha: number; color: string; r: number };
     type Rocket = { x: number; y: number; vy: number; color: string; trail: { x: number; y: number }[]; burst: boolean };
@@ -114,6 +143,7 @@ function WelcomeFireworks() {
   return (
     <canvas
       ref={ref}
+      data-testid="welcome-fireworks"
       className="absolute inset-0 w-full h-full pointer-events-none"
       style={{ zIndex: 0 }}
     />
@@ -138,6 +168,10 @@ interface WelcomeModalProps {
 export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeModalProps) {
   const [visible, setVisible] = useState(false);
   useRegisterModal('welcome-modal', visible);
+  // OS media query (framer hook) + the app's data-reduce-animations toggle —
+  // the codebase-standard pairing. Gates entrance springs, the border pulse,
+  // and the fireworks loop; the modal stays fully usable without them.
+  const reduceMotion = Boolean(useReducedMotion() || prefersReducedMotion());
 
   useEffect(() => {
     const key = `pw_welcomed_${userId}`;
@@ -158,19 +192,25 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
     onTakeTour?.();
   }
 
+  // With reduced motion, elements render in place: no initial offsets, no
+  // springs, no stagger. `initial={false}` keeps AnimatePresence exit instant.
+  const fade = (delay: number, y = 0) => reduceMotion
+    ? { initial: false as const }
+    : { initial: { opacity: 0, y }, animate: { opacity: 1, y: 0 }, transition: { delay } };
+
   return (
     <AnimatePresence>
       {visible && (
         <motion.div
           className="fixed inset-0 z-[200] overflow-y-auto"
-          style={{ backgroundColor: "rgba(2,2,2,0.55)", backdropFilter: "blur(4px)" }}
-          initial={{ opacity: 0 }}
+          style={{ backgroundColor: "color-mix(in srgb, var(--pw-bg-base) 60%, transparent)", backdropFilter: "blur(4px)" }}
+          initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.4 }}
+          transition={{ duration: reduceMotion ? 0 : 0.4 }}
         >
-          {/* Fireworks backdrop */}
-          <WelcomeFireworks />
+          {/* Fireworks backdrop — an animation loop, so it never starts under reduced motion */}
+          {!reduceMotion && <WelcomeFireworks />}
 
           {/* Radial glow behind card */}
           <div
@@ -179,7 +219,7 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
               width: 700,
               height: 700,
               borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(56,145,166,0.18) 0%, transparent 70%)",
+              background: "radial-gradient(circle, color-mix(in srgb, var(--pw-brand-primary) 16%, transparent) 0%, transparent 70%)",
               zIndex: 1,
             }}
           />
@@ -192,38 +232,38 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
             className="relative w-full mx-4 rounded-3xl overflow-hidden flex flex-col items-center text-center"
             style={{
               maxWidth: 520,
-              background: "linear-gradient(160deg, rgba(7,15,18,0.72) 0%, rgba(4,8,10,0.68) 60%, rgba(2,2,2,0.65) 100%)",
-              border: "1px solid rgba(56,145,166,0.35)",
+              background: "linear-gradient(160deg, color-mix(in srgb, var(--pw-surface-2) 88%, transparent) 0%, color-mix(in srgb, var(--pw-bg-elevated) 86%, transparent) 60%, color-mix(in srgb, var(--pw-bg-base) 85%, transparent) 100%)",
+              border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 35%, transparent)",
               zIndex: 2,
-              boxShadow: "0 0 80px rgba(56,145,166,0.15), 0 32px 80px rgba(0,0,0,0.7)",
+              boxShadow: "0 0 80px color-mix(in srgb, var(--pw-brand-primary) 15%, transparent), 0 32px 80px rgba(0,0,0,0.7)",
             }}
-            initial={{ scale: 0.75, opacity: 0, y: 50 }}
+            initial={reduceMotion ? false : { scale: 0.75, opacity: 0, y: 50 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            transition={{ type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
+            exit={reduceMotion ? { opacity: 0 } : { scale: 0.9, opacity: 0, y: 20 }}
+            transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
           >
-            {/* Animated top border glow */}
+            {/* Top border — brand blue into trophy gold; pulses only when motion is allowed */}
             <motion.div
               className="absolute top-0 left-0 right-0 h-[2px] rounded-t-3xl"
-              style={{ background: "linear-gradient(90deg, transparent, #3891A6, #FDE74C, #3891A6, transparent)" }}
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+              style={{ background: "linear-gradient(90deg, transparent, var(--pw-brand-primary), var(--pw-brand-secondary), var(--pw-brand-primary), transparent)" }}
+              animate={reduceMotion ? { opacity: 0.85 } : { opacity: [0.5, 1, 0.5] }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
             />
 
             <div className="px-8 pt-10 pb-8 w-full">
               {/* Logo + badge */}
               <motion.div
                 className="flex justify-center mb-5"
-                initial={{ scale: 0, rotate: -15 }}
+                initial={reduceMotion ? false : { scale: 0, rotate: -15 }}
                 animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", stiffness: 280, damping: 16, delay: 0.2 }}
+                transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 280, damping: 16, delay: 0.2 }}
               >
                 <div
                   className="w-24 h-24 rounded-2xl flex items-center justify-center overflow-hidden"
                   style={{
-                    background: "linear-gradient(135deg, rgba(56,145,166,0.25) 0%, rgba(56,145,166,0.08) 100%)",
-                    border: "1.5px solid rgba(56,145,166,0.4)",
-                    boxShadow: "0 0 30px rgba(56,145,166,0.25)",
+                    background: "linear-gradient(135deg, color-mix(in srgb, var(--pw-brand-primary) 25%, transparent) 0%, color-mix(in srgb, var(--pw-brand-primary) 8%, transparent) 100%)",
+                    border: "1.5px solid color-mix(in srgb, var(--pw-brand-primary) 40%, transparent)",
+                    boxShadow: "0 0 30px color-mix(in srgb, var(--pw-brand-primary) 25%, transparent)",
                   }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -234,75 +274,65 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
               {/* Headline */}
               <motion.p
                 className="text-xs font-bold tracking-widest uppercase mb-3"
-                style={{ color: "#3891A6" }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.35 }}
+                style={{ color: "var(--pw-brand-primary)" }}
+                {...fade(0.35)}
               >
                 Welcome to PuzzleWarz
               </motion.p>
 
               <motion.h1
-                className="text-3xl font-black text-white mb-3 leading-tight"
-                style={{ letterSpacing: "-0.02em" }}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
+                className="text-3xl font-black mb-3 leading-tight"
+                style={{ letterSpacing: "-0.02em", color: "var(--pw-text-primary)" }}
+                {...fade(0.4, 12)}
               >
                 Hey {userName}, <br />
-                <span style={{ color: "#3891A6" }}>let the solving begin.</span>
+                <span style={{ color: "var(--pw-brand-primary)" }}>let the solving begin.</span>
               </motion.h1>
 
               <motion.p
                 className="text-sm leading-relaxed mb-8"
-                style={{ color: "#6B7280" }}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
+                style={{ color: "var(--pw-text-secondary)" }}
+                {...fade(0.5, 8)}
               >
                 You&apos;ve joined a community of puzzle solvers competing, collaborating, and climbing the ranks. Here&apos;s what&apos;s waiting for you.
               </motion.p>
 
-              {/* Feature grid */}
+              {/* Feature grid — neutral tiles, single brand accent on the icon chip */}
               <div className="grid grid-cols-2 gap-3 mb-8">
                 {FEATURES.map((f, i) => (
                   <motion.div
                     key={f.title}
                     className="rounded-2xl text-left p-4"
                     style={{
-                      background: "rgba(56,145,166,0.06)",
-                      border: "1px solid rgba(56,145,166,0.15)",
+                      background: "color-mix(in srgb, var(--pw-surface-2) 55%, transparent)",
+                      border: "1px solid var(--pw-border-subtle)",
                     }}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.55 + i * 0.08 }}
+                    {...fade(0.55 + i * 0.08, 16)}
                   >
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-lg mb-2"
-                      style={{ background: "rgba(56,145,166,0.12)", border: "1px solid rgba(56,145,166,0.2)" }}
+                      style={{ background: "color-mix(in srgb, var(--pw-brand-primary) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 20%, transparent)" }}
                     >
                       {f.icon}
                     </div>
-                    <p className="text-xs font-bold text-white mb-1">{f.title}</p>
-                    <p className="text-xs leading-relaxed" style={{ color: "#6B7280" }}>{f.desc}</p>
+                    <p className="text-xs font-bold mb-1" style={{ color: "var(--pw-text-primary)" }}>{f.title}</p>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--pw-text-secondary)" }}>{f.desc}</p>
                   </motion.div>
                 ))}
               </div>
 
               {/* CTA */}
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.9 }}
+                {...fade(0.9, 10)}
                 className="flex flex-col gap-3"
               >
                 <button
                   onClick={handleTakeTour}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl py-3 px-6 text-sm font-bold transition-all duration-200"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl py-3 px-6 text-sm font-bold transition-all duration-200 hover:brightness-110"
                   style={{
-                    background: "linear-gradient(90deg, #3891A6 0%, #2d7a8e 100%)",
-                    color: "#fff",
-                    boxShadow: "0 4px 20px rgba(56,145,166,0.35)",
+                    background: "linear-gradient(90deg, var(--pw-brand-primary-light) 0%, var(--pw-action-primary) 100%)",
+                    color: "var(--pw-text-on-primary)",
+                    boxShadow: "0 4px 20px color-mix(in srgb, var(--pw-brand-primary) 35%, transparent)",
                     letterSpacing: "0.04em",
                     textTransform: "uppercase",
                     border: "none",
@@ -314,24 +344,22 @@ export default function WelcomeModal({ userName, userId, onTakeTour }: WelcomeMo
                 <button
                   onClick={dismiss}
                   className="text-xs transition-opacity duration-150 hover:opacity-100"
-                  style={{ color: "#9ca3af", background: "none", border: "none", cursor: "pointer" }}
+                  style={{ color: "var(--pw-text-secondary)", background: "none", border: "none", cursor: "pointer" }}
                 >
                   Skip tour — go to dashboard
                 </button>
               </motion.div>
             </div>
 
-            {/* Bottom tip */}
+            {/* Bottom tip — gold = reward emphasis */}
             <motion.div
               className="w-full px-8 py-4 flex items-center gap-3"
-              style={{ borderTop: "1px solid rgba(56,145,166,0.1)", background: "rgba(56,145,166,0.04)" }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.0 }}
+              style={{ borderTop: "1px solid var(--pw-border-subtle)", background: "color-mix(in srgb, var(--pw-brand-secondary) 4%, transparent)" }}
+              {...fade(1.0)}
             >
-              <span style={{ color: "#3891A6", fontSize: "1rem" }}>💡</span>
-              <p className="text-xs text-left" style={{ color: "#4B5563" }}>
-                Check the <strong style={{ color: "#6B7280" }}>Season Pass</strong> to start earning exclusive rewards from day one.
+              <span style={{ color: "var(--pw-brand-secondary)", fontSize: "1rem" }}>💡</span>
+              <p className="text-xs text-left" style={{ color: "var(--pw-text-secondary)" }}>
+                Check the <strong style={{ color: "var(--pw-brand-secondary)" }}>Season Pass</strong> to start earning exclusive rewards from day one.
               </p>
             </motion.div>
           </motion.div>

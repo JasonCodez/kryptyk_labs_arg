@@ -53,7 +53,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  themeColor: "#3891A6",
+  // Canonical brand values (--pw-brand-primary). Static metadata can't read
+  // CSS variables, so this literal must stay in sync with globals.css — the
+  // brand-tokens test enforces it.
+  themeColor: "#03ACF4",
   colorScheme: "dark",
   viewportFit: "cover",
 };

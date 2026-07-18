@@ -11,8 +11,11 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "any",
-    background_color: "#020202",
-    theme_color: "#3891A6",
+    // Canonical brand values: --pw-bg-base / --pw-brand-primary. Manifest JSON
+    // can't consume CSS variables, so these literals must stay in sync with
+    // globals.css — the brand-tokens test enforces it.
+    background_color: "#0A0E17",
+    theme_color: "#03ACF4",
     lang: "en-US",
     dir: "ltr",
     categories: ["games", "puzzle", "education", "entertainment"],

@@ -292,8 +292,8 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                       style={{
                         background: link.accent
                           ? `linear-gradient(90deg, ${link.accent}, ${link.accent}66)`
-                          : "linear-gradient(90deg, #03ACF4, #03ACF466)",
-                        boxShadow: `0 0 14px ${link.accent ?? "#03ACF4"}`,
+                          : "linear-gradient(90deg, var(--pw-brand-primary), color-mix(in srgb, var(--pw-brand-primary) 40%, transparent))",
+                        boxShadow: `0 0 14px ${link.accent ?? "var(--pw-brand-primary)"}`,
                       }}
                     />
                   )}
@@ -322,7 +322,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                 {MORE_LINKS.some(l => isActive(pathname, l.href)) && (
                   <span
                     className="absolute -bottom-[9px] left-3 right-3 h-[2px] rounded-full"
-                    style={{ background: "linear-gradient(90deg, #03ACF4, #03ACF466)", boxShadow: "0 0 8px #03ACF455" }}
+                    style={{ background: "linear-gradient(90deg, var(--pw-brand-primary), color-mix(in srgb, var(--pw-brand-primary) 40%, transparent))", boxShadow: "0 0 8px color-mix(in srgb, var(--pw-brand-primary) 33%, transparent)" }}
                   />
                 )}
               </button>
@@ -389,7 +389,8 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
                     <img
                       src={avatarSrc}
                       alt="Avatar"
-                      className="h-7 w-7 rounded-full object-cover ring-1 ring-[#03ACF4]/40"
+                      className="h-7 w-7 rounded-full object-cover"
+                      style={{ border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 40%, transparent)" }}
                       onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }}
                     />
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className={`text-zinc-500 transition-transform duration-200 ${profileOpen ? "rotate-180" : ""}`}>

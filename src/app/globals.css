@@ -317,8 +317,12 @@
 
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Default app pairing — PuzzleWarz is dark-only, so these must NOT depend on
+     the OS color-scheme preference. They repoint the old Next.js template
+     variables (and the Tailwind bg-background / text-foreground utilities via
+     the @theme block below) at the brand tokens. */
+  --background: var(--pw-bg-base);
+  --foreground: var(--pw-text-primary);
 
   /* ═══ PuzzleWarz brand tokens (Phase 8.1) — canonical source of truth ═══
      Derived from the official logo (public/images/puzzle_warz_logo.png):
@@ -385,7 +389,7 @@
   --pw-error-text: #FF7A7E;
   --pw-error-surface: #2A1215;
   --pw-error-border: rgba(229,72,77,0.5);
-  --pw-text-on-error: #FFFFFF;
+  --pw-text-on-error: #0B1029;     /* ink: 4.79:1 on --pw-error — white is only 3.91:1 */
   --pw-info: #4FB8FF;
   --pw-info-surface: #0F2236;
   --pw-info-border: rgba(79,184,255,0.45);
@@ -472,11 +476,18 @@
   50% { box-shadow: 0 0 0 10px transparent; }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Continuous attention animations stop entirely under reduced motion — both the
+   OS setting and the app's own accessibility toggle. The buttons stay fully
+   interactive; only the decorative pulse/halo is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-candy-breathe,
+  .animate-candy-spark {
+    animation: none !important;
   }
+}
+[data-reduce-animations="true"] .animate-candy-breathe,
+[data-reduce-animations="true"] .animate-candy-spark {
+  animation: none !important;
 }
 
 @keyframes rainbow-shift {
@@ -593,9 +604,9 @@ body {
   /* Ambient glow rebuilt from logo colors: shield blue top-left, trophy gold
      top-right, a whisper of piece-green at the foot — over neutral navy. */
   background:
-    radial-gradient(1300px 800px at 15% -10%, rgba(3,172,244, 0.14), transparent 62%),
-    radial-gradient(1100px 700px at 90% 0%, rgba(254,208,7, 0.08), transparent 58%),
-    radial-gradient(1000px 650px at 50% 100%, rgba(59,196,106, 0.07), transparent 60%),
+    radial-gradient(1300px 800px at 15% -10%, color-mix(in srgb, var(--pw-brand-primary) 14%, transparent), transparent 62%),
+    radial-gradient(1100px 700px at 90% 0%, color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent), transparent 58%),
+    radial-gradient(1000px 650px at 50% 100%, color-mix(in srgb, var(--pw-success) 7%, transparent), transparent 60%),
     var(--pw-bg-base);
   color: var(--foreground);
   font-family: var(--font-geist-sans, Arial, sans-serif);
@@ -869,9 +880,9 @@ body {
 /* ── Hero grid background (subtle blueprint) ─────────────── */
 .hero-bg {
   background-image:
-    linear-gradient(rgba(3,172,244,0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(3,172,244,0.055) 1px, transparent 1px),
-    linear-gradient(135deg, rgba(3,172,244,0.1) 0%, rgba(254,208,7,0.04) 60%, transparent 100%);
+    linear-gradient(color-mix(in srgb, var(--pw-brand-primary) 5.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--pw-brand-primary) 5.5%, transparent) 1px, transparent 1px),
+    linear-gradient(135deg, color-mix(in srgb, var(--pw-brand-primary) 10%, transparent) 0%, color-mix(in srgb, var(--pw-brand-secondary) 4%, transparent) 60%, transparent 100%);
   background-size: 48px 48px, 48px 48px, 100% 100%;
 }
 

@@ -26,13 +26,16 @@ def twaManifest = [
     launchUrl: '/?source=pwa', // The start path for the TWA. Must be relative to the domain.
     name: 'Puzzle Warz', // The application name.
     launcherName: 'Puzzle Warz', // The name shown on the Android Launcher.
-    themeColor: '#3891A6', // The color used for the status bar.
-    themeColorDark: '#000000', // The color used for the dark status bar.
-    navigationColor: '#000000', // The color used for the navigation bar.
-    navigationColorDark: '#000000', // The color used for the dark navbar.
-    navigationDividerColor: '#000000', // The navbar divider color.
-    navigationDividerColorDark: '#000000', // The dark navbar divider color.
-    backgroundColor: '#020202', // The color used for the splash screen background.
+    // PuzzleWarz brand values — keep in sync with globals.css tokens
+    // (--pw-brand-primary #03ACF4, --pw-bg-base #0A0E17); Gradle can't read
+    // CSS variables, so these literals are enforced by the brand-tokens test.
+    themeColor: '#03ACF4', // The color used for the status bar.
+    themeColorDark: '#0A0E17', // The color used for the dark status bar.
+    navigationColor: '#0A0E17', // The color used for the navigation bar.
+    navigationColorDark: '#0A0E17', // The color used for the dark navbar.
+    navigationDividerColor: '#0A0E17', // The navbar divider color.
+    navigationDividerColorDark: '#0A0E17', // The dark navbar divider color.
+    backgroundColor: '#0A0E17', // The color used for the splash screen background.
     enableNotifications: true, // Set to true to enable notification delegation.
     // Every shortcut must include the following fields:
     // - name: String that will show up in the shortcut.
