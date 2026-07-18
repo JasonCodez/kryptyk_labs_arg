@@ -4,30 +4,37 @@ import { forwardRef } from "react";
 import type { ReactNode } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 
-export type GameButtonVariant = "pink" | "purple" | "gold" | "cyan" | "grass" | "ember";
+/** Semantic roles — the preferred API. */
+export type GameButtonSemanticVariant =
+  | "primary"
+  | "secondary"
+  | "accent"
+  | "success"
+  | "danger";
+/** @deprecated Palette-named variants from the pre-brand candy system; they map
+ * onto semantic roles below. Use the semantic names in new code. */
+export type GameButtonLegacyVariant = "pink" | "purple" | "gold" | "cyan" | "grass" | "ember";
+export type GameButtonVariant = GameButtonSemanticVariant | GameButtonLegacyVariant;
 export type GameButtonSize = "sm" | "md" | "lg";
 
-const VARIANT_GRADIENTS: Record<GameButtonVariant, string> = {
-  pink: "linear-gradient(160deg, #FF8FC7 0%, #FF4FA3 45%, #C7157A 100%)",
-  purple: "linear-gradient(160deg, #B98CFF 0%, #8B3DFF 45%, #5B1FB0 100%)",
-  gold: "linear-gradient(160deg, #FFE58A 0%, #FFC93C 45%, #E0960B 100%)",
-  cyan: "linear-gradient(160deg, #8FF6F3 0%, #2FE6E0 45%, #0FA6A1 100%)",
-  grass: "linear-gradient(160deg, #8CF3AE 0%, #3ED97A 45%, #1F9E52 100%)",
-  ember: "linear-gradient(160deg, #FF9C9C 0%, #FF5A5A 45%, #C72A2A 100%)",
+// Legacy → semantic mapping: pink/purple/cyan were all "the main action color"
+// in practice, so they collapse onto primary; gold was reward/premium
+// (secondary), grass success, ember danger.
+const LEGACY_TO_SEMANTIC: Record<GameButtonLegacyVariant, GameButtonSemanticVariant> = {
+  pink: "primary",
+  purple: "primary",
+  cyan: "primary",
+  gold: "secondary",
+  grass: "success",
+  ember: "danger",
 };
 
-// Border color reads as the "edge" of the plastic/jelly piece — a few shades
-// darker than the gradient's midpoint so the shape still pops against similarly
-// colored backgrounds.
-const VARIANT_BORDER: Record<GameButtonVariant, string> = {
-  pink: "#A80F63",
-  purple: "#48198F",
-  gold: "#B87A08",
-  cyan: "#0C827E",
-  grass: "#187F41",
-  ember: "#A32121",
-};
+export function resolveGameButtonVariant(variant: GameButtonVariant): GameButtonSemanticVariant {
+  return (LEGACY_TO_SEMANTIC as Partial<Record<GameButtonVariant, GameButtonSemanticVariant>>)[variant] ?? (variant as GameButtonSemanticVariant);
+}
 
+// Fill gradient + border + ink text live in .game-btn--* (src/styles/game-ui.css),
+// built from the logo-derived brand tokens in globals.css.
 const SIZE_CLASSES: Record<GameButtonSize, string> = {
   // min-h-11 (44px) is the accessibility touch-target floor — never go below it
   // even for the smallest variant.
@@ -55,7 +62,7 @@ export interface GameButtonProps extends Omit<HTMLMotionProps<"button">, "childr
 const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameButton(
   {
     children,
-    variant = "pink",
+    variant = "primary",
     size = "md",
     icon,
     pulse = false,
@@ -67,6 +74,7 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
   },
   ref
 ) {
+  const semantic = resolveGameButtonVariant(variant);
   return (
     <motion.button
       ref={ref}
@@ -80,6 +88,7 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
         "relative inline-flex items-center justify-center gap-2 select-none",
         "font-extrabold uppercase tracking-wide game-text-stroke game-text-pop",
         "border-b-4 transition-shadow duration-100",
+        `game-btn--${semantic}`,
         size === "sm" ? "shadow-skeu-raised-sm active:shadow-skeu-pressed" : "shadow-skeu-raised active:shadow-skeu-pressed",
         SIZE_CLASSES[size],
         fullWidth ? "w-full" : "",
@@ -87,12 +96,7 @@ const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(function GameB
         pulse && !disabled ? "animate-candy-breathe" : "",
         className,
       ].join(" ")}
-      style={{
-        backgroundImage: VARIANT_GRADIENTS[variant],
-        borderColor: VARIANT_BORDER[variant],
-        color: "#ffffff",
-        ...style,
-      }}
+      style={style}
       {...rest}
     >
       {/* Glass highlight — decorative, sits above the gradient fill. */}

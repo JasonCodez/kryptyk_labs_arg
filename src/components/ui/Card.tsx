@@ -3,15 +3,17 @@ import type { CSSProperties, ReactNode } from "react";
 export type CardAccent = "gold" | "violet" | "teal" | "success" | "none";
 export type CardPadding = "sm" | "md" | "lg";
 
-// RGB channels of the candy-palette tokens (globals.css / tailwind.config.ts),
-// so the accent border and glow can use valid rgba() with alpha. Appending hex
-// alpha to a var() — `var(--pw-gold)55` — produces an invalid color the
-// browser silently drops.
+// RGB channels of the logo-derived brand tokens (globals.css), so the accent
+// border and glow can use valid rgba() with alpha. Appending hex alpha to a
+// var() — `var(--pw-gold)55` — produces an invalid color the browser silently
+// drops. Accent names are legacy ("violet"/"teal" pre-date the brand system);
+// both now resolve to the brand primary blue — prefer "teal" in new call sites
+// until the names are migrated in a later phase.
 const ACCENT_RGB: Record<Exclude<CardAccent, "none">, string> = {
-  gold: "255, 201, 60", // #FFC93C
-  violet: "139, 61, 255", // #8B3DFF
-  teal: "255, 79, 163", // #FF4FA3 (candy-pink — primary action)
-  success: "62, 217, 122", // #3ED97A
+  gold: "254, 208, 7", // --pw-brand-secondary #FED007
+  violet: "3, 172, 244", // --pw-brand-primary #03ACF4
+  teal: "3, 172, 244", // --pw-brand-primary #03ACF4 (primary action)
+  success: "59, 196, 106", // --pw-success #3BC46A
 };
 
 const PADDING: Record<CardPadding, number> = {

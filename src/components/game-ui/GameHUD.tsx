@@ -2,7 +2,7 @@
 
 import type { ReactNode, CSSProperties } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import GameButton, { type GameButtonVariant } from "./GameButton";
+import GameButton, { resolveGameButtonVariant, type GameButtonVariant } from "./GameButton";
 
 export interface GameHUDStat {
   key: string;
@@ -38,23 +38,13 @@ export interface GameHUDProps {
  * (a quick scale-bounce) via AnimatePresence/key below.
  */
 function StatPill({ stat }: { stat: GameHUDStat }) {
-  const variant = stat.variant ?? "purple";
+  // Fill gradient + ink text come from the shared .game-btn--* variant classes
+  // (logo-derived brand tokens); legacy palette names map onto semantic roles.
+  const semantic = resolveGameButtonVariant(stat.variant ?? "primary");
   return (
     <div
-      className="relative flex items-center gap-1.5 rounded-full px-3 py-1.5 sm:px-4 sm:py-2 border-2 shadow-skeu-pill overflow-hidden"
-      style={{
-        backgroundImage:
-          variant === "gold"
-            ? "linear-gradient(160deg, #FFE58A 0%, #FFC93C 60%, #E0960B 100%)"
-            : variant === "cyan"
-              ? "linear-gradient(160deg, #8FF6F3 0%, #2FE6E0 60%, #0FA6A1 100%)"
-              : variant === "grass"
-                ? "linear-gradient(160deg, #8CF3AE 0%, #3ED97A 60%, #1F9E52 100%)"
-                : variant === "ember"
-                  ? "linear-gradient(160deg, #FF9C9C 0%, #FF5A5A 60%, #C72A2A 100%)"
-                  : "linear-gradient(160deg, #B98CFF 0%, #8B3DFF 60%, #5B1FB0 100%)",
-        borderColor: "rgba(0,0,0,0.25)",
-      }}
+      className={`relative flex items-center gap-1.5 rounded-full px-3 py-1.5 sm:px-4 sm:py-2 border-2 shadow-skeu-pill overflow-hidden game-btn--${semantic}`}
+      style={{ borderColor: "rgba(0,0,0,0.25)" }}
     >
       <span className="game-gloss-overlay game-gloss-overlay--pill" aria-hidden />
       <span className="relative text-base sm:text-lg leading-none drop-shadow-sm">{stat.icon}</span>
@@ -65,14 +55,14 @@ function StatPill({ stat }: { stat: GameHUDStat }) {
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ opacity: 0 }}
           transition={{ type: "spring", stiffness: 400, damping: 18 }}
-          className="relative font-black text-white text-sm sm:text-base game-text-stroke game-text-pop tabular-nums"
+          className="relative font-black text-sm sm:text-base game-text-stroke game-text-pop tabular-nums"
           style={{ "--stroke-width": "1.5px" } as CSSProperties}
         >
           {stat.value}
         </motion.span>
       </AnimatePresence>
       {stat.label && (
-        <span className="relative hidden sm:inline text-[10px] font-bold uppercase tracking-wider text-white/80">
+        <span className="relative hidden sm:inline text-[10px] font-bold uppercase tracking-wider opacity-80">
           {stat.label}
         </span>
       )}
@@ -99,7 +89,7 @@ export default function GameHUD({ stats, actions, onPause, children }: GameHUDPr
         </div>
         {onPause && (
           <GameButton
-            variant="purple"
+            variant="primary"
             size="sm"
             onClick={onPause}
             aria-label="Pause"
@@ -119,7 +109,7 @@ export default function GameHUD({ stats, actions, onPause, children }: GameHUDPr
           {actions.map((action) => (
             <GameButton
               key={action.key}
-              variant={action.variant ?? "pink"}
+              variant={action.variant ?? "primary"}
               size="md"
               icon={action.icon}
               pulse={action.pulse}

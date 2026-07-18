@@ -1,6 +1,8 @@
 // Usage: node scripts/extract-logo-colors.mjs <path-to-image>
 // Example: node scripts/extract-logo-colors.mjs public/images/puzzle_warz_logo.png
-import Vibrant from 'node-vibrant/lib/vibrant';
+// node-vibrant 3.x no longer ships lib/vibrant as a bare specifier — the
+// package root re-exports the node build, so import that directly.
+import Vibrant from 'node-vibrant';
 
 const vibrantInstance = Vibrant.default || Vibrant;
 const path = process.argv[2] || 'public/images/puzzle_warz_logo.png';

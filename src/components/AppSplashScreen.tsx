@@ -34,7 +34,7 @@ export default function AppSplashScreen() {
         position: "fixed",
         inset: 0,
         zIndex: 9999,
-        backgroundColor: "#020202",
+        backgroundColor: "var(--pw-bg-base)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -73,7 +73,7 @@ export default function AppSplashScreen() {
       <div style={{
         position: "absolute",
         inset: 0,
-        background: "radial-gradient(ellipse at 50% 45%, rgba(56,145,166,0.12) 0%, transparent 60%)",
+        background: "radial-gradient(ellipse at 50% 45%, rgba(3,172,244,0.12) 0%, transparent 60%)",
         pointerEvents: "none",
       }} />
 
@@ -88,7 +88,7 @@ export default function AppSplashScreen() {
               width: 180,
               height: 180,
               borderRadius: "50%",
-              border: "1.5px solid rgba(56,145,166,0.45)",
+              border: "1.5px solid rgba(3,172,244,0.45)",
               animation: `pw-sp-ring 2s ease-out ${delay}s infinite`,
             }}
           />
@@ -100,7 +100,7 @@ export default function AppSplashScreen() {
           width: 148,
           height: 148,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(56,145,166,0.22) 0%, transparent 72%)",
+          background: "radial-gradient(circle, rgba(3,172,244,0.22) 0%, transparent 72%)",
           animation: "pw-sp-glow 2s ease-in-out infinite",
         }} />
 
@@ -114,7 +114,7 @@ export default function AppSplashScreen() {
             position: "relative",
             zIndex: 1,
             animation: "pw-sp-logo 0.75s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
-            filter: "drop-shadow(0 0 28px rgba(56,145,166,0.65))",
+            filter: "drop-shadow(0 0 28px rgba(3,172,244,0.65))",
           }}
         />
       </div>
@@ -122,7 +122,7 @@ export default function AppSplashScreen() {
       {/* Tagline */}
       <p style={{
         margin: 0,
-        color: "#6b7280",
+        color: "var(--pw-text-muted)",
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: "0.18em",
@@ -141,7 +141,7 @@ export default function AppSplashScreen() {
               width: 7,
               height: 7,
               borderRadius: "50%",
-              backgroundColor: "#3891A6",
+              backgroundColor: "var(--pw-brand-primary)",
               animation: `pw-sp-dot 1.1s ease-in-out ${delay}s infinite`,
             }}
           />

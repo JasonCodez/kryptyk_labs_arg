@@ -53,12 +53,12 @@
    .juicy-text so every variant stays visually consistent. */
 .juicy-text {
   -webkit-text-stroke-width: var(--juicy-stroke-width, 3px);
-  -webkit-text-stroke-color: var(--juicy-stroke-color, #170B26);
+  -webkit-text-stroke-color: var(--juicy-stroke-color, #0B1029);
   paint-order: stroke fill;
   background-image: var(--juicy-gradient);
   background-clip: text;
   -webkit-background-clip: text;
-  color: var(--juicy-stroke-color, #170B26); /* fallback fill if background-clip:text is unsupported */
+  color: var(--juicy-stroke-color, #0B1029); /* fallback fill if background-clip:text is unsupported */
   -webkit-text-fill-color: transparent;
   text-shadow: var(--juicy-shadow);
   letter-spacing: 0.01em;
@@ -67,37 +67,79 @@
    still-fully-legible fill instead of invisible text. */
 @supports not (background-clip: text) {
   .juicy-text {
-    -webkit-text-fill-color: var(--juicy-stroke-color, #170B26);
+    -webkit-text-fill-color: var(--juicy-stroke-color, #0B1029);
   }
 }
 
+/* Variant colors come from the logo-derived brand tokens (globals.css).
+   Gradient stops are explicit hexes of those tokens because background-clip
+   gradients need literal color stops that read well top-to-bottom; each stop
+   is the token value ± the shared light/dark derivation. */
+.juicy-text--brand {
+  /* Brand display — logo shield blue. */
+  --juicy-gradient: linear-gradient(180deg, #C9EBFF 0%, #03ACF4 50%, #0054AC 100%);
+  --juicy-stroke-color: #012B58;
+  --juicy-shadow: 0 2px 0 #012B58, 0 4px 0 #012B58, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
 .juicy-text--gold {
-  --juicy-gradient: linear-gradient(180deg, #FFF3B0 0%, #FFC93C 45%, #E0960B 100%);
+  /* Reward display — logo trophy gold. */
+  --juicy-gradient: linear-gradient(180deg, #FFF3B0 0%, #FED007 45%, #FDAE03 100%);
   --juicy-stroke-color: #7A4A00;
   --juicy-shadow: 0 2px 0 #7A4A00, 0 4px 0 #7A4A00, 0 8px 16px rgba(0, 0, 0, 0.45);
 }
-.juicy-text--candy {
-  --juicy-gradient: linear-gradient(180deg, #FFD9EC 0%, #FF4FA3 50%, #C7157A 100%);
-  --juicy-stroke-color: #6E0E45;
-  --juicy-shadow: 0 2px 0 #6E0E45, 0 4px 0 #6E0E45, 0 8px 16px rgba(0, 0, 0, 0.45);
+/* Deprecated: pink "candy" and purple are not logo colors — both classes now
+   render the brand-blue treatment so stale call sites stay on-brand. */
+.juicy-text--candy,
+.juicy-text--purple {
+  --juicy-gradient: linear-gradient(180deg, #C9EBFF 0%, #03ACF4 50%, #0054AC 100%);
+  --juicy-stroke-color: #012B58;
+  --juicy-shadow: 0 2px 0 #012B58, 0 4px 0 #012B58, 0 8px 16px rgba(0, 0, 0, 0.45);
 }
 .juicy-text--blue-glass {
-  --juicy-gradient: linear-gradient(180deg, #DFFFFE 0%, #2FE6E0 50%, #0FA6A1 100%);
-  --juicy-stroke-color: #063F3D;
-  --juicy-shadow: 0 2px 0 #063F3D, 0 4px 0 #063F3D, 0 8px 16px rgba(0, 0, 0, 0.45);
-}
-.juicy-text--purple {
-  --juicy-gradient: linear-gradient(180deg, #E4D4FF 0%, #8B3DFF 50%, #5B1FB0 100%);
-  --juicy-stroke-color: #3A1266;
-  --juicy-shadow: 0 2px 0 #3A1266, 0 4px 0 #3A1266, 0 8px 16px rgba(0, 0, 0, 0.45);
+  /* Light glass — brand primary-light, for softer display moments. */
+  --juicy-gradient: linear-gradient(180deg, #E9F7FF 0%, #5BC9FF 50%, #0387C0 100%);
+  --juicy-stroke-color: #013B58;
+  --juicy-shadow: 0 2px 0 #013B58, 0 4px 0 #013B58, 0 8px 16px rgba(0, 0, 0, 0.45);
 }
 .juicy-text--grass {
-  --juicy-gradient: linear-gradient(180deg, #DFFFE9 0%, #3ED97A 50%, #1F9E52 100%);
+  /* Success display — semantic success green. */
+  --juicy-gradient: linear-gradient(180deg, #DFFFE9 0%, #3BC46A 50%, #1F8F4C 100%);
   --juicy-stroke-color: #0E4B27;
   --juicy-shadow: 0 2px 0 #0E4B27, 0 4px 0 #0E4B27, 0 8px 16px rgba(0, 0, 0, 0.45);
 }
 .juicy-text--ember {
-  --juicy-gradient: linear-gradient(180deg, #FFDADA 0%, #FF5A5A 50%, #C72A2A 100%);
+  /* Danger display — semantic error red. */
+  --juicy-gradient: linear-gradient(180deg, #FFDADA 0%, #F0565B 50%, #B0272B 100%);
   --juicy-stroke-color: #6B1414;
   --juicy-shadow: 0 2px 0 #6B1414, 0 4px 0 #6B1414, 0 8px 16px rgba(0, 0, 0, 0.45);
+}
+
+/* ── GameButton / HUD pill variant fills ──────────────────────────────────────
+   Shared "shiny plastic" gradient fills for the semantic button roles. Text is
+   brand ink (--pw-text-on-*) — white fails AA on the bright logo fills; dark
+   glyphs on bright fills also echoes the logo's own outlined lettering. */
+.game-btn--primary {
+  background-image: linear-gradient(160deg, #5BC9FF 0%, #03ACF4 45%, #0054AC 100%);
+  border-color: #013B78;
+  color: var(--pw-text-on-primary);
+}
+.game-btn--secondary {
+  background-image: linear-gradient(160deg, #FFE55C 0%, #FED007 45%, #FDAE03 100%);
+  border-color: #8A5E00;
+  color: var(--pw-text-on-secondary);
+}
+.game-btn--accent {
+  background-image: linear-gradient(160deg, #FFA43D 0%, #F97102 45%, #C25500 100%);
+  border-color: #7A3600;
+  color: var(--pw-text-on-accent);
+}
+.game-btn--success {
+  background-image: linear-gradient(160deg, #8CF3AE 0%, #3BC46A 45%, #1F8F4C 100%);
+  border-color: #14612F;
+  color: var(--pw-text-on-success);
+}
+.game-btn--danger {
+  background-image: linear-gradient(160deg, #FF9C9C 0%, #F0565B 45%, #B0272B 100%);
+  border-color: #7A1A1D;
+  color: #0B1029;
 }

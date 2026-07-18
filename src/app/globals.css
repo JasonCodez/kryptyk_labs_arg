@@ -88,7 +88,7 @@
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  background: #020202;
+  background: var(--pw-bg-base);
 }
 .pw-play-content {
   flex: 1;
@@ -139,8 +139,8 @@
   padding-left: 8px;
   padding-right: 8px;
   min-height: calc(56px + env(safe-area-inset-top, 0px));
-  background: rgba(2, 2, 2, 0.96);
-  border-bottom: 1px solid rgba(139, 61, 255, 0.18);
+  background: color-mix(in srgb, var(--pw-bg-base) 96%, transparent);
+  border-bottom: 1px solid var(--pw-border-subtle);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   overflow-x: hidden;
@@ -154,7 +154,7 @@
   display: grid;
   place-items: center;
   border-radius: 12px;
-  color: #eef1fa;
+  color: var(--pw-text-primary);
   text-decoration: none;
 }
 .pw-play-header-titles {
@@ -174,7 +174,7 @@
 .pw-play-header-title {
   font-size: 15px;
   font-weight: 800;
-  color: #eef1fa;
+  color: var(--pw-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -183,7 +183,7 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #8891ac;
+  color: var(--pw-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -224,9 +224,9 @@
   justify-content: center;
   gap: 5px;
   border-radius: 11px;
-  border: 1px solid rgba(129, 140, 248, 0.24);
-  background: rgba(30, 41, 59, 0.72);
-  color: #e2e8f0;
+  border: 1px solid var(--pw-border-default);
+  background: color-mix(in srgb, var(--pw-surface-2) 82%, transparent);
+  color: var(--pw-text-primary);
   font-size: 11px;
   font-weight: 800;
 }
@@ -251,11 +251,11 @@
   min-width: 210px;
   max-width: min(280px, calc(100vw - 16px));
   padding: 8px;
-  border: 1px solid rgba(129, 140, 248, 0.32);
+  border: 1px solid var(--pw-border-strong);
   border-radius: 12px;
-  background: rgba(8, 12, 22, 0.98);
+  background: color-mix(in srgb, var(--pw-bg-elevated) 98%, transparent);
   box-shadow: 0 18px 55px rgba(0, 0, 0, 0.58);
-  color: #f8fafc;
+  color: var(--pw-text-primary);
 }
 .pw-play-header-menu-stack {
   display: grid;
@@ -271,9 +271,9 @@
   justify-content: flex-start;
   padding: 10px 12px !important;
   border-radius: 9px !important;
-  border: 1px solid rgba(148, 163, 184, 0.18) !important;
-  background: rgba(30, 41, 59, 0.72) !important;
-  color: #f8fafc !important;
+  border: 1px solid var(--pw-border-default) !important;
+  background: color-mix(in srgb, var(--pw-surface-2) 82%, transparent) !important;
+  color: var(--pw-text-primary) !important;
   font-size: 13px !important;
   font-weight: 750 !important;
   text-decoration: none !important;
@@ -320,28 +320,107 @@
   --background: #ffffff;
   --foreground: #171717;
 
-  /* ── Battle-pass token system — one job per color ───────────────
-     Candy/skeuomorphic palette: kept the dark "board" background so
-     the bright candy pieces (buttons, cards, badges) still pop, but
-     every accent below now maps to theme.extend.colors.candy in
-     tailwind.config.ts instead of the old muted brand hues. */
-  --pw-ink: #170B26;
-  --pw-ink-2: #1E1033;
-  --pw-surface: #241640;
-  --pw-surface-hi: #32205A;
-  --pw-line: rgba(255,79,163, 0.18);
-  --pw-line-hi: rgba(255,79,163, 0.36);
-  --pw-gold: #FFC93C;      /* earned / XP / claimed / premium */
-  --pw-gold-dim: #E0960B;
-  --pw-violet: #8B3DFF;    /* rare / next-up / identity */
-  --pw-violet-dim: #5B1FB0;
-  --pw-teal: #FF4FA3;      /* primary action / info */
-  --pw-success: #3ED97A;   /* solved — the one green */
-  --pw-ember: #FF5A5A;     /* failed / danger */
-  --pw-locked: #4A3D66;
-  --pw-text: #FFF6FB;
-  --pw-text-dim: #C8B8E0;
-  --pw-text-faint: #8C7BAD;
+  /* ═══ PuzzleWarz brand tokens (Phase 8.1) — canonical source of truth ═══
+     Derived from the official logo (public/images/puzzle_warz_logo.png):
+     shield blue is the primary, trophy/wordmark gold the secondary, the
+     orange puzzle piece the accent. Surfaces come from the logo's navy
+     outline ink — neutral, not purple. Light/dark variants are deterministic
+     srgb mixes of the base (+12% white hover, +18% black pressed, 62% toward
+     surface-1 for disabled); the source logo colors themselves are documented
+     in scripts/extract-logo-colors.* output and are never edited here. */
+
+  /* Core brand */
+  --pw-brand-primary: #03ACF4;         /* logo shield sky blue */
+  --pw-brand-primary-light: #5BC9FF;
+  --pw-brand-primary-dark: #0054AC;    /* logo shield shading */
+  --pw-brand-secondary: #FED007;       /* logo trophy / WARZ gold */
+  --pw-brand-secondary-light: #FFE55C;
+  --pw-brand-secondary-dark: #FDAE03;
+  --pw-brand-accent: #F97102;          /* logo orange puzzle piece */
+  --pw-brand-accent-light: #FFA43D;
+  --pw-brand-accent-dark: #C25500;
+
+  /* Backgrounds and surfaces — neutral navy from the logo outline ink */
+  --pw-bg-base: #0A0E17;
+  --pw-bg-elevated: #0F1523;
+  --pw-surface-1: #131A2A;
+  --pw-surface-2: #1A2336;
+  --pw-surface-3: #222D45;
+  --pw-surface-hover: #263351;
+  --pw-surface-pressed: #0D1320;
+  --pw-surface-disabled: #10141F;
+
+  /* Text */
+  --pw-text-primary: #EEF2FA;
+  --pw-text-secondary: #A9B4CC;
+  --pw-text-muted: #7D89A6;
+  --pw-text-disabled: #55617D;
+  --pw-text-on-primary: #0B1029;   /* ink on bright brand fills — white fails AA there */
+  --pw-text-on-secondary: #0B1029;
+  --pw-text-on-accent: #0B1029;
+
+  /* Borders and depth */
+  --pw-border-subtle: #1E2740;
+  --pw-border-default: #2C3856;
+  --pw-border-strong: #5A6A94;     /* 3.6:1 vs bg-base — use when the border is the only boundary */
+  --pw-highlight-top: rgba(255,255,255,0.35);
+  --pw-shadow-inner: rgba(0,0,0,0.25);
+  --pw-shadow-soft: 0 6px 18px rgba(0,0,0,0.35);
+  --pw-shadow-panel: 0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.08), inset 0 -6px 14px rgba(0,0,0,0.18);
+  --pw-shadow-button: 0 6px 0 rgba(0,0,0,0.28), 0 10px 18px rgba(0,0,0,0.35), inset 0 3px 0 rgba(255,255,255,0.55), inset 0 -4px 8px rgba(0,0,0,0.18);
+  --pw-focus-ring: #4FB8FF;        /* visible on every surface incl. primary-dark fills */
+
+  /* Semantic states — harmonized with the logo's green/red pieces, kept
+     distinct from brand colors (warning is deliberately more orange than
+     reward-gold so "warning" never reads as "reward"). */
+  --pw-success: #3BC46A;
+  --pw-success-surface: #122A1C;
+  --pw-success-border: rgba(59,196,106,0.45);
+  --pw-text-on-success: #0B1029;
+  --pw-warning: #FFB020;
+  --pw-warning-surface: #2A2210;
+  --pw-warning-border: rgba(255,176,32,0.45);
+  --pw-text-on-warning: #0B1029;
+  --pw-error: #E5484D;             /* fills/borders; use --pw-error-text for small text on dark */
+  --pw-error-text: #FF7A7E;
+  --pw-error-surface: #2A1215;
+  --pw-error-border: rgba(229,72,77,0.5);
+  --pw-text-on-error: #FFFFFF;
+  --pw-info: #4FB8FF;
+  --pw-info-surface: #0F2236;
+  --pw-info-border: rgba(79,184,255,0.45);
+  --pw-text-on-info: #0B1029;
+
+  /* Interactive action states (derived per the mix formula above) */
+  --pw-action-primary: #03ACF4;
+  --pw-action-primary-hover: #21B6F5;
+  --pw-action-primary-pressed: #028DC8;
+  --pw-action-primary-disabled: #0D5177;
+  --pw-action-secondary: #FED007;
+  --pw-action-secondary-hover: #FED625;
+  --pw-action-secondary-pressed: #D0AB06;
+  --pw-action-secondary-disabled: #6C5F1D;
+
+  /* ── Compatibility aliases (Phase 8.1 → remove in a later phase) ──────
+     Old battle-pass/candy token names, re-pointed at the canonical system
+     so every existing consumer picks up the logo palette without a
+     file-by-file rewrite. Do NOT add new references to these names. */
+  --pw-ink: var(--pw-bg-base);
+  --pw-ink-2: var(--pw-bg-elevated);
+  --pw-surface: var(--pw-surface-1);
+  --pw-surface-hi: var(--pw-surface-2);
+  --pw-line: var(--pw-border-subtle);
+  --pw-line-hi: var(--pw-border-default);
+  --pw-gold: var(--pw-brand-secondary);      /* earned / XP / claimed / premium */
+  --pw-gold-dim: var(--pw-brand-secondary-dark);
+  --pw-violet: var(--pw-brand-primary);      /* was "rare / next-up" purple — now brand blue */
+  --pw-violet-dim: var(--pw-brand-primary-dark);
+  --pw-teal: var(--pw-action-primary);       /* primary action / info */
+  --pw-ember: var(--pw-error);
+  --pw-locked: var(--pw-text-disabled);
+  --pw-text: var(--pw-text-primary);
+  --pw-text-dim: var(--pw-text-secondary);
+  --pw-text-faint: var(--pw-text-muted);
 }
 
 @theme inline {
@@ -349,6 +428,48 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Rounded game faces loaded by next/font in layout.tsx — makes font-display /
+     font-ui utilities real (they were silently dead while these lived only in
+     the unwired tailwind.config.ts). */
+  --font-display: var(--font-display), ui-rounded, sans-serif;
+  --font-ui: var(--font-ui), ui-rounded, sans-serif;
+
+  /* Brand palette exposed as Tailwind utilities (bg-pw-primary, text-pw-success, …) */
+  --color-pw-primary: var(--pw-brand-primary);
+  --color-pw-primary-light: var(--pw-brand-primary-light);
+  --color-pw-primary-dark: var(--pw-brand-primary-dark);
+  --color-pw-secondary: var(--pw-brand-secondary);
+  --color-pw-accent: var(--pw-brand-accent);
+  --color-pw-success: var(--pw-success);
+  --color-pw-warning: var(--pw-warning);
+  --color-pw-error: var(--pw-error);
+  --color-pw-info: var(--pw-info);
+  --color-pw-surface-1: var(--pw-surface-1);
+  --color-pw-surface-2: var(--pw-surface-2);
+  --color-pw-surface-3: var(--pw-surface-3);
+
+  /* "Pressable plastic/jelly" depth — moved here from the unwired
+     tailwind.config.ts so shadow-skeu-* utilities actually compile.
+     Palette-neutral (black lift + white gloss) by design. */
+  --shadow-skeu-raised: 0 6px 0 rgba(0,0,0,0.28), 0 10px 18px rgba(0,0,0,0.35), inset 0 3px 0 rgba(255,255,255,0.55), inset 0 -4px 8px rgba(0,0,0,0.18);
+  --shadow-skeu-raised-sm: 0 4px 0 rgba(0,0,0,0.28), 0 6px 10px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.5), inset 0 -3px 6px rgba(0,0,0,0.16);
+  --shadow-skeu-pressed: 0 1px 0 rgba(0,0,0,0.28), 0 2px 4px rgba(0,0,0,0.25), inset 0 3px 6px rgba(0,0,0,0.35), inset 0 -1px 0 rgba(255,255,255,0.12);
+  --shadow-skeu-panel: 0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.12);
+  --shadow-skeu-pill: 0 3px 0 rgba(0,0,0,0.25), 0 4px 8px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.45), inset 0 -3px 5px rgba(0,0,0,0.15);
+
+  /* CTA attention animations (animate-candy-*) — also re-homed from the
+     unwired config. The spark halo now pulses brand gold. */
+  --animate-candy-breathe: candy-breathe 1.8s ease-in-out infinite;
+  --animate-candy-spark: candy-spark 1.6s ease-out infinite;
+}
+
+@keyframes candy-breathe {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.045); filter: brightness(1.12); }
+}
+@keyframes candy-spark {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pw-brand-secondary) 55%, transparent); }
+  50% { box-shadow: 0 0 0 10px transparent; }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -376,10 +497,10 @@
 
 /* ── Driver.js tour theme ──────────────────────────────────────────── */
 .pw-tour-popover {
-  background: linear-gradient(160deg, #0a1015 0%, #060c10 100%) !important;
-  border: 1px solid rgba(56, 145, 166, 0.4) !important;
+  background: linear-gradient(160deg, var(--pw-bg-elevated) 0%, var(--pw-bg-base) 100%) !important;
+  border: 1px solid color-mix(in srgb, var(--pw-brand-primary) 40%, transparent) !important;
   border-radius: 16px !important;
-  box-shadow: 0 0 60px rgba(56, 145, 166, 0.15), 0 24px 64px rgba(0, 0, 0, 0.8) !important;
+  box-shadow: 0 0 60px color-mix(in srgb, var(--pw-brand-primary) 15%, transparent), 0 24px 64px rgba(0, 0, 0, 0.8) !important;
   padding: 20px 24px 16px !important;
   max-width: min(360px, calc(100vw - 24px)) !important;
   width: min(360px, calc(100vw - 24px)) !important;
@@ -405,27 +526,27 @@
   font-size: 11px !important;
   font-weight: 700 !important;
   letter-spacing: 0.06em !important;
-  color: #3891A6 !important;
+  color: var(--pw-brand-primary) !important;
 }
 .pw-tour-popover .driver-popover-footer {
   margin-top: 16px !important;
   padding-top: 12px !important;
-  border-top: 1px solid rgba(56, 145, 166, 0.15) !important;
+  border-top: 1px solid color-mix(in srgb, var(--pw-brand-primary) 15%, transparent) !important;
 }
 .pw-tour-popover .driver-popover-navigation-btns {
   gap: 8px !important;
 }
 .pw-tour-popover button.driver-popover-next-btn {
-  background: linear-gradient(135deg, #3891A6, #2d7a8e) !important;
-  border: 1px solid rgba(56, 145, 166, 0.5) !important;
-  color: #fff !important;
+  background: linear-gradient(135deg, var(--pw-brand-primary), var(--pw-action-primary-pressed)) !important;
+  border: 1px solid color-mix(in srgb, var(--pw-brand-primary) 50%, transparent) !important;
+  color: var(--pw-text-on-primary) !important;
   font-size: 12px !important;
   font-weight: 700 !important;
   letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
   border-radius: 10px !important;
   padding: 8px 16px !important;
-  box-shadow: 0 4px 16px rgba(56, 145, 166, 0.3) !important;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--pw-brand-primary) 30%, transparent) !important;
   text-shadow: none !important;
 }
 .pw-tour-popover button.driver-popover-next-btn:hover {
@@ -453,30 +574,38 @@
   color: #fff !important;
 }
 .pw-tour-popover .driver-popover-arrow-side-top.driver-popover-arrow {
-  border-top-color: #0a1015 !important;
+  border-top-color: var(--pw-bg-elevated) !important;
 }
 .pw-tour-popover .driver-popover-arrow-side-bottom.driver-popover-arrow {
-  border-bottom-color: #0a1015 !important;
+  border-bottom-color: var(--pw-bg-elevated) !important;
 }
 .pw-tour-popover .driver-popover-arrow-side-left.driver-popover-arrow {
-  border-left-color: #0a1015 !important;
+  border-left-color: var(--pw-bg-elevated) !important;
 }
 .pw-tour-popover .driver-popover-arrow-side-right.driver-popover-arrow {
-  border-right-color: #0a1015 !important;
+  border-right-color: var(--pw-bg-elevated) !important;
 }
 #driver-highlighted-element-stage {
   border-radius: 12px !important;
 }
 
 body {
+  /* Ambient glow rebuilt from logo colors: shield blue top-left, trophy gold
+     top-right, a whisper of piece-green at the foot — over neutral navy. */
   background:
-    radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255, 0.24), transparent 62%),
-    radial-gradient(1100px 700px at 90% 0%, rgba(255,79,163, 0.16), transparent 58%),
-    radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122, 0.10), transparent 60%),
-    var(--pw-ink);
+    radial-gradient(1300px 800px at 15% -10%, rgba(3,172,244, 0.14), transparent 62%),
+    radial-gradient(1100px 700px at 90% 0%, rgba(254,208,7, 0.08), transparent 58%),
+    radial-gradient(1000px 650px at 50% 100%, rgba(59,196,106, 0.07), transparent 60%),
+    var(--pw-bg-base);
   color: var(--foreground);
   font-family: var(--font-geist-sans, Arial, sans-serif);
   overflow-x: hidden;
+}
+
+/* ── Shared focus indicator — one ring, every surface ─────────────── */
+:where(a, button, [role="button"], input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--pw-focus-ring);
+  outline-offset: 2px;
 }
 
 /* ── Logo pulse (used by LoadingSpinner and inline loaders) ───── */
@@ -487,10 +616,10 @@ body {
 
 /* ── Custom scrollbar ─────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #080808; }
-::-webkit-scrollbar-thumb { background: var(--pw-teal); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #77A5FF; }
-* { scrollbar-width: thin; scrollbar-color: var(--pw-teal) #080808; }
+::-webkit-scrollbar-track { background: var(--pw-bg-base); }
+::-webkit-scrollbar-thumb { background: var(--pw-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--pw-brand-primary); }
+* { scrollbar-width: thin; scrollbar-color: var(--pw-border-strong) var(--pw-bg-base); }
 
 /* ── Utility: hide scrollbar but keep scrollability ──────────── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -506,7 +635,8 @@ body {
 }
 
 .rarity-text-rare {
-  color: #3891A6 !important;
+  /* Rare = blue (genre convention); now the brand primary. */
+  color: var(--pw-brand-primary) !important;
 }
 
 .rarity-text-epic {
@@ -576,9 +706,11 @@ body {
   color: #4A5F61 !important;
 }
 
-/* Note: an earlier pass forced all purple/pink utility classes to teal/yellow to avoid an
-   off-brand accent. The battle-pass direction reinstates violet as a deliberate, first-class
-   accent (rare / next-up / identity — see --pw-violet), so that override has been removed. */
+/* Note: Phase 8.1 rebuilt the palette from the official logo, which contains no
+   purple — the old --pw-violet "rare / next-up / identity" accent now aliases the
+   brand primary (logo blue). Rarity colors above (.rarity-text-epic etc.) keep
+   their genre-conventional hues deliberately: rarity is an item-economy scale,
+   not UI chrome, and epic=purple stays understandable to players. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Escape-room pickup / collect animations
@@ -737,9 +869,9 @@ body {
 /* ── Hero grid background (subtle blueprint) ─────────────── */
 .hero-bg {
   background-image:
-    linear-gradient(rgba(56,145,166,0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56,145,166,0.055) 1px, transparent 1px),
-    linear-gradient(135deg, rgba(56,145,166,0.1) 0%, rgba(253,231,76,0.04) 60%, transparent 100%);
+    linear-gradient(rgba(3,172,244,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(3,172,244,0.055) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(3,172,244,0.1) 0%, rgba(254,208,7,0.04) 60%, transparent 100%);
   background-size: 48px 48px, 48px 48px, 100% 100%;
 }
 
@@ -748,17 +880,17 @@ body {
   transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
 }
 .card-hover-teal:hover {
-  box-shadow: 0 0 0 1px rgba(56,145,166,0.5), 0 6px 36px rgba(56,145,166,0.15);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pw-brand-primary) 50%, transparent), 0 6px 36px color-mix(in srgb, var(--pw-brand-primary) 15%, transparent);
   transform: translateY(-3px);
-  border-color: rgba(56,145,166,0.6) !important;
+  border-color: color-mix(in srgb, var(--pw-brand-primary) 60%, transparent) !important;
 }
 .card-hover-yellow {
   transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
 }
 .card-hover-yellow:hover {
-  box-shadow: 0 0 0 1px rgba(253,231,76,0.4), 0 6px 36px rgba(253,231,76,0.1);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pw-brand-secondary) 40%, transparent), 0 6px 36px color-mix(in srgb, var(--pw-brand-secondary) 10%, transparent);
   transform: translateY(-3px);
-  border-color: rgba(253,231,76,0.55) !important;
+  border-color: color-mix(in srgb, var(--pw-brand-secondary) 55%, transparent) !important;
 }
 
 /* ── Battle-pass elevation kit — reusable across cards, tracks, progression UI ── */
@@ -771,17 +903,19 @@ body {
   clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
 }
 .pw-glow-gold {
-  box-shadow: 0 0 22px rgba(255,201,60, 0.45);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--pw-brand-secondary) 45%, transparent);
 }
+/* Class names kept for compatibility — "violet" now renders the brand primary
+   (logo blue) attention glow. Rename to pw-glow-primary in a later phase. */
 .pw-glow-violet {
-  box-shadow: 0 0 0 4px rgba(139,61,255, 0.14), 0 0 20px rgba(139,61,255, 0.5);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--pw-brand-primary) 14%, transparent), 0 0 20px color-mix(in srgb, var(--pw-brand-primary) 50%, transparent);
 }
 .pw-pulse-violet {
   animation: pw-pulse-ring 2.2s ease-in-out infinite;
 }
 @keyframes pw-pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(139,61,255, 0.14), 0 0 16px rgba(139,61,255, 0.4); }
-  50%      { box-shadow: 0 0 0 8px rgba(139,61,255, 0.07), 0 0 28px rgba(139,61,255, 0.65); }
+  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--pw-brand-primary) 14%, transparent), 0 0 16px color-mix(in srgb, var(--pw-brand-primary) 40%, transparent); }
+  50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--pw-brand-primary) 7%, transparent), 0 0 28px color-mix(in srgb, var(--pw-brand-primary) 65%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pw-pulse-violet { animation: none; }
@@ -793,7 +927,7 @@ body {
   height: 9px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 12px 4px rgba(255,201,60, 0.9);
+  box-shadow: 0 0 12px 4px color-mix(in srgb, var(--pw-brand-secondary) 90%, transparent);
   animation: pw-bead-travel 2.6s linear infinite;
 }
 @keyframes pw-bead-travel {
@@ -820,7 +954,7 @@ body {
 }
 .pw-arcade-card:hover {
   transform: translateY(-4px) scale(1.015);
-  box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent, #FF4FA3) 55%, transparent);
+  box-shadow: 0 14px 34px -12px color-mix(in srgb, var(--accent, var(--pw-brand-primary)) 55%, transparent);
 }
 .pw-arcade-card:active:not(.pw-arcade-card-inert) {
   transform: translateY(-1px) scale(0.985);
@@ -836,8 +970,8 @@ body {
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: .04em;
-  color: #170B26;
-  background: #FFC93C;
+  color: var(--pw-text-on-secondary);
+  background: var(--pw-brand-secondary);
   padding: 4px 9px;
   border-radius: 7px;
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
@@ -848,8 +982,8 @@ body {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .04em;
-  color: #170B26;
-  background: #FFC93C;
+  color: var(--pw-text-on-secondary);
+  background: var(--pw-brand-secondary);
   padding: 3px 7px;
   border-radius: 6px;
   white-space: nowrap;
@@ -867,8 +1001,8 @@ body {
   justify-content: center;
   font-size: 32px;
   flex-shrink: 0;
-  background: radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--accent, #FF4FA3) 55%, var(--pw-surface-hi)), var(--pw-surface-hi));
-  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent, #FF4FA3) 70%, transparent), inset 0 0 0 1px rgba(255,255,255,0.08);
+  background: radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, var(--accent, var(--pw-brand-primary)) 55%, var(--pw-surface-hi)), var(--pw-surface-hi));
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent, var(--pw-brand-primary)) 70%, transparent), inset 0 0 0 1px rgba(255,255,255,0.08);
 }
 .pw-arcade-card-inert .pw-arcade-icon, .pw-arcade-row-inert .pw-arcade-icon { filter: grayscale(0.7); }
 
@@ -879,7 +1013,7 @@ body {
   font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
   font-size: 9px;
   font-weight: 800;
-  color: #170B26;
+  color: var(--pw-text-on-secondary);
   padding: 3px 7px;
   border-radius: 7px;
   letter-spacing: .05em;
@@ -915,7 +1049,7 @@ body {
 }
 .pw-arcade-failed-msg {
   font-size: 11.5px;
-  color: #FFB4B4;
+  color: var(--pw-error-text);
   margin: -10px 0 12px;
 }
 .pw-arcade-loot {
@@ -936,8 +1070,8 @@ body {
   color: var(--pw-text);
   white-space: nowrap;
 }
-.pw-arcade-chip-gold { color: #FFC93C; }
-.pw-arcade-chip-em { color: #3ED97A; }
+.pw-arcade-chip-gold { color: var(--pw-brand-secondary); }
+.pw-arcade-chip-em { color: var(--pw-success); }
 
 .pw-arcade-perf {
   display: flex;
@@ -979,7 +1113,7 @@ body {
 }
 .pw-arcade-row:hover {
   transform: translateX(3px);
-  box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--accent, #FF4FA3) 55%, transparent);
+  box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--accent, var(--pw-brand-primary)) 55%, transparent);
 }
 .pw-arcade-row:active:not(.pw-arcade-row-inert) {
   transform: translateX(3px) scale(0.99);

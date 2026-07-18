@@ -16,10 +16,10 @@
   max-width: calc(100% - 12px);
   padding: 6px 12px;
   transform: translateX(-50%);
-  border: 1px solid rgba(62, 217, 122, 0.7);
+  border: 1px solid var(--pw-success-border);
   border-radius: 999px;
-  background: linear-gradient(160deg, #2A8654, #1F9E52 60%);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), 0 0 18px rgba(62, 217, 122, 0.4), inset 0 1px 0 rgba(255,255,255,0.35);
+  background: linear-gradient(160deg, #2A8654, #1F8F4C 60%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), 0 0 18px color-mix(in srgb, var(--pw-success) 40%, transparent), inset 0 1px 0 rgba(255,255,255,0.35);
   color: #E9FFF1;
   font-size: 11px;
   font-weight: 900;
@@ -28,9 +28,9 @@
 }
 .crossword-grid-stage [role="gridcell"][data-selected="true"] {
   z-index: 5 !important;
-  outline: 3px solid #5B1FB0;
+  outline: 3px solid var(--pw-brand-primary-dark);
   outline-offset: -3px;
-  box-shadow: 0 0 0 2px #FFF6FB, 0 0 0 5px rgba(255, 79, 163, 0.75), 0 0 16px rgba(255, 79, 163, 0.45) !important;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 5px color-mix(in srgb, var(--pw-brand-primary) 75%, transparent), 0 0 16px color-mix(in srgb, var(--pw-brand-primary) 45%, transparent) !important;
 }
 .crossword-grid-stage [role="gridcell"][data-active-word="true"]:not([data-selected="true"]) {
   filter: saturate(1.05);
@@ -69,9 +69,9 @@
   align-items: stretch;
   gap: 4px;
   padding: 4px;
-  border: 1px solid rgba(139, 61, 255, 0.35);
+  border: 1px solid var(--pw-border-default);
   border-radius: 14px;
-  background: linear-gradient(160deg, #32205A, #241640 65%);
+  background: linear-gradient(160deg, var(--pw-surface-3), var(--pw-surface-2) 65%);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 .crossword-active-dock-copy {
@@ -83,7 +83,7 @@
   padding: 3px 5px;
 }
 .crossword-active-dock-label {
-  color: #C79CFF;
+  color: var(--pw-brand-primary-light);
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -94,14 +94,14 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  color: #FFF6FB;
+  color: var(--pw-text-primary);
   font-size: 12px;
   font-weight: 720;
   line-height: 1.22;
   overflow-wrap: anywhere;
 }
 .crossword-active-dock-empty {
-  color: #8C7BAD;
+  color: var(--pw-text-muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -116,8 +116,9 @@
   gap: 4px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 11px;
-  background: linear-gradient(160deg, #8B3DFF, #5B1FB0 70%);
-  color: #FFF6FB;
+  /* Ink glyphs on the bright brand fill — same contrast pattern as .game-btn--primary. */
+  background: linear-gradient(160deg, var(--pw-brand-primary-light), var(--pw-brand-primary) 70%);
+  color: var(--pw-text-on-primary);
   font-size: 13px;
   font-weight: 850;
   box-shadow: 0 3px 0 rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -3px 6px rgba(0,0,0,0.15);
@@ -171,9 +172,9 @@
   height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
-  background: linear-gradient(160deg, #3A2566, #241640 65%);
+  background: linear-gradient(160deg, var(--pw-surface-3), var(--pw-surface-2) 65%);
   box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -3px 6px rgba(0,0,0,0.18);
-  color: #FFF6FB;
+  color: var(--pw-text-primary);
   font-size: 14px;
   font-weight: 900;
   transition: transform 100ms ease, box-shadow 100ms ease;
@@ -186,7 +187,7 @@
   flex-basis: 1.45rem;
   max-width: 58px;
   color: #FFC2C2;
-  background: linear-gradient(160deg, #B03A3A, #7A1F1F 65%);
+  background: linear-gradient(160deg, #B0272B, #7A1A1D 65%);
 }
 .crossword-key:disabled {
   opacity: 0.38;
@@ -210,12 +211,12 @@
   flex-direction: column;
   overflow: hidden;
   padding: 0 12px env(safe-area-inset-bottom, 0px);
-  border: 1px solid rgba(139, 61, 255, 0.4);
+  border: 1px solid var(--pw-border-strong);
   border-bottom: 0;
   border-radius: 24px 24px 0 0;
-  background: linear-gradient(180deg, #241640, #170B26 55%);
+  background: linear-gradient(180deg, var(--pw-surface-2), var(--pw-bg-base) 55%);
   box-shadow: 0 -24px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,0.08);
-  color: #FFF6FB;
+  color: var(--pw-text-primary);
   outline: none;
 }
 .crossword-clue-sheet-handle {
@@ -236,13 +237,13 @@
 }
 .crossword-clue-sheet-header h2 {
   margin: 0;
-  color: #FFF6FB;
+  color: var(--pw-text-primary);
   font-size: 18px;
   font-weight: 900;
 }
 .crossword-clue-sheet-header p {
   margin: 2px 0 0;
-  color: #C8B8E0;
+  color: var(--pw-text-secondary);
   font-size: 11px;
 }
 .crossword-sheet-close {
@@ -260,21 +261,21 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
-  color: #C8B8E0;
+  color: var(--pw-text-secondary);
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
   transition: background 120ms ease, border-color 120ms ease;
 }
 .crossword-clue-sheet-tab[data-active] {
-  border-color: rgba(255, 79, 163, 0.55);
-  background: linear-gradient(160deg, rgba(255,79,163,0.32), rgba(139,61,255,0.22));
-  color: #FFF6FB;
-  box-shadow: 0 0 14px rgba(255,79,163,0.25);
+  border-color: color-mix(in srgb, var(--pw-brand-primary) 55%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--pw-brand-primary) 32%, transparent), color-mix(in srgb, var(--pw-brand-primary-dark) 30%, transparent));
+  color: var(--pw-text-primary);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--pw-brand-primary) 25%, transparent);
 }
 .crossword-clue-sheet-tab span {
   margin-left: 4px;
-  color: #FF9FCB;
+  color: var(--pw-brand-primary-light);
 }
 .crossword-clue-sheet-list {
   min-height: 0;
@@ -295,26 +296,26 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
-  color: #C8B8E0;
+  color: var(--pw-text-secondary);
   text-align: left;
   font-size: 13px;
   line-height: 1.28;
 }
 .crossword-sheet-clue[data-active] {
-  border-color: rgba(255, 79, 163, 0.55);
-  background: rgba(255, 79, 163, 0.14);
-  color: #FFF6FB;
+  border-color: color-mix(in srgb, var(--pw-brand-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--pw-brand-primary) 14%, transparent);
+  color: var(--pw-text-primary);
 }
 .crossword-sheet-clue[data-solved] {
-  color: #3ED97A;
+  color: var(--pw-success);
 }
 .crossword-sheet-clue-number {
   align-self: start;
-  color: #FF9FCB;
+  color: var(--pw-brand-primary-light);
   font-weight: 900;
 }
 .crossword-sheet-clue-check {
-  color: #3ED97A;
+  color: var(--pw-success);
   font-weight: 900;
 }
 

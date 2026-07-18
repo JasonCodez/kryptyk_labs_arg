@@ -7,7 +7,7 @@ interface LoadingSpinnerProps {
 
 export default function LoadingSpinner({ label, size = 72 }: LoadingSpinnerProps) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ backgroundColor: "#020202" }}>
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ backgroundColor: "var(--pw-bg-base)" }}>
       <Image
         src="/images/puzzle_warz_logo.png"
         alt="Loading…"
@@ -17,7 +17,7 @@ export default function LoadingSpinner({ label, size = 72 }: LoadingSpinnerProps
         style={{ objectFit: "contain", animation: "pw-logo-spin 1.4s ease-in-out infinite" }}
       />
       {label && (
-        <p className="text-sm font-semibold" style={{ color: "#3891A6" }}>{label}</p>
+        <p className="text-sm font-semibold" style={{ color: "var(--pw-brand-primary)" }}>{label}</p>
       )}
     </div>
   );
