@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import LeaderboardIntroCard from "@/components/onboarding/LeaderboardIntroCard";
 
 interface LeaderboardEntry {
   userId: string;
@@ -271,6 +272,10 @@ export default function LeaderboardsPage() {
   }
 
   const currentUserId = (session?.user as any)?.id;
+  const isAuthenticated = status === "authenticated";
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || null
+    : null;
 
   return (
     <div
@@ -338,6 +343,8 @@ export default function LeaderboardsPage() {
               ))}
             </div>
           </div>
+
+          {isAuthenticated && onboardingUserId && <LeaderboardIntroCard userId={onboardingUserId} />}
 
           {error && (
             <div className="mb-6 p-4 rounded-lg text-white border" style={{ backgroundColor: "rgba(255,90,90,0.1)", borderColor: "rgba(255,90,90,0.4)" }}>
