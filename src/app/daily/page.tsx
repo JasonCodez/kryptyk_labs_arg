@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import DailyIntroCard from "@/components/onboarding/DailyIntroCard";
+import DailyHubHeader from "@/components/daily/DailyHubHeader";
 
 type DailySummaryEntry = {
   dayNumber: number;
@@ -88,6 +89,8 @@ export default function DailyHubPage() {
   const [debriefCompleted, setDebriefCompleted] = useState(false);
 
   useEffect(() => {
+    // Sync-on-mount so the timer shows a real value before the first tick.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCountdown(getCountdown());
     const id = window.setInterval(() => setCountdown(getCountdown()), 1_000);
     return () => window.clearInterval(id);
@@ -131,14 +134,7 @@ export default function DailyHubPage() {
       }}
     >
       <main className="pt-24 pb-16 flex flex-col items-center px-3">
-        <div className="w-full max-w-5xl mt-6 mb-6 text-center">
-          <p className="text-xs font-bold tracking-[0.18em] uppercase" style={{ color: "var(--pw-brand-primary)" }}>Daily Puzzles</p>
-          <h1 className="text-3xl font-black tracking-tight mt-1" style={{ color: "var(--pw-text-primary)" }}>Six fresh puzzles, every day</h1>
-          {/* Gold = the daily reset/reward role. */}
-          <p className="text-xs font-mono mt-2 font-bold" style={{ color: "var(--pw-brand-secondary)", textShadow: "0 0 14px color-mix(in srgb, var(--pw-brand-secondary) 40%, transparent)" }}>
-            Resets in {countdown}
-          </p>
-        </div>
+        <DailyHubHeader countdown={countdown} />
 
         {isAuthenticated && onboardingUserId && <DailyIntroCard userId={onboardingUserId} />}
 

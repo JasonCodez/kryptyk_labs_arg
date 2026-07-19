@@ -51,7 +51,7 @@ describe("Daily hub", () => {
     global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
     render(<DailyHubPage />);
     expect(screen.getByRole("status").textContent).toMatch(/loading today's puzzles/i);
-    expect(screen.getByText(/resets in/i)).toBeTruthy();
+    expect(screen.getByText(/next reset/i)).toBeTruthy();
   });
 
   it("renders all six cards with their routes", async () => {
