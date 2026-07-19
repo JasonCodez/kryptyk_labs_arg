@@ -81,7 +81,7 @@ for (const viewport of mobileViewports) {
     await page.setViewportSize(viewport); await authenticate(page); await installFixture(page); await page.goto("/daily/sudoku", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("sudoku-root")).toBeVisible({ timeout: 15_000 }); await expect(page.locator("input")).toHaveCount(0); await expectFit(page);
     const cell = page.getByRole("gridcell", { name: /Row 1, column 2, editable, empty/ }); await cell.click(); await page.getByRole("button", { name: "Enter 3" }).click(); await expect(page.getByRole("gridcell", { name: /Row 1, column 2, editable, value 3/ })).toBeVisible();
-    await page.getByRole("button", { name: "Notes Off" }).click(); await page.getByRole("button", { name: "Enter 4" }).click(); await page.getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("button", { name: "Notes mode off" }).click(); await page.getByRole("button", { name: "Enter 4" }).click(); await page.getByRole("button", { name: "Undo last move" }).click();
   });
 }
 

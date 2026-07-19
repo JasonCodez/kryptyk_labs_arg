@@ -22,16 +22,21 @@
 .sudoku-controls { display: grid; gap: 7px; }
 .sudoku-utility-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
 .sudoku-tool, .sudoku-number-key, .sudoku-validation-row button, .sudoku-result-card button, .sudoku-result-card a { min-height: 44px; border: 1px solid rgba(134,216,232,.32); border-radius: 10px; background: rgba(9,49,58,.88); color: #fff; font-weight: 750; }
-.sudoku-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; line-height: 1.05; }
-.sudoku-tool span { color: #fde74c; font-size: 10px; margin-top: 2px; }
-.sudoku-tool[aria-pressed="true"] { background: #3891a6; box-shadow: inset 0 0 0 2px #fde74c; }
+.sudoku-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; line-height: 1.05; background: var(--pw-surface-2); border-color: var(--pw-border-default); color: var(--pw-text-primary); }
+.sudoku-tool-label { font-size: 12px; font-weight: 750; color: inherit; }
+.sudoku-tool-state { font-size: 10px; font-weight: 700; margin-top: 1px; color: var(--pw-text-secondary); }
+.sudoku-tool--notes-on { background: color-mix(in srgb, var(--pw-info) 14%, var(--pw-surface-2)); border-color: var(--pw-info-border); color: var(--pw-info); }
+.sudoku-tool--notes-on .sudoku-tool-state { color: var(--pw-text-primary); font-weight: 800; }
+.sudoku-tool:disabled { opacity: 1; background: var(--pw-surface-disabled); border-color: var(--pw-border-default); color: var(--pw-text-secondary); cursor: not-allowed; }
+.sudoku-tool:disabled .sudoku-tool-state { color: var(--pw-text-secondary); }
+.sudoku-tool:focus-visible { outline: 2px solid var(--pw-info); outline-offset: 2px; }
 .sudoku-number-pad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .sudoku-number-key { font-size: 21px; background: linear-gradient(180deg, rgba(56,145,166,.92), rgba(22,90,107,.92)); }
 .sudoku-number-key:active { transform: scale(.94); }
 .sudoku-validation-row { min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .sudoku-validation-row p { margin: 0; max-height: 2.5em; overflow: auto; color: #dddBF1; font-size: 12px; line-height: 1.2; }
 .sudoku-validation-row button { min-width: 128px; padding: 0 14px; background: #fde74c; color: #071016; }
-.sudoku-validation-row button:disabled, .sudoku-tool:disabled, .sudoku-number-key:disabled { opacity: .42; }
+.sudoku-validation-row button:disabled, .sudoku-number-key:disabled { opacity: .42; }
 .sudoku-internal-header { display: flex; align-items: center; justify-content: space-between; max-width: 620px; margin: 0 auto 8px; }
 .sudoku-internal-header h2 { margin: 0; letter-spacing: .18em; }
 .sudoku-internal-header button { min-height: 44px; padding: 0 16px; border-radius: 9px; }
