@@ -44,7 +44,7 @@ html:has(.pw-jigsaw-shell-content),body:has(.pw-jigsaw-shell-content) { overflow
 .pw-jigsaw-shell-content .pw-inline-toasts>* { pointer-events:auto; }
 @media (max-width:539px) {
   .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) { overflow-y:auto; overflow-x:hidden; }
-  .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-board-area { flex:0 0 auto; width:100%; aspect-ratio:1 / 1; }
+  .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-board-area { flex:0 0 auto; width:100%; height:calc(100vw - 4px); box-sizing:border-box; max-width:100%; min-width:0; contain:layout size; }
   .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-mobile-coach { flex:0 0 auto; margin:6px 8px; padding:6px 10px; }
   .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-tray { height:140px; }
 }

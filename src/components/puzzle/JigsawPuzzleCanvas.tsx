@@ -1341,8 +1341,22 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     // branching or hardcoded pixel reservations needed.
     const update = () => {
       const horizontalInset = 8;
-      const availableWidth = boardArea.clientWidth - horizontalInset;
-      const availableHeight = boardArea.clientHeight - 4;
+      let availableWidth = boardArea.clientWidth - horizontalInset;
+      let availableHeight = boardArea.clientHeight - 4;
+
+      // Below 540px, .jigsaw-board-area is a fixed-height flex item rather than one that
+      // consumes all remaining viewport height (see the mobile rule in jigsaw.css) — but during
+      // a tray-piece pickup/drag, layout can momentarily report a clientWidth/clientHeight wider
+      // than the device itself (e.g. transient scroll/overflow), which previously let the canvas
+      // (and the piece being dragged onto it) render larger than the screen. Clamp to the actual
+      // viewport width during normal play so this can't happen; completion-frame sizing (below)
+      // is left untouched.
+      const isMobileAppShellPlay = displayMode === "app-shell" && !isFullscreen && !showFrame && window.innerWidth < 540;
+      if (isMobileAppShellPlay) {
+        const viewportCap = window.innerWidth - 8;
+        availableWidth = Math.min(availableWidth, viewportCap);
+        availableHeight = Math.min(availableHeight, viewportCap);
+      }
 
       // The decorative completion frame's border extends past its transparent "hole" (see
       // FRAME_HOLE) by design — that's what makes it read as an actual picture frame around
@@ -1355,8 +1369,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       const boardSide = showFrame
         ? Math.max(120, Math.floor(Math.min(availableWidth * holeW, availableHeight * holeH)))
         : Math.max(120, Math.floor(Math.min(availableWidth, availableHeight)));
-      const canvasCssW = showFrame ? Math.round(boardSide / holeW) : boardSide;
-      const canvasCssH = showFrame ? Math.round(boardSide / holeH) : boardSide;
+      let canvasCssW = showFrame ? Math.round(boardSide / holeW) : boardSide;
+      let canvasCssH = showFrame ? Math.round(boardSide / holeH) : boardSide;
+      if (isMobileAppShellPlay) {
+        const viewportCap = window.innerWidth - 8;
+        canvasCssW = Math.min(canvasCssW, viewportCap);
+        canvasCssH = Math.min(canvasCssH, viewportCap);
+      }
       boardInsetPxRef.current = showFrame
         ? { x: (FRAME_HOLE.left / holeW) * boardSide, y: (FRAME_HOLE.top / holeH) * boardSide }
         : { x: 0, y: 0 };
