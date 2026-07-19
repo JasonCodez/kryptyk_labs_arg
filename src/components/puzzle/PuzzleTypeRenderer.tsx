@@ -304,7 +304,7 @@ export function PuzzleTypeRenderer({
 
   if (puzzle.puzzleType === 'word_crack') {
     return (
-      <div className="mb-8">
+      <div className="mb-3 sm:mb-8">
         <PuzzleFullscreenFrame extraControls={skipControl} puzzleId={puzzleId} puzzleTitle={puzzle.title || "This puzzle"}>
           {progress?.solved && (
             <div className="mb-6 p-4 rounded-lg border text-white"
@@ -323,6 +323,11 @@ export function PuzzleTypeRenderer({
             onHintUsed={onHintUsed}
             onSolved={(xpGained) => onSolved(undefined, xpGained)}
           />
+          {skipControl && (
+            <div className="flex justify-center px-4 pt-3 pb-4">
+              {skipControl}
+            </div>
+          )}
         </PuzzleFullscreenFrame>
       </div>
     );

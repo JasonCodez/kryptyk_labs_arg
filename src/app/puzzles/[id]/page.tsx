@@ -23,6 +23,7 @@ import type { Socket } from "socket.io-client";
 import CodeMasterIDE from "@/components/puzzle/CodeMasterIDE";
 import { getSkinTokens } from "@/lib/puzzleSkins";
 import { PuzzleTypeRenderer } from "@/components/puzzle/PuzzleTypeRenderer";
+import CatalogSkipControl from "@/components/puzzle/CatalogSkipControl";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
 import { PuzzleProgressSection } from "@/components/puzzle/PuzzleProgressSection";
 import PuzzleBugReportButton from "@/components/puzzle/PuzzleBugReportButton";
@@ -1106,42 +1107,7 @@ export default function PuzzleDetailPage() {
   // hidden behind the fullscreen overlay. Passed into PuzzleFullscreenFrame so it's still
   // reachable while fullscreen. Mirrors the same eligibility checks as PuzzleProgressSection.
   const skipControl = !progress?.solved && !teamIdParam ? (
-    effectiveSkipTokens > 0 ? (
-      <button
-        type="button"
-        onClick={handleSkipPuzzle}
-        disabled={isSkipping}
-        style={{
-          padding: "8px 14px",
-          borderRadius: 8,
-          background: "rgba(139,92,246,0.15)",
-          border: "1px solid rgba(139,92,246,0.4)",
-          color: "#a78bfa",
-          cursor: "pointer",
-          fontSize: 13,
-          fontWeight: 600,
-          opacity: isSkipping ? 0.4 : 1,
-        }}
-      >
-        {isSkipping ? "Skipping…" : `⏭️ Skip (${effectiveSkipTokens})`}
-      </button>
-    ) : (
-      <a
-        href="/store"
-        style={{
-          padding: "8px 14px",
-          borderRadius: 8,
-          background: "rgba(139,92,246,0.1)",
-          border: "1px solid rgba(139,92,246,0.3)",
-          color: "#FDE74C",
-          fontSize: 12,
-          fontWeight: 600,
-          textDecoration: "underline",
-        }}
-      >
-        Buy skip tokens →
-      </a>
-    )
+    <CatalogSkipControl tokens={effectiveSkipTokens} skipping={isSkipping} onSkip={handleSkipPuzzle} />
   ) : null;
 
   const catalogSudokuMounted = puzzle.puzzleType === "sudoku"
@@ -1743,9 +1709,10 @@ export default function PuzzleDetailPage() {
             )}
 
             {/* Hints / Progress Section Wrapper — Jigsaw already has its own Skip control in
-                the header's "More puzzle actions" overflow menu, so this section would just
-                duplicate it below the board. */}
-            {puzzle.puzzleType !== "word_search" && puzzle.puzzleType !== "jigsaw" && puzzle.puzzleType !== "gridlock_file" && <div className="puzzle-detail-progress-section">
+                the header's "More puzzle actions" overflow menu, and word_crack renders its
+                own CatalogSkipControl directly beneath the board, so this section would just
+                duplicate it below. */}
+            {puzzle.puzzleType !== "word_search" && puzzle.puzzleType !== "jigsaw" && puzzle.puzzleType !== "gridlock_file" && puzzle.puzzleType !== "word_crack" && <div className="puzzle-detail-progress-section">
             <PuzzleProgressSection
               progress={progress}
               puzzleTitle={puzzle?.title}
