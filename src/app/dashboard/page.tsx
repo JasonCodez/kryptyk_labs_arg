@@ -8,6 +8,7 @@ import WelcomeModal from '@/components/WelcomeModal';
 import DashboardTour from '@/components/DashboardTour';
 import GameButton from '@/components/game-ui/GameButton';
 import StarterPathCard from '@/components/onboarding/StarterPathCard';
+import DashboardCommandHeader from '@/components/dashboard/DashboardCommandHeader';
 
 interface UserStats {
   totalPuzzlesSolved: number;
@@ -467,53 +468,15 @@ export default function Dashboard() {
       }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 64px' }}>
 
-          {/* ── Welcome header ─────────────────────────────── */}
-          <div style={{
-            display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-            gap: 20, marginBottom: 48,
-            opacity: mounted ? 1 : 0, transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-            transition: 'opacity 0.6s ease, transform 0.6s ease',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-              {/* Avatar */}
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-                {session.user.image ? (
-                  <img src={session.user.image} alt="avatar" style={{ width: 60, height: 60, borderRadius: '50%', border: '2px solid rgba(139,61,255,0.5)', objectFit: 'cover' }} onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                ) : (
-                  <div style={{
-                    width: 60, height: 60, borderRadius: '50%',
-                    background: 'linear-gradient(135deg, rgba(139,61,255,0.35) 0%, rgba(139,61,255,0.15) 100%)',
-                    border: '2px solid rgba(139,61,255,0.4)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 20, fontWeight: 800, color: '#9BD1D6',
-                  }}>{initials}</div>
-                )}
-                {/* Online dot */}
-                <div style={{
-                  position: 'absolute', bottom: 2, right: 2, width: 12, height: 12,
-                  borderRadius: '50%', backgroundColor: '#3ED97A',
-                  border: '2px solid #170B26', boxShadow: '0 0 6px rgba(62,217,122,0.6)',
-                }} />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <h1 style={{ fontSize: 'clamp(20px, 3vw, 28px)', fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.01em' }}>
-                    Welcome back, {session.user.name?.split(' ')[0] || 'Player'}
-                  </h1>
-                  {isAdmin && (
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 999, backgroundColor: 'rgba(255,201,60,0.1)', color: '#FFC93C', border: '1px solid rgba(255,201,60,0.25)' }}>
-                      Admin
-                    </span>
-                  )}
-                </div>
-                <p style={{ color: '#8891AC', fontSize: 14, margin: 0 }}>
-                  {stats?.rank ? `Global Rank #${stats.rank} · ` : ''}{stats?.totalPoints?.toLocaleString() || 0} pts
-                </p>
-              </div>
-            </div>
-
-          </div>
+          {/* ── Player Hub command header ───────────────────── */}
+          <DashboardCommandHeader
+            displayName={session.user.name || 'Player'}
+            initials={initials}
+            avatarUrl={session.user.image}
+            totalPoints={stats?.totalPoints ?? 0}
+            rank={stats?.rank ?? null}
+            isAdmin={isAdmin}
+          />
 
           {/* ── Starter Path onboarding progress ────────────── */}
           <StarterPathCard userId={onboardingUserId} />
