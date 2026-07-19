@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import HiddenWordInstructionsModal from "./HiddenWordInstructionsModal";
+import HiddenWordRoundStatus from "./HiddenWordRoundStatus";
 import { HIDDEN_WORD_RESULT_VISUALS } from "@/lib/hiddenWordVisuals";
 import { isHapticsEnabled } from "@/lib/juice";
 import {
@@ -725,100 +726,16 @@ export default function HiddenWordPuzzle({
           "--skin-accent-active": skin.accentActive,
         } as React.CSSProperties}
       >
-        {/* â”€â”€ Header â”€â”€ */}
-        {showHeader && (
-        <div className="text-center relative w-full px-8">
-          <h2
-            className="text-2xl sm:text-3xl font-black tracking-[0.25em] mb-1"
-            style={(() => {
-              const key = skin._key ?? "default";
-              const gradients: Record<string, string> = {
-                retro:       "linear-gradient(135deg, #B43CFF, #FF55AA, #00FF88)",
-                skin_retro:  "linear-gradient(135deg, #B43CFF, #FF55AA, #00FF88)",
-                neon:        "linear-gradient(135deg, #00FFE5, #FFFFFF, #FF00CC)",
-                skin_neon:   "linear-gradient(135deg, #00FFE5, #FFFFFF, #FF00CC)",
-                lava:        "linear-gradient(135deg, #FF5500, #FFAA00, #FF3000)",
-                skin_lava:   "linear-gradient(135deg, #FF5500, #FFAA00, #FF3000)",
-                galaxy:      "linear-gradient(135deg, #8B5CF6, #E0BAFF, #C026D3)",
-                skin_galaxy: "linear-gradient(135deg, #8B5CF6, #E0BAFF, #C026D3)",
-                christmas:   "linear-gradient(135deg, #67E8F9, #FFFFFF, #38BDF8)",
-                skin_christmas:"linear-gradient(135deg, #67E8F9, #FFFFFF, #38BDF8)",
-                ice:         "linear-gradient(135deg, #67E8F9, #FFFFFF, #38BDF8)",
-                skin_ice:    "linear-gradient(135deg, #67E8F9, #FFFFFF, #38BDF8)",
-                default:     "linear-gradient(135deg, #818cf8, #c084fc, #f472b6)",
-              };
-              const glows: Record<string, string> = {
-                retro:       "drop-shadow(0 0 14px rgba(180,60,255,0.7))",
-                skin_retro:  "drop-shadow(0 0 14px rgba(180,60,255,0.7))",
-                neon:        "drop-shadow(0 0 16px rgba(0,255,229,0.85))",
-                skin_neon:   "drop-shadow(0 0 16px rgba(0,255,229,0.85))",
-                lava:        "drop-shadow(0 0 14px rgba(255,85,0,0.75))",
-                skin_lava:   "drop-shadow(0 0 14px rgba(255,85,0,0.75))",
-                galaxy:      "drop-shadow(0 0 14px rgba(139,92,246,0.7))",
-                skin_galaxy: "drop-shadow(0 0 14px rgba(139,92,246,0.7))",
-                christmas:   "drop-shadow(0 0 14px rgba(103,232,249,0.65))",
-                skin_christmas:"drop-shadow(0 0 14px rgba(103,232,249,0.65))",
-                ice:         "drop-shadow(0 0 14px rgba(103,232,249,0.65))",
-                skin_ice:    "drop-shadow(0 0 14px rgba(103,232,249,0.65))",
-                default:     "drop-shadow(0 0 12px rgba(129,140,248,0.5))",
-              };
-              return {
-                display: "inline-block",
-                backgroundImage: gradients[key] ?? gradients.default,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                color: "transparent",
-                WebkitTextFillColor: "transparent",
-              };
-            })()}
-          >
-            HIDDEN WORD
-          </h2>
-          <button
-            onClick={() => setShowInstructions(true)}
-            className="absolute right-0 top-0 w-8 h-8 sm:w-6 sm:h-6 rounded-full text-sm sm:text-xs font-bold flex items-center justify-center transition-all hover:scale-110"
-            style={{ background: "rgba(129,140,248,0.2)", border: "1px solid rgba(129,140,248,0.4)", color: "#818cf8" }}
-            title="How to play"
-          >
-            ?
-          </button>
-          <p className="text-xs mt-1 font-medium" style={{ color: "#e2e8f0", textShadow: "0 1px 6px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)" }}>
-            {wordLength} letters · {maxGuesses - guesses.length} attempt{maxGuesses - guesses.length !== 1 ? "s" : ""} remaining
-          </p>
-          {!warzMode && gameStatus === "playing" && failedAttempts >= 1 && (
-            <p className="text-xs mt-0.5" style={{ color: "#f97316" }}>
-              ⚠️ Final attempt — rewards halved
-            </p>
-          )}
-        </div>
-        )}
-
-        {/* ─── Attempt Meter ─── */}
-        {showAttemptMeter && gameStatus === "playing" && (
-          <div className="w-full px-4" style={{ maxWidth: "320px" }}>
-            <div className="flex justify-between text-xs mb-1.5" style={{ color: "#9ca3af" }}>
-              <span className="font-bold tracking-widest">ATTEMPT METER</span>
-              <span>{guesses.length} / {maxGuesses}</span>
-            </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${(guesses.length / maxGuesses) * 100}%`,
-                  background: guesses.length / maxGuesses < 0.5
-                    ? "#38D399"
-                    : guesses.length / maxGuesses < 0.75
-                    ? "#FDE74C"
-                    : "#ef4444",
-                  boxShadow: guesses.length / maxGuesses >= 0.75
-                    ? "0 0 8px rgba(239,68,68,0.6)"
-                    : guesses.length / maxGuesses >= 0.5
-                    ? "0 0 8px rgba(253,231,76,0.5)"
-                    : "0 0 8px rgba(56,211,153,0.5)",
-                }}
-              />
-            </div>
-          </div>
+        {/* ─── Round status bar ─── */}
+        {(showHeader || showAttemptMeter) && (
+          <HiddenWordRoundStatus
+            wordLength={wordLength}
+            guessesUsed={guesses.length}
+            maxGuesses={maxGuesses}
+            showHelp={showHeader}
+            finalAttempt={!warzMode && gameStatus === "playing" && failedAttempts >= 1}
+            onHelp={() => setShowInstructions(true)}
+          />
         )}
 
         {/* ─── Status toast (error or decrypting) ─── */}
