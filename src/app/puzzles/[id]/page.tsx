@@ -1126,7 +1126,7 @@ export default function PuzzleDetailPage() {
     <>
       <PuzzlePlayShell
       backHref="/puzzles"
-      title={puzzle.puzzleType === "gridlock_file" ? "GRIDLOCK FILE" : displayTitle}
+      title={puzzle.puzzleType === "gridlock_file" ? "GRIDLOCK FILE" : puzzle.puzzleType === "word_search" ? "Word Trove" : displayTitle}
       subtitle={puzzle.puzzleType === "anagram_blitz"
         ? `${anagramPresentation?.solvedCount ?? 0} / ${anagramPresentation?.totalWords ?? normalizedAnagramConfig.words.length} solved`
         : puzzle.puzzleType === "sudoku"
