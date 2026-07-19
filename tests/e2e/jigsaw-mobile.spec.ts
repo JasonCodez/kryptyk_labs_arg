@@ -774,3 +774,125 @@ test("no width jump between 529px and 530px (Catalog, DPR 2)", async ({ browser 
   expect(Math.abs(widths[530].areaWidth! - widths[529].areaWidth! - 1)).toBeLessThanOrEqual(1);
   expect(Math.abs(widths[530].canvasWidth! - widths[529].canvasWidth!)).toBeLessThanOrEqual(2);
 });
+
+test("Quick Tip is a body-level portal, does not affect layout, and survives dismissal + drag at 320x710 (DPR 2)", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 320, height: 710 }, hasTouch: true, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await authenticate(page);
+  await installDailyFixture(page, 0, { rows: 4, cols: 4 });
+  await openDaily(page);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+
+  // The Quick Tip appears, is a direct child of document.body (via the portal), and is not
+  // nested inside .jigsaw-root at all.
+  const tip = page.locator(".jigsaw-quick-tip-wrapper");
+  await expect(tip).toBeVisible();
+  const portalCheck = await page.evaluate(() => {
+    const wrapper = document.querySelector(".jigsaw-quick-tip-wrapper");
+    return {
+      isDirectBodyChild: wrapper?.parentElement === document.body,
+      isInsideRoot: !!wrapper?.closest(".jigsaw-root"),
+    };
+  });
+  expect(portalCheck.isDirectBodyChild).toBe(true);
+  expect(portalCheck.isInsideRoot).toBe(false);
+
+  const widthsWithTip = await measureCatalogWidths(page);
+  expect(widthsWithTip.canvasWidth!).toBeGreaterThanOrEqual(300);
+  expect(widthsWithTip.rootWidth!).toBeGreaterThanOrEqual(318);
+  expect(widthsWithTip.areaWidth!).toBeGreaterThanOrEqual(318);
+  expect(widthsWithTip.trayWidth!).toBeGreaterThanOrEqual(318);
+
+  const canvasBackingBefore = await page.evaluate(() => {
+    const c = document.querySelector(".jigsaw-board-canvas") as HTMLCanvasElement;
+    const r = c.getBoundingClientRect();
+    return { attrW: c.width, attrH: c.height, boundW: r.width, boundH: r.height, dpr: window.devicePixelRatio };
+  });
+  expect(Math.abs(canvasBackingBefore.attrW - canvasBackingBefore.boundW * canvasBackingBefore.dpr)).toBeLessThanOrEqual(1);
+  expect(Math.abs(canvasBackingBefore.attrH - canvasBackingBefore.boundH * canvasBackingBefore.dpr)).toBeLessThanOrEqual(1);
+
+  // Dismissing the tip must not change canvas, root, board-area, or tray dimensions.
+  await page.getByRole("button", { name: "Dismiss jigsaw tip" }).click();
+  await expect(tip).toHaveCount(0);
+  const widthsAfterDismiss = await measureCatalogWidths(page);
+  expect(widthsAfterDismiss.canvasWidth).toBe(widthsWithTip.canvasWidth);
+  expect(widthsAfterDismiss.rootWidth).toBe(widthsWithTip.rootWidth);
+  expect(widthsAfterDismiss.areaWidth).toBe(widthsWithTip.areaWidth);
+  expect(widthsAfterDismiss.trayWidth).toBe(widthsWithTip.trayWidth);
+
+  // Drag and drop one piece after dismissal — piece/canvas scale remains correct, no overflow.
+  const board = page.locator(".jigsaw-board-canvas");
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+  const from = await trayCanvas.boundingBox();
+  const boardBox = await board.boundingBox();
+  expect(from).not.toBeNull(); expect(boardBox).not.toBeNull();
+  const startX = from!.x + from!.width / 2;
+  const startY = from!.y + from!.height / 2;
+  const targetX = boardBox!.x + boardBox!.width / 2;
+  const targetY = boardBox!.y + boardBox!.height / 2;
+  const pointerId = 4242;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: targetX, clientY: targetY });
+  await board.dispatchEvent("pointerup", { pointerId, pointerType: "touch", clientX: targetX, clientY: targetY });
+
+  const canvasBackingAfter = await page.evaluate(() => {
+    const c = document.querySelector(".jigsaw-board-canvas") as HTMLCanvasElement;
+    const r = c.getBoundingClientRect();
+    return { attrW: c.width, attrH: c.height, boundW: r.width, boundH: r.height, dpr: window.devicePixelRatio };
+  });
+  expect(Math.abs(canvasBackingAfter.attrW - canvasBackingAfter.boundW * canvasBackingAfter.dpr)).toBeLessThanOrEqual(1);
+  expect(Math.abs(canvasBackingAfter.attrH - canvasBackingAfter.boundH * canvasBackingAfter.dpr)).toBeLessThanOrEqual(1);
+  expect(canvasBackingAfter.boundW).toBe(canvasBackingBefore.boundW);
+
+  const dims = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(dims).toBeLessThanOrEqual(320);
+
+  await context.close();
+});
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 529, height: 800 },
+  { width: 530, height: 800 },
+]) {
+  test(`Quick Tip renders as a body portal with no layout impact at ${viewport.width}x${viewport.height} (DPR 2)`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport, hasTouch: true, deviceScaleFactor: 2 });
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await authenticate(page);
+    await installDailyFixture(page, 0, { rows: 3, cols: 3 });
+    await openDaily(page);
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+
+    const portalCheck = await page.evaluate(() => {
+      const wrapper = document.querySelector(".jigsaw-quick-tip-wrapper");
+      return {
+        exists: !!wrapper,
+        isDirectBodyChild: wrapper?.parentElement === document.body,
+        isInsideRoot: !!wrapper?.closest(".jigsaw-root"),
+      };
+    });
+    expect(portalCheck.exists).toBe(true);
+    expect(portalCheck.isDirectBodyChild).toBe(true);
+    expect(portalCheck.isInsideRoot).toBe(false);
+
+    // Daily route (not Catalog) — .puzzle-detail-play-card-body/.jigsaw-renderer-shell don't
+    // exist here, so only assert the widths that apply to both routes.
+    const widths = await measureCatalogWidths(page);
+    console.log(`[quick tip ${viewport.width}x${viewport.height} DPR2]`, JSON.stringify(widths));
+    expect(widths.rootWidth).toBe(viewport.width);
+    expect(widths.areaWidth).toBe(viewport.width);
+    expect(widths.trayWrapWidth).toBe(viewport.width);
+    expect(widths.trayWidth).toBe(viewport.width);
+    expect(widths.anyExceeds).toBe(false);
+    expect(widths.docScrollWidth).toBeLessThanOrEqual(viewport.width);
+
+    await context.close();
+  });
+}
