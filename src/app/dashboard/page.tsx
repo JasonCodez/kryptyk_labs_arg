@@ -11,175 +11,13 @@ import StarterPathCard from '@/components/onboarding/StarterPathCard';
 import DashboardCommandHeader from '@/components/dashboard/DashboardCommandHeader';
 import DashboardNavigationHub from '@/components/dashboard/DashboardNavigationHub';
 import DashboardStatsStrip from '@/components/dashboard/DashboardStatsStrip';
+import DashboardFeaturedMission from '@/components/dashboard/DashboardFeaturedMission';
 
 interface UserStats {
   totalPuzzlesSolved: number;
   totalPoints: number;
   currentTeams: number;
   rank: number | null;
-}
-
-/* ── featured banner (Witness) ───────────────────────────── */
-interface WitnessTeaser {
-  caseNumber: number;
-  classification: string;
-  totalPlays: number;
-  completed: boolean;
-}
-function FeaturedBanner({ visible }: { visible: boolean }) {
-  const [teaser, setTeaser] = useState<WitnessTeaser | null>(null);
-  const [hovered, setHovered] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/debrief/today')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data) return;
-        const plays = data.stats?.totalPlays ?? 0;
-        setTeaser({
-          caseNumber: data.caseNumber ?? data.scenario?.caseNumber ?? 0,
-          classification: data.classification ?? data.scenario?.classification ?? 'CLASSIFIED',
-          totalPlays: plays,
-          completed: !!data.completed,
-        });
-      })
-      .catch(() => {});
-  }, []);
-
-  // Don't show until we know the completion state; hide once completed
-  if (teaser?.completed) return null;
-
-  return (
-    <Link
-      href="/debrief"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'block',
-        textDecoration: 'none',
-        position: 'relative',
-        overflow: 'hidden',
-        borderRadius: 20,
-        border: `1px solid ${hovered ? 'rgba(139,61,255,0.55)' : 'rgba(139,61,255,0.22)'}`,
-        background: 'linear-gradient(135deg, rgba(11,14,26,0.98) 0%, rgba(19,24,41,0.95) 60%, rgba(11,14,26,0.98) 100%)',
-        padding: '36px 40px',
-        marginBottom: 40,
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(24px)',
-        transition: `opacity 0.65s ease 0.05s, transform 0.65s ease 0.05s, border-color 0.3s, box-shadow 0.3s`,
-        boxShadow: hovered
-          ? '0 20px 60px rgba(139,61,255,0.16), 0 0 0 1px rgba(139,61,255,0.2) inset'
-          : '0 8px 40px rgba(0,0,0,0.5)',
-        cursor: 'pointer',
-      }}
-    >
-      {/* Scan-line overlay */}
-      <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(139,61,255,0.02) 3px, rgba(139,61,255,0.02) 4px)',
-        borderRadius: 20,
-      }} />
-
-      {/* Corner accent lines */}
-      <div style={{ position: 'absolute', top: 12, left: 12, width: 20, height: 20, borderTop: '2px solid rgba(139,61,255,0.5)', borderLeft: '2px solid rgba(139,61,255,0.5)', borderRadius: '2px 0 0 0' }} />
-      <div style={{ position: 'absolute', top: 12, right: 12, width: 20, height: 20, borderTop: '2px solid rgba(139,61,255,0.5)', borderRight: '2px solid rgba(139,61,255,0.5)', borderRadius: '0 2px 0 0' }} />
-      <div style={{ position: 'absolute', bottom: 12, left: 12, width: 20, height: 20, borderBottom: '2px solid rgba(139,61,255,0.5)', borderLeft: '2px solid rgba(139,61,255,0.5)', borderRadius: '0 0 0 2px' }} />
-      <div style={{ position: 'absolute', bottom: 12, right: 12, width: 20, height: 20, borderBottom: '2px solid rgba(139,61,255,0.5)', borderRight: '2px solid rgba(139,61,255,0.5)', borderRadius: '0 0 2px 0' }} />
-
-      {/* Glow blob */}
-      <div style={{
-        position: 'absolute', top: -60, right: -60, width: 300, height: 300,
-        background: 'radial-gradient(circle, rgba(139,61,255,0.1) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 32 }}>
-        {/* Icon block */}
-        <div style={{
-          flexShrink: 0,
-          width: 80, height: 80, borderRadius: 18,
-          background: 'rgba(139,61,255,0.1)',
-          border: '1px solid rgba(139,61,255,0.3)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 36,
-          boxShadow: hovered ? '0 0 24px rgba(139,61,255,0.25)' : 'none',
-          transition: 'box-shadow 0.3s, transform 0.3s',
-          transform: hovered ? 'scale(1.08)' : 'scale(1)',
-        }}>
-          🔍
-        </div>
-
-        {/* Copy */}
-        <div style={{ flex: 1, minWidth: 220 }}>
-          {/* Eyebrow */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <span style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase',
-              color: '#8B3DFF', padding: '3px 10px', borderRadius: 999,
-              background: 'rgba(139,61,255,0.12)', border: '1px solid rgba(139,61,255,0.28)',
-            }}>
-              Featured Puzzle
-            </span>
-            {teaser && (
-              <span style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase',
-                color: 'rgba(255,201,60,0.9)', display: 'flex', alignItems: 'center', gap: 5,
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FFC93C', boxShadow: '0 0 6px rgba(255,201,60,0.7)', animation: 'db-pulse 2s ease-in-out infinite', display: 'inline-block' }} />
-                Live Today
-              </span>
-            )}
-          </div>
-
-          <h2 style={{
-            fontSize: 'clamp(22px, 3.5vw, 34px)', fontWeight: 900, color: '#fff',
-            margin: '0 0 6px', letterSpacing: '-0.02em', lineHeight: 1.1,
-          }}>
-            The Debrief
-          </h2>
-
-          {teaser && (
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', color: 'rgba(139,61,255,0.8)', marginBottom: 8 }}>
-              CASE #{String(teaser.caseNumber).padStart(4, '0')} &nbsp;·&nbsp;
-              <span style={{ color: '#FF5A5A' }}>{teaser.classification.toUpperCase()}</span>
-            </div>
-          )}
-
-          <p style={{ color: '#8891AC', fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 500 }}>
-            You have 35 seconds to read an incident report. Then it disappears. Five questions follow. Every detail matters.
-          </p>
-        </div>
-
-        {/* Stats + CTA */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 16, flexShrink: 0 }}>
-          {teaser && teaser.totalPlays > 0 && (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
-                {teaser.totalPlays.toLocaleString()}
-              </div>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#5B6483', marginTop: 3 }}>
-                Investigators
-              </div>
-            </div>
-          )}
-
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '11px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13,
-            letterSpacing: '0.04em',
-            background: hovered ? 'rgba(139,61,255,0.22)' : 'rgba(139,61,255,0.12)',
-            border: `1px solid ${hovered ? 'rgba(139,61,255,0.6)' : 'rgba(139,61,255,0.35)'}`,
-            color: '#8B3DFF',
-            transition: 'all 0.25s',
-            whiteSpace: 'nowrap',
-          }}>
-            Enter the Case
-            <span style={{ transition: 'transform 0.25s', transform: hovered ? 'translateX(4px)' : 'none', display: 'inline-block' }}>→</span>
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
 }
 
 /* ── action card ──────────────────────────────────────────── */
@@ -368,7 +206,6 @@ export default function Dashboard() {
     <>
       <style>{`
         @keyframes db-fade-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes db-pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
         @keyframes db-glow { 0%,100%{box-shadow:0 0 0 0 rgba(139,61,255,0)} 50%{box-shadow:0 0 0 6px rgba(139,61,255,0)} }
       `}</style>
 
@@ -391,8 +228,10 @@ export default function Dashboard() {
           {/* ── Starter Path onboarding progress ────────────── */}
           <StarterPathCard userId={onboardingUserId} />
 
-          {/* ── Featured puzzle hero banner ─────────────────── */}
-          <div id="tour-featured"><FeaturedBanner visible={mounted} /></div>
+          {/* ── Featured mission card ────────────────────────── */}
+          <div id="tour-featured">
+            <DashboardFeaturedMission />
+          </div>
 
           {/* ── Stat strip ───────────────────────────────────── */}
           <DashboardStatsStrip
