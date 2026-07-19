@@ -7,10 +7,14 @@ import WordSearchPuzzle, { type WordSearchPresentationState, type WordSearchPuzz
 import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
+import DailyCompletionHandoff from "@/components/onboarding/DailyCompletionHandoff";
 
 export default function DailyWordSearchPage() {
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || null
+    : null;
   const { loading, available, dayNumber, streak, completedToday, content, submitCompletion } = useDailyPuzzle("word_search");
   const [wordSearchData, setWordSearchData] = useState<Record<string, unknown> | null>(null);
   const [reward, setReward] = useState<{ points: number; xp: number } | null>(null);
@@ -62,11 +66,16 @@ export default function DailyWordSearchPage() {
         ) : !available || !content?.puzzleId ? (
           <p className="mt-16 text-sm" style={{ color: "#AB9F9D" }}>Today&apos;s Word Trove isn&apos;t ready yet — check back soon.</p>
         ) : isDone ? (
-          <div className="mt-10 w-full max-w-sm rounded-xl p-6 text-center" style={{ border: "1px solid rgba(56,211,153,0.18)", background: "rgba(56,211,153,0.04)" }}>
-            <div className="mb-2 text-4xl">✓</div><p className="mb-1 font-bold text-white">Solved for today!</p>
-            {reward && <p className="text-sm" style={{ color: "#38D399" }}>+{reward.points} pts · +{reward.xp} xp</p>}
-            <p className="mt-3 text-xs" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
-          </div>
+          <>
+            <div className="mt-10 w-full max-w-sm rounded-xl p-6 text-center" style={{ border: "1px solid rgba(56,211,153,0.18)", background: "rgba(56,211,153,0.04)" }}>
+              <div className="mb-2 text-4xl">✓</div><p className="mb-1 font-bold text-white">Solved for today!</p>
+              {reward && <p className="text-sm" style={{ color: "#38D399" }}>+{reward.points} pts · +{reward.xp} xp</p>}
+              <p className="mt-3 text-xs" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
+            </div>
+            <div className="mt-5 w-full max-w-sm">
+              <DailyCompletionHandoff userId={onboardingUserId} completed />
+            </div>
+          </>
         ) : !wordSearchData ? (
           <div className="mt-20 flex items-center gap-2" style={{ color: "#3891A6" }}><div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" /></div>
         ) : (

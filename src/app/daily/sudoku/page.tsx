@@ -7,12 +7,16 @@ import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
 import SudokuPuzzle, { type SudokuPresentationState, type SudokuPuzzleHandle } from "@/components/puzzle/SudokuPuzzle";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
+import DailyCompletionHandoff from "@/components/onboarding/DailyCompletionHandoff";
 
 const formatElapsed = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
 export default function DailySudokuPage() {
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || null
+    : null;
   const { loading, available, dayNumber, streak, completedToday, content, submitCompletion } = useDailyPuzzle("sudoku");
   const sudokuRef = useRef<SudokuPuzzleHandle>(null);
   const [presentation, setPresentation] = useState<SudokuPresentationState | null>(null);
@@ -40,7 +44,10 @@ export default function DailySudokuPage() {
       ) : !available || !grid || !solution ? (
         <div className="sudoku-status-card">Today&apos;s Sudoku isn&apos;t ready yet. Check back soon.</div>
       ) : isDone ? (
-        <section className="sudoku-result-card"><span aria-hidden>✓</span><h2>Solved for today!</h2>{reward && <p>+{reward.points} pts · +{reward.xp} xp</p>}<p>Come back tomorrow for a new puzzle.</p></section>
+        <>
+          <section className="sudoku-result-card"><span aria-hidden>✓</span><h2>Solved for today!</h2>{reward && <p>+{reward.points} pts · +{reward.xp} xp</p>}<p>Come back tomorrow for a new puzzle.</p></section>
+          <DailyCompletionHandoff userId={onboardingUserId} completed />
+        </>
       ) : (
         <SudokuPuzzle
           ref={sudokuRef}

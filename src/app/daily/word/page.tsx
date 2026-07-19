@@ -8,6 +8,7 @@ import GuestRewardModal from "@/components/puzzle/GuestRewardModal";
 import StreakTimer from "@/components/StreakTimer";
 import HiddenWordPuzzle from "@/components/puzzle/HiddenWordPuzzle";
 import PuzzleFullscreenFrame from "@/components/puzzle/PuzzleFullscreenFrame";
+import DailyCompletionHandoff from "@/components/onboarding/DailyCompletionHandoff";
 import { addPendingRewards, getAnonId } from "@/lib/gridlockAnon";
 import { useReferralLink } from "@/hooks/useReferralLink";
 import { isValidHiddenWordGuess } from "@/lib/hiddenWordValidate";
@@ -50,6 +51,9 @@ export default function DailyPage() {
   const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
   const sessionUid = session?.user?.email ?? session?.user?.name ?? "";
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || null
+    : null;
   const referralLink = useReferralLink(isAuthenticated);
   const dateKey = new Date().toISOString().slice(0, 10);
   const storeKey = sessionUid ? `pw_daily_${dateKey}_${sessionUid}` : `pw_daily_${dateKey}`;
@@ -353,6 +357,12 @@ export default function DailyPage() {
                     ))}
                   </div>
                 </div>
+
+                {gameStatus === "won" && (
+                  <div className="w-full max-w-3xl mt-5">
+                    <DailyCompletionHandoff userId={onboardingUserId} completed />
+                  </div>
+                )}
 
                 {guessResults.length > 0 ? (
                   <div className="w-full max-w-3xl mt-5">

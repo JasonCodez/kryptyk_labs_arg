@@ -8,10 +8,14 @@ import PuzzlePlayShell from "@/components/app-shell/PuzzlePlayShell";
 import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
 import { useJigsawImageInfo } from "@/hooks/useJigsawImageInfo";
+import DailyCompletionHandoff from "@/components/onboarding/DailyCompletionHandoff";
 
 export default function DailyJigsawPage() {
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || null
+    : null;
   const { loading, available, dayNumber, streak, completedToday, nextReward, content, submitCompletion } =
     useDailyPuzzle("jigsaw");
   const [reward, setReward] = useState<{ points: number; xp: number } | null>(null);
@@ -62,14 +66,19 @@ export default function DailyJigsawPage() {
         ) : !available || !content?.imageUrl ? (
           <p className="mt-16 text-sm" style={{ color: "#AB9F9D" }}>Today&apos;s jigsaw isn&apos;t ready yet — check back soon.</p>
         ) : isDone ? (
-          <div className="w-full max-w-sm mt-10 p-6 rounded-xl text-center" style={{ border: "1px solid rgba(56,211,153,0.18)", background: "rgba(56,211,153,0.04)" }}>
-            <div className="text-4xl mb-2">✓</div>
-            <p className="text-white font-bold mb-1">Solved for today!</p>
-            {reward && (
-              <p className="text-sm" style={{ color: "#38D399" }}>+{reward.points} pts · +{reward.xp} xp</p>
-            )}
-            <p className="text-xs mt-3" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
-          </div>
+          <>
+            <div className="w-full max-w-sm mt-10 p-6 rounded-xl text-center" style={{ border: "1px solid rgba(56,211,153,0.18)", background: "rgba(56,211,153,0.04)" }}>
+              <div className="text-4xl mb-2">✓</div>
+              <p className="text-white font-bold mb-1">Solved for today!</p>
+              {reward && (
+                <p className="text-sm" style={{ color: "#38D399" }}>+{reward.points} pts · +{reward.xp} xp</p>
+              )}
+              <p className="text-xs mt-3" style={{ color: "#666" }}>Come back tomorrow for a new puzzle.</p>
+            </div>
+            <div className="w-full max-w-sm mt-5">
+              <DailyCompletionHandoff userId={onboardingUserId} completed />
+            </div>
+          </>
         ) : !imageInfo.ready ? (
           <div className="flex items-center gap-2 mt-20" style={{ color: "#3891A6" }}>
             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
