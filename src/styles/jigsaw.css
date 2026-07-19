@@ -12,15 +12,6 @@
 .jigsaw-controls button:disabled { opacity:.4; }
 .jigsaw-app-control-bar { flex:0 0 auto; display:flex; justify-content:center; padding:5px 10px; border-top:1px solid rgba(255,255,255,.1); background:#05070d; }
 .jigsaw-app-control-bar .jigsaw-controls { position:static; justify-content:center; }
-.jigsaw-mobile-coach { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--pw-info-border,rgba(79,184,255,.45)); border-radius:12px; background:var(--pw-surface-2,#1A2336); color:var(--pw-text-primary,#EEF2FA); }
-.jigsaw-mobile-coach > svg { color:var(--pw-info,#4FB8FF); flex-shrink:0; }
-.jigsaw-mobile-coach-copy { display:flex; flex-direction:column; min-width:0; flex:1 1 auto; gap:1px; }
-.jigsaw-mobile-coach-eyebrow { font-size:.62rem; font-weight:800; letter-spacing:.08em; color:var(--pw-text-secondary,#A9B4CC); }
-.jigsaw-mobile-coach-text { font-size:.76rem; font-weight:600; line-height:1.25; color:var(--pw-text-primary,#EEF2FA); }
-.jigsaw-mobile-coach-fullscreen { display:inline-flex; align-items:center; gap:6px; min-height:44px; min-width:44px; padding:0 12px; border:1px solid var(--pw-info-border,rgba(79,184,255,.45)); border-radius:10px; background:color-mix(in srgb, var(--pw-info,#4FB8FF) 12%, var(--pw-surface-2,#1A2336)); color:var(--pw-text-primary,#EEF2FA); font-weight:700; font-size:.8rem; flex-shrink:0; }
-.jigsaw-mobile-coach-fullscreen svg { color:var(--pw-info,#4FB8FF); }
-.jigsaw-mobile-coach-dismiss { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; border:1px solid var(--pw-border-default,#2C3856); border-radius:10px; background:transparent; color:var(--pw-text-secondary,#A9B4CC); flex-shrink:0; }
-.jigsaw-mobile-coach-fullscreen:focus-visible,.jigsaw-mobile-coach-dismiss:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
 .jigsaw-dialog-layer { position:fixed; inset:0; z-index:15000; display:grid; place-items:center; padding:16px; background:rgba(0,0,0,.82); }
 .jigsaw-dialog { width:min(560px,100%); max-height:min(720px,calc(100dvh - 32px)); overflow:auto; border:1px solid rgba(255,255,255,.2); border-radius:18px; background:#0b1020; color:#fff; padding:18px; box-shadow:0 20px 60px #000; }
 .jigsaw-dialog header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -45,7 +36,6 @@ html:has(.pw-jigsaw-shell-content),body:has(.pw-jigsaw-shell-content) { overflow
 @media (max-width:539px) {
   .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) { overflow-y:auto; overflow-x:hidden; }
   .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-board-area { flex:0 0 auto; width:100%; height:calc(100vw - 4px); box-sizing:border-box; max-width:100%; min-width:0; contain:layout size; }
-  .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-mobile-coach { flex:0 0 auto; margin:6px 8px; padding:6px 10px; }
   .jigsaw-root[data-display-mode="app-shell"]:not([data-fullscreen="true"]) .jigsaw-tray { height:140px; }
 }
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root:not([data-fullscreen="true"]) { flex-direction:row; } .jigsaw-board-area { flex:1 1 68%; align-items:center; padding-top:0; } .jigsaw-tray-wrap { flex:0 0 min(32vw,280px); height:100%; } .jigsaw-tray { height:100%!important; flex-direction:column; overflow-x:hidden; overflow-y:auto; border-top:0; border-left:1px solid rgba(255,255,255,.1); } }

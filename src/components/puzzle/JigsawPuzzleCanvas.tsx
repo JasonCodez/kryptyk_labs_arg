@@ -29,7 +29,6 @@ import React, {
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
-import JigsawMobileCoach from "./jigsaw/JigsawMobileCoach";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
 import JigsawPreviewDialog from "./jigsaw/JigsawPreviewDialog";
 import JigsawResetDialog from "./jigsaw/JigsawResetDialog";
@@ -1004,8 +1003,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const [portalReady, setPortalReady]   = useState(false);
 
   // UI helpers
-  const [isTouchDevice, setIsTouchDevice]               = useState(false);
-  const [mobileHintDismissed, setMobileHintDismissed]   = useState(false);
   const [showPreview, setShowPreview]                   = useState(false);
   const [showHelp, setShowHelp]                         = useState(false);
   const [showReset, setShowReset]                       = useState(false);
@@ -2708,7 +2705,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // One-time setup
   useEffect(() => {
     setPortalReady(true);
-    setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window);
   }, []);
   // Every interaction that mutates drag/ghost state now calls requestCanvasRenderRef.current()
   // directly at its own call site (pointer handlers, drag lifecycle functions, keyboard
@@ -3083,16 +3079,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         )}
       </div>
 
-      {/* Mobile coach — a compact, dismissible tip introducing the tray/drag interaction on
-          touch devices. Sits between the board and the tray as its own flex row rather than
-          floating over the canvas. */}
-      {isTouchDevice && !isFullscreen && !mobileHintDismissed && !isSolved && (
-        <JigsawMobileCoach
-          onFullscreen={() => setIsFullscreen(true)}
-          onDismiss={() => setMobileHintDismissed(true)}
-        />
-      )}
-
       {/* ── Tray strip ───────────────────────────────── */}
       {/* Fullscreen-only compact utility bar — Preview/Return/Reset/Fullscreen already live in
           the header's "More puzzle actions" overflow menu in normal portrait mode (mobile
@@ -3189,6 +3175,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           since they need to track the pointer every move tick without a React re-render. */}
       <div
         ref={ghostWrapperRef}
+        data-testid="jigsaw-drag-ghost"
         style={{
           position: "fixed", left: 0, top: 0, zIndex: 14000,
           pointerEvents: "none",

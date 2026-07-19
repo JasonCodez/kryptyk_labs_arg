@@ -556,7 +556,7 @@ test("Warz mounts without restoring or writing Catalog and Daily progress", asyn
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
 });
 
-test("mobile coach sits between the board and tray at 320x710 on a touch device, and dismissing it pulls the tray up", async ({ browser }) => {
+test("mobile jigsaw layout: the tray sits directly beneath the board area at 320x710, with no coach", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 320, height: 710 }, hasTouch: true });
   const page = await context.newPage();
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -564,26 +564,20 @@ test("mobile coach sits between the board and tray at 320x710 on a touch device,
   await installDailyFixture(page);
   await openDaily(page);
 
-  const boardBox = await page.locator(".jigsaw-board-area").boundingBox();
-  const coachBox = await page.locator(".jigsaw-mobile-coach").boundingBox();
-  const trayBox = await page.locator(".jigsaw-tray").boundingBox();
-  expect(boardBox).not.toBeNull(); expect(coachBox).not.toBeNull(); expect(trayBox).not.toBeNull();
+  await expect(page.locator(".jigsaw-mobile-coach")).toHaveCount(0);
 
-  // Board → coach → tray, top to bottom, with no overlap between any of them.
-  expect(coachBox!.y).toBeGreaterThanOrEqual(boardBox!.y + boardBox!.height - 1);
-  expect(trayBox!.y).toBeGreaterThanOrEqual(coachBox!.y + coachBox!.height - 1);
-  expect(trayBox!.height).toBeGreaterThanOrEqual(136);
+  const boardBox = await page.locator(".jigsaw-board-area").boundingBox();
+  const trayBox = await page.locator(".jigsaw-tray").boundingBox();
+  expect(boardBox).not.toBeNull(); expect(trayBox).not.toBeNull();
+
+  // Board area → tray, directly adjacent with no reserved spacer gap.
+  const gap = trayBox!.y - (boardBox!.y + boardBox!.height);
+  expect(gap).toBeGreaterThanOrEqual(-1);
+  expect(gap).toBeLessThanOrEqual(8);
+  expect(Math.round(trayBox!.height)).toBe(140);
 
   const dimensions = await page.evaluate(() => ({ viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth }));
   expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
-
-  // Dismissing the coach removes it and pulls the tray directly beneath the board.
-  await page.getByRole("button", { name: "Dismiss jigsaw tip" }).click();
-  await expect(page.locator(".jigsaw-mobile-coach")).toHaveCount(0);
-  const boardBoxAfter = await page.locator(".jigsaw-board-area").boundingBox();
-  const trayBoxAfter = await page.locator(".jigsaw-tray").boundingBox();
-  expect(trayBoxAfter!.y).toBeGreaterThanOrEqual(boardBoxAfter!.y + boardBoxAfter!.height - 1);
-  expect(trayBoxAfter!.y).toBeLessThanOrEqual(boardBoxAfter!.y + boardBoxAfter!.height + 20);
 
   await context.close();
 });
@@ -593,30 +587,63 @@ test("canvas and dragged piece stay clamped to the viewport at 320x710 (mobile s
   const page = await context.newPage();
   await page.emulateMedia({ reducedMotion: "reduce" });
   await authenticate(page);
-  await installDailyFixture(page, 0, { rows: 4, cols: 4 });
+  const grid = { rows: 4, cols: 4 };
+  await installDailyFixture(page, 0, grid);
   await openDaily(page);
 
-  const board = page.locator(".jigsaw-board-canvas");
-  const boxBefore = await board.boundingBox();
-  expect(boxBefore).not.toBeNull();
+  // Wait at least two animation frames after the puzzle reaches "playing" so any post-mount
+  // layout settling has already happened before we take our baseline measurements.
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
 
+  const board = page.locator(".jigsaw-board-canvas");
   const trayPiece = page.locator(".jigsaw-tray-piece").first();
   const trayCanvas = trayPiece.locator("canvas");
+
+  const boxInitial = await board.boundingBox();
+  const trayBoxInitial = await trayCanvas.boundingBox();
+  expect(boxInitial).not.toBeNull();
+  expect(trayBoxInitial).not.toBeNull();
+
+  // Confirm both sizes remain stable with no further settling before any drag begins.
+  await page.waitForTimeout(500);
+  const boxBefore = await board.boundingBox();
   const from = await trayCanvas.boundingBox();
+  expect(boxBefore).not.toBeNull();
   expect(from).not.toBeNull();
+  expect(Math.abs(boxBefore!.width - boxInitial!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(boxBefore!.height - boxInitial!.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(from!.width - trayBoxInitial!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(from!.height - trayBoxInitial!.height)).toBeLessThanOrEqual(1);
+
   const startX = from!.x + from!.width / 2;
   const startY = from!.y + from!.height / 2;
   const targetX = boxBefore!.x + boxBefore!.width / 2;
   const targetY = boxBefore!.y + boxBefore!.height / 2;
   const pointerId = 9001;
 
-  // Pick up the tray piece.
+  // Pick up the tray piece — this shows the floating drag-ghost immediately, at tray size.
   await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY });
   await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY - 20 });
+
+  // While the ghost is visible (still hovering the tray), it must never render larger than one
+  // board-scale piece plus its existing tab bleed — the exact class of bug this regression test
+  // exists to catch.
+  const ghost = page.locator('[data-testid="jigsaw-drag-ghost"]');
+  await expect(ghost).toBeVisible();
+  const ghostBox = await ghost.boundingBox();
+  expect(ghostBox).not.toBeNull();
+  const cellCss = boxBefore!.width / grid.cols;
+  const maxPieceSize = cellCss * (1 + 2 * 0.32) + 4; // 0.32 === THUMB_BLEED_FRAC (tab-protrusion allowance)
+  expect(ghostBox!.width).toBeLessThanOrEqual(maxPieceSize);
+  expect(ghostBox!.height).toBeLessThanOrEqual(maxPieceSize);
+
   // Drag it into the center of the board.
   await board.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: targetX, clientY: targetY });
   const boxDuring = await board.boundingBox();
   expect(boxDuring).not.toBeNull();
+
   // Drop it.
   await board.dispatchEvent("pointerup", { pointerId, pointerType: "touch", clientX: targetX, clientY: targetY });
   const boxAfter = await board.boundingBox();
@@ -636,20 +663,12 @@ test("canvas and dragged piece stay clamped to the viewport at 320x710 (mobile s
     expect(box!.x + box!.width).toBeLessThanOrEqual(321);
   }
 
+  // No horizontal overflow.
   const dims = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth }));
   expect(dims.scrollWidth).toBeLessThanOrEqual(320);
 
-  // The coach and tray remain beneath the board, and the tray remains 140px tall.
-  const boardAreaBox = await page.locator(".jigsaw-board-area").boundingBox();
-  const coachBox = await page.locator(".jigsaw-mobile-coach").boundingBox();
-  const trayBox = await page.locator(".jigsaw-tray").boundingBox();
-  expect(boardAreaBox).not.toBeNull(); expect(coachBox).not.toBeNull(); expect(trayBox).not.toBeNull();
-  expect(coachBox!.y).toBeGreaterThanOrEqual(boardAreaBox!.y + boardAreaBox!.height - 1);
-  expect(trayBox!.y).toBeGreaterThanOrEqual(coachBox!.y + coachBox!.height - 1);
-  expect(Math.round(trayBox!.height)).toBe(140);
-
   // The piece was dropped and removed from the tray.
-  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(15);
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(grid.rows * grid.cols - 1);
 
   await context.close();
 });
