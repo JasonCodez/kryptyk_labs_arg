@@ -6,12 +6,12 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import WelcomeModal from '@/components/WelcomeModal';
 import DashboardTour from '@/components/DashboardTour';
-import GameButton from '@/components/game-ui/GameButton';
 import StarterPathCard from '@/components/onboarding/StarterPathCard';
 import DashboardCommandHeader from '@/components/dashboard/DashboardCommandHeader';
 import DashboardNavigationHub from '@/components/dashboard/DashboardNavigationHub';
 import DashboardStatsStrip from '@/components/dashboard/DashboardStatsStrip';
 import DashboardFeaturedMission from '@/components/dashboard/DashboardFeaturedMission';
+import DashboardInviteCard from '@/components/dashboard/DashboardInviteCard';
 
 interface UserStats {
   totalPuzzlesSolved: number;
@@ -103,7 +103,6 @@ export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [referral, setReferral] = useState<{ inviteCode: string; link: string; signedUp: number } | null>(null);
-  const [referralCopied, setReferralCopied] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -241,51 +240,12 @@ export default function Dashboard() {
             rank={stats?.rank ?? null}
           />
 
-          {/* ── Referral widget ─────────────────────────── */}
+          {/* ── Invite Friends card ─────────────────────── */}
           {referral && (
-            <div className="pw-bevel" style={{
-              marginBottom: 48,
-              padding: '22px 26px',
-              background: 'radial-gradient(320px 160px at 0% 0%, rgba(255,201,60,0.16), transparent 65%), linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)',
-              border: '1px solid rgba(255,201,60,0.3)',
-              boxShadow: '0 0 24px -10px rgba(255,201,60,0.5)',
-              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16,
-              opacity: mounted ? 1 : 0, transform: mounted ? 'translateY(0)' : 'translateY(18px)',
-              transition: 'opacity 0.6s ease 0.35s, transform 0.5s ease 0.35s',
-            }}>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#FFC93C', marginBottom: 4, textShadow: '0 0 16px rgba(255,201,60,0.4)' }}>
-                  🔗 Invite Friends
-                </div>
-                <div style={{ fontSize: 13, color: '#8891AC', lineHeight: 1.5 }}>
-                  {referral.signedUp > 0
-                    ? `${referral.signedUp} player${referral.signedUp !== 1 ? 's' : ''} joined via your link`
-                    : 'Share your link — every solver on the board makes it more competitive'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <code style={{
-                  fontSize: 12, fontFamily: 'ui-monospace, monospace', color: '#FFC93C',
-                  background: 'rgba(255,201,60,0.1)', border: '1px solid rgba(255,201,60,0.25)',
-                  borderRadius: 8, padding: '6px 12px', letterSpacing: '0.05em',
-                  maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  display: 'block',
-                }}>
-                  {referral.link}
-                </code>
-                <GameButton
-                  variant={referralCopied ? 'grass' : 'gold'}
-                  size="sm"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(referral.link);
-                    setReferralCopied(true);
-                    setTimeout(() => setReferralCopied(false), 2000);
-                  }}
-                >
-                  {referralCopied ? '✓ Copied!' : 'Copy Link'}
-                </GameButton>
-              </div>
-            </div>
+            <DashboardInviteCard
+              inviteLink={referral.link}
+              signedUp={referral.signedUp}
+            />
           )}
 
           {/* ── Core nav cards ──────────────────────────────── */}
