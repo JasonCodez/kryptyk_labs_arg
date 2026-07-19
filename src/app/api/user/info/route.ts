@@ -44,6 +44,9 @@ export async function GET(request: NextRequest) {
             name: session.user.name || undefined,
             image: session.user.image || undefined,
             role: 'PLAYER',
+            // Starting level is 1 by default; mark it pre-claimed so the level-up
+            // slot machine doesn't fire for a level the user never "leveled up" into.
+            levelRewardClaimed: 1,
           },
           select: { id: true, role: true, image: true, nameChanged: true },
         });
@@ -55,6 +58,7 @@ export async function GET(request: NextRequest) {
             name: session.user.name || undefined,
             image: session.user.image || undefined,
             role: 'PLAYER',
+            levelRewardClaimed: 1,
           },
           select: { id: true, role: true, image: true },
         });
