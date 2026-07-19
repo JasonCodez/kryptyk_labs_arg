@@ -26,6 +26,17 @@
 p.jigsaw-preview-title { margin:0; font-size:.9rem; font-weight:700; line-height:1.4; color:var(--pw-text-primary,#EEF2FA); text-align:center; }
 button.jigsaw-preview-back { display:flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; width:100%; box-sizing:border-box; margin-top:4px; padding:0 16px; border:none; border-radius:12px; background:var(--pw-brand-primary,#03ACF4); color:var(--pw-text-on-primary,#0B1029); font-weight:800; font-size:.9rem; }
 button.jigsaw-preview-back:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
+.jigsaw-reset { display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:14px; text-align:center; }
+.jigsaw-reset > svg { color:var(--pw-error,#E5484D); }
+.jigsaw-reset-label { font-size:.68rem; font-weight:800; letter-spacing:.1em; color:var(--pw-error-text,#FF7A7E); }
+p.jigsaw-reset-primary { margin:0; font-size:.9rem; font-weight:700; line-height:1.4; color:var(--pw-text-primary,#EEF2FA); }
+p.jigsaw-reset-support { margin:0; font-size:.8rem; line-height:1.45; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-reset-actions { display:flex; flex-direction:column; gap:8px; width:100%; box-sizing:border-box; margin-top:6px; }
+@media (min-width:420px) { .jigsaw-reset-actions { flex-direction:row; } }
+button.jigsaw-reset-keep { flex:1 1 0; display:flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; box-sizing:border-box; padding:0 16px; border:none; border-radius:12px; background:var(--pw-brand-primary,#03ACF4); color:var(--pw-text-on-primary,#0B1029); font-weight:800; font-size:.88rem; }
+button.jigsaw-reset-confirm { flex:1 1 0; display:flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; box-sizing:border-box; padding:0 16px; border:1px solid var(--pw-error-border,rgba(229,72,77,.5)); border-radius:12px; background:var(--pw-error-surface,#2A1215); color:var(--pw-error-text,#FF7A7E); font-weight:800; font-size:.88rem; }
+button.jigsaw-reset-confirm:disabled { opacity:.65; cursor:not-allowed; }
+button.jigsaw-reset-keep:focus-visible,button.jigsaw-reset-confirm:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
 .jigsaw-completion-error { position:absolute; left:50%; top:12px; z-index:9200; transform:translateX(-50%); width:min(520px,calc(100% - 24px)); padding:10px; border:1px solid #ef4444; border-radius:12px; background:rgba(69,10,10,.95); color:#fecaca; text-align:center; }
 .jigsaw-completion-error button { min-height:44px; margin-left:10px; border-radius:8px; padding:6px 12px; background:#fff; color:#450a0a; font-weight:800; }
 .pw-jigsaw-shell-content,.pw-jigsaw-shell-content .puzzle-detail-play-stage,.pw-jigsaw-shell-content .puzzle-detail-play-inner,.pw-jigsaw-shell-content .puzzle-detail-play-container,.pw-jigsaw-shell-content .puzzle-detail-play-card,.pw-jigsaw-shell-content .puzzle-detail-play-card-body,.pw-jigsaw-shell-content .jigsaw-renderer-shell { height:100%; min-height:0; overflow:hidden; }
