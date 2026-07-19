@@ -33,9 +33,10 @@ export type JigsawStatusHudProps = {
   placedCount: number;
   totalCount: number;
   groupCount: number;
+  showTime?: boolean;
 };
 
-export default function JigsawStatusHud({ elapsedLabel, placedCount, totalCount, groupCount }: JigsawStatusHudProps) {
+export default function JigsawStatusHud({ elapsedLabel, placedCount, totalCount, groupCount, showTime = true }: JigsawStatusHudProps) {
   const safeTotal = totalCount > 0 ? totalCount : 0;
   const safePlaced = Math.max(0, Math.min(placedCount, safeTotal));
   const percent = safeTotal <= 0 ? 0 : Math.max(0, Math.min(100, (safePlaced / safeTotal) * 100));
@@ -43,13 +44,15 @@ export default function JigsawStatusHud({ elapsedLabel, placedCount, totalCount,
   return (
     <div className="jigsaw-status-hud" aria-label="Jigsaw status">
       <div className="jigsaw-status-items">
-        <div className="jigsaw-status-item">
-          <span className="jigsaw-status-icon"><IconClock /></span>
-          <span className="jigsaw-status-copy">
-            <span className="jigsaw-status-label">TIME</span>
-            <span className="jigsaw-status-value">{elapsedLabel}</span>
-          </span>
-        </div>
+        {showTime && (
+          <div className="jigsaw-status-item">
+            <span className="jigsaw-status-icon" data-testid="jigsaw-status-clock"><IconClock /></span>
+            <span className="jigsaw-status-copy">
+              <span className="jigsaw-status-label">TIME</span>
+              <span className="jigsaw-status-value">{elapsedLabel}</span>
+            </span>
+          </div>
+        )}
         <div className="jigsaw-status-item">
           <span className="jigsaw-status-icon"><IconPieces /></span>
           <span className="jigsaw-status-copy">

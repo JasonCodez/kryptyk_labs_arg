@@ -3078,6 +3078,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
             placedCount={pieces.filter(p => p.snapped).length}
             totalCount={pieces.length}
             groupCount={groupCount}
+            showTime={mode !== "warz"}
           />
         )}
       </div>
