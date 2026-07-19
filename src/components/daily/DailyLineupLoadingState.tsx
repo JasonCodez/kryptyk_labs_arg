@@ -29,7 +29,7 @@ export default function DailyLineupLoadingState() {
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="flex items-center gap-3 rounded-lg"
+            className="flex flex-col min-[360px]:flex-row items-start min-[360px]:items-center gap-3 rounded-lg"
             style={{
               minHeight: 56,
               padding: "12px 14px",
@@ -37,45 +37,48 @@ export default function DailyLineupLoadingState() {
               border: "1px solid var(--pw-border-default)",
             }}
           >
-            {/* Icon placeholder */}
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                flexShrink: 0,
-                background: "color-mix(in srgb, var(--pw-border-default) 60%, transparent)",
-                border: "1px solid var(--pw-border-default)",
-              }}
-            />
+            {/* First row: icon + content */}
+            <span className="flex items-start gap-3 flex-1 min-w-0">
+              {/* Icon placeholder */}
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  flexShrink: 0,
+                  background: "color-mix(in srgb, var(--pw-border-default) 60%, transparent)",
+                  border: "1px solid var(--pw-border-default)",
+                }}
+              />
 
-            {/* Content placeholder */}
-            <span className="min-w-0 flex-1">
-              <span
-                style={{
-                  display: "block",
-                  height: 12,
-                  borderRadius: 4,
-                  background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)",
-                  marginBottom: 8,
-                  width: "70%",
-                }}
-              />
-              <span
-                style={{
-                  display: "block",
-                  height: 10,
-                  borderRadius: 4,
-                  background: "color-mix(in srgb, var(--pw-border-default) 30%, transparent)",
-                  width: "90%",
-                }}
-              />
+              {/* Content placeholder */}
+              <span className="min-w-0 flex-1">
+                <span
+                  style={{
+                    display: "block",
+                    height: 12,
+                    borderRadius: 4,
+                    background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)",
+                    marginBottom: 8,
+                    width: "70%",
+                  }}
+                />
+                <span
+                  style={{
+                    display: "block",
+                    height: 10,
+                    borderRadius: 4,
+                    background: "color-mix(in srgb, var(--pw-border-default) 30%, transparent)",
+                    width: "90%",
+                  }}
+                />
+              </span>
             </span>
 
-            {/* Status placeholder */}
+            {/* Second row (below 360px) / inline (360px+): Status placeholder */}
             <span
+              className="flex items-center gap-2.5 shrink-0 pl-11 mt-2 min-[360px]:pl-0 min-[360px]:mt-0"
               style={{
-                flexShrink: 0,
                 display: "flex",
                 gap: 8,
                 alignItems: "center",

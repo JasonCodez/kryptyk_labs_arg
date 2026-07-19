@@ -77,7 +77,7 @@ export default function DailyHubPage() {
         minHeight: "100vh",
       }}
     >
-      <main className="pt-24 pb-16 flex flex-col items-center px-3">
+      <main className="pt-[88px] sm:pt-24 pb-16 flex flex-col items-center px-3">
         <DailyHubHeader countdown={countdown} />
 
         {isAuthenticated && onboardingUserId && <DailyIntroCard userId={onboardingUserId} />}

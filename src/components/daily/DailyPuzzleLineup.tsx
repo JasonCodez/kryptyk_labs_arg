@@ -199,7 +199,7 @@ function PuzzleRow({
   return (
     <Link
       href={puzzle.slug === "" ? "/debrief" : `/daily/${puzzle.slug}`}
-      className="pw-bevel pw-press flex items-center gap-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="pw-bevel pw-press flex flex-col min-[360px]:flex-row items-start min-[360px]:items-center gap-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
       style={{
         minHeight: 56,
         padding: "12px 14px",
@@ -217,41 +217,44 @@ function PuzzleRow({
         outlineColor: "var(--pw-brand-secondary)",
       }}
     >
-      {/* Icon emblem */}
-      <span
-        aria-hidden="true"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          flexShrink: 0,
-          background: `color-mix(in srgb, ${puzzle.color} 16%, transparent)`,
-          border: `1px solid color-mix(in srgb, ${puzzle.color} ${completed ? "30" : "35"}%, transparent)`,
-        }}
-      >
-        <Icon color={completed ? "var(--pw-success)" : puzzle.color} />
-      </span>
+      {/* First row: icon + content */}
+      <span className="flex items-start gap-3 flex-1 min-w-0">
+        {/* Icon emblem */}
+        <span
+          aria-hidden="true"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            flexShrink: 0,
+            background: `color-mix(in srgb, ${puzzle.color} 16%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${puzzle.color} ${completed ? "30" : "35"}%, transparent)`,
+          }}
+        >
+          <Icon color={completed ? "var(--pw-success)" : puzzle.color} />
+        </span>
 
-      {/* Content */}
-      <span className="min-w-0 flex-1">
-        <span style={{ display: "block", fontWeight: 700, fontSize: 14, color: "var(--pw-text-primary)" }}>
-          {puzzle.title}
-        </span>
-        <span style={{ display: "block", fontSize: 12, color: "var(--pw-text-muted)", marginTop: 2 }}>
-          {puzzle.description}
-        </span>
-        {entry?.dayNumber ? (
-          <span style={{ display: "block", fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
-            Daily #{entry.dayNumber}
+        {/* Content */}
+        <span className="min-w-0 flex-1">
+          <span style={{ display: "block", fontWeight: 700, fontSize: 14, color: "var(--pw-text-primary)" }}>
+            {puzzle.title}
           </span>
-        ) : null}
+          <span style={{ display: "block", fontSize: 12, color: "var(--pw-text-muted)", marginTop: 2 }}>
+            {puzzle.description}
+          </span>
+          {entry?.dayNumber ? (
+            <span style={{ display: "block", fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
+              Daily #{entry.dayNumber}
+            </span>
+          ) : null}
+        </span>
       </span>
 
-      {/* Status and streak */}
-      <span className="flex items-center gap-2.5 shrink-0">
+      {/* Second row (below 360px) / inline (360px+): Status and streak */}
+      <span className="flex items-center gap-2.5 shrink-0 pl-11 mt-2 min-[360px]:pl-0 min-[360px]:mt-0">
         {streak > 0 && (
           <span
             style={{
@@ -267,7 +270,7 @@ function PuzzleRow({
             {streak} day streak
           </span>
         )}
-        <span style={{ fontSize: 12, color: completed ? "var(--pw-text-muted)" : puzzle.color, fontWeight: 600 }}>
+        <span style={{ fontSize: 12, color: completed ? "var(--pw-text-muted)" : puzzle.color, fontWeight: 600, whiteSpace: "nowrap" }}>
           {statusLabel}
         </span>
         <span aria-hidden style={{ flexShrink: 0, display: "flex" }}>

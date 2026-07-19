@@ -22,7 +22,7 @@ function IconClock({ color }: { color: string }) {
 export default function DailyHubHeader({ countdown }: DailyHubHeaderProps) {
   return (
     <header
-      className="pw-bevel w-full max-w-5xl mt-6 mb-6 sm:mb-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left"
+      className="pw-bevel w-full max-w-5xl mb-6 sm:mb-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left"
       style={{
         padding: "16px 18px",
         borderRadius: 16,
