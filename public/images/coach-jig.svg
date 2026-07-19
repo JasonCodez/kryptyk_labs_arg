@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 70 432 384" role="img" aria-labelledby="cj-title cj-desc">
+  <title id="cj-title">Coach Jig — PuzzleWarz onboarding mascot</title>
+  <desc id="cj-desc">A friendly gold puzzle-piece character wearing a blue coach cap and whistle, waving hello and giving a thumbs-up.</desc>
+  <defs>
+    <linearGradient id="cjGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE55C"/>
+      <stop offset="0.55" stop-color="#FED007"/>
+      <stop offset="1" stop-color="#FDAE03"/>
+    </linearGradient>
+    <linearGradient id="cjBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5BC9FF"/>
+      <stop offset="1" stop-color="#03ACF4"/>
+    </linearGradient>
+    <linearGradient id="cjShoe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2FBCFF"/>
+      <stop offset="1" stop-color="#0398DB"/>
+    </linearGradient>
+    <linearGradient id="cjShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.62" stop-color="#E89B00" stop-opacity="0"/>
+      <stop offset="1" stop-color="#E89B00" stop-opacity="0.42"/>
+    </linearGradient>
+    <path id="cjBody" d="M188,150 H324 Q356,150 356,182 V210 C382,204 398,219 398,238 C398,257 382,272 356,266 V318 Q356,350 324,350 H188 Q156,350 156,318 V264 C178,270 190,256 190,237 C190,218 178,204 156,210 V182 Q156,150 188,150 Z"/>
+    <clipPath id="cjBodyClip"><use href="#cjBody"/></clipPath>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="256" cy="432" rx="126" ry="11" fill="#0A0E17" opacity="0.16"/>
+
+  <g transform="rotate(-2 256 280)" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- legs (planted athletic stance) -->
+    <path d="M226,346 C220,370 212,388 203,402" fill="none" stroke="#131A2A" stroke-width="13"/>
+    <path d="M290,346 C296,370 304,388 313,402" fill="none" stroke="#131A2A" stroke-width="13"/>
+
+    <!-- left shoe -->
+    <g>
+      <g fill="#131A2A" stroke="#131A2A" stroke-width="12">
+        <ellipse cx="185" cy="412" rx="26" ry="13"/>
+        <circle cx="203" cy="404" r="12"/>
+      </g>
+      <g fill="url(#cjShoe)">
+        <ellipse cx="185" cy="412" rx="26" ry="13"/>
+        <circle cx="203" cy="404" r="12"/>
+      </g>
+      <rect x="157" y="415" width="56" height="11" rx="5.5" fill="#FFFFFF" stroke="#131A2A" stroke-width="6"/>
+      <path d="M197,401 Q190,409 178,409" fill="none" stroke="#131A2A" stroke-width="3.5" opacity="0.55"/>
+    </g>
+
+    <!-- right shoe -->
+    <g>
+      <g fill="#131A2A" stroke="#131A2A" stroke-width="12">
+        <ellipse cx="329" cy="412" rx="26" ry="13"/>
+        <circle cx="313" cy="404" r="12"/>
+      </g>
+      <g fill="url(#cjShoe)">
+        <ellipse cx="329" cy="412" rx="26" ry="13"/>
+        <circle cx="313" cy="404" r="12"/>
+      </g>
+      <rect x="301" y="415" width="56" height="11" rx="5.5" fill="#FFFFFF" stroke="#131A2A" stroke-width="6"/>
+      <path d="M319,401 Q326,409 338,409" fill="none" stroke="#131A2A" stroke-width="3.5" opacity="0.55"/>
+    </g>
+
+    <!-- arms (behind body) -->
+    <path d="M176,290 C130,282 104,244 102,196" fill="none" stroke="#131A2A" stroke-width="13"/>
+    <path d="M340,296 C385,302 406,282 410,254" fill="none" stroke="#131A2A" stroke-width="13"/>
+
+    <!-- body -->
+    <use href="#cjBody" fill="url(#cjGold)" stroke="#131A2A" stroke-width="6"/>
+    <g clip-path="url(#cjBodyClip)">
+      <rect x="150" y="150" width="255" height="205" fill="url(#cjShade)"/>
+      <ellipse cx="202" cy="190" rx="30" ry="13" fill="#FFFFFF" opacity="0.28" transform="rotate(-18 202 190)"/>
+    </g>
+
+    <!-- lanyard + whistle -->
+    <path d="M164,282 Q256,400 348,282" fill="none" stroke="#1E2749" stroke-width="5"/>
+    <g>
+      <g fill="#1E2749" stroke="#1E2749" stroke-width="12">
+        <rect x="240" y="335" width="24" height="11" rx="5.5" transform="rotate(-14 252 340)"/>
+        <circle cx="262" cy="350" r="11"/>
+      </g>
+      <g fill="#F97102">
+        <rect x="240" y="335" width="24" height="11" rx="5.5" transform="rotate(-14 252 340)"/>
+        <circle cx="262" cy="350" r="11"/>
+      </g>
+      <circle cx="266" cy="353" r="3.5" fill="#1E2749"/>
+    </g>
+
+    <!-- face -->
+    <ellipse cx="196" cy="264" rx="9" ry="6" fill="#FFA43D" opacity="0.55"/>
+    <ellipse cx="316" cy="264" rx="9" ry="6" fill="#FFA43D" opacity="0.55"/>
+    <g>
+      <ellipse cx="224" cy="228" rx="23" ry="28" fill="#FFFFFF" stroke="#131A2A" stroke-width="6"/>
+      <ellipse cx="288" cy="228" rx="23" ry="28" fill="#FFFFFF" stroke="#131A2A" stroke-width="6"/>
+      <circle cx="228" cy="235" r="10.5" fill="#16224A"/>
+      <circle cx="292" cy="235" r="10.5" fill="#16224A"/>
+      <circle cx="231" cy="230" r="3.8" fill="#FFFFFF"/>
+      <circle cx="295" cy="230" r="3.8" fill="#FFFFFF"/>
+      <circle cx="225" cy="240" r="1.6" fill="#FFFFFF" opacity="0.8"/>
+      <circle cx="289" cy="240" r="1.6" fill="#FFFFFF" opacity="0.8"/>
+    </g>
+    <g>
+      <path d="M216,272 Q256,288 296,272 C296,308 280,320 256,320 C232,320 216,308 216,272 Z" fill="#1E2749" stroke="#131A2A" stroke-width="6"/>
+      <path d="M221,275 Q256,289 291,275 Q291,287 256,292 Q221,287 221,275 Z" fill="#FFFFFF"/>
+      <ellipse cx="256" cy="309" rx="20" ry="9.5" fill="#F97102"/>
+    </g>
+
+    <!-- cap with puzzle tab poking through -->
+    <g>
+      <path d="M238,114 C236,92 242,80 256,80 C270,80 276,92 274,114 Q256,122 238,114 Z" fill="url(#cjGold)" stroke="#131A2A" stroke-width="6"/>
+      <path d="M168,158 C168,100 344,100 344,158 Q256,174 168,158 Z" fill="url(#cjBlue)" stroke="#131A2A" stroke-width="6"/>
+      <path d="M210,124 Q206,142 208,161" fill="none" stroke="#0054AC" stroke-width="4" opacity="0.45"/>
+      <path d="M302,124 Q306,142 304,161" fill="none" stroke="#0054AC" stroke-width="4" opacity="0.45"/>
+      <path d="M330,150 C380,142 414,148 418,160 C420,170 402,175 372,172 C352,170 338,166 330,162 Z" fill="#0054AC" stroke="#131A2A" stroke-width="6"/>
+      <path d="M192,134 Q216,114 252,111" fill="none" stroke="#FFFFFF" stroke-width="7" opacity="0.3"/>
+      <g>
+        <g fill="#131A2A" stroke="#131A2A" stroke-width="8">
+          <rect x="245" y="136" width="22" height="15" rx="4"/>
+          <circle cx="256" cy="134" r="6"/>
+        </g>
+        <g fill="#FED007">
+          <rect x="245" y="136" width="22" height="15" rx="4"/>
+          <circle cx="256" cy="134" r="6"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- waving glove -->
+    <g>
+      <g fill="#131A2A" stroke="#131A2A" stroke-width="12">
+        <ellipse cx="102" cy="172" rx="20" ry="24" transform="rotate(-12 102 172)"/>
+        <ellipse cx="122" cy="190" rx="9" ry="13" transform="rotate(-50 122 190)"/>
+      </g>
+      <g fill="#FFFFFF">
+        <ellipse cx="102" cy="172" rx="20" ry="24" transform="rotate(-12 102 172)"/>
+        <ellipse cx="122" cy="190" rx="9" ry="13" transform="rotate(-50 122 190)"/>
+      </g>
+      <path d="M95,153 L96,166 M105,151 L105,166 M114,155 L112,168" fill="none" stroke="#131A2A" stroke-width="3.5" opacity="0.75"/>
+    </g>
+
+    <!-- thumbs-up glove -->
+    <g>
+      <g fill="#131A2A" stroke="#131A2A" stroke-width="12">
+        <ellipse cx="414" cy="246" rx="17" ry="15" transform="rotate(-10 414 246)"/>
+        <ellipse cx="408" cy="221" rx="8" ry="14" transform="rotate(16 408 221)"/>
+      </g>
+      <g fill="#FFFFFF">
+        <ellipse cx="414" cy="246" rx="17" ry="15" transform="rotate(-10 414 246)"/>
+        <ellipse cx="408" cy="221" rx="8" ry="14" transform="rotate(16 408 221)"/>
+      </g>
+      <path d="M405,240 Q414,237 421,242" fill="none" stroke="#131A2A" stroke-width="3.5" opacity="0.75"/>
+    </g>
+  </g>
+</svg>
