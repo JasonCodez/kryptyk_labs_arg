@@ -50,6 +50,7 @@ import { juice } from "@/lib/juice";
 import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
 import { normalizeAnagramConfig } from "@/lib/anagramConfig";
+import { useLibraryStarterPathCompletion } from "@/hooks/useLibraryStarterPathCompletion";
 
 interface XpModalData {
   xpGained: number;
@@ -282,6 +283,15 @@ export default function PuzzleDetailPage() {
   const [xpModalData, setXpModalData] = useState<XpModalData | null>(null);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [comparisonStats, setComparisonStats] = useState<ComparisonStats | null>(null);
+
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || null
+    : null;
+  useLibraryStarterPathCompletion({
+    userId: onboardingUserId,
+    completed: success,
+    enabled: !teamIdParam && !lobbyIdParam,
+  });
 
   useEffect(() => {
     pageMountedRef.current = true;
