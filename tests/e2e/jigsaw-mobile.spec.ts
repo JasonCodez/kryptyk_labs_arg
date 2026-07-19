@@ -223,7 +223,7 @@ for (const viewport of [
 
     // Skip remains available through the header's "More puzzle actions" menu.
     await page.getByRole("button", { name: "More puzzle actions" }).click();
-    await expect(page.getByRole("menuitem", { name: "⏭️ Skip (3)" })).toBeVisible();
+    await expect(page.getByRole("menuitem").filter({ hasText: "Skip Puzzle" })).toBeVisible();
   });
 }
 

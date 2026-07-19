@@ -8,6 +8,15 @@ export interface CatalogSkipControlProps {
   /** True while a skip request is in flight. */
   skipping: boolean;
   onSkip: () => void;
+  /**
+   * Forwarded through to the root element. When this control is placed inside
+   * PuzzleHeaderOverflowMenu, the menu clones its children to inject these —
+   * without forwarding them the control silently drops out of the menu's
+   * role="menuitem" semantics and arrow-key/Home/End navigation.
+   */
+  className?: string;
+  role?: string;
+  tabIndex?: number;
 }
 
 /** Decorative skip/forward emblem. */
@@ -25,12 +34,14 @@ function IconSkipForward({ color }: { color: string }) {
  * only — the page owns the skip token count, in-flight state, and API call.
  * Deliberately quiet: this is a utility action, not a reward/premium CTA.
  */
-export default function CatalogSkipControl({ tokens, skipping, onSkip }: CatalogSkipControlProps) {
+export default function CatalogSkipControl({ tokens, skipping, onSkip, className, role, tabIndex }: CatalogSkipControlProps) {
   if (tokens < 1) {
     return (
       <Link
         href="/store"
-        className="inline-flex items-center justify-center gap-2 px-4 rounded-lg text-sm font-semibold"
+        role={role}
+        tabIndex={tabIndex}
+        className={`inline-flex items-center justify-center gap-2 px-4 rounded-lg text-sm font-semibold${className ? ` ${className}` : ""}`}
         style={{
           minHeight: 44,
           color: "var(--pw-text-primary)",
@@ -52,7 +63,9 @@ export default function CatalogSkipControl({ tokens, skipping, onSkip }: Catalog
       type="button"
       onClick={onSkip}
       disabled={skipping}
-      className="inline-flex items-center justify-center gap-2 px-4 rounded-lg text-sm font-semibold transition-opacity active:opacity-70 disabled:opacity-50 disabled:cursor-not-allowed"
+      role={role}
+      tabIndex={tabIndex}
+      className={`inline-flex items-center justify-center gap-2 px-4 rounded-lg text-sm font-semibold transition-opacity active:opacity-70 disabled:opacity-50 disabled:cursor-not-allowed${className ? ` ${className}` : ""}`}
       style={{
         minHeight: 44,
         color: "var(--pw-text-primary)",
