@@ -1362,23 +1362,34 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
       const s = boardSide / BOARD_SIZE;
       scaleRef.current = s;
-      setCanvasW(canvasCssW);
-      setCanvasH(canvasCssH);
+      // canvasW/canvasH (React state, also passed as the JSX width={}/height={} props below)
+      // must hold backing-store pixels, not CSS pixels — React writes those props straight onto
+      // the canvas's width/height attributes on every re-render, and canvas.width/height are the
+      // backing store size, not CSS size. Storing CSS pixels there previously meant every
+      // re-render silently overwrote the DPR-sized backing store the imperative assignment below
+      // had just set, back down to 1x — the exact cause of pieces rendering at ~DPR× their
+      // intended size on high-DPR screens.
+      const dpr = window.devicePixelRatio || 1;
+      const backingW = Math.max(1, Math.round(canvasCssW * dpr));
+      const backingH = Math.max(1, Math.round(canvasCssH * dpr));
+      setCanvasW(backingW);
+      setCanvasH(backingH);
       const canvas = canvasRef.current;
       if (canvas) {
-        const dpr           = window.devicePixelRatio || 1;
-        canvas.width        = canvasCssW * dpr;
-        canvas.height       = canvasCssH * dpr;
-        canvas.style.width  = `${canvasCssW}px`;
-        canvas.style.height = `${canvasCssH}px`;
         // Assigning canvas.width/height always clears its bitmap, even when re-observing an
         // unchanged size (ResizeObserver.observe fires once immediately on registration,
         // regardless of whether anything actually changed — which happens on every re-run of
-        // this effect, e.g. when `showFrame` flips). Setting dirtyRef alone only gets picked up
-        // if a render() is already scheduled; once the render loop has gone idle (nothing left
-        // animating after the completion celebration settles), nothing would otherwise notice
-        // the now-blank canvas. requestCanvasRenderRef both marks it dirty and schedules a
-        // fresh frame if none is pending, so the just-cleared canvas always gets repainted.
+        // this effect, e.g. when `showFrame` flips), so only assign when the value actually
+        // changed.
+        if (canvas.width !== backingW) canvas.width = backingW;
+        if (canvas.height !== backingH) canvas.height = backingH;
+        canvas.style.width  = `${canvasCssW}px`;
+        canvas.style.height = `${canvasCssH}px`;
+        // Setting dirtyRef alone only gets picked up if a render() is already scheduled; once
+        // the render loop has gone idle (nothing left animating after the completion celebration
+        // settles), nothing would otherwise notice a freshly-cleared canvas. requestCanvasRenderRef
+        // both marks it dirty and schedules a fresh frame if none is pending, so a just-cleared
+        // canvas always gets repainted.
         requestCanvasRenderRef.current();
       }
 

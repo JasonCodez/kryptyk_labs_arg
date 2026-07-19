@@ -554,3 +554,80 @@ test("Warz mounts without restoring or writing Catalog and Daily progress", asyn
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
 });
+
+async function measureCanvasBacking(page: Page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector(".jigsaw-board-canvas") as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      boundingWidth: rect.width,
+      boundingHeight: rect.height,
+      attrWidth: canvas.width,
+      attrHeight: canvas.height,
+      dpr: window.devicePixelRatio,
+    };
+  });
+}
+
+for (const deviceScaleFactor of [1, 2, 3]) {
+  test(`board canvas backing store matches CSS size × DPR ${deviceScaleFactor} at 320x710`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 320, height: 710 }, hasTouch: true, deviceScaleFactor });
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await authenticate(page);
+    await installDailyFixture(page, 0, { rows: 4, cols: 4 });
+    await openDaily(page);
+    // Let the resize effect settle (two animation frames) before measuring.
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+
+    const before = await measureCanvasBacking(page);
+    expect(before.dpr).toBe(deviceScaleFactor);
+    expect(Math.abs(before.attrWidth - before.boundingWidth * before.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(before.attrHeight - before.boundingHeight * before.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(before.boundingWidth - before.boundingHeight)).toBeLessThanOrEqual(1); // CSS board stays square
+    expect(before.boundingWidth).toBeLessThanOrEqual(320);
+
+    const dimsBefore = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(dimsBefore).toBeLessThanOrEqual(320);
+
+    // Pick up a tray piece and confirm the backing-store ratio while it's still over the tray.
+    const board = page.locator(".jigsaw-board-canvas");
+    const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+    const from = await trayCanvas.boundingBox();
+    const boardBox = await board.boundingBox();
+    expect(from).not.toBeNull(); expect(boardBox).not.toBeNull();
+    const startX = from!.x + from!.width / 2;
+    const startY = from!.y + from!.height / 2;
+    const targetX = boardBox!.x + boardBox!.width / 2;
+    const targetY = boardBox!.y + boardBox!.height / 2;
+    const pointerId = 7777;
+
+    await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY });
+    await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY - 20 });
+    const duringPickup = await measureCanvasBacking(page);
+    expect(Math.abs(duringPickup.attrWidth - duringPickup.boundingWidth * duringPickup.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(duringPickup.attrHeight - duringPickup.boundingHeight * duringPickup.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(duringPickup.boundingWidth - before.boundingWidth)).toBeLessThanOrEqual(1); // CSS size stable
+
+    // Move onto the board — confirm the ratio remains correct while over the board.
+    await board.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: targetX, clientY: targetY });
+    const overBoard = await measureCanvasBacking(page);
+    expect(Math.abs(overBoard.attrWidth - overBoard.boundingWidth * overBoard.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(overBoard.attrHeight - overBoard.boundingHeight * overBoard.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(overBoard.boundingWidth - before.boundingWidth)).toBeLessThanOrEqual(1);
+
+    // Drop the piece — confirm the ratio remains correct after drop, and nothing overflowed.
+    await board.dispatchEvent("pointerup", { pointerId, pointerType: "touch", clientX: targetX, clientY: targetY });
+    const afterDrop = await measureCanvasBacking(page);
+    expect(Math.abs(afterDrop.attrWidth - afterDrop.boundingWidth * afterDrop.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(afterDrop.attrHeight - afterDrop.boundingHeight * afterDrop.dpr)).toBeLessThanOrEqual(1);
+    expect(Math.abs(afterDrop.boundingWidth - before.boundingWidth)).toBeLessThanOrEqual(1);
+
+    const dimsAfter = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(dimsAfter).toBeLessThanOrEqual(320);
+
+    await context.close();
+  });
+}
