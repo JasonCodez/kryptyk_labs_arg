@@ -30,6 +30,7 @@ import { createPortal } from "react-dom";
 import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
 import JigsawQuickTip from "./jigsaw/JigsawQuickTip";
+import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
 import JigsawPreviewDialog from "./jigsaw/JigsawPreviewDialog";
 import JigsawResetDialog from "./jigsaw/JigsawResetDialog";
@@ -1005,6 +1006,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
   // UI helpers
   const [isTouchDevice, setIsTouchDevice]               = useState(false);
+  const [isLandscape, setIsLandscape]                   = useState(false);
   const [mobileHintDismissed, setMobileHintDismissed]   = useState(false);
   const [showPreview, setShowPreview]                   = useState(false);
   const [showHelp, setShowHelp]                         = useState(false);
@@ -2702,6 +2704,17 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setPortalReady(true);
     setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window);
   }, []);
+  // Jigsaw's board/tray layout is portrait-only — on touch devices, block interaction with a
+  // "rotate back" overlay instead of trying to keep a separate landscape layout in sync with the
+  // board/canvas measurement and DPR math. Tracked live (not just at mount) since the device can
+  // rotate mid-session.
+  useEffect(() => {
+    const mql = window.matchMedia("(orientation: landscape)");
+    setIsLandscape(mql.matches);
+    const onChange = (event: MediaQueryListEvent) => setIsLandscape(event.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
   // Every interaction that mutates drag/ghost state now calls requestCanvasRenderRef.current()
   // directly at its own call site (pointer handlers, drag lifecycle functions, keyboard
   // placement) — a blanket native listener re-triggering a render on every raw pointer event
@@ -3203,13 +3216,25 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       )
     : null;
 
+  // Also portaled straight to document.body, at a z-index above the fullscreen portal (12000),
+  // so it blocks interaction with the board regardless of fullscreen state.
+  const orientationLockPortal = portalReady && isTouchDevice && isLandscape && typeof document !== "undefined"
+    ? createPortal(<JigsawOrientationLock />, document.body)
+    : null;
+
   if (isFullscreen && portalReady && typeof document !== "undefined") {
-    return createPortal(ui, document.body);
+    return (
+      <>
+        {createPortal(ui, document.body)}
+        {orientationLockPortal}
+      </>
+    );
   }
   return (
     <>
       {ui}
       {quickTipPortal}
+      {orientationLockPortal}
     </>
   );
 });

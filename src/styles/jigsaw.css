@@ -52,6 +52,9 @@ html:has(.pw-jigsaw-shell-content),body:has(.pw-jigsaw-shell-content) { overflow
 .jigsaw-quick-tip-fullscreen svg { color:var(--pw-info,#4FB8FF); }
 .jigsaw-quick-tip-dismiss { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; border:1px solid var(--pw-border-default,#2C3856); border-radius:10px; background:transparent; color:var(--pw-text-secondary,#A9B4CC); flex-shrink:0; }
 .jigsaw-quick-tip-fullscreen:focus-visible,.jigsaw-quick-tip-dismiss:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
+.jigsaw-orientation-lock { position:fixed; inset:0; z-index:20000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:24px; background:var(--pw-surface-1,#131A2A); text-align:center; }
+.jigsaw-orientation-lock > svg { color:var(--pw-info,#4FB8FF); }
+.jigsaw-orientation-lock-text { margin:0; max-width:320px; font-size:1rem; font-weight:700; line-height:1.5; color:var(--pw-text-primary,#EEF2FA); }
 .jigsaw-help { display:flex; flex-direction:column; gap:14px; margin-top:14px; }
 .jigsaw-help-intro { display:flex; flex-direction:column; gap:4px; }
 .jigsaw-help-eyebrow { font-size:.68rem; font-weight:800; letter-spacing:.1em; color:var(--pw-brand-accent,#F97102); }
