@@ -65,11 +65,36 @@ describe("JigsawHelpDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("passes Start Building as the safest action and it receives focus after the animation frame", async () => {
-    render(<JigsawHelpDialog onClose={jest.fn()} />);
+  it("focuses the dialog container (not Start Building) after the animation frame", async () => {
+    const { container } = render(<JigsawHelpDialog onClose={jest.fn()} />);
     const startBuilding = screen.getByRole("button", { name: "Start Building" });
     await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
-    expect(document.activeElement).toBe(startBuilding);
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(document.activeElement).toBe(dialog);
+    expect(document.activeElement).not.toBe(startBuilding);
+  });
+
+  it("does not rerun the initial-focus effect when onClose changes identity on rerender", async () => {
+    const focusSpy = jest.spyOn(HTMLElement.prototype, "focus");
+    const { rerender } = render(<JigsawHelpDialog onClose={jest.fn()} />);
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    const callsAfterInitialFocus = focusSpy.mock.calls.length;
+
+    rerender(<JigsawHelpDialog onClose={jest.fn()} />);
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(focusSpy.mock.calls.length).toBe(callsAfterInitialFocus);
+
+    focusSpy.mockRestore();
+  });
+
+  it("calls only the latest onClose after rerendering with a different callback", async () => {
+    const firstOnClose = jest.fn();
+    const secondOnClose = jest.fn();
+    const { rerender } = render(<JigsawHelpDialog onClose={firstOnClose} />);
+    rerender(<JigsawHelpDialog onClose={secondOnClose} />);
+    screen.getByRole("button", { name: "Start Building" }).click();
+    expect(secondOnClose).toHaveBeenCalledTimes(1);
+    expect(firstOnClose).not.toHaveBeenCalled();
   });
 
   it("renders decorative, non-focusable SVGs", () => {

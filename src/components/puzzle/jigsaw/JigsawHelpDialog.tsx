@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import JigsawDialogFrame from "./JigsawDialogFrame";
 
 function StepEmblem({ number }: { number: number }) {
@@ -61,9 +61,17 @@ const TOOLS = [
 ];
 
 export default function JigsawHelpDialog({ onClose }: { onClose: () => void }) {
-  const startBuildingRef = useRef<HTMLButtonElement>(null);
+  // JigsawDialogFrame's focus effect re-runs whenever the onClose it was given changes identity.
+  // The caller (JigsawPuzzleCanvas) passes an inline arrow function, which is a new reference on
+  // every parent render — without this stable indirection, each of those rerenders would rerun
+  // the frame's initial-focus effect and yank the modal's scroll position back to wherever the
+  // freshly re-focused element sits.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+  const stableOnClose = useCallback(() => { onCloseRef.current(); }, []);
+
   return (
-    <JigsawDialogFrame title="How to play Jigsaw" onClose={onClose} safestActionRef={startBuildingRef}>
+    <JigsawDialogFrame title="How to play Jigsaw" onClose={stableOnClose}>
       <div className="jigsaw-help">
         <div className="jigsaw-help-intro">
           <span className="jigsaw-help-eyebrow">JIGSAW // BRIEFING</span>
@@ -106,7 +114,7 @@ export default function JigsawHelpDialog({ onClose }: { onClose: () => void }) {
           </p>
         </div>
 
-        <button type="button" ref={startBuildingRef} className="jigsaw-help-primary" onClick={onClose}>
+        <button type="button" className="jigsaw-help-primary" onClick={stableOnClose}>
           Start Building
         </button>
       </div>
