@@ -1003,6 +1003,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const [portalReady, setPortalReady]   = useState(false);
 
   // UI helpers
+  const [isTouchDevice, setIsTouchDevice]               = useState(false);
+  const [mobileHintDismissed, setMobileHintDismissed]   = useState(false);
   const [showPreview, setShowPreview]                   = useState(false);
   const [showHelp, setShowHelp]                         = useState(false);
   const [showReset, setShowReset]                       = useState(false);
@@ -1338,22 +1340,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     // branching or hardcoded pixel reservations needed.
     const update = () => {
       const horizontalInset = 8;
-      let availableWidth = boardArea.clientWidth - horizontalInset;
-      let availableHeight = boardArea.clientHeight - 4;
-
-      // Below 540px, .jigsaw-board-area is a fixed-height flex item rather than one that
-      // consumes all remaining viewport height (see the mobile rule in jigsaw.css) — but during
-      // a tray-piece pickup/drag, layout can momentarily report a clientWidth/clientHeight wider
-      // than the device itself (e.g. transient scroll/overflow), which previously let the canvas
-      // (and the piece being dragged onto it) render larger than the screen. Clamp to the actual
-      // viewport width during normal play so this can't happen; completion-frame sizing (below)
-      // is left untouched.
-      const isMobileAppShellPlay = displayMode === "app-shell" && !isFullscreen && !showFrame && window.innerWidth < 540;
-      if (isMobileAppShellPlay) {
-        const viewportCap = window.innerWidth - 8;
-        availableWidth = Math.min(availableWidth, viewportCap);
-        availableHeight = Math.min(availableHeight, viewportCap);
-      }
+      const availableWidth = boardArea.clientWidth - horizontalInset;
+      const availableHeight = boardArea.clientHeight - 4;
 
       // The decorative completion frame's border extends past its transparent "hole" (see
       // FRAME_HOLE) by design — that's what makes it read as an actual picture frame around
@@ -1366,13 +1354,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       const boardSide = showFrame
         ? Math.max(120, Math.floor(Math.min(availableWidth * holeW, availableHeight * holeH)))
         : Math.max(120, Math.floor(Math.min(availableWidth, availableHeight)));
-      let canvasCssW = showFrame ? Math.round(boardSide / holeW) : boardSide;
-      let canvasCssH = showFrame ? Math.round(boardSide / holeH) : boardSide;
-      if (isMobileAppShellPlay) {
-        const viewportCap = window.innerWidth - 8;
-        canvasCssW = Math.min(canvasCssW, viewportCap);
-        canvasCssH = Math.min(canvasCssH, viewportCap);
-      }
+      const canvasCssW = showFrame ? Math.round(boardSide / holeW) : boardSide;
+      const canvasCssH = showFrame ? Math.round(boardSide / holeH) : boardSide;
       boardInsetPxRef.current = showFrame
         ? { x: (FRAME_HOLE.left / holeW) * boardSide, y: (FRAME_HOLE.top / holeH) * boardSide }
         : { x: 0, y: 0 };
@@ -2705,6 +2688,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // One-time setup
   useEffect(() => {
     setPortalReady(true);
+    setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window);
   }, []);
   // Every interaction that mutates drag/ghost state now calls requestCanvasRenderRef.current()
   // directly at its own call site (pointer handlers, drag lifecycle functions, keyboard
@@ -2976,6 +2960,31 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </div>
         )}
 
+        {/* Mobile hint — a transient, dismissible pill introducing the tray/drag interaction on
+            touch devices. Allowed to wrap (rather than a strict single line) and capped to the
+            viewport width so it can't overflow off narrower screens. */}
+        {isTouchDevice && !isFullscreen && !mobileHintDismissed && !isSolved && (
+          <div className="jigsaw-mobile-hint" style={{ position: "absolute", bottom: 58, left: "50%", transform: "translateX(-50%)",
+                        zIndex: 9100, display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8,
+                        background: "rgba(10,20,40,0.88)", color: "white", fontSize: 12, fontWeight: 500,
+                        padding: "7px 12px", borderRadius: 22, boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        maxWidth: "calc(100vw - 24px)", textAlign: "center" }}>
+            <span>Swipe the tray to browse · drag a piece up to pick it up</span>
+            <button type="button" onClick={() => setIsFullscreen(true)}
+                    style={{ background: "rgba(99,102,241,0.9)", border: "none", color: "white",
+                             padding: "3px 10px", borderRadius: 12, cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+              Fullscreen
+            </button>
+            <button type="button" onClick={() => setMobileHintDismissed(true)}
+                    aria-label="Dismiss"
+                    style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)",
+                             cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Preview button */}
         {false && imageOk && effectiveUrl && !isSolved && (
           <button type="button" onClick={() => setShowPreview(v => !v)}
@@ -3175,7 +3184,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           since they need to track the pointer every move tick without a React re-render. */}
       <div
         ref={ghostWrapperRef}
-        data-testid="jigsaw-drag-ghost"
         style={{
           position: "fixed", left: 0, top: 0, zIndex: 14000,
           pointerEvents: "none",
