@@ -167,6 +167,28 @@
 .word-search-word-item[data-found]:nth-child(8n+7) { border-color: #14b8a6; color: #5eead4; background: rgba(20,184,166,.18); }
 .word-search-word-item[data-found]:nth-child(8n) { border-color: #f97316; color: #fdba74; background: rgba(249,115,22,.18); }
 
+@media (max-width: 539px) {
+  .word-search-play-layout {
+    grid-template-rows: auto auto auto;
+    align-content: start;
+    gap: 6px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .word-search-board-viewport {
+    place-items: start center;
+  }
+  .word-search-board-viewport:not([data-zoomed]) {
+    overflow: visible;
+  }
+  .word-search-word-dock,
+  .word-search-controls {
+    flex-shrink: 0;
+  }
+}
+
 @media (min-width: 1032px) {
   .word-search-root { max-width: 980px; margin: 0 auto; }
   .word-search-play-layout { grid-template-areas: "board list" "dock list" "controls list"; grid-template-columns: minmax(0, 1fr) minmax(220px, 290px); grid-template-rows: minmax(0, 1fr) auto auto; min-height: 600px; padding: 18px; }
