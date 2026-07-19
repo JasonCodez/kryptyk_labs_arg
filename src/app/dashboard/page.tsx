@@ -128,7 +128,7 @@ export default function Dashboard() {
           )}
 
           {/* ── Core nav cards ──────────────────────────────── */}
-          <div style={{ marginBottom: isAdmin ? 48 : 0 }}>
+          <div className={isAdmin ? 'mb-6 sm:mb-12' : undefined}>
             <DashboardNavigationHub />
           </div>
 

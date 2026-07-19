@@ -67,25 +67,21 @@ export default function DashboardCommandHeader({
 
   return (
     <header
-      className="pw-bevel w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5"
+      className="pw-bevel w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 p-4 sm:px-[22px] sm:py-5 mb-6 sm:mb-12"
       style={{
-        padding: "20px 22px",
         borderRadius: 18,
-        marginBottom: 48,
         background: "linear-gradient(170deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
         border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 30%, var(--pw-border-default))",
         boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
       }}
     >
-      <div className="flex items-center gap-4 min-w-0">
+      <div className="flex items-start gap-3 sm:gap-4 min-w-0">
         {/* Avatar */}
         <Link
           href="/profile"
           aria-label="Open player profile"
-          className="relative flex items-center justify-center shrink-0"
+          className="relative flex items-center justify-center shrink-0 w-12 h-12 sm:w-14 sm:h-14"
           style={{
-            width: 56,
-            height: 56,
             borderRadius: "50%",
             background:
               "linear-gradient(135deg, color-mix(in srgb, var(--pw-brand-primary) 35%, transparent) 0%, color-mix(in srgb, var(--pw-brand-primary) 15%, transparent) 100%)",
@@ -130,23 +126,19 @@ export default function DashboardCommandHeader({
         </Link>
 
         <div className="min-w-0">
-          <p
-            style={{
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              color: "var(--pw-brand-accent)",
-              margin: "0 0 4px",
-            }}
-          >
-            PuzzleWarz // Player Hub
-          </p>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 style={{ fontSize: "clamp(18px, 3vw, 24px)", fontWeight: 900, color: "var(--pw-brand-primary)", margin: 0 }}>
-              Ready for another round, {firstName}?
-            </h1>
+          <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 4 }}>
+            <p
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: "0.2em",
+                textTransform: "uppercase",
+                color: "var(--pw-brand-accent)",
+                margin: 0,
+              }}
+            >
+              <span className="hidden sm:inline">PuzzleWarz // </span>Player Hub
+            </p>
             {isAdmin && (
               <span
                 style={{
@@ -165,6 +157,13 @@ export default function DashboardCommandHeader({
               </span>
             )}
           </div>
+
+          <h1
+            className="text-[17px] leading-[1.25] sm:text-[length:clamp(18px,3vw,24px)] sm:leading-normal"
+            style={{ fontWeight: 900, color: "var(--pw-brand-primary)", margin: 0 }}
+          >
+            Ready for another round, {firstName}?
+          </h1>
 
           <p style={{ fontSize: 13, color: "var(--pw-text-secondary)", margin: "4px 0 8px" }}>
             Your next puzzle is waiting.

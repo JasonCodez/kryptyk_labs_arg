@@ -95,9 +95,8 @@ export default function DashboardStatsStrip({
     <section
       id="tour-stats"
       aria-labelledby={HEADING_ID}
-      className="pw-bevel"
+      className="pw-bevel mb-6 sm:mb-12"
       style={{
-        marginBottom: 48,
         padding: "16px 14px",
         borderRadius: 16,
         background: "linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",

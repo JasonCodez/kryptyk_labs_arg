@@ -67,12 +67,11 @@ export default function DashboardFeaturedMission() {
   return (
     <Link
       href="/debrief"
-      className="pw-bevel pw-press block hover:border-[var(--pw-brand-primary)] focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="pw-bevel pw-press block hover:border-[var(--pw-brand-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 mb-6 sm:mb-10"
       style={{
         textDecoration: "none",
         borderRadius: 16,
         padding: "18px 20px",
-        marginBottom: 40,
         minHeight: 48,
         background: "linear-gradient(150deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
         border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 28%, var(--pw-border-default))",

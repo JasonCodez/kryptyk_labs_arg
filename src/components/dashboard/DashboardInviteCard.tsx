@@ -60,9 +60,8 @@ export default function DashboardInviteCard({ inviteLink, signedUp }: DashboardI
   return (
     <section
       aria-labelledby={HEADING_ID}
-      className="pw-bevel"
+      className="pw-bevel mb-6 sm:mb-12"
       style={{
-        marginBottom: 48,
         padding: "18px 20px",
         borderRadius: 16,
         background: "linear-gradient(170deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
