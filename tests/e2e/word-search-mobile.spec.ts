@@ -212,12 +212,12 @@ test("catalog, daily days, and consecutive Warz rounds remain isolated for the s
 
   await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("0 / 2 found")).toBeVisible();
+  await expect(page.getByTestId("puzzle-header-progress")).toContainText("0/2");
   await dragWord(page, [0, 0], [0, 2]);
   state.setDailyDay(143);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("0 / 2 found")).toBeVisible();
+  await expect(page.getByTestId("puzzle-header-progress")).toContainText("0/2");
 
   await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Start Battle/ }).click();

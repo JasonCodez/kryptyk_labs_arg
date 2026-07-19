@@ -751,7 +751,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
             </motion.div>
           </div>
 
-          <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={openAppropriateWordList} />
+          <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={openAppropriateWordList} showProgress={displayMode !== "app-shell"} />
           <WordSearchControls hintTokens={hintTokens} hintPending={hintPending} disabled={status !== "playing"} canZoom={canZoom} zoomed={zoom > 1} onHint={() => void requestHint()} onZoomIn={() => setZoom((value) => Math.min(2, value + .25))} onZoomOut={() => setZoom((value) => Math.max(1, value - .25))} onResetZoom={() => setZoom(1)} />
           <WordSearchDesktopWordList ref={desktopListRef} words={words} foundWords={foundSet} onOpenDefinition={openDefinition} onEscape={focusBoard} />
         </div>
