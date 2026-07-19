@@ -9,6 +9,7 @@ import DashboardTour from '@/components/DashboardTour';
 import GameButton from '@/components/game-ui/GameButton';
 import StarterPathCard from '@/components/onboarding/StarterPathCard';
 import DashboardCommandHeader from '@/components/dashboard/DashboardCommandHeader';
+import DashboardNavigationHub from '@/components/dashboard/DashboardNavigationHub';
 
 interface UserStats {
   totalPuzzlesSolved: number;
@@ -432,20 +433,6 @@ export default function Dashboard() {
     { label: 'Global Rank',    value: stats?.rank ? `#${stats.rank}` : 'Unranked', icon: '🏆', color: '#E8934A', bgColor: 'rgba(232,147,74,0.10)', borderColor: 'rgba(232,147,74,0.30)', animate: false },
   ];
 
-  const coreCards = [
-    { href: '/puzzles',             icon: '🧩', title: 'Solve Puzzles',       desc: 'Dive into active puzzles and earn points',                  accent: 'teal'  as const, tourId: 'tour-card-puzzles' },
-    { href: '/warz',                icon: '⚔️', title: 'Warz',                desc: 'Challenge rivals head-to-head. Wager points on speed.',      accent: 'gold'  as const, badge: 'Live', tourId: 'tour-card-warz' },
-    { href: '/teams',               icon: '👥', title: 'My Teams',            desc: 'Manage your teams and invite players to collaborate.',       accent: 'gold'  as const, tourId: 'tour-card-teams' },
-    { href: '/leaderboards',        icon: '🏆', title: 'Leaderboards',        desc: 'Check global rankings and see where you stand.',             accent: 'teal'  as const, tourId: 'tour-card-leaderboards' },
-    { href: '/categories',          icon: '📚', title: 'Browse Categories',   desc: 'Explore puzzles organized by topic and difficulty.',         accent: 'gold'  as const },
-    { href: '/achievements',        icon: '🎖️', title: 'Achievements',        desc: 'Unlock badges and earn recognition as you progress.',        accent: 'muted' as const, tourId: 'tour-card-achievements' },
-    { href: '/profile',             icon: '👤', title: 'My Profile',          desc: 'View your stats, badges, and customize your profile.',       accent: 'teal'  as const, tourId: 'tour-card-profile' },
-    { href: '/dashboard/activity',  icon: '📋', title: 'Activity Feed',       desc: 'Review your recent actions and account history.',            accent: 'muted' as const },
-    { href: '/daily',               icon: '📅', title: 'Daily Challenge',     desc: 'Tackle today\'s featured puzzle and keep your streak alive.', accent: 'gold'  as const, tourId: 'tour-card-daily' },
-    { href: '/frequency',           icon: '📡', title: 'Frequency',           desc: 'Think like the crowd. Score = how many people agreed with you.', accent: 'teal' as const, badge: 'New', tourId: 'tour-card-frequency' },
-    { href: '/faq',                 icon: '❓', title: 'FAQ',                 desc: 'Answers to common questions about puzzles, teams, and more.', accent: 'muted' as const },
-  ];
-
   const adminCards = [
     { href: '/admin/analytics',  icon: '📊', title: 'Analytics',         desc: 'View platform statistics and puzzle analytics.',         accent: 'teal' as const },
     { href: '/admin/puzzles',    icon: '➕', title: 'Create Puzzle',     desc: 'Add new puzzles to the platform.',                       accent: 'muted' as const },
@@ -540,18 +527,7 @@ export default function Dashboard() {
 
           {/* ── Core nav cards ──────────────────────────────── */}
           <div style={{ marginBottom: isAdmin ? 48 : 0 }}>
-            <p style={{
-              fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase',
-              color: '#8891AC', marginBottom: 20,
-              opacity: mounted ? 1 : 0, transition: 'opacity 0.6s ease 0.4s',
-            }}>
-              Navigate
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
-              {coreCards.map((c, i) => (
-                <ActionCard key={i} {...c} delay={0.12 + i * 0.07} visible={mounted} tourId={c.tourId} />
-              ))}
-            </div>
+            <DashboardNavigationHub />
           </div>
 
           {/* ── Admin cards ─────────────────────────────────── */}
