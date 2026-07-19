@@ -25,7 +25,7 @@ export default function DailyLineupLoadingState() {
         Loading today&rsquo;s puzzles…
       </p>
 
-      <div aria-hidden="true" className="grid gap-2.5 grid-cols-1 min-[430px]:grid-cols-2 min-[981px]:grid-cols-3">
+      <div aria-hidden="true" className="grid gap-2.5 grid-cols-1 min-[669px]:grid-cols-2 min-[981px]:grid-cols-3">
         {[...Array(6)].map((_, i) => (
           <div
             key={i}

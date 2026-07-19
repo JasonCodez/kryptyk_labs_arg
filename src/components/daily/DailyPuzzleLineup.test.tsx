@@ -156,8 +156,9 @@ describe("DailyPuzzleLineup", () => {
     const { container } = show();
     const gridContainer = container.querySelector(".grid");
     const classNames = gridContainer?.className || "";
-    expect(classNames).toContain("min-[430px]:grid-cols-2");
+    expect(classNames).toContain("min-[669px]:grid-cols-2");
     expect(classNames).toContain("min-[981px]:grid-cols-3");
+    expect(classNames).not.toContain("min-[430px]:grid-cols-2");
     expect(classNames).not.toContain("md:grid-cols-3");
   });
 });
