@@ -2,6 +2,15 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import HiddenWordInstructionsModal from "./HiddenWordInstructionsModal";
+import { HIDDEN_WORD_RESULT_VISUALS } from "@/lib/hiddenWordVisuals";
+
+/** jsdom normalizes inline color strings to rgb()/rgba() — render the expected
+ *  value through a throwaway element so both sides compare in the same format. */
+function toBrowserColor(value: string): string {
+  const probe = document.createElement("div");
+  probe.style.color = value;
+  return probe.style.color;
+}
 
 function show(onClose = jest.fn(), wordLength = 5, maxGuesses = 6) {
   const utils = render(
@@ -38,6 +47,50 @@ describe("HiddenWordInstructionsModal", () => {
     expect(screen.getByText("COLD")).toBeTruthy();
   });
 
+  it("Correct tile uses the shared correct background and border", () => {
+    const { container } = show();
+    const tile = container.querySelector('[data-testid="hw-legend-tile-correct"]') as HTMLElement;
+    expect(tile).toBeTruthy();
+    expect(tile.style.backgroundColor).toBe(toBrowserColor(HIDDEN_WORD_RESULT_VISUALS.correct.background));
+    expect(tile.style.borderColor).toBe(toBrowserColor(HIDDEN_WORD_RESULT_VISUALS.correct.border));
+  });
+
+  it("Correct tile has a filled marker", () => {
+    const { container } = show();
+    const marker = container.querySelector('[data-testid="hw-legend-marker-correct"]');
+    expect(marker).toBeTruthy();
+    expect(marker?.getAttribute("data-marker")).toBe("filled");
+  });
+
+  it("Close tile uses the shared present purple background and border", () => {
+    const { container } = show();
+    const tile = container.querySelector('[data-testid="hw-legend-tile-present"]') as HTMLElement;
+    expect(tile).toBeTruthy();
+    expect(tile.style.backgroundColor).toBe(toBrowserColor(HIDDEN_WORD_RESULT_VISUALS.present.background));
+    expect(tile.style.borderColor).toBe(toBrowserColor(HIDDEN_WORD_RESULT_VISUALS.present.border));
+  });
+
+  it("Close tile has a ring marker", () => {
+    const { container } = show();
+    const marker = container.querySelector('[data-testid="hw-legend-marker-present"]');
+    expect(marker).toBeTruthy();
+    expect(marker?.getAttribute("data-marker")).toBe("ring");
+  });
+
+  it("Cold tile uses the shared absent background and border", () => {
+    const { container } = show();
+    const tile = container.querySelector('[data-testid="hw-legend-tile-absent"]') as HTMLElement;
+    expect(tile).toBeTruthy();
+    expect(tile.style.backgroundColor).toBe(toBrowserColor(HIDDEN_WORD_RESULT_VISUALS.absent.background));
+    expect(tile.style.borderColor).toBe(toBrowserColor(HIDDEN_WORD_RESULT_VISUALS.absent.border));
+  });
+
+  it("Cold tile has no marker", () => {
+    const { container } = show();
+    const marker = container.querySelector('[data-testid="hw-legend-marker-absent"]');
+    expect(marker).toBeNull();
+  });
+
   it("Start Solving calls onClose", () => {
     const { onClose } = show();
     fireEvent.click(screen.getByRole("button", { name: /start solving/i }));
@@ -68,10 +121,10 @@ describe("HiddenWordInstructionsModal", () => {
     expect(container.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
   });
 
-  it("contains no legacy purple, magenta, or pink color strings", () => {
+  it("contains no legacy magenta or pink color strings (purple is the intentional Close tile color)", () => {
     const { container } = show();
     const html = container.innerHTML.toLowerCase();
-    for (const legacy of ["8b3dff", "ff4fa3", "purple", "magenta", "pink", "139,61,255", "255,79,163", "a78bfa"]) {
+    for (const legacy of ["8b3dff", "ff4fa3", "magenta", "pink", "139,61,255", "255,79,163"]) {
       expect(html).not.toContain(legacy);
     }
   });

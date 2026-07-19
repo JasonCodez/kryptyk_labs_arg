@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import HiddenWordInstructionsModal from "./HiddenWordInstructionsModal";
+import { HIDDEN_WORD_RESULT_VISUALS } from "@/lib/hiddenWordVisuals";
 import { isHapticsEnabled } from "@/lib/juice";
 import {
   getHiddenWordGrade,
@@ -75,9 +76,24 @@ const KEYBOARD_ROWS = [
 // Deliberately not green+yellow (Wordle's signature pairing) — CLOSE uses purple, which also
 // keeps it clearly distinct in hue from the blue-gray COLD tiles for colorblind players.
 const COLORS = {
-  correct: { bg: "#38D399", border: "#10b981", glow: "rgba(56,211,153,0.65)", text: "#04190f" },
-  present: { bg: "#a78bfa", border: "#7c3aed", glow: "rgba(167,139,250,0.65)", text: "#1e1147" },
-  absent:  { bg: "rgba(56,145,166,0.22)", border: "rgba(56,145,166,0.5)", glow: "none", text: "#E2E8F0" },
+  correct: {
+    bg: HIDDEN_WORD_RESULT_VISUALS.correct.background,
+    border: HIDDEN_WORD_RESULT_VISUALS.correct.border,
+    glow: HIDDEN_WORD_RESULT_VISUALS.correct.glow,
+    text: HIDDEN_WORD_RESULT_VISUALS.correct.text,
+  },
+  present: {
+    bg: HIDDEN_WORD_RESULT_VISUALS.present.background,
+    border: HIDDEN_WORD_RESULT_VISUALS.present.border,
+    glow: HIDDEN_WORD_RESULT_VISUALS.present.glow,
+    text: HIDDEN_WORD_RESULT_VISUALS.present.text,
+  },
+  absent: {
+    bg: HIDDEN_WORD_RESULT_VISUALS.absent.background,
+    border: HIDDEN_WORD_RESULT_VISUALS.absent.border,
+    glow: HIDDEN_WORD_RESULT_VISUALS.absent.glow,
+    text: HIDDEN_WORD_RESULT_VISUALS.absent.text,
+  },
   empty:   { bg: "transparent", border: "#374151", glow: "none", text: "#ffffff" },
   active:  { bg: "rgba(253,231,76,0.08)", border: "#FDE74C", glow: "rgba(253,231,76,0.3)", text: "#ffffff" },
 };

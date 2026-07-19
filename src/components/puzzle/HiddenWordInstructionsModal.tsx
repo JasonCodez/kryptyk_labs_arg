@@ -1,11 +1,89 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { HIDDEN_WORD_RESULT_VISUALS, type HiddenWordResultVisual } from "@/lib/hiddenWordVisuals";
 
 export interface HiddenWordInstructionsModalProps {
   wordLength: number;
   maxGuesses: number;
   onClose: () => void;
+}
+
+/** Miniature version of the real game tile, plus its readable label/description. */
+function LegendRow({
+  testId,
+  letter,
+  visual,
+  label,
+  description,
+}: {
+  testId: string;
+  letter: string;
+  visual: HiddenWordResultVisual;
+  label: string;
+  description: string;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div
+        aria-hidden="true"
+        data-testid={`hw-legend-tile-${testId}`}
+        style={{
+          position: "relative",
+          width: 40,
+          height: 40,
+          borderRadius: 8,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 900,
+          fontSize: 18,
+          background: visual.background,
+          border: `2px solid ${visual.border}`,
+          color: visual.text,
+        }}
+      >
+        {letter}
+        {visual.marker === "filled" && (
+          <span
+            aria-hidden="true"
+            data-testid={`hw-legend-marker-${testId}`}
+            data-marker="filled"
+            style={{
+              position: "absolute",
+              top: 3,
+              right: 3,
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: visual.text,
+            }}
+          />
+        )}
+        {visual.marker === "ring" && (
+          <span
+            aria-hidden="true"
+            data-testid={`hw-legend-marker-${testId}`}
+            data-marker="ring"
+            style={{
+              position: "absolute",
+              top: 3,
+              right: 3,
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "transparent",
+              border: `1.5px solid ${visual.text}`,
+            }}
+          />
+        )}
+      </div>
+      <span style={{ fontSize: 12, color: "var(--pw-text-secondary)" }}>
+        <strong style={{ color: "var(--pw-text-primary)" }}>{label}</strong> — {description}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -91,55 +169,28 @@ export default function HiddenWordInstructionsModal({
           </li>
         </ul>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "0 0 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              aria-hidden="true"
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 6,
-                flexShrink: 0,
-                background: "var(--pw-success)",
-                border: "1px solid var(--pw-success-border)",
-              }}
-            />
-            <span style={{ fontSize: 12, color: "var(--pw-text-secondary)" }}>
-              <strong style={{ color: "var(--pw-text-primary)" }}>CORRECT</strong> — Right letter, right position
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              aria-hidden="true"
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 6,
-                flexShrink: 0,
-                background: "transparent",
-                border: "2px solid var(--pw-info)",
-              }}
-            />
-            <span style={{ fontSize: 12, color: "var(--pw-text-secondary)" }}>
-              <strong style={{ color: "var(--pw-text-primary)" }}>CLOSE</strong> — Letter exists, wrong position
-            </span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              aria-hidden="true"
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 6,
-                flexShrink: 0,
-                background: "var(--pw-surface-1)",
-                border: "1px solid var(--pw-border-default)",
-              }}
-            />
-            <span style={{ fontSize: 12, color: "var(--pw-text-secondary)" }}>
-              <strong style={{ color: "var(--pw-text-primary)" }}>COLD</strong> — Letter is not in the word
-            </span>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "0 0 16px" }}>
+          <LegendRow
+            testId="correct"
+            letter="C"
+            visual={HIDDEN_WORD_RESULT_VISUALS.correct}
+            label="CORRECT"
+            description="Right letter, right position"
+          />
+          <LegendRow
+            testId="present"
+            letter="P"
+            visual={HIDDEN_WORD_RESULT_VISUALS.present}
+            label="CLOSE"
+            description="Letter exists, wrong position"
+          />
+          <LegendRow
+            testId="absent"
+            letter="X"
+            visual={HIDDEN_WORD_RESULT_VISUALS.absent}
+            label="COLD"
+            description="Letter is not in the word"
+          />
         </div>
 
         <button
