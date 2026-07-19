@@ -52,7 +52,7 @@ export default function JigsawHelpDialog({ onClose }: { onClose: () => void }) {
           <p className="jigsaw-help-summary">Browse the tray, place matching pieces, and assemble the complete picture.</p>
         </div>
 
-        <ol className="jigsaw-help-steps">
+        <ol className="jigsaw-help-steps" aria-label="Jigsaw building steps">
           <li className="jigsaw-help-step">
             <span className="jigsaw-help-step-number" aria-hidden="true">1</span>
             <div className="jigsaw-help-step-copy">
