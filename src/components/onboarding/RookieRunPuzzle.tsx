@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import GameButton from "@/components/game-ui/GameButton";
+import RookieRunVictory from "@/components/onboarding/RookieRunVictory";
 import { completeOnboardingStep } from "@/lib/onboarding";
 
 /* ── Puzzle data ────────────────────────────────────────────────────── */
@@ -12,25 +13,34 @@ const ANSWER = "SOLVE";
 const TILES = ["V", "E", "S", "O", "L"] as const;
 
 const INCORRECT_FEEDBACK = "Not quite—remove a letter and try again.";
-const SUCCESS_MESSAGE = "Starter puzzle complete.";
 
-/* ── Rookie Run progress rail (Solve active on this screen) ─────────── */
+/* ── Rookie Run progress rail ───────────────────────────────────────── */
 
 type StageState = "done" | "active" | "upcoming";
 
-const STAGES: { label: string; state: StageState; gold?: boolean }[] = [
-  { label: "Learn", state: "done" },
-  { label: "Solve", state: "active" },
-  { label: "Celebrate", state: "upcoming", gold: true },
-];
+interface Stage {
+  label: string;
+  state: StageState;
+  gold?: boolean;
+}
 
-function stageNodeStyle(stage: (typeof STAGES)[number]): React.CSSProperties {
+function railStages(solved: boolean): Stage[] {
+  return [
+    { label: "Learn", state: "done" },
+    { label: "Solve", state: solved ? "done" : "active" },
+    { label: "Celebrate", state: solved ? "active" : "upcoming", gold: true },
+  ];
+}
+
+function stageNodeStyle(stage: Stage): React.CSSProperties {
   if (stage.state === "active") {
+    // The gold Celebrate stage keeps its trophy color when it becomes active.
+    const c = stage.gold ? "var(--pw-brand-secondary)" : "var(--pw-brand-primary)";
     return {
-      background: "color-mix(in srgb, var(--pw-brand-primary) 22%, transparent)",
-      border: "2px solid var(--pw-brand-primary)",
-      color: "var(--pw-brand-primary)",
-      boxShadow: "0 0 12px color-mix(in srgb, var(--pw-brand-primary) 35%, transparent)",
+      background: `color-mix(in srgb, ${c} 22%, transparent)`,
+      border: `2px solid ${c}`,
+      color: c,
+      boxShadow: `0 0 12px color-mix(in srgb, ${c} 35%, transparent)`,
     };
   }
   if (stage.state === "done") {
@@ -54,10 +64,10 @@ function stageNodeStyle(stage: (typeof STAGES)[number]): React.CSSProperties {
   };
 }
 
-function ProgressRail() {
+function ProgressRail({ solved }: { solved: boolean }) {
   return (
     <ol aria-label="Rookie Run progress" className="flex items-start justify-center mb-6 list-none p-0 m-0">
-      {STAGES.map((stage, i) => (
+      {railStages(solved).map((stage, i) => (
         <li
           key={stage.label}
           aria-current={stage.state === "active" ? "step" : undefined}
@@ -85,7 +95,7 @@ function ProgressRail() {
               className="text-[10px] font-bold tracking-widest uppercase"
               style={{
                 color:
-                  stage.state === "active"
+                  stage.state === "active" && !stage.gold
                     ? "var(--pw-brand-primary)"
                     : stage.gold
                       ? "color-mix(in srgb, var(--pw-brand-secondary) 75%, var(--pw-text-muted))"
@@ -182,7 +192,7 @@ export default function RookieRunPuzzle({ userId, onReturnToDashboard }: RookieR
   return (
     <div className="px-4 py-6 sm:py-8" onKeyDown={handleKeyDown}>
       <div className="mx-auto w-full" style={{ maxWidth: 480 }}>
-        <ProgressRail />
+        <ProgressRail solved={solved} />
 
         {/* Clue panel — neutral navy surface */}
         <div
@@ -251,68 +261,57 @@ export default function RookieRunPuzzle({ userId, onReturnToDashboard }: RookieR
           })}
         </div>
 
-        {/* Letter tiles */}
-        <div role="group" aria-label="Letter tiles" className="flex justify-center gap-2 mb-6 flex-wrap">
-          {TILES.map((letter, tileIndex) => {
-            const used = placed.includes(tileIndex);
-            return (
-              <button
-                key={tileIndex}
-                type="button"
-                aria-label={`Letter ${letter}`}
-                onClick={() => placeTile(tileIndex)}
-                disabled={used || solved}
-                className="rounded-xl text-xl font-black flex items-center justify-center transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
-                style={{
-                  width: 48,
-                  height: 48,
-                  minWidth: 44,
-                  minHeight: 44,
-                  outlineColor: "var(--pw-brand-primary)",
-                  cursor: used || solved ? "default" : "pointer",
-                  opacity: used || solved ? 0.35 : 1,
-                  background: "linear-gradient(170deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
-                  border: "2px solid color-mix(in srgb, var(--pw-brand-primary) 45%, var(--pw-border-default))",
-                  color: "var(--pw-text-primary)",
-                }}
-              >
-                {letter}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Incorrect-answer feedback */}
-        <p
-          role="status"
-          aria-live="polite"
-          className="text-center text-sm font-semibold mb-5 min-h-5"
-          style={{ color: "var(--pw-brand-accent)" }}
-        >
-          {feedback}
-        </p>
-
         {solved ? (
-          /* Success panel — green appears only now */
-          <div
-            role="status"
-            className="rounded-2xl px-5 py-6 text-center"
-            style={{
-              background: "color-mix(in srgb, var(--pw-success) 8%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--pw-success) 45%, transparent)",
-            }}
-          >
-            <p className="text-lg font-black mb-4" style={{ color: "var(--pw-success)" }}>
-              {SUCCESS_MESSAGE}
-            </p>
-            <GameButton variant="success" fullWidth onClick={onReturnToDashboard}>
-              Return to Dashboard
-            </GameButton>
-          </div>
+          /* Victory card replaces the tray, feedback line, and check button;
+             the solved answer slots above stay visible in green. */
+          <RookieRunVictory onReturnToDashboard={onReturnToDashboard} />
         ) : (
-          <GameButton variant="primary" fullWidth disabled={!isFull} onClick={checkAnswer}>
-            Check Answer
-          </GameButton>
+          <>
+            {/* Letter tiles */}
+            <div role="group" aria-label="Letter tiles" className="flex justify-center gap-2 mb-6 flex-wrap">
+              {TILES.map((letter, tileIndex) => {
+                const used = placed.includes(tileIndex);
+                return (
+                  <button
+                    key={tileIndex}
+                    type="button"
+                    aria-label={`Letter ${letter}`}
+                    onClick={() => placeTile(tileIndex)}
+                    disabled={used}
+                    className="rounded-xl text-xl font-black flex items-center justify-center transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{
+                      width: 48,
+                      height: 48,
+                      minWidth: 44,
+                      minHeight: 44,
+                      outlineColor: "var(--pw-brand-primary)",
+                      cursor: used ? "default" : "pointer",
+                      opacity: used ? 0.35 : 1,
+                      background: "linear-gradient(170deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
+                      border: "2px solid color-mix(in srgb, var(--pw-brand-primary) 45%, var(--pw-border-default))",
+                      color: "var(--pw-text-primary)",
+                    }}
+                  >
+                    {letter}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Incorrect-answer feedback */}
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-center text-sm font-semibold mb-5 min-h-5"
+              style={{ color: "var(--pw-brand-accent)" }}
+            >
+              {feedback}
+            </p>
+
+            <GameButton variant="primary" fullWidth disabled={!isFull} onClick={checkAnswer}>
+              Check Answer
+            </GameButton>
+          </>
         )}
       </div>
     </div>

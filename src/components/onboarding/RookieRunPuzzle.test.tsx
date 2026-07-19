@@ -1,12 +1,20 @@
 /** @jest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import RookieRunPuzzle from "./RookieRunPuzzle";
-import { loadOnboardingState } from "@/lib/onboarding";
+import { completeOnboardingStep, loadOnboardingState } from "@/lib/onboarding";
+
+jest.mock("@/lib/onboarding", () => {
+  const actual = jest.requireActual("@/lib/onboarding");
+  return { ...actual, completeOnboardingStep: jest.fn(actual.completeOnboardingStep) };
+});
+
+const completeStepMock = completeOnboardingStep as jest.Mock;
 
 const USER = "u1";
 const CLUE = "What do players do with puzzles?";
 const SCRAMBLE = ["V", "E", "S", "O", "L"];
+const VICTORY_HEADING = "First solve complete.";
 
 function tile(letter: string): HTMLButtonElement {
   return screen.getByRole("button", { name: `Letter ${letter}` }) as HTMLButtonElement;
@@ -20,8 +28,26 @@ function checkButton(): HTMLButtonElement {
   return screen.getByRole("button", { name: /check answer/i }) as HTMLButtonElement;
 }
 
+function continueButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: /continue to dashboard/i }) as HTMLButtonElement;
+}
+
 function placeLetters(letters: string[]) {
   for (const letter of letters) fireEvent.click(tile(letter));
+}
+
+function solvePuzzle() {
+  placeLetters(["S", "O", "L", "V", "E"]);
+  fireEvent.click(checkButton());
+}
+
+function railStage(label: string): HTMLElement {
+  const rail = screen.getByRole("list", { name: "Rookie Run progress" });
+  const item = within(rail)
+    .getAllByRole("listitem")
+    .find((li) => li.textContent?.includes(label));
+  if (!item) throw new Error(`No rail stage labeled ${label}`);
+  return item;
 }
 
 describe("RookieRunPuzzle", () => {
@@ -30,6 +56,8 @@ describe("RookieRunPuzzle", () => {
   beforeEach(() => {
     localStorage.clear();
     onReturnToDashboard.mockClear();
+    completeStepMock.mockClear();
+    document.documentElement.removeAttribute("data-reduce-animations");
   });
 
   afterEach(() => {
@@ -115,26 +143,85 @@ describe("RookieRunPuzzle", () => {
     expect(checkButton()).toBeTruthy();
   });
 
-  it("correct SOLVE completes first_puzzle_completed and shows the success panel", () => {
+  it("correct SOLVE completes first_puzzle_completed and shows the victory card", () => {
     show();
-    placeLetters(["S", "O", "L", "V", "E"]);
-    fireEvent.click(checkButton());
-    expect(screen.getByText("Starter puzzle complete.")).toBeTruthy();
+    solvePuzzle();
+    expect(screen.getByText(VICTORY_HEADING)).toBeTruthy();
+    expect(screen.getByText("Rookie Run // Mission Complete")).toBeTruthy();
+    expect(screen.getByText("You learned the core loop: choose, solve, confirm.")).toBeTruthy();
+    expect(screen.getByText("First Solve")).toBeTruthy();
     expect(loadOnboardingState(USER).completedSteps).toContain("first_puzzle_completed");
+  });
+
+  it("records first_puzzle_completed exactly once", () => {
+    show();
+    solvePuzzle();
+    const completedCalls = completeStepMock.mock.calls.filter(
+      ([, step]) => step === "first_puzzle_completed",
+    );
+    expect(completedCalls).toEqual([[USER, "first_puzzle_completed"]]);
+  });
+
+  it("solving advances the rail: Learn and Solve complete, Celebrate active", () => {
+    show();
+    expect(railStage("Solve").textContent).toContain("(active)");
+    solvePuzzle();
+    expect(railStage("Learn").textContent).toContain("(complete)");
+    expect(railStage("Solve").textContent).toContain("(complete)");
+    expect(railStage("Celebrate").textContent).toContain("(active)");
+    expect(railStage("Celebrate").getAttribute("aria-current")).toBe("step");
+  });
+
+  it("solving removes the letter tray and Check Answer button", () => {
+    show();
+    solvePuzzle();
+    expect(screen.queryByRole("group", { name: "Letter tiles" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /check answer/i })).toBeNull();
+    // Completed answer slots stay visible
+    expect(slot(1).getAttribute("aria-label")).toBe("Answer slot 1: S");
+  });
+
+  it("victory card shows Starter Path progress and the next Daily objective", () => {
+    show();
+    solvePuzzle();
+    expect(screen.getByText("Starter Path • 1 of 4 complete")).toBeTruthy();
+    expect(screen.getByText("Discover today’s Daily Puzzle")).toBeTruthy();
+  });
+
+  it("moves focus to the Continue to Dashboard button on victory", () => {
+    show();
+    solvePuzzle();
+    expect(document.activeElement).toBe(continueButton());
   });
 
   it("Enter checks the answer once all slots are full", () => {
     show();
     placeLetters(["S", "O", "L", "V", "E"]);
     fireEvent.keyDown(screen.getByRole("group", { name: "Answer slots" }), { key: "Enter" });
-    expect(screen.getByText("Starter puzzle complete.")).toBeTruthy();
+    expect(screen.getByText(VICTORY_HEADING)).toBeTruthy();
   });
 
-  it("Return to Dashboard calls the supplied navigation action", () => {
+  it("Continue to Dashboard calls the supplied navigation action", () => {
     show();
-    placeLetters(["S", "O", "L", "V", "E"]);
-    fireEvent.click(checkButton());
-    fireEvent.click(screen.getByRole("button", { name: /return to dashboard/i }));
+    solvePuzzle();
+    fireEvent.click(continueButton());
     expect(onReturnToDashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders sparkle and ring effects when motion is allowed", () => {
+    show();
+    solvePuzzle();
+    expect(screen.getByTestId("victory-ring")).toBeTruthy();
+    expect(screen.getByTestId("victory-sparkles")).toBeTruthy();
+  });
+
+  it("reduced motion renders the victory card with no sparkle or ring effects", () => {
+    document.documentElement.setAttribute("data-reduce-animations", "true");
+    show();
+    solvePuzzle();
+    expect(screen.getByText(VICTORY_HEADING)).toBeTruthy();
+    expect(screen.queryByTestId("victory-ring")).toBeNull();
+    expect(screen.queryByTestId("victory-sparkles")).toBeNull();
+    expect(document.activeElement).toBe(continueButton());
   });
 });
