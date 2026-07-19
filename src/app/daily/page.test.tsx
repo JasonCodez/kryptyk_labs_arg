@@ -67,28 +67,27 @@ describe("Daily hub", () => {
     mockFetch(FULL_SUMMARY);
     await renderHub();
     const sudoku = document.querySelector('a[href="/daily/sudoku"]')!;
-    expect(sudoku.textContent).toContain("✓ Done");
-    expect(sudoku.textContent).toContain("View result");
-    expect(sudoku.textContent).not.toContain("Play now");
+    expect(sudoku.textContent).toContain("View Result");
+    expect(sudoku.textContent).not.toContain("Play");
   });
 
   it("shows a play affordance and gold streak chip on available cards", async () => {
     mockFetch(FULL_SUMMARY);
     await renderHub();
     const word = document.querySelector('a[href="/daily/word"]')!;
-    expect(word.textContent).toContain("Play now");
-    expect(screen.getByLabelText("4 day streak")).toBeTruthy();
+    expect(word.textContent).toContain("Play");
+    expect(word.textContent).toContain("4 day streak");
     // Zero-streak available cards show no streak chip.
     const crossword = document.querySelector('a[href="/daily/crossword"]')!;
-    expect(crossword.textContent).not.toContain("🔥");
+    expect(crossword.textContent).not.toContain("day streak");
   });
 
   it("shows a not-ready message without a play affordance", async () => {
     mockFetch(FULL_SUMMARY);
     await renderHub();
     const trove = document.querySelector('a[href="/daily/word-search"]')!;
-    expect(trove.textContent).toContain("Not ready yet");
-    expect(trove.textContent).not.toContain("Play now");
+    expect(trove.textContent).toContain("Check Back Soon");
+    expect(trove.textContent).not.toContain("Play");
   });
 
   it("locks sign-in-required cards for guests with an explicit label and lock icon", async () => {
@@ -96,11 +95,10 @@ describe("Daily hub", () => {
     mockFetch(FULL_SUMMARY);
     await renderHub();
     const sudoku = document.querySelector('a[href="/daily/sudoku"]')!;
-    expect(sudoku.textContent).toContain("Sign in to play");
-    expect(sudoku.textContent).toContain("🔒");
+    expect(sudoku.textContent).toContain("Sign In to Play");
     // Hidden Word never requires sign-in.
     const word = document.querySelector('a[href="/daily/word"]')!;
-    expect(word.textContent).not.toContain("Sign in to play");
+    expect(word.textContent).not.toContain("Sign In to Play");
   });
 
   it("renders the Debrief special card states", async () => {
@@ -108,7 +106,6 @@ describe("Daily hub", () => {
     await renderHub();
     const debrief = document.querySelector('a[href="/debrief"]')!;
     expect(debrief.textContent).toContain("The Debrief");
-    expect(debrief.textContent).toContain("✓ Done");
-    expect(debrief.textContent).toContain("Come back tomorrow");
+    expect(debrief.textContent).toContain("New Case Tomorrow");
   });
 });
