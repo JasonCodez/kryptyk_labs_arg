@@ -10,83 +10,13 @@ import GameButton from '@/components/game-ui/GameButton';
 import StarterPathCard from '@/components/onboarding/StarterPathCard';
 import DashboardCommandHeader from '@/components/dashboard/DashboardCommandHeader';
 import DashboardNavigationHub from '@/components/dashboard/DashboardNavigationHub';
+import DashboardStatsStrip from '@/components/dashboard/DashboardStatsStrip';
 
 interface UserStats {
   totalPuzzlesSolved: number;
   totalPoints: number;
   currentTeams: number;
   rank: number | null;
-}
-
-/* ── count-up ─────────────────────────────────────────────── */
-function useCountUp(target: number, duration = 1600, trigger = false) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!trigger || target === 0) return;
-    let start: number | null = null;
-    const step = (ts: number) => {
-      if (!start) start = ts;
-      const p = Math.min((ts - start) / duration, 1);
-      setCount(Math.floor((1 - Math.pow(1 - p, 3)) * target));
-      if (p < 1) requestAnimationFrame(step);
-      else setCount(target);
-    };
-    requestAnimationFrame(step);
-  }, [target, duration, trigger]);
-  return (!trigger || target === 0) ? target : count;
-}
-
-/* ── stat card ────────────────────────────────────────────── */
-interface StatCardProps {
-  label: string;
-  value: number | string;
-  icon: string;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-  prefix?: string;
-  suffix?: string;
-  delay: number;
-  visible: boolean;
-  animate?: boolean;
-}
-function StatCard({ label, value, icon, color, bgColor, borderColor, prefix = '', suffix = '', delay, visible, animate = false }: StatCardProps) {
-  const numVal = typeof value === 'number' ? value : 0;
-  const counted = useCountUp(numVal, 1400, animate && visible);
-  const displayVal = typeof value === 'string' ? value : counted;
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <div
-      className="pw-bevel relative overflow-hidden"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: `linear-gradient(160deg, ${bgColor.replace(/[\d.]+\)$/, '0.22)')}, var(--pw-surface) 65%)`,
-        border: `1px solid ${hovered ? color : borderColor}`,
-        padding: '24px',
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(24px)',
-        transition: `opacity 0.6s ease ${delay}s, transform 0.6s ease ${delay}s, border-color 0.25s, box-shadow 0.25s`,
-        boxShadow: `0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.12), ${hovered ? `0 8px 32px ${bgColor}` : `0 0 18px -6px ${bgColor}`}`,
-        cursor: 'default',
-      }}
-    >
-      <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.4 }} />
-      <div className="relative" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color }}>{label}</p>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-          backgroundColor: bgColor, border: `1px solid ${borderColor}`, boxShadow: `0 0 14px -3px ${color}`,
-        }}>
-          {icon}
-        </div>
-      </div>
-      <p className="relative" style={{ fontSize: 36, fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-0.02em', textShadow: `0 0 24px ${bgColor}` }}>
-        {prefix}{displayVal}{suffix}
-      </p>
-    </div>
-  );
 }
 
 /* ── featured banner (Witness) ───────────────────────────── */
@@ -426,13 +356,6 @@ export default function Dashboard() {
   const initials = (session.user.name || session.user.email || 'P')
     .split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
-  const statCards = [
-    { label: 'Puzzles Solved', value: stats?.totalPuzzlesSolved ?? 0, icon: '🧩', color: '#FF4FA3', bgColor: 'rgba(255,79,163,0.12)', borderColor: 'rgba(255,79,163,0.35)', animate: true },
-    { label: 'Total Points',   value: stats?.totalPoints ?? 0,        icon: '⚡', color: '#FFC93C', bgColor: 'rgba(255,201,60,0.10)',  borderColor: 'rgba(255,201,60,0.32)',  animate: true },
-    { label: 'Active Teams',   value: stats?.currentTeams ?? 0,       icon: '👥', color: '#8B3DFF', bgColor: 'rgba(139,61,255,0.10)', borderColor: 'rgba(139,61,255,0.30)', animate: true },
-    { label: 'Global Rank',    value: stats?.rank ? `#${stats.rank}` : 'Unranked', icon: '🏆', color: '#E8934A', bgColor: 'rgba(232,147,74,0.10)', borderColor: 'rgba(232,147,74,0.30)', animate: false },
-  ];
-
   const adminCards = [
     { href: '/admin/analytics',  icon: '📊', title: 'Analytics',         desc: 'View platform statistics and puzzle analytics.',         accent: 'teal' as const },
     { href: '/admin/puzzles',    icon: '➕', title: 'Create Puzzle',     desc: 'Add new puzzles to the platform.',                       accent: 'muted' as const },
@@ -471,12 +394,13 @@ export default function Dashboard() {
           {/* ── Featured puzzle hero banner ─────────────────── */}
           <div id="tour-featured"><FeaturedBanner visible={mounted} /></div>
 
-          {/* ── Stat cards ──────────────────────────────────── */}
-          <div id="tour-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 48 }}>
-            {statCards.map((s, i) => (
-              <StatCard key={i} {...s} delay={0.08 + i * 0.1} visible={mounted} />
-            ))}
-          </div>
+          {/* ── Stat strip ───────────────────────────────────── */}
+          <DashboardStatsStrip
+            puzzlesSolved={stats?.totalPuzzlesSolved ?? 0}
+            totalPoints={stats?.totalPoints ?? 0}
+            activeTeams={stats?.currentTeams ?? 0}
+            rank={stats?.rank ?? null}
+          />
 
           {/* ── Referral widget ─────────────────────────── */}
           {referral && (
