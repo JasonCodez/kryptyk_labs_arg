@@ -2760,9 +2760,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     finalHandoffRef.current = false;
     frameFadeStartRef.current = null;
     setShowFrame(false);
-    startTimeRef.current = Date.now();
-    savedElapsedRef.current = 0;
-    setElapsedSeconds(0);
+    // Deliberately leave startTimeRef/elapsedSeconds untouched — "Reset Puzzle" clears the piece
+    // arrangement only (per the reset dialog's own copy: "Every piece will return to its initial
+    // tray position"), not elapsed time. The stopwatch keeps counting straight through the reset.
     setCompletionError("");
     setSelectedGroupId(null);
     setPieces(fresh.pieces);
