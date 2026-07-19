@@ -133,6 +133,22 @@ for (const { viewport, size } of mobileCases) {
   });
 }
 
+test("15x15 board uses nearly the full 320px width with a small edge margin", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 }); await authenticate(page); await installRoutes(page, 15); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  const dimensions = await page.evaluate(() => ({ width: innerWidth, docWidth: document.documentElement.scrollWidth, docHeight: document.documentElement.scrollHeight, innerHeight }));
+  expect(dimensions.docWidth).toBeLessThanOrEqual(dimensions.width + 1);
+  expect(dimensions.docHeight).toBeLessThanOrEqual(dimensions.innerHeight + 1);
+  const boardBox = await page.locator(".word-search-board").boundingBox(); expect(boardBox).not.toBeNull();
+  expect(boardBox!.width).toBeGreaterThanOrEqual(280);
+  expect(boardBox!.width).toBeLessThanOrEqual(dimensions.width);
+  expect(boardBox!.x).toBeGreaterThanOrEqual(8);
+  expect(dimensions.width - (boardBox!.x + boardBox!.width)).toBeGreaterThanOrEqual(8);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"]')).toHaveText("C");
+  await expect(page.locator(".word-search-word-dock:visible,.word-search-desktop-list:visible")).toBeVisible();
+  await expect(page.locator(".word-search-hint-button:visible")).toBeVisible();
+});
+
 test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, and hint work", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const state = await installRoutes(page, 15); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });

@@ -225,10 +225,17 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     const board = boardRef.current;
     const viewport = viewportRef.current;
     if (!board || !viewport || !size) return;
-    const available = Math.max(180, Math.min(viewport.clientWidth, viewport.clientHeight || viewport.clientWidth));
     const gap = size >= 18 ? 1 : 2;
-    const padding = 12;
-    const cell = Math.max(size > 18 ? 24 : 14, Math.floor((available - padding * 2 - gap * (size - 1)) / size));
+    let cell: number;
+    if (typeof window !== "undefined" && window.innerWidth < 540) {
+      const boardChrome = 6 + 6 + 1 + 1; // board's left/right padding + left/right border
+      const available = Math.max(180, viewport.clientWidth);
+      cell = Math.max(12, Math.floor((available - boardChrome - gap * (size - 1)) / size));
+    } else {
+      const available = Math.max(180, Math.min(viewport.clientWidth, viewport.clientHeight || viewport.clientWidth));
+      const padding = 12;
+      cell = Math.max(size > 18 ? 24 : 14, Math.floor((available - padding * 2 - gap * (size - 1)) / size));
+    }
     board.style.setProperty("--word-search-cell", `${cell}px`);
     board.style.setProperty("--word-search-gap", `${gap}px`);
     const cells = new Map<string, DOMRect>();
