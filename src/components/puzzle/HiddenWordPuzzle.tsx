@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
 import HiddenWordInstructionsModal from "./HiddenWordInstructionsModal";
 import HiddenWordRoundStatus from "./HiddenWordRoundStatus";
+import HiddenWordHintControl from "./HiddenWordHintControl";
 import { HIDDEN_WORD_RESULT_VISUALS } from "@/lib/hiddenWordVisuals";
 import { isHapticsEnabled } from "@/lib/juice";
 import {
@@ -1023,44 +1024,14 @@ export default function HiddenWordPuzzle({
         )}
         {showHints && gameStatus === "playing" && (
           <div className="mt-3 flex flex-col items-center gap-2">
-            {/* Token-gated letter reveal */}
-            {hintLevel === 0 && (
-              <>
-                <button
-                  onClick={useHint}
-                  disabled={hintLoading || hintTokens < 1}
-                  className="px-4 py-1.5 rounded-full text-sm font-semibold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    background: hintTokens < 1 ? "rgba(255,107,107,0.1)" : "rgba(56,145,166,0.15)",
-                    border: `1px solid ${hintTokens < 1 ? "rgba(255,107,107,0.5)" : "rgba(56,145,166,0.4)"}`,
-                    color: hintTokens < 1 ? "#FF6B6B" : "#3891A6",
-                  }}
-                  title={hintTokens < 1 ? "No hint tokens — purchase from the Store" : `Use 1 hint token (${hintTokens} remaining)`}
-                >
-                  {hintLoading ? "..." : hintTokens < 1 ? "🔤 No Hint Tokens" : `🔤 Reveal a Letter (${hintTokens} token${hintTokens !== 1 ? "s" : ""})`}
-                </button>
-                {hintTokens < 1 && (
-                  <a
-                    href="/store"
-                    className="text-xs font-semibold underline transition-opacity hover:opacity-80"
-                    style={{ color: "#FDE74C" }}
-                  >
-                    Buy tokens →
-                  </a>
-                )}
-              </>
-            )}
-            {/* Letter revealed */}
-            {hintLevel >= 1 && hintReveal && (
-              <p className="text-sm" style={{ color: "#94a3b8" }}>
-                Letter at position{" "}
-                <span className="font-bold" style={{ color: "#3891A6" }}>{hintReveal.position + 1}</span>{" "}is{" "}
-                <span className="font-bold text-lg" style={{ color: "#ffffff" }}>{hintReveal.letter}</span>
-              </p>
-            )}
-            {hintLevel >= 1 && (
-              <p className="text-xs" style={{ color: "#64748b" }}>No more hints available</p>
-            )}
+            <HiddenWordHintControl
+              tokens={hintTokens}
+              loading={hintLoading}
+              used={hintLevel >= 1}
+              revealedPosition={hintReveal?.position}
+              revealedLetter={hintReveal?.letter}
+              onReveal={useHint}
+            />
           </div>
         )}      </div>      </div>
       {/* â”€â”€ All animations â”€â”€ */}

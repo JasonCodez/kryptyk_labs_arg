@@ -8,12 +8,12 @@ afterEach(cleanup);
 describe("CatalogSkipControl", () => {
   it("shows singular token text", () => {
     render(<CatalogSkipControl tokens={1} skipping={false} onSkip={jest.fn()} />);
-    expect(screen.getByText("1 token available")).toBeTruthy();
+    expect(screen.getByText("1 token")).toBeTruthy();
   });
 
   it("shows plural token text", () => {
     render(<CatalogSkipControl tokens={29} skipping={false} onSkip={jest.fn()} />);
-    expect(screen.getByText("29 tokens available")).toBeTruthy();
+    expect(screen.getByText("29 tokens")).toBeTruthy();
   });
 
   it("calls onSkip when clicked", () => {
@@ -60,6 +60,28 @@ describe("CatalogSkipControl", () => {
     const { container } = render(<CatalogSkipControl tokens={0} skipping={false} onSkip={jest.fn()} />);
     const html = container.innerHTML.toLowerCase();
     for (const legacy of ["8b3dff", "ff4fa3", "purple", "magenta", "pink", "139,61,255", "255,79,163", "139,92,246", "167,139,250"]) {
+      expect(html).not.toContain(legacy);
+    }
+  });
+
+  it("contains no GameButton classes or gloss overlay", () => {
+    const { container } = render(<CatalogSkipControl tokens={2} skipping={false} onSkip={jest.fn()} />);
+    expect(container.innerHTML).not.toMatch(/game-btn--/);
+    expect(container.querySelector(".game-gloss-overlay")).toBeNull();
+  });
+
+  it("contains no gold or yellow styling when tokens are available", () => {
+    const { container } = render(<CatalogSkipControl tokens={2} skipping={false} onSkip={jest.fn()} />);
+    const html = container.innerHTML.toLowerCase();
+    for (const legacy of ["fde74c", "fed007", "ffe55c", "fdae03", "gold", "yellow"]) {
+      expect(html).not.toContain(legacy);
+    }
+  });
+
+  it("contains no gold or yellow styling with zero tokens", () => {
+    const { container } = render(<CatalogSkipControl tokens={0} skipping={false} onSkip={jest.fn()} />);
+    const html = container.innerHTML.toLowerCase();
+    for (const legacy of ["fde74c", "fed007", "ffe55c", "fdae03", "gold", "yellow"]) {
       expect(html).not.toContain(legacy);
     }
   });

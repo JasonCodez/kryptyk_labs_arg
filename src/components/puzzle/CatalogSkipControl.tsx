@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import GameButton from "@/components/game-ui/GameButton";
 
 export interface CatalogSkipControlProps {
   /** Remaining skip tokens for this puzzle. */
@@ -24,42 +23,48 @@ function IconSkipForward({ color }: { color: string }) {
 /**
  * Reusable Skip control for the catalog puzzle detail page. Presentational
  * only — the page owns the skip token count, in-flight state, and API call.
+ * Deliberately quiet: this is a utility action, not a reward/premium CTA.
  */
 export default function CatalogSkipControl({ tokens, skipping, onSkip }: CatalogSkipControlProps) {
   if (tokens < 1) {
     return (
       <Link
         href="/store"
-        className="inline-flex items-center justify-center gap-2 px-4 rounded-2xl text-sm font-extrabold uppercase tracking-wide"
+        className="inline-flex items-center justify-center gap-2 px-4 rounded-lg text-sm font-semibold"
         style={{
           minHeight: 44,
-          color: "var(--pw-brand-secondary)",
-          border: "1px solid color-mix(in srgb, var(--pw-brand-secondary) 45%, transparent)",
-          background: "color-mix(in srgb, var(--pw-brand-secondary) 10%, transparent)",
+          color: "var(--pw-text-primary)",
+          border: "1px solid var(--pw-border-default)",
+          background: "color-mix(in srgb, var(--pw-surface-2) 82%, transparent)",
         }}
       >
-        <IconSkipForward color="var(--pw-brand-secondary)" />
+        <IconSkipForward color="var(--pw-text-secondary)" />
         Get Skip Tokens
       </Link>
     );
   }
 
   const label = skipping ? "Skipping…" : "Skip Puzzle";
-  const tokenText = `${tokens} token${tokens !== 1 ? "s" : ""} available`;
+  const tokenText = `${tokens} token${tokens !== 1 ? "s" : ""}`;
 
   return (
-    <GameButton
+    <button
       type="button"
-      variant="secondary"
-      size="sm"
       onClick={onSkip}
       disabled={skipping}
-      icon={<IconSkipForward color="currentColor" />}
+      className="inline-flex items-center justify-center gap-2 px-4 rounded-lg text-sm font-semibold transition-opacity active:opacity-70 disabled:opacity-50 disabled:cursor-not-allowed"
+      style={{
+        minHeight: 44,
+        color: "var(--pw-text-primary)",
+        border: "1px solid var(--pw-border-default)",
+        background: "color-mix(in srgb, var(--pw-surface-2) 82%, transparent)",
+      }}
     >
-      <span className="flex flex-col items-start leading-tight normal-case">
+      <IconSkipForward color="var(--pw-text-secondary)" />
+      <span className="flex flex-col items-start leading-tight">
         <span>{label}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.75 }}>{tokenText}</span>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--pw-text-secondary)" }}>{tokenText}</span>
       </span>
-    </GameButton>
+    </button>
   );
 }
