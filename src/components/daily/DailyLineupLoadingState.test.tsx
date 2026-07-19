@@ -58,4 +58,13 @@ describe("DailyLineupLoadingState", () => {
     );
     expect(animated).toHaveLength(0);
   });
+
+  it("grid uses correct responsive breakpoints", () => {
+    const { container } = render(<DailyLineupLoadingState />);
+    const gridContainer = container.querySelector(".grid");
+    const classNames = gridContainer?.className || "";
+    expect(classNames).toContain("min-[430px]:grid-cols-2");
+    expect(classNames).toContain("min-[981px]:grid-cols-3");
+    expect(classNames).not.toContain("md:grid-cols-3");
+  });
 });

@@ -283,7 +283,7 @@ function PuzzleRow({
 
 /**
  * Compact mobile-first Daily Puzzle Lineup replacing the six card grid. One row
- * per puzzle at 320px; two columns at 430px+, three at md+. Preserves all game
+ * per puzzle at 320px; two columns at 430px+, three at 981px+. Preserves all game
  * state, auth requirements, and day/streak tracking.
  */
 export default function DailyPuzzleLineup({
@@ -309,7 +309,7 @@ export default function DailyPuzzleLineup({
         Today&rsquo;s Challenges
       </h2>
 
-      <div className="grid gap-2.5 grid-cols-1 min-[430px]:grid-cols-2 md:grid-cols-3">
+      <div className="grid gap-2.5 grid-cols-1 min-[430px]:grid-cols-2 min-[981px]:grid-cols-3">
         {PUZZLES.map((puzzle) => {
           const entry = summary[puzzle.key];
           return (
