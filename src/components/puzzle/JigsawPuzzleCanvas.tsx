@@ -2708,8 +2708,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // "rotate back" overlay instead of trying to keep a separate landscape layout in sync with the
   // board/canvas measurement and DPR math. Tracked live (not just at mount) since the device can
   // rotate mid-session.
+  //
+  // The max-width clause is required, not cosmetic: isTouchDevice is also true on touchscreen
+  // laptops/desktops (pointer:coarse or "ontouchstart" in window can both report true on hybrid
+  // Windows devices even when the user is on a full desktop-width window), and a desktop browser
+  // window is essentially always "landscape" by aspect ratio — without this, those users would
+  // see the lock overlay permanently. 1031px matches this app's existing mobile/desktop
+  // breakpoint (desktop layouts elsewhere start at min-width:1032px).
   useEffect(() => {
-    const mql = window.matchMedia("(orientation: landscape)");
+    const mql = window.matchMedia("(orientation: landscape) and (max-width: 1031px)");
     setIsLandscape(mql.matches);
     const onChange = (event: MediaQueryListEvent) => setIsLandscape(event.matches);
     mql.addEventListener("change", onChange);
