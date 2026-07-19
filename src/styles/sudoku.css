@@ -55,6 +55,10 @@
   .sudoku-game-surface { grid-template-rows: auto auto; align-content: start; gap: 8px; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
   .sudoku-board-region { align-items: flex-start; }
   .sudoku-controls { flex-shrink: 0; }
+  .sudoku-validation-row { grid-template-columns: 1fr; grid-template-rows: auto auto; width: 100%; gap: 6px; }
+  .sudoku-validation-row p { max-height: none; overflow: visible; text-align: center; min-height: 1.2em; color: var(--pw-text-secondary); }
+  .sudoku-validation-row button { width: 100%; min-width: 0; min-height: 44px; background: var(--pw-brand-secondary); color: #071016; border: 1px solid rgba(7,16,22,.4); }
+  .sudoku-validation-row button:disabled { opacity: 1; background: #0e2338; color: var(--pw-text-secondary); border-color: var(--pw-border-default); cursor: not-allowed; }
 }
 @media (min-width: 540px) { .sudoku-number-pad { grid-template-columns: repeat(9, 1fr); }.sudoku-grid { width: min(100%, calc(100dvh - 280px), 620px); } }
 @media (orientation: landscape) and (max-height: 600px) and (min-width: 650px) {
