@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import DailyIntroCard from "@/components/onboarding/DailyIntroCard";
 
 type DailySummaryEntry = {
   dayNumber: number;
@@ -74,8 +75,11 @@ function cardShellStyle(role: CardRole, state: "available" | "completed" | "dim"
 }
 
 export default function DailyHubPage() {
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const isAuthenticated = sessionStatus === "authenticated";
+  const onboardingUserId = session?.user
+    ? (session.user as { id?: string }).id || session.user.email || "guest"
+    : null;
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState("00:00:00");
@@ -135,6 +139,8 @@ export default function DailyHubPage() {
             Resets in {countdown}
           </p>
         </div>
+
+        {isAuthenticated && onboardingUserId && <DailyIntroCard userId={onboardingUserId} />}
 
         {loading ? (
           <div className="flex items-center gap-2 mt-16" role="status" style={{ color: "var(--pw-brand-primary)" }}>
