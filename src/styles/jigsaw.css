@@ -46,5 +46,27 @@ html:has(.pw-jigsaw-shell-content),body:has(.pw-jigsaw-shell-content) { overflow
 .jigsaw-quick-tip-fullscreen svg { color:var(--pw-info,#4FB8FF); }
 .jigsaw-quick-tip-dismiss { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; border:1px solid var(--pw-border-default,#2C3856); border-radius:10px; background:transparent; color:var(--pw-text-secondary,#A9B4CC); flex-shrink:0; }
 .jigsaw-quick-tip-fullscreen:focus-visible,.jigsaw-quick-tip-dismiss:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
+.jigsaw-help { display:flex; flex-direction:column; gap:14px; margin-top:14px; }
+.jigsaw-help-intro { display:flex; flex-direction:column; gap:4px; }
+.jigsaw-help-eyebrow { font-size:.68rem; font-weight:800; letter-spacing:.1em; color:var(--pw-brand-accent,#F97102); }
+.jigsaw-help-heading { margin:0; font-size:1rem; font-weight:800; color:var(--pw-text-primary,#EEF2FA); }
+p.jigsaw-help-lead { margin:0; font-size:.85rem; line-height:1.45; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-help-steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.jigsaw-help-step { display:flex; align-items:flex-start; gap:10px; padding:10px; border:1px solid var(--pw-border-default,#2C3856); border-radius:12px; background:var(--pw-surface-2,#1A2336); }
+.jigsaw-help-step > svg { flex-shrink:0; color:var(--pw-info,#4FB8FF); }
+.jigsaw-help-step-body { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.jigsaw-help-step-kicker { font-size:.6rem; font-weight:800; letter-spacing:.08em; color:var(--pw-info,#4FB8FF); }
+.jigsaw-help-step-title { font-size:.85rem; font-weight:700; color:var(--pw-text-primary,#EEF2FA); }
+.jigsaw-help-step-copy { font-size:.78rem; line-height:1.4; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-help-section-title { display:block; font-size:.68rem; font-weight:800; letter-spacing:.1em; color:var(--pw-text-secondary,#A9B4CC); margin-bottom:8px; }
+.jigsaw-help-tools { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.jigsaw-help-tool { display:flex; align-items:flex-start; gap:8px; }
+.jigsaw-help-tool > svg { flex-shrink:0; margin-top:2px; color:var(--pw-info,#4FB8FF); }
+.jigsaw-help-tool-body { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.jigsaw-help-tool-title { font-size:.82rem; font-weight:700; color:var(--pw-text-primary,#EEF2FA); }
+.jigsaw-help-tool-copy { font-size:.78rem; line-height:1.4; color:var(--pw-text-secondary,#A9B4CC); }
+p.jigsaw-help-keys-copy { margin:0; font-size:.78rem; line-height:1.4; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-help-primary { display:flex; align-items:center; justify-content:center; min-height:44px; width:100%; box-sizing:border-box; border:none; border-radius:12px; background:var(--pw-brand-primary,#03ACF4); color:var(--pw-text-on-primary,#0B1029); font-weight:800; font-size:.9rem; }
+.jigsaw-help-primary:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root:not([data-fullscreen="true"]) { flex-direction:row; } .jigsaw-board-area { flex:1 1 68%; align-items:center; padding-top:0; } .jigsaw-tray-wrap { flex:0 0 min(32vw,280px); height:100%; } .jigsaw-tray { height:100%!important; flex-direction:column; overflow-x:hidden; overflow-y:auto; border-top:0; border-left:1px solid rgba(255,255,255,.1); } }
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root[data-display-mode="app-shell"] { display:grid; grid-template-columns:minmax(0,1fr) min(32vw,280px); grid-template-rows:auto minmax(0,1fr); } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-board-area { grid-column:1; grid-row:1 / span 2; } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-app-control-bar { grid-column:2; grid-row:1; border-top:0; border-left:1px solid rgba(255,255,255,.1); } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-tray-wrap { grid-column:2; grid-row:2; min-height:0; width:auto; height:auto; } }
