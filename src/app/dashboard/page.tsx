@@ -610,9 +610,7 @@ export default function Dashboard() {
       </main>
 
       <WelcomeModal
-        userName={session.user.name?.split(' ')[0] || 'Solver'}
         userId={(session.user as { id?: string }).id || session.user.email || 'guest'}
-        onTakeTour={() => setShowOnboarding(true)}
       />
 
       {showOnboarding && (
