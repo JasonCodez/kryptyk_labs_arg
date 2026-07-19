@@ -142,14 +142,14 @@
 }
 
 .crossword-utility-row {
-  min-height: 38px;
+  min-height: 44px;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.crossword-utility-row > button {
-  min-height: 36px;
+.crossword-utility-row > button,
+.crossword-utility-row > div {
   margin-top: 0 !important;
 }
 

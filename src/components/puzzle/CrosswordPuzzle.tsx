@@ -10,6 +10,7 @@ import { juice } from "@/lib/juice";
 import ActiveClueDock from "@/components/puzzle/crossword/ActiveClueDock";
 import CrosswordKeyboard from "@/components/puzzle/crossword/CrosswordKeyboard";
 import CrosswordClueSheet from "@/components/puzzle/crossword/CrosswordClueSheet";
+import CrosswordHintControl from "@/components/puzzle/crossword/CrosswordHintControl";
 import GameButton from "@/components/game-ui/GameButton";
 import JuicyText from "@/components/game-ui/JuicyText";
 
@@ -2568,15 +2569,12 @@ const CrosswordPuzzle = forwardRef<CrosswordPuzzleHandle, Props>(function Crossw
               {/* Hint button */}
               <div className="crossword-utility-row">
               {gameStatus === "playing" && (
-                <GameButton
-                  onClick={useHintToken}
-                  disabled={hintLoading || hintTokens < 1 || !cursorCell}
-                  variant={hintTokens < 1 ? "ember" : "gold"}
-                  size="sm"
-                  className="mt-1"
-                >
-                  {hintLoading ? "..." : hintTokens < 1 ? "🔤 No Hint Tokens" : `🔤 Reveal Letter (${hintTokens} token${hintTokens !== 1 ? "s" : ""})`}
-                </GameButton>
+                <CrosswordHintControl
+                  tokens={hintTokens}
+                  loading={hintLoading}
+                  canReveal={Boolean(cursorCell)}
+                  onReveal={useHintToken}
+                />
               )}
               </div>
 
