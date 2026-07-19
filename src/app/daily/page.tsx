@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import DailyIntroCard from "@/components/onboarding/DailyIntroCard";
 import DailyHubHeader from "@/components/daily/DailyHubHeader";
 import DailyPuzzleLineup, { type DailySummary } from "@/components/daily/DailyPuzzleLineup";
+import DailyLineupLoadingState from "@/components/daily/DailyLineupLoadingState";
 
 function getCountdown(): string {
   const now = new Date();
@@ -82,10 +83,7 @@ export default function DailyHubPage() {
         {isAuthenticated && onboardingUserId && <DailyIntroCard userId={onboardingUserId} />}
 
         {loading ? (
-          <div className="flex items-center gap-2 mt-16" role="status" style={{ color: "var(--pw-brand-primary)" }}>
-            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden />
-            <span className="text-sm">Loading today&apos;s puzzles…</span>
-          </div>
+          <DailyLineupLoadingState />
         ) : (
           <DailyPuzzleLineup
             summary={summary}

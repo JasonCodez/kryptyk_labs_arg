@@ -50,7 +50,7 @@ describe("Daily hub", () => {
   it("shows a loading status before the summary resolves", () => {
     global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
     render(<DailyHubPage />);
-    expect(screen.getByRole("status").textContent).toMatch(/loading today's puzzles/i);
+    expect(screen.getByRole("status").textContent).toMatch(/loading today.*puzzles/i);
     expect(screen.getByText(/next reset/i)).toBeTruthy();
   });
 
