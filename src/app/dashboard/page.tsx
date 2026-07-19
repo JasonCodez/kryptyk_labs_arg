@@ -7,6 +7,7 @@ import Link from 'next/link';
 import WelcomeModal from '@/components/WelcomeModal';
 import DashboardTour from '@/components/DashboardTour';
 import GameButton from '@/components/game-ui/GameButton';
+import StarterPathCard from '@/components/onboarding/StarterPathCard';
 
 interface UserStats {
   totalPuzzlesSolved: number;
@@ -418,6 +419,8 @@ export default function Dashboard() {
 
   if (!session?.user) return null;
 
+  const onboardingUserId = (session.user as { id?: string }).id || session.user.email || 'guest';
+
   const initials = (session.user.name || session.user.email || 'P')
     .split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
@@ -511,6 +514,9 @@ export default function Dashboard() {
             </div>
 
           </div>
+
+          {/* ── Starter Path onboarding progress ────────────── */}
+          <StarterPathCard userId={onboardingUserId} />
 
           {/* ── Featured puzzle hero banner ─────────────────── */}
           <div id="tour-featured"><FeaturedBanner visible={mounted} /></div>
@@ -609,9 +615,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      <WelcomeModal
-        userId={(session.user as { id?: string }).id || session.user.email || 'guest'}
-      />
+      <WelcomeModal userId={onboardingUserId} />
 
       {showOnboarding && (
         <DashboardTour onComplete={() => setShowOnboarding(false)} />
