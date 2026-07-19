@@ -1,6 +1,7 @@
 "use client";
 
 import Pressable from "@/components/juice/Pressable";
+import WordSearchHintControl from "@/components/puzzle/word-search/WordSearchHintControl";
 
 interface Props {
   hintTokens: number;
@@ -17,15 +18,7 @@ interface Props {
 export default function WordSearchControls({ hintTokens, hintPending, disabled, zoomed, canZoom, onHint, onZoomIn, onZoomOut, onResetZoom }: Props) {
   return (
     <div className="word-search-controls" aria-label="Word Trove controls">
-      <Pressable
-        type="button"
-        className="word-search-hint-button"
-        disabled={disabled || hintPending || hintTokens < 1}
-        onClick={onHint}
-        aria-busy={hintPending}
-      >
-        <span aria-hidden>💡</span> {hintPending ? "Finding…" : hintTokens < 1 ? "No hints" : `Hint (${hintTokens})`}
-      </Pressable>
+      <WordSearchHintControl tokens={hintTokens} pending={hintPending} disabled={disabled} onHint={onHint} />
       {canZoom && (
         <div className="word-search-zoom-controls" aria-label="Board zoom">
           <Pressable type="button" onClick={onZoomOut} aria-label="Zoom out">−</Pressable>
