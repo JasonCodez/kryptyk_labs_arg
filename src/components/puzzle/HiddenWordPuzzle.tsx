@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePuzzleSkin } from "@/hooks/usePuzzleSkin";
+import HiddenWordInstructionsModal from "./HiddenWordInstructionsModal";
 import { isHapticsEnabled } from "@/lib/juice";
 import {
   getHiddenWordGrade,
@@ -115,97 +116,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-// â”€â”€â”€ Instructions Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-function InstructionsModal({ wordLength, maxGuesses, onClose }: { wordLength: number; maxGuesses: number; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.85)" }}>
-      <div
-        className="relative w-full max-w-md rounded-2xl p-6 text-white"
-        style={{
-          background: "linear-gradient(135deg, #040e0a 0%, #0c1a14 100%)",
-          border: "1px solid rgba(56,211,153,0.3)",
-          boxShadow: "0 0 40px rgba(56,211,153,0.15), 0 25px 50px rgba(0,0,0,0.6)",
-        }}
-      >
-        {/* Title */}
-        <div className="text-center mb-5">
-          <div className="text-4xl mb-2">⚡</div>
-          <h2 className="text-2xl font-black tracking-widest" style={{ color: "#38D399" }}>HOW TO PLAY</h2>
-          <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>Find the hidden {wordLength}-letter word.</p>
-        </div>
-
-        {/* Rules */}
-        <ul className="space-y-3 text-sm mb-6">
-          <li className="flex items-start gap-3">
-            <span className="text-lg">🎯</span>
-            <span>You have <strong className="text-white">{maxGuesses} guesses</strong> to find the {wordLength}-letter word.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <span className="text-lg">⌨️</span>
-            <span>Type a word and press <strong className="text-white">ENTER</strong>. Each tile flips to reveal intel.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <span className="text-lg">📊</span>
-            <span>Solve faster for a better <strong className="text-white">grade</strong> — S, A, B, C, or D.</span>
-          </li>
-        </ul>
-
-        {/* Color examples */}
-        <div className="space-y-3 mb-6">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#9ca3af" }}>Tile intel codes:</p>
-
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg text-black"
-              style={{ position: "relative", background: COLORS.correct.bg, boxShadow: `0 0 12px ${COLORS.correct.glow}` }}>
-              C
-              <span aria-hidden="true" style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: "50%", background: COLORS.correct.text }} />
-            </div>
-            <span className="text-sm">
-              ✅ <strong className="text-white">CORRECT</strong>
-              <span style={{ color: "#9ca3af" }}> — right letter, right position</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg text-black"
-              style={{ position: "relative", background: COLORS.present.bg, boxShadow: `0 0 12px ${COLORS.present.glow}` }}>
-              P
-              <span aria-hidden="true" style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: "50%", background: "transparent", border: `1.5px solid ${COLORS.present.text}` }} />
-            </div>
-            <span className="text-sm">
-              🔍 <strong className="text-white">CLOSE</strong>
-              <span style={{ color: "#9ca3af" }}> — letter exists, wrong position</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg"
-              style={{ background: COLORS.absent.bg, border: `2px solid ${COLORS.absent.border}`, color: "#9ca3af" }}>X</div>
-            <span className="text-sm">
-              ❌ <strong className="text-white">COLD</strong>
-              <span style={{ color: "#9ca3af" }}> — letter not in the word</span>
-            </span>
-          </div>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="w-full py-3 rounded-xl font-black text-lg tracking-widest transition-all duration-150 active:scale-95"
-          style={{
-            background: "linear-gradient(135deg, #10b981, #38D399)",
-            boxShadow: "0 0 20px rgba(56,211,153,0.4)",
-            color: "#020202",
-          }}
-        >
-          START PLAYING ⚡
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function HiddenWordPuzzle({
   puzzleId,
@@ -731,7 +642,7 @@ export default function HiddenWordPuzzle({
     <>
       {/* Instructions modal */}
       {showInstructions && (
-        <InstructionsModal
+        <HiddenWordInstructionsModal
           wordLength={wordLength}
           maxGuesses={maxGuesses}
           onClose={() => setShowInstructions(false)}
