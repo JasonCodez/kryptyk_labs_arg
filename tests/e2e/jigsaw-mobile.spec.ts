@@ -208,12 +208,13 @@ for (const viewport of [
     expect(headerBox).not.toBeNull();
     expect(canvasBox!.y - (headerBox!.y + headerBox!.height)).toBeLessThanOrEqual(20);
 
-    // The card itself must not reserve dead vertical space beyond header+board+tray — i.e. no
-    // large unused region below/around the actual playable content.
+    // Board area is now capped to a square (no longer stretched to consume all remaining card
+    // height below 540px — see the mobile jigsaw-board-area rule in jigsaw.css), so the tray
+    // must still sit directly beneath it even though the card itself may now be taller than
+    // header+board+tray on a tall viewport; that leftover space is expected, not a regression.
     const trayBox = await page.locator(".jigsaw-tray").boundingBox();
     expect(trayBox).not.toBeNull();
     expect(trayBox!.y).toBeGreaterThanOrEqual(canvasBox!.y + canvasBox!.height - 1); // tray directly beneath the board
-    expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(trayBox!.y + trayBox!.height + 24);
 
     await expect(page.locator(".jigsaw-tray")).toBeVisible();
 
@@ -553,4 +554,36 @@ test("Warz mounts without restoring or writing Catalog and Daily progress", asyn
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
+});
+
+test("mobile coach sits between the board and tray at 320x710 on a touch device, and dismissing it pulls the tray up", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 320, height: 710 }, hasTouch: true });
+  const page = await context.newPage();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await authenticate(page);
+  await installDailyFixture(page);
+  await openDaily(page);
+
+  const boardBox = await page.locator(".jigsaw-board-area").boundingBox();
+  const coachBox = await page.locator(".jigsaw-mobile-coach").boundingBox();
+  const trayBox = await page.locator(".jigsaw-tray").boundingBox();
+  expect(boardBox).not.toBeNull(); expect(coachBox).not.toBeNull(); expect(trayBox).not.toBeNull();
+
+  // Board → coach → tray, top to bottom, with no overlap between any of them.
+  expect(coachBox!.y).toBeGreaterThanOrEqual(boardBox!.y + boardBox!.height - 1);
+  expect(trayBox!.y).toBeGreaterThanOrEqual(coachBox!.y + coachBox!.height - 1);
+  expect(trayBox!.height).toBeGreaterThanOrEqual(136);
+
+  const dimensions = await page.evaluate(() => ({ viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth }));
+  expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
+
+  // Dismissing the coach removes it and pulls the tray directly beneath the board.
+  await page.getByRole("button", { name: "Dismiss jigsaw tip" }).click();
+  await expect(page.locator(".jigsaw-mobile-coach")).toHaveCount(0);
+  const boardBoxAfter = await page.locator(".jigsaw-board-area").boundingBox();
+  const trayBoxAfter = await page.locator(".jigsaw-tray").boundingBox();
+  expect(trayBoxAfter!.y).toBeGreaterThanOrEqual(boardBoxAfter!.y + boardBoxAfter!.height - 1);
+  expect(trayBoxAfter!.y).toBeLessThanOrEqual(boardBoxAfter!.y + boardBoxAfter!.height + 20);
+
+  await context.close();
 });

@@ -29,6 +29,7 @@ import React, {
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
+import JigsawMobileCoach from "./jigsaw/JigsawMobileCoach";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
 import JigsawPreviewDialog from "./jigsaw/JigsawPreviewDialog";
 import JigsawResetDialog from "./jigsaw/JigsawResetDialog";
@@ -2960,31 +2961,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </div>
         )}
 
-        {/* Mobile hint — a transient, dismissible pill introducing the tray/drag interaction on
-            touch devices. Allowed to wrap (rather than a strict single line) and capped to the
-            viewport width so it can't overflow off narrower screens. */}
-        {isTouchDevice && !isFullscreen && !mobileHintDismissed && !isSolved && (
-          <div className="jigsaw-mobile-hint" style={{ position: "absolute", bottom: 58, left: "50%", transform: "translateX(-50%)",
-                        zIndex: 9100, display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8,
-                        background: "rgba(10,20,40,0.88)", color: "white", fontSize: 12, fontWeight: 500,
-                        padding: "7px 12px", borderRadius: 22, boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        maxWidth: "calc(100vw - 24px)", textAlign: "center" }}>
-            <span>Swipe the tray to browse · drag a piece up to pick it up</span>
-            <button type="button" onClick={() => setIsFullscreen(true)}
-                    style={{ background: "rgba(99,102,241,0.9)", border: "none", color: "white",
-                             padding: "3px 10px", borderRadius: 12, cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
-              Fullscreen
-            </button>
-            <button type="button" onClick={() => setMobileHintDismissed(true)}
-                    aria-label="Dismiss"
-                    style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)",
-                             cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}>
-              ×
-            </button>
-          </div>
-        )}
-
         {/* Preview button */}
         {false && imageOk && effectiveUrl && !isSolved && (
           <button type="button" onClick={() => setShowPreview(v => !v)}
@@ -3087,6 +3063,16 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         </div>
         )}
       </div>
+
+      {/* Mobile coach — a compact, dismissible tip introducing the tray/drag interaction on
+          touch devices. Sits between the board and the tray as its own flex row rather than
+          floating over the canvas. */}
+      {isTouchDevice && !isFullscreen && !mobileHintDismissed && !isSolved && (
+        <JigsawMobileCoach
+          onFullscreen={() => setIsFullscreen(true)}
+          onDismiss={() => setMobileHintDismissed(true)}
+        />
+      )}
 
       {/* ── Tray strip ───────────────────────────────── */}
       {/* Fullscreen-only compact utility bar — Preview/Return/Reset/Fullscreen already live in
