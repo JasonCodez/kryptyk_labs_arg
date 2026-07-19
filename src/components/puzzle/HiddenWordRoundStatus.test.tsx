@@ -99,4 +99,33 @@ describe("HiddenWordRoundStatus", () => {
       expect(svg.getAttribute("focusable")).toBe("false");
     }
   });
+
+  it("uses var(--pw-info) for the word-length label", () => {
+    show({ wordLength: 5 });
+    const label = screen.getByText(/5 letters/i);
+    expect(label.style.color).toBe("var(--pw-info)");
+  });
+
+  it("uses var(--pw-text-primary) for the guesses label", () => {
+    show({ guessesUsed: 2, maxGuesses: 6 });
+    const label = screen.getByText(/2 \/ 6 guesses/i);
+    expect(label.style.color).toBe("var(--pw-text-primary)");
+  });
+
+  it("uses the info tokens for the Help icon and button", () => {
+    const { container } = show();
+    const button = screen.getByRole("button", { name: "How to play Hidden Word" });
+    expect(button.style.border).toContain("var(--pw-info-border)");
+    expect(button.style.background).toContain("var(--pw-info)");
+    const svg = container.querySelector("svg");
+    const path = svg?.querySelector("circle,path");
+    expect(path?.getAttribute("stroke") ?? path?.getAttribute("fill")).toBe("var(--pw-info)");
+  });
+
+  it("keeps the Help button at a 44px touch target", () => {
+    show();
+    const button = screen.getByRole("button", { name: "How to play Hidden Word" }) as HTMLButtonElement;
+    expect(button.style.width).toBe("44px");
+    expect(button.style.height).toBe("44px");
+  });
 });

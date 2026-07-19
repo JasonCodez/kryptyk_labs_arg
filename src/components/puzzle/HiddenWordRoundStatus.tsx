@@ -52,15 +52,15 @@ export default function HiddenWordRoundStatus({
         }}
       >
         <span
-          className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap"
-          style={{ color: "var(--skin-accent-active, #9ca3af)" }}
+          className="text-[11px] font-bold uppercase tracking-widest whitespace-nowrap"
+          style={{ color: "var(--pw-info)" }}
         >
           {wordLength} letters
         </span>
 
         <span
-          className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap"
-          style={{ color: "#e2e8f0" }}
+          className="text-[11px] font-bold uppercase tracking-widest whitespace-nowrap"
+          style={{ color: "var(--pw-text-primary)" }}
         >
           {guessesUsed} / {maxGuesses} guesses
         </span>
@@ -76,11 +76,11 @@ export default function HiddenWordRoundStatus({
               height: 44,
               minWidth: 44,
               minHeight: 44,
-              background: "rgba(148,163,184,0.15)",
-              border: "1px solid var(--skin-board-border, rgba(148,163,184,0.35))",
+              background: "color-mix(in srgb, var(--pw-info) 12%, transparent)",
+              border: "1px solid var(--pw-info-border)",
             }}
           >
-            <IconHelp color="var(--skin-accent-active, #9ca3af)" />
+            <IconHelp color="var(--pw-info)" />
           </button>
         )}
       </div>

@@ -1225,6 +1225,8 @@ export default function PuzzleDetailPage() {
                     <button type="button" key="report-bug" onClick={() => setShowHeaderBugReport(true)}>Report Bug</button>,
                   ]}
                 />
+          : puzzle.puzzleType === "word_crack"
+            ? <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} compact />
           : <PuzzleBugReportButton puzzleId={puzzleId} puzzleTitle={puzzle?.title ?? "This puzzle"} />}
       contentMode={puzzle.puzzleType === "jigsaw" || puzzle.puzzleType === "crossword" || puzzle.puzzleType === "anagram_blitz" || puzzle.puzzleType === "sudoku" || puzzle.puzzleType === "word_search" || puzzle.puzzleType === "gridlock_file" ? "fixed" : "scroll"}
       contentClassName={puzzle.puzzleType === "crossword"
