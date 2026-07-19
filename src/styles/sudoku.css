@@ -51,6 +51,11 @@
   body:has(.pw-sudoku-shell-content) { padding-bottom: 0; overflow: hidden; }
 }
 
+@media (max-width: 539px) {
+  .sudoku-game-surface { grid-template-rows: auto auto; align-content: start; gap: 8px; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .sudoku-board-region { align-items: flex-start; }
+  .sudoku-controls { flex-shrink: 0; }
+}
 @media (min-width: 540px) { .sudoku-number-pad { grid-template-columns: repeat(9, 1fr); }.sudoku-grid { width: min(100%, calc(100dvh - 280px), 620px); } }
 @media (orientation: landscape) and (max-height: 600px) and (min-width: 650px) {
   .sudoku-game-surface { grid-template-columns: minmax(0, 1fr) minmax(290px, .72fr); grid-template-rows: minmax(0, 1fr); gap: 12px; }
