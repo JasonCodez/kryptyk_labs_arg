@@ -12,6 +12,8 @@ import DashboardNavigationHub from '@/components/dashboard/DashboardNavigationHu
 import DashboardStatsStrip from '@/components/dashboard/DashboardStatsStrip';
 import DashboardFeaturedMission from '@/components/dashboard/DashboardFeaturedMission';
 import DashboardInviteCard from '@/components/dashboard/DashboardInviteCard';
+import DashboardPageShell from '@/components/dashboard/DashboardPageShell';
+import DashboardLoadingState from '@/components/dashboard/DashboardLoadingState';
 
 interface UserStats {
   totalPuzzlesSolved: number;
@@ -154,36 +156,7 @@ export default function Dashboard() {
 
   /* ── Loading skeleton ─────────────────────────────────── */
   if (status === 'loading' || loading) {
-    return (
-      <div style={{
-        background: 'radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26',
-        minHeight: '100vh',
-      }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 48px' }}>
-          {/* Header skeleton */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 48 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(139,61,255,0.12)', animation: 'pulse 1.5s ease-in-out infinite' }} />
-            <div>
-              <div style={{ width: 200, height: 22, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 10, animation: 'pulse 1.5s ease-in-out infinite' }} />
-              <div style={{ width: 140, height: 14, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite' }} />
-            </div>
-          </div>
-          {/* Stat skeleton */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 20, marginBottom: 48 }}>
-            {[0,1,2,3].map(i => (
-              <div key={i} style={{ height: 108, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', animation: `pulse 1.5s ease-in-out ${i * 0.1}s infinite` }} />
-            ))}
-          </div>
-          {/* Card skeleton */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 20 }}>
-            {[0,1,2,3,4,5].map(i => (
-              <div key={i} style={{ height: 160, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', animation: `pulse 1.5s ease-in-out ${i * 0.08}s infinite` }} />
-            ))}
-          </div>
-        </div>
-        <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-      </div>
-    );
+    return <DashboardLoadingState />;
   }
 
   if (!session?.user) return null;
@@ -203,17 +176,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <style>{`
-        @keyframes db-fade-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes db-glow { 0%,100%{box-shadow:0 0 0 0 rgba(139,61,255,0)} 50%{box-shadow:0 0 0 6px rgba(139,61,255,0)} }
-      `}</style>
-
-      <main style={{
-        background: 'radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26',
-        minHeight: '100vh',
-      }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '100px 16px 64px' }}>
-
+      <DashboardPageShell>
           {/* ── Player Hub command header ───────────────────── */}
           <DashboardCommandHeader
             displayName={session.user.name || 'Player'}
@@ -274,8 +237,7 @@ export default function Dashboard() {
             </div>
           )}
 
-        </div>
-      </main>
+      </DashboardPageShell>
 
       <WelcomeModal userId={onboardingUserId} />
 
