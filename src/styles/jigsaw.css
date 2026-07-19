@@ -24,6 +24,15 @@
 .jigsaw-control--reset svg { color:var(--pw-error-text,#FF7A7E); }
 .jigsaw-app-control-bar { flex:0 0 auto; display:flex; justify-content:center; padding:5px 10px; border-top:1px solid rgba(255,255,255,.1); background:#05070d; }
 .jigsaw-app-control-bar .jigsaw-controls { position:static; justify-content:center; max-width:none; padding:0; border:none; background:transparent; }
+.jigsaw-status-hud { position:absolute; top:10px; left:10px; z-index:200; display:flex; flex-direction:column; gap:6px; max-width:calc(100% - 20px); box-sizing:border-box; padding:6px 10px; border-radius:12px; border:1px solid var(--pw-border-default,#2C3856); background:rgba(10,20,40,.72); pointer-events:none; }
+.jigsaw-status-items { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.jigsaw-status-item { display:flex; align-items:center; gap:6px; }
+.jigsaw-status-icon { display:flex; color:var(--pw-info,#4FB8FF); flex-shrink:0; }
+.jigsaw-status-copy { display:flex; flex-direction:column; line-height:1.15; }
+.jigsaw-status-label { font-size:.58rem; font-weight:800; letter-spacing:.08em; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-status-value { font-size:.76rem; font-weight:700; color:var(--pw-text-primary,#EEF2FA); white-space:nowrap; }
+.jigsaw-status-progress { position:relative; height:4px; border-radius:3px; background:var(--pw-surface-2,#1A2336); overflow:hidden; }
+.jigsaw-status-progress-fill { height:100%; border-radius:3px; background:var(--pw-brand-primary,#03ACF4); transition:width .2s ease; }
 .jigsaw-dialog-layer { position:fixed; inset:0; z-index:15000; display:grid; place-items:center; padding:16px; background:rgba(0,0,0,.82); }
 .jigsaw-dialog { width:min(560px,100%); max-height:min(720px,calc(100dvh - 32px)); overflow:auto; border:1px solid rgba(255,255,255,.2); border-radius:18px; background:#0b1020; color:#fff; padding:18px; box-shadow:0 20px 60px #000; }
 .jigsaw-dialog header { display:flex; align-items:center; justify-content:space-between; gap:12px; }

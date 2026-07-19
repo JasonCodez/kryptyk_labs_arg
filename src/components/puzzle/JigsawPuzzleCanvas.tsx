@@ -29,6 +29,7 @@ import React, {
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
+import JigsawStatusHud from "./jigsaw/JigsawStatusHud";
 import JigsawQuickTip from "./jigsaw/JigsawQuickTip";
 import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
@@ -3072,26 +3073,12 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
             screen this corner is exactly where the post-completion modal (rating/XP, rendered
             by the parent page above this component) needs the space instead. */}
         {displayMode !== "app-shell" && !isSolved && (
-        <div style={{ position: "absolute", top: 10, left: 10, zIndex: 200,
-                      display: "flex", gap: 8, alignItems: "center", pointerEvents: "none" }}>
-          <div style={{ background: "rgba(0,0,0,0.55)", color: "rgba(255,255,255,0.86)", fontSize: 11,
-                        fontWeight: 700, padding: "4px 10px", borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.12)", letterSpacing: "0.02em" }}>
-            ⏱ {formatElapsed(elapsedSeconds)}
-          </div>
-          <div style={{ background: "rgba(0,0,0,0.55)", color: "rgba(255,255,255,0.8)", fontSize: 11,
-                        fontWeight: 600, padding: "4px 10px", borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.1)", letterSpacing: "0.02em" }}>
-            {pieces.filter(p => p.snapped).length}/{pieces.length} placed
-          </div>
-          {groupCount > 1 && (
-            <div style={{ background: "rgba(0,0,0,0.55)", color: "rgba(255,255,255,0.6)", fontSize: 11,
-                          fontWeight: 600, padding: "4px 10px", borderRadius: 12,
-                          border: "1px solid rgba(255,255,255,0.08)" }}>
-              {groupCount} groups
-            </div>
-          )}
-        </div>
+          <JigsawStatusHud
+            elapsedLabel={formatElapsed(elapsedSeconds)}
+            placedCount={pieces.filter(p => p.snapped).length}
+            totalCount={pieces.length}
+            groupCount={groupCount}
+          />
         )}
       </div>
 
