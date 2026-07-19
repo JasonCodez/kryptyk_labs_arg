@@ -51,6 +51,8 @@ import Pressable from "@/components/juice/Pressable";
 import { confettiBurstAt } from "@/components/juice/particles";
 import { normalizeAnagramConfig } from "@/lib/anagramConfig";
 import { useLibraryStarterPathCompletion } from "@/hooks/useLibraryStarterPathCompletion";
+import { loadOnboardingState } from "@/lib/onboarding";
+import LibraryCompletionHandoff, { isLibraryCompletionHandoffEligible } from "@/components/onboarding/LibraryCompletionHandoff";
 
 interface XpModalData {
   xpGained: number;
@@ -283,6 +285,7 @@ export default function PuzzleDetailPage() {
   const [xpModalData, setXpModalData] = useState<XpModalData | null>(null);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [comparisonStats, setComparisonStats] = useState<ComparisonStats | null>(null);
+  const [showLibraryHandoff, setShowLibraryHandoff] = useState(false);
 
   const onboardingUserId = session?.user
     ? (session.user as { id?: string }).id || session.user.email || null
@@ -292,6 +295,26 @@ export default function PuzzleDetailPage() {
     completed: success,
     enabled: !teamIdParam && !lobbyIdParam,
   });
+
+  // Runs once the rating modal is dismissed: hands off to the final Starter
+  // Path objective (Leaderboards) when eligible, otherwise falls back to the
+  // normal post-completion destination. Never writes onboarding state itself.
+  const finishCatalogCompletionFlow = () => {
+    setShowRatingModal(false);
+
+    const eligible =
+      success &&
+      !teamIdParam &&
+      !lobbyIdParam &&
+      Boolean(onboardingUserId) &&
+      isLibraryCompletionHandoffEligible(loadOnboardingState(onboardingUserId as string));
+
+    if (eligible) {
+      setShowLibraryHandoff(true);
+    } else {
+      router.push("/puzzles");
+    }
+  };
 
   useEffect(() => {
     pageMountedRef.current = true;
@@ -1468,17 +1491,23 @@ export default function PuzzleDetailPage() {
                 puzzleTitle={puzzle.title}
                 difficulty={puzzle.difficulty}
                 funFact={puzzle.puzzleType === 'jigsaw' && jigsawPlayable ? (jigsawPlayable.data as JigsawPuzzleType['data'] & { funFact?: string }).funFact : undefined}
-                  onClose={() => {
-                    setShowRatingModal(false);
-                    router.push("/puzzles");
-                  }}
-                  onSubmit={() => {
-                    router.push("/puzzles");
-                  }}
+                  onClose={finishCatalogCompletionFlow}
                   initialAwardedPoints={justAwardedPoints}
                   completionSeconds={completionSeconds}
               />
             )}
+
+            <LibraryCompletionHandoff
+              open={showLibraryHandoff}
+              onViewLeaderboard={() => {
+                setShowLibraryHandoff(false);
+                router.push("/leaderboards");
+              }}
+              onBrowseMore={() => {
+                setShowLibraryHandoff(false);
+                router.push("/puzzles");
+              }}
+            />
 
             {/* Toasts (inline above puzzle) */}
             <Toasts toasts={toasts} onRemove={(id) => removeToast(id)} inline />
