@@ -1,8 +1,8 @@
-.jigsaw-root { width:100%; height:100%; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:#000; }
-.jigsaw-board-area { position:relative; flex:1 1 auto; min-height:0; display:flex; align-items:flex-start; justify-content:center; overflow:hidden; padding-top:4px; }
+.jigsaw-root { width:100%; min-width:0; max-width:100%; height:100%; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:#000; }
+.jigsaw-board-area { position:relative; flex:1 1 auto; width:100%; min-width:0; max-width:100%; min-height:0; display:flex; align-items:flex-start; justify-content:center; overflow:hidden; padding-top:4px; }
 .jigsaw-board-canvas { display:block; position:relative; max-width:100%; max-height:100%; user-select:none; outline:none; }
 .jigsaw-board-canvas:focus-visible { box-shadow:0 0 0 3px #facc15; }
-.jigsaw-tray-wrap { position:relative; flex:0 0 auto; min-width:0; }
+.jigsaw-tray-wrap { position:relative; flex:0 0 auto; width:100%; min-width:0; max-width:100%; }
 .jigsaw-tray { display:flex; align-items:center; gap:10px; overflow-x:auto; overflow-y:hidden; touch-action:pan-x; -webkit-overflow-scrolling:touch; height:108px; padding:6px 10px max(6px,env(safe-area-inset-bottom)); background:rgba(255,255,255,.03); border-top:1px solid rgba(255,255,255,.1); }
 @media (min-width:640px) { .jigsaw-tray { height:140px; padding:10px 14px max(10px,env(safe-area-inset-bottom)); } }
 .jigsaw-tray-piece { display:block; flex:0 0 auto; border:2px solid transparent; border-radius:8px; background:transparent; padding:2px; min-width:44px; min-height:44px; }
@@ -27,8 +27,8 @@ html:has(.pw-jigsaw-shell-content),body:has(.pw-jigsaw-shell-content) { overflow
 .pw-jigsaw-shell-content .puzzle-detail-play-inner { padding:0!important; }
 .pw-jigsaw-shell-content .puzzle-detail-play-container { max-width:none!important; }
 .pw-jigsaw-shell-content .puzzle-detail-play-card { margin:0!important; }
-.pw-jigsaw-shell-content .puzzle-detail-play-card-body { padding:0!important; display:flex; flex-direction:column; position:relative; }
-.pw-jigsaw-shell-content .jigsaw-renderer-shell { flex:1 1 auto; display:flex; }
+.pw-jigsaw-shell-content .puzzle-detail-play-card-body { padding:0!important; display:flex; flex-direction:column; position:relative; width:100%; min-width:0; align-items:stretch; }
+.pw-jigsaw-shell-content .jigsaw-renderer-shell { flex:1 1 auto; display:flex; width:100%; min-width:0; max-width:100%; align-self:stretch; }
 /* The always-mounted inline toast tray (Toasts inline, page.tsx) must not consume board-area
    flex space now that card-body is a flex column — same fix already applied for anagram. */
 .pw-jigsaw-shell-content .pw-inline-toasts { position:absolute!important; inset:8px 8px auto!important; width:auto; margin:0!important; pointer-events:none; }

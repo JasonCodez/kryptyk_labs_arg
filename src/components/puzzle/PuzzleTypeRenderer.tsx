@@ -142,7 +142,7 @@ export function PuzzleTypeRenderer({
         ) : !jigsawImageInfo.ready ? (
           <div className="p-8 text-center text-gray-400">Loading puzzle image…</div>
         ) : (
-          <div className="h-full min-h-0 overflow-hidden">
+          <div className="h-full w-full min-h-0 min-w-0 overflow-hidden">
             <JigsawPuzzle
               ref={jigsawRef}
               puzzleId={puzzleId}

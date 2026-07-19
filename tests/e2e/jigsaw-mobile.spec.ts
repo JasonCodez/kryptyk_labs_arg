@@ -631,3 +631,146 @@ for (const deviceScaleFactor of [1, 2, 3]) {
     await context.close();
   });
 }
+
+async function measureCatalogWidths(page: Page) {
+  return page.evaluate(() => {
+    const inner = window.innerWidth;
+    const rect = (sel: string) => {
+      const el = document.querySelector(sel) as HTMLElement | null;
+      return el ? el.getBoundingClientRect() : null;
+    };
+    const shell = document.querySelector(".jigsaw-renderer-shell") as HTMLElement | null;
+    const shellChildRect = shell?.firstElementChild ? (shell.firstElementChild as HTMLElement).getBoundingClientRect() : null;
+    const canvas = document.querySelector(".jigsaw-board-canvas") as HTMLCanvasElement | null;
+    const canvasRect = canvas?.getBoundingClientRect() ?? null;
+    const round = (n: number | undefined) => (n === undefined ? null : Math.round(n * 100) / 100);
+    const widthOf = (r: DOMRect | null) => (r ? round(r.width) : null);
+    const rightOf = (r: DOMRect | null) => (r ? round(r.right) : null);
+    const exceeds = (r: DOMRect | null) => (r ? r.right > inner + 0.5 : false);
+    const cardBody = rect(".puzzle-detail-play-card-body");
+    const root = rect(".jigsaw-root");
+    const area = rect(".jigsaw-board-area");
+    const trayWrap = rect(".jigsaw-tray-wrap");
+    const tray = rect(".jigsaw-tray");
+    return {
+      innerWidth: inner,
+      docScrollWidth: document.documentElement.scrollWidth,
+      cardBodyWidth: widthOf(cardBody),
+      rendererShellWidth: widthOf(shell?.getBoundingClientRect() ?? null),
+      rendererShellChildWidth: widthOf(shellChildRect),
+      rootWidth: widthOf(root),
+      areaWidth: widthOf(area),
+      trayWrapWidth: widthOf(trayWrap),
+      trayWidth: widthOf(tray),
+      canvasWidth: widthOf(canvasRect),
+      anyExceeds: [cardBody, shell?.getBoundingClientRect() ?? null, shellChildRect, root, area, trayWrap, tray, canvasRect].some(exceeds),
+      rights: {
+        cardBody: rightOf(cardBody),
+        root: rightOf(root),
+        area: rightOf(area),
+        trayWrap: rightOf(trayWrap),
+        tray: rightOf(tray),
+        canvas: rightOf(canvasRect),
+      },
+    };
+  });
+}
+
+function expectFullWidth(widths: Awaited<ReturnType<typeof measureCatalogWidths>>, target: number, tolerance = 2) {
+  expect(Math.abs(widths.cardBodyWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(widths.rendererShellWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(widths.rendererShellChildWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(widths.rootWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(widths.areaWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(widths.trayWrapWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(widths.trayWidth! - target)).toBeLessThanOrEqual(tolerance);
+  expect(widths.anyExceeds).toBe(false);
+  expect(widths.docScrollWidth).toBeLessThanOrEqual(target);
+}
+
+test("Catalog Jigsaw renders full-width at 320x710 (DPR 2), before and after a drag", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 320, height: 710 }, hasTouch: true, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await authenticate(page);
+  await installCatalogFixture(page);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+
+  const before = await measureCatalogWidths(page);
+  expectFullWidth(before, 320);
+  expect(before.canvasWidth!).toBeGreaterThanOrEqual(300);
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+  const from = await trayCanvas.boundingBox();
+  const boardBox = await board.boundingBox();
+  expect(from).not.toBeNull(); expect(boardBox).not.toBeNull();
+  const startX = from!.x + from!.width / 2;
+  const startY = from!.y + from!.height / 2;
+  const targetX = boardBox!.x + boardBox!.width / 2;
+  const targetY = boardBox!.y + boardBox!.height / 2;
+  const pointerId = 6543;
+
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId, pointerType: "touch", buttons: 1, clientX: targetX, clientY: targetY });
+  await board.dispatchEvent("pointerup", { pointerId, pointerType: "touch", clientX: targetX, clientY: targetY });
+
+  const after = await measureCatalogWidths(page);
+  expectFullWidth(after, 320);
+  expect(after.canvasWidth!).toBeGreaterThanOrEqual(300);
+
+  await context.close();
+});
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 529, height: 800 },
+  { width: 530, height: 800 },
+]) {
+  test(`Catalog Jigsaw renders full-width at ${viewport.width}x${viewport.height} (DPR 2)`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport, hasTouch: true, deviceScaleFactor: 2 });
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await authenticate(page);
+    await installCatalogFixture(page);
+    await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+
+    const widths = await measureCatalogWidths(page);
+    console.log(`[${viewport.width}x${viewport.height} DPR2]`, JSON.stringify(widths));
+    expectFullWidth(widths, viewport.width);
+
+    await context.close();
+  });
+}
+
+test("no width jump between 529px and 530px (Catalog, DPR 2)", async ({ browser }) => {
+  const widths: Record<number, Awaited<ReturnType<typeof measureCatalogWidths>>> = {};
+  for (const width of [529, 530]) {
+    const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: true, deviceScaleFactor: 2 });
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await authenticate(page);
+    await installCatalogFixture(page);
+    await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    widths[width] = await measureCatalogWidths(page);
+    await context.close();
+  }
+  console.log("529:", JSON.stringify(widths[529]));
+  console.log("530:", JSON.stringify(widths[530]));
+  expect(Math.abs(widths[530].rootWidth! - widths[529].rootWidth! - 1)).toBeLessThanOrEqual(1);
+  expect(Math.abs(widths[530].areaWidth! - widths[529].areaWidth! - 1)).toBeLessThanOrEqual(1);
+  expect(Math.abs(widths[530].canvasWidth! - widths[529].canvasWidth!)).toBeLessThanOrEqual(2);
+});
