@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import GameButton from "@/components/game-ui/GameButton";
 import { useRegisterModal } from "@/hooks/useRegisterModal";
@@ -112,6 +113,7 @@ interface WelcomeModalProps {
  */
 export default function WelcomeModal({ userId }: WelcomeModalProps) {
   const [visible, setVisible] = useState(false);
+  const router = useRouter();
   useRegisterModal("welcome-modal", visible);
   const reduceMotion = useAppReducedMotion();
 
@@ -138,6 +140,7 @@ export default function WelcomeModal({ userId }: WelcomeModalProps) {
     startOnboarding(userId);
     completeOnboardingStep(userId, "welcome");
     setVisible(false);
+    router.push("/rookie-run");
   }
 
   function exploreOnMyOwn() {

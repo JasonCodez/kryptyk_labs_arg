@@ -4,12 +4,18 @@ import { act, cleanup, fireEvent, render, screen, waitForElementToBeRemoved } fr
 import WelcomeModal from "./WelcomeModal";
 import { loadOnboardingState } from "@/lib/onboarding";
 
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
+
 const HEADING = "Your first solve starts here.";
 
 describe("WelcomeModal (Rookie Run)", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     localStorage.clear();
+    mockPush.mockClear();
     document.documentElement.removeAttribute("data-reduce-animations");
   });
 
@@ -40,7 +46,7 @@ describe("WelcomeModal (Rookie Run)", () => {
     expect(screen.getByText("Celebrate")).toBeTruthy();
   });
 
-  it("Begin Rookie Run activates onboarding, completes the welcome step, and closes", async () => {
+  it("Begin Rookie Run activates onboarding, completes the welcome step, closes, and navigates to /rookie-run", async () => {
     show();
     fireEvent.click(screen.getByRole("button", { name: /begin rookie run/i }));
 
@@ -48,6 +54,7 @@ describe("WelcomeModal (Rookie Run)", () => {
     expect(state.status).toBe("active");
     expect(state.completedSteps).toContain("welcome");
     expect(state.currentStep).toBe("first_puzzle_started");
+    expect(mockPush).toHaveBeenCalledWith("/rookie-run");
 
     // Exit animations run on real frames, not jest's fake clock
     jest.useRealTimers();
@@ -55,11 +62,12 @@ describe("WelcomeModal (Rookie Run)", () => {
     jest.useFakeTimers();
   });
 
-  it("Explore on My Own marks onboarding skipped and closes", async () => {
+  it("Explore on My Own marks onboarding skipped and closes without navigating", async () => {
     show();
     fireEvent.click(screen.getByRole("button", { name: /explore on my own/i }));
 
     expect(loadOnboardingState("u1").status).toBe("skipped");
+    expect(mockPush).not.toHaveBeenCalled();
 
     jest.useRealTimers();
     await waitForElementToBeRemoved(() => screen.queryByText(HEADING), { timeout: 3000 });

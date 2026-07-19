@@ -20,6 +20,10 @@ describe("getAppMode", () => {
     expect(getAppMode("/daily/anagram")).toBe("play");
   });
 
+  test("play: Rookie Run starter puzzle", () => {
+    expect(getAppMode("/rookie-run")).toBe("play");
+  });
+
   test("play: generic /puzzles/<id> solve route", () => {
     expect(getAppMode("/puzzles/abc123")).toBe("play");
     expect(getAppMode("/puzzles/cmrjm3acz0006pcu4va7e4iuh")).toBe("play");

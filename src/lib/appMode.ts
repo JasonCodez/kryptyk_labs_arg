@@ -30,6 +30,9 @@ export function getAppMode(pathname: string | null | undefined): AppMode {
   if (pathname === "/auth" || pathname.startsWith("/auth/")) return "auth";
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return "admin";
 
+  // The Rookie Run onboarding starter puzzle is a solve screen.
+  if (pathname === "/rookie-run") return "play";
+
   // The daily hub is browse; each individual daily puzzle under it is play
   // (/daily/crossword, /daily/sudoku, /daily/word, /daily/word-search,
   // /daily/jigsaw, and any future single-segment daily puzzle route).
