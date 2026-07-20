@@ -29,7 +29,7 @@ afterEach(cleanup);
 
 const WORDS = ["CAT", "DOG", "ELEPHANT"];
 
-function Harness({ found = new Set<string>(), onOpenDefinition = jest.fn() }: { found?: Set<string>; onOpenDefinition?: (word: string) => void }) {
+function Harness({ found = new Set<string>(), onOpenDefinition = jest.fn(), definitionsEnabled }: { found?: Set<string>; onOpenDefinition?: (word: string) => void; definitionsEnabled?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -40,6 +40,7 @@ function Harness({ found = new Set<string>(), onOpenDefinition = jest.fn() }: { 
         foundWords={found}
         onClose={() => setOpen(false)}
         onOpenDefinition={onOpenDefinition}
+        definitionsEnabled={definitionsEnabled}
       />
     </>
   );
@@ -101,6 +102,8 @@ describe("WordSearchWordList word states", () => {
     const cat = screen.getByRole("button", { name: "CAT, found; open definition" });
     expect(cat.hasAttribute("disabled")).toBe(false);
     expect(cat.querySelector("svg")).toBeTruthy();
+    expect(cat.querySelector(".word-search-word-item-definition-label")).toBeTruthy();
+    expect(cat.querySelector(".word-search-word-item-chevron")).toBeTruthy();
 
     const dog = screen.getByRole("button", { name: "DOG, not found" });
     const elephant = screen.getByRole("button", { name: "ELEPHANT, not found" });
@@ -108,6 +111,76 @@ describe("WordSearchWordList word states", () => {
     expect(elephant.hasAttribute("disabled")).toBe(true);
 
     expect(document.body.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+  });
+});
+
+describe("WordSearchWordList definitionsEnabled", () => {
+  it("defaults to enabled: clicking the found word invokes onOpenDefinition", async () => {
+    const onOpenDefinition = jest.fn();
+    render(<Harness found={new Set(["CAT"])} onOpenDefinition={onOpenDefinition} />);
+    fireEvent.click(screen.getByRole("button", { name: "Words" }));
+    await screen.findByRole("dialog", { name: "Words to find" });
+
+    fireEvent.click(screen.getByRole("button", { name: "CAT, found; open definition" }));
+    await waitFor(() => expect(onOpenDefinition).toHaveBeenCalledWith("CAT"));
+  });
+
+  it("marks a found word informational-only when definitions are disabled (Warz)", async () => {
+    const onOpenDefinition = jest.fn();
+    render(<Harness found={new Set(["CAT"])} onOpenDefinition={onOpenDefinition} definitionsEnabled={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Words" }));
+    await screen.findByRole("dialog", { name: "Words to find" });
+
+    const cat = screen.getByRole("button", { name: "CAT, found" });
+    expect(cat.getAttribute("aria-label")).not.toContain("open definition");
+    expect(cat.getAttribute("data-found")).toBe("true");
+    expect(cat.hasAttribute("disabled")).toBe(true);
+    expect(cat.querySelector(".word-search-word-status svg")).toBeTruthy(); // completion check remains
+    expect(cat.querySelector(".word-search-word-item-definition-label")).toBeNull();
+    expect(cat.querySelector(".word-search-word-item-chevron")).toBeNull();
+
+    fireEvent.click(cat);
+    expect(onOpenDefinition).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unfound word disabled and without a completion indicator when definitions are disabled", async () => {
+    render(<Harness found={new Set(["CAT"])} definitionsEnabled={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Words" }));
+    await screen.findByRole("dialog", { name: "Words to find" });
+
+    const dog = screen.getByRole("button", { name: "DOG, not found" });
+    expect(dog.hasAttribute("disabled")).toBe(true);
+    expect(dog.querySelector("svg")).toBeNull();
+    expect(dog.hasAttribute("data-found")).toBe(false);
+
+    const labels = Array.from(document.querySelectorAll(".word-search-word-item-label")).map((el) => el.textContent);
+    expect(labels).toEqual(["CAT", "DOG", "ELEPHANT"]);
+  });
+
+  it("applies the same informational-only found behavior on the desktop panel", () => {
+    const onOpenDefinition = jest.fn();
+    render(
+      <WordSearchDesktopWordList
+        words={WORDS}
+        foundWords={new Set(["CAT"])}
+        onOpenDefinition={onOpenDefinition}
+        definitionsEnabled={false}
+      />,
+    );
+
+    const cat = screen.getByRole("button", { name: "CAT, found" });
+    expect(cat.getAttribute("aria-label")).not.toContain("open definition");
+    expect(cat.hasAttribute("disabled")).toBe(true);
+    expect(cat.getAttribute("data-found")).toBe("true");
+    expect(cat.querySelector(".word-search-word-status svg")).toBeTruthy();
+    expect(cat.querySelector(".word-search-word-item-definition-label")).toBeNull();
+    expect(cat.querySelector(".word-search-word-item-chevron")).toBeNull();
+
+    fireEvent.click(cat);
+    expect(onOpenDefinition).not.toHaveBeenCalled();
+
+    const dog = screen.getByRole("button", { name: "DOG, not found" });
+    expect(dog.hasAttribute("disabled")).toBe(true);
   });
 });
 

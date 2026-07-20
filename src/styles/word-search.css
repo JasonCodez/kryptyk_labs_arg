@@ -284,8 +284,9 @@
 .word-search-word-item-label { min-width: 0; overflow-wrap: anywhere; }
 .word-search-word-item:disabled { cursor: not-allowed; }
 .word-search-word-item[data-found] { cursor: pointer; border-left-width: 4px; font-weight: 800; }
+.word-search-word-item[data-definition-disabled] { cursor: default; }
 @media (hover: hover) and (pointer: fine) {
-  .word-search-word-item[data-found]:hover { filter: brightness(1.12); }
+  .word-search-word-item[data-found]:not([data-definition-disabled]):hover { filter: brightness(1.12); }
 }
 .word-search-word-item[data-found]:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
 .word-search-word-item-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }

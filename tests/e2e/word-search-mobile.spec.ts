@@ -50,6 +50,7 @@ async function installRoutes(page: Page, size: number, short = false) {
   let dailyDayNumber = 142;
   let repairRequired = false;
   let reconciliations = 0;
+  const dictionaryRequests: string[] = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/\/$/, ""); const method = request.method();
     const fulfill = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
@@ -87,7 +88,10 @@ async function installRoutes(page: Page, size: number, short = false) {
     if (path === "/api/user/info") return fulfill({ id: "e2e-user", username: "trove-tester", totalPoints: 1000, totalXp: 0, activeSkin: "default" });
     if (path === "/api/warz/check-eligible") return fulfill({ eligible: true });
     if (path === "/api/user/profile") return fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
-    if (path === "/api/dictionary/define") return fulfill({ found: true, partOfSpeech: "noun", definition: `Definition of ${url.searchParams.get("word")}`, example: null, audioUrl: null, phonetic: null });
+    if (path === "/api/dictionary/define") {
+      dictionaryRequests.push(url.searchParams.get("word") ?? "");
+      return fulfill({ found: true, partOfSpeech: "noun", definition: `Definition of ${url.searchParams.get("word")}`, example: null, audioUrl: null, phonetic: null });
+    }
     return fulfill({});
   });
   return {
@@ -98,6 +102,7 @@ async function installRoutes(page: Page, size: number, short = false) {
     attemptSuccess: () => attemptSuccess,
     hintConsumes: () => hintConsumes,
     reconciliations: () => reconciliations,
+    dictionaryRequests,
     failNextDaily: () => { failDailyOnce = true; },
     setDailyDay: (day: number) => { dailyDayNumber = day; },
     seedLegacyRepair: () => { data.words.forEach((word) => found.add(word)); repairRequired = true; catalogSolved = false; },
@@ -404,7 +409,7 @@ test("catalog, daily days, and consecutive Warz rounds remain isolated for the s
 test("Warz: finding words never opens a definition modal, mid-match or on the final word", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
-  await installRoutes(page, 10, true);
+  const state = await installRoutes(page, 10, true);
   await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.getByTestId("word-search-root")).toBeVisible();
@@ -430,6 +435,37 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
   await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // anchor clears after the two-tap submission
   await page.waitForTimeout(700); // past the normal (320ms) and final-word (520ms) reveal delay
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  expect(state.dictionaryRequests).toHaveLength(0);
+
+  // Manually opening the word list and tapping the found CAT must never expose a working
+  // definition path — Warz stays completely definition-free, not just automatically.
+  const submissionsBeforeList = state.submissions.length;
+  await page.getByRole("button", { name: "Words" }).click();
+  const sheet = page.getByRole("dialog", { name: "Words to find" });
+  await expect(sheet).toBeVisible();
+  const cat = sheet.getByRole("button", { name: "CAT, found" });
+  await expect(cat).toBeVisible();
+  await expect(cat).toHaveAttribute("data-found", "true"); // still visibly completed
+  await expect(cat.locator("svg")).toHaveCount(1); // completion check only — no chevron
+  const catLabel = await cat.getAttribute("aria-label");
+  expect(catLabel).not.toContain("open definition");
+  await expect(cat.locator(".word-search-word-item-definition-label")).toHaveCount(0);
+  await expect(cat.locator(".word-search-word-item-chevron")).toHaveCount(0);
+  await expect(cat).toBeDisabled();
+
+  const dog = sheet.getByRole("button", { name: "DOG, not found" });
+  await expect(dog).toBeDisabled();
+
+  // A click on a native-disabled button cannot dispatch — confirms no dictionary call, no modal.
+  await cat.click({ force: true }).catch(() => {});
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  expect(state.dictionaryRequests).toHaveLength(0);
+
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole("grid")).toBeVisible();
+  expect(state.submissions.length).toBe(submissionsBeforeList); // opening/closing the list submitted nothing
 
   // The board must remain immediately interactive — prove it by finding the final word next.
   await expect(page.getByRole("grid")).toBeVisible();
@@ -442,6 +478,7 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
   await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
   await expect(page.locator(".word-search-success")).toHaveCount(0);
+  expect(state.dictionaryRequests).toHaveLength(0);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(overflow).toBe(false);
@@ -1431,7 +1468,7 @@ test("Pass 7: desktop 1440x900 Catalog panel has a sticky, opaque header and upd
 test("Pass 7: Warz word sheet uses the redesigned treatment without opening definitions or affecting timing", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
-  await installRoutes(page, 10, true);
+  const state = await installRoutes(page, 10, true);
   await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.getByTestId("word-search-root")).toBeVisible();
@@ -1448,7 +1485,21 @@ test("Pass 7: Warz word sheet uses the redesigned treatment without opening defi
   await page.waitForTimeout(700);
   // Automatic (non-final and final) definition reveals stay fully suppressed in Warz.
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  expect(state.dictionaryRequests).toHaveLength(0);
 
+  // Manual definitions are also fully suppressed — CAT reads as found but is not interactive.
   await page.getByRole("button", { name: "Words" }).click();
-  await expect(page.getByRole("button", { name: /CAT, found/ })).toBeVisible();
+  const sheet = page.getByRole("dialog", { name: "Words to find" });
+  const cat = sheet.getByRole("button", { name: "CAT, found" });
+  await expect(cat).toBeVisible();
+  await expect(cat).toHaveAttribute("data-found", "true");
+  await expect(cat).toBeDisabled();
+  expect(await cat.getAttribute("aria-label")).not.toContain("open definition");
+  await expect(cat.locator(".word-search-word-item-definition-label")).toHaveCount(0);
+  await expect(cat.locator(".word-search-word-item-chevron")).toHaveCount(0);
+
+  await cat.click({ force: true }).catch(() => {});
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  expect(state.dictionaryRequests).toHaveLength(0);
 });

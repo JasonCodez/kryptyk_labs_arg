@@ -394,6 +394,50 @@ test("Warz: the final word calls onSolved exactly once, synchronously, without a
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
+// ── Warz manual definitions: the word list itself must never expose a working definition path,
+// not just the automatic queueing covered above. ────────────────────────────────────────────────
+
+test("Warz: a found word in the list is informational-only — no click can open a definition or fetch one", async () => {
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  const view = renderPuzzle({ puzzleId: "warz-def-manual", wordSearchData: DATA, displayMode: "app-shell", warzMode: true, persistenceScope: "none" });
+  await keyboardFindCat(view); // CAT — 1 of 2, non-final
+
+  fireEvent.click(screen.getByRole("button", { name: "Words" }));
+  const sheet = await screen.findByRole("dialog", { name: "Words to find" });
+  const cat = within(sheet).getByRole("button", { name: "CAT, found" });
+  expect(cat.getAttribute("aria-label")).not.toContain("open definition");
+  expect(cat.getAttribute("data-found")).toBe("true"); // still visibly found
+  expect(cat.hasAttribute("disabled")).toBe(true);
+
+  fireEvent.click(cat);
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toHaveLength(0);
+
+  const dog = within(sheet).getByRole("button", { name: "DOG, not found" });
+  expect(dog.hasAttribute("disabled")).toBe(true);
+
+  // Closing the list leaves the match untouched.
+  fireEvent.keyDown(window, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Words to find" })).toBeNull());
+  expect(screen.getByRole("grid")).toBeTruthy();
+  expect(view.latestPresentation()?.foundCount).toBe(1);
+});
+
+test("Warz: the desktop list also keeps a found word informational-only", async () => {
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  const view = renderPuzzle({ puzzleId: "warz-def-manual-desktop", wordSearchData: DATA, displayMode: "app-shell", warzMode: true, persistenceScope: "none" });
+  await keyboardFindCat(view);
+
+  const cat = screen.getByRole("button", { name: "CAT, found" });
+  expect(cat.getAttribute("aria-label")).not.toContain("open definition");
+  expect(cat.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(cat);
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toHaveLength(0);
+});
+
 // ── Pass 3: Daily/Catalog definition pacing — non-final finds are opt-in, only the final find
 // opens automatically. Warz's own definition-suppression tests above are unaffected. ──────────
 

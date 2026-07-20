@@ -13,6 +13,8 @@ interface Props {
   foundWords: ReadonlySet<string>;
   onClose: () => void;
   onOpenDefinition: (word: string) => void;
+  /** When false (Warz), found words stay informational-only: no definition affordance or click. */
+  definitionsEnabled?: boolean;
 }
 
 function IconCheck() {
@@ -70,20 +72,22 @@ function WordListHeading({ headingId, found, total }: { headingId: string; found
   );
 }
 
-function WordItems({ words, foundWords, onOpenDefinition }: Omit<Props, "open" | "onClose">) {
+function WordItems({ words, foundWords, onOpenDefinition, definitionsEnabled = true }: Omit<Props, "open" | "onClose">) {
   return (
     <div className="word-search-word-items">
       {words.map((word) => {
         const found = foundWords.has(word);
+        const canOpenDefinition = found && definitionsEnabled;
         return (
           <button
             type="button"
             key={word}
             className="word-search-word-item"
             data-found={found || undefined}
-            disabled={!found}
+            data-definition-disabled={(found && !definitionsEnabled) || undefined}
+            disabled={!canOpenDefinition}
             onClick={() => onOpenDefinition(word)}
-            aria-label={`${word}, ${found ? "found; open definition" : "not found"}`}
+            aria-label={`${word}, ${found ? (definitionsEnabled ? "found; open definition" : "found") : "not found"}`}
           >
             <span className="word-search-word-item-label">{word}</span>
             {found && (
@@ -91,8 +95,12 @@ function WordItems({ words, foundWords, onOpenDefinition }: Omit<Props, "open" |
                 <span className="word-search-word-status">
                   <IconCheck />
                 </span>
-                <span className="word-search-word-item-definition-label">Definition</span>
-                <IconChevron />
+                {canOpenDefinition && (
+                  <>
+                    <span className="word-search-word-item-definition-label">Definition</span>
+                    <IconChevron />
+                  </>
+                )}
               </span>
             )}
           </button>
@@ -128,7 +136,7 @@ export const WordSearchDesktopWordList = forwardRef<HTMLElement, DesktopProps>(f
   );
 });
 
-export default function WordSearchWordList({ open, words, foundWords, onClose, onOpenDefinition }: Props) {
+export default function WordSearchWordList({ open, words, foundWords, onClose, onOpenDefinition, definitionsEnabled = true }: Props) {
   const headingId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -182,6 +190,7 @@ export default function WordSearchWordList({ open, words, foundWords, onClose, o
             <WordItems
               words={words}
               foundWords={foundWords}
+              definitionsEnabled={definitionsEnabled}
               onOpenDefinition={(word) => {
                 onClose();
                 window.requestAnimationFrame(() => onOpenDefinition(word));

@@ -402,6 +402,9 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   }, [fetchDefinition, reduceMotion, showNextDefinition, words]);
 
   const openDefinition = useCallback((word: string) => {
+    // Defense in depth: Warz must stay fully definition-free even if a future caller
+    // bypasses the word list's own disabled state for found items.
+    if (warzMode) return;
     if (!foundRef.current.includes(word)) return;
     const pending: DefinitionState = { word, colorIdx: words.indexOf(word) % WORD_COLORS.length, status: "loading" };
     definitionRef.current = pending;
@@ -411,7 +414,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
       definitionRef.current = resolved;
       setDefinition(resolved);
     });
-  }, [fetchDefinition, words]);
+  }, [fetchDefinition, warzMode, words]);
 
   const celebrateWord = useCallback((word: string, cells: WordSearchCell[], hinted = false, final = false) => {
     setFoundWords((previous) => previous.includes(word) ? previous : [...previous, word]);
@@ -707,7 +710,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
       {showIntro && <Dialog title="More than a word search" onClose={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}><p>Every word you find unlocks its real definition, turning each puzzle into a quick vocabulary discovery. Tap a found word in the word list any time to explore it.</p><p>Your final find opens its definition automatically, with pronunciation, part of speech, examples, and audio when available.</p><button type="button" onClick={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}>Start searching</button></Dialog>}
       {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag from the first letter to the last, or tap a start letter and then tap the end letter. A marked start letter is waiting for your second tap; tap it again to cancel. You can also use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><p>Found words unlock their definitions — open the word list and tap any found word to read it.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
       {definition && <WordDefinitionModal word={definition.word} color={WORD_COLORS[definition.colorIdx]} status={definition.status} data={definition.data} onDismiss={dismissDefinition} />}
-      <WordSearchWordList open={wordListOpen} words={words} foundWords={foundSet} onClose={() => setWordListOpen(false)} onOpenDefinition={openDefinition} />
+      <WordSearchWordList open={wordListOpen} words={words} foundWords={foundSet} onClose={() => setWordListOpen(false)} onOpenDefinition={openDefinition} definitionsEnabled={!warzMode} />
 
       <div className="word-search-game-surface">
         {displayMode === "standalone" && <header className="word-search-standalone-header"><div><h2>WORD TROVE</h2><p>{foundWords.length} / {words.length} found</p></div><button type="button" onClick={() => setShowHelp(true)}>Help</button></header>}
@@ -770,7 +773,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
 
           <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={openAppropriateWordList} showProgress={displayMode !== "app-shell"} />
           <WordSearchControls hintTokens={hintTokens} hintPending={hintPending} disabled={status !== "playing"} canZoom={canZoom} zoomed={zoom > 1} onHint={() => void requestHint()} onZoomIn={() => setZoom((value) => Math.min(2, value + .25))} onZoomOut={() => setZoom((value) => Math.max(1, value - .25))} onResetZoom={() => setZoom(1)} />
-          <WordSearchDesktopWordList ref={desktopListRef} words={words} foundWords={foundSet} onOpenDefinition={openDefinition} onEscape={focusBoard} />
+          <WordSearchDesktopWordList ref={desktopListRef} words={words} foundWords={foundSet} onOpenDefinition={openDefinition} onEscape={focusBoard} definitionsEnabled={!warzMode} />
         </div>
         {flashWord && <span className="word-search-live" aria-live="polite">Found {flashWord}</span>}
       </div>
