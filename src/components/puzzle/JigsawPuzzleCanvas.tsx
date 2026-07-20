@@ -30,6 +30,7 @@ import { createPortal } from "react-dom";
 import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
 import JigsawStatusHud from "./jigsaw/JigsawStatusHud";
+import JigsawTrayStatus from "./jigsaw/JigsawTrayStatus";
 import JigsawQuickTip from "./jigsaw/JigsawQuickTip";
 import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
@@ -3110,11 +3111,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           role="list"
           aria-label="Loose puzzle pieces"
         >
-          {trayOrder.length === 0 && (
-            <div style={{ margin: "0 auto", color: "rgba(255,255,255,0.35)", fontSize: 13, fontStyle: "italic" }}>
-              {isSolved ? "Puzzle complete!" : "All pieces are on the board"}
-            </div>
-          )}
+          <JigsawTrayStatus remainingCount={trayOrder.length} isSolved={isSolved} />
           {trayOrder.map((groupId, i) => (
             <TrayPieceThumb
               key={groupId}
@@ -3144,25 +3141,16 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         {/* Persistent draggable scrollbar — its own touch target below the tray, entirely
             separate from the piece thumbnails, so it never competes with picking a piece up. */}
         {trayThumbGeometry && (
-          <div
-            onPointerDown={onTrayTrackPointerDown}
-            style={{
-              position: "relative", height: 14, margin: "0 14px 8px",
-              background: "rgba(255,255,255,0.06)", borderRadius: 999,
-              touchAction: "none", cursor: "pointer",
-            }}
-          >
+          <div className="jigsaw-tray-scrollbar" onPointerDown={onTrayTrackPointerDown}>
             <div
               ref={trayThumbRef}
+              className="jigsaw-tray-scrollbar-thumb"
               onPointerDown={onTrayThumbPointerDown}
               onPointerMove={onTrayThumbPointerMove}
               onPointerUp={onTrayThumbPointerUp}
               onPointerCancel={onTrayThumbPointerUp}
               style={{
-                position: "absolute", top: 0, height: "100%",
                 left: `${trayThumbGeometry.leftPct}%`, width: `${trayThumbGeometry.widthPct}%`,
-                background: "rgba(255,255,255,0.32)", borderRadius: 999,
-                touchAction: "none", cursor: "grab",
               }}
             />
           </div>
