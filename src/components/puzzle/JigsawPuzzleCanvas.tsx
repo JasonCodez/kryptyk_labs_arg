@@ -31,6 +31,7 @@ import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
 import JigsawStatusHud from "./jigsaw/JigsawStatusHud";
 import JigsawTrayStatus, { JigsawTrayBadge } from "./jigsaw/JigsawTrayStatus";
+import JigsawCompletionCard from "./jigsaw/JigsawCompletionCard";
 import JigsawQuickTip from "./jigsaw/JigsawQuickTip";
 import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
@@ -3018,26 +3019,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         </div>
 
         {/* Congrats message */}
-        <div ref={messageRef}
-             style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center",
-                      pointerEvents: "none", zIndex: 9999, opacity: 0 }}>
-          <div style={{ background: "rgba(0,0,0,0.72)", padding: "20px 28px", borderRadius: 14,
-                        textAlign: "center", maxWidth: "min(720px,90%)" }}>
-            <div style={{ color: "#FDE74C", fontSize: 24, fontWeight: 800, marginBottom: 8 }}>
-              Congratulations! Puzzle completed!
-            </div>
-            <div style={{ color: "#DDDBF1", fontSize: 16 }}>
-              You&apos;ve been awarded{" "}
-              <span style={{ color: "#FDE74C", fontWeight: 800 }}>{awardedPoints ?? "..."}</span>{" "}
-              points!
-            </div>
-            {funFact && (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-                <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>Fun Fact</div>
-                <div style={{ color: "#DDDBF1", fontSize: 14, lineHeight: 1.55 }}>{funFact}</div>
-              </div>
-            )}
-          </div>
+        <div ref={messageRef} className="jigsaw-completion-message">
+          <JigsawCompletionCard awardedPoints={awardedPoints} funFact={funFact} />
         </div>
 
         {/* Resumed banner — sits below the stats row (also top-anchored) rather than at the same

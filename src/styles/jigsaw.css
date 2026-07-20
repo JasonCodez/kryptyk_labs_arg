@@ -76,6 +76,19 @@ button.jigsaw-reset-confirm:disabled { opacity:.65; cursor:not-allowed; }
 button.jigsaw-reset-keep:focus-visible,button.jigsaw-reset-confirm:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
 .jigsaw-completion-error { position:absolute; left:50%; top:12px; z-index:9200; transform:translateX(-50%); width:min(520px,calc(100% - 24px)); padding:10px; border:1px solid #ef4444; border-radius:12px; background:rgba(69,10,10,.95); color:#fecaca; text-align:center; }
 .jigsaw-completion-error button { min-height:44px; margin-left:10px; border-radius:8px; padding:6px 12px; background:#fff; color:#450a0a; font-weight:800; }
+.jigsaw-completion-message { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:9999; opacity:0; }
+.jigsaw-completion-card { display:flex; flex-direction:column; align-items:center; gap:4px; width:min(360px,calc(100% - 28px)); box-sizing:border-box; padding:20px 18px; border-radius:16px; border:1px solid var(--pw-border-default,#2C3856); background:rgba(10,20,40,.92); box-shadow:0 20px 50px rgba(0,0,0,.5); text-align:center; }
+.jigsaw-completion-card-icon { display:flex; align-items:center; justify-content:center; width:48px; height:48px; margin-bottom:4px; border-radius:999px; border:1px solid var(--pw-info-border,rgba(79,184,255,.45)); background:color-mix(in srgb, var(--pw-info,#4FB8FF) 14%, var(--pw-surface-2,#1A2336)); color:var(--pw-info,#4FB8FF); }
+.jigsaw-completion-card-eyebrow { font-size:.68rem; font-weight:800; letter-spacing:.1em; color:var(--pw-brand-accent,#F97102); }
+.jigsaw-completion-card-title { margin:2px 0 0; font-size:1.15rem; font-weight:800; color:var(--pw-text-primary,#EEF2FA); }
+.jigsaw-completion-card-support { margin:0; font-size:.85rem; line-height:1.4; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-completion-reward { display:flex; flex-direction:column; align-items:center; gap:0; margin-top:12px; padding:10px 20px; border-radius:12px; border:1px solid var(--pw-border-default,#2C3856); background:var(--pw-surface-2,#1A2336); }
+.jigsaw-completion-reward-amount { font-size:1.6rem; font-weight:800; line-height:1.1; color:#FDE74C; }
+.jigsaw-completion-reward-label { font-size:.62rem; font-weight:800; letter-spacing:.1em; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-completion-reward-support { margin:8px 0 0; font-size:.72rem; line-height:1.35; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-completion-fact { width:100%; box-sizing:border-box; margin-top:14px; padding-top:12px; border-top:1px solid var(--pw-border-default,#2C3856); }
+.jigsaw-completion-fact-label { font-size:.6rem; font-weight:800; letter-spacing:.1em; color:var(--pw-text-secondary,#A9B4CC); margin-bottom:5px; }
+.jigsaw-completion-fact-text { font-size:.8rem; line-height:1.5; color:var(--pw-text-primary,#EEF2FA); overflow-wrap:break-word; }
 .pw-jigsaw-shell-content,.pw-jigsaw-shell-content .puzzle-detail-play-stage,.pw-jigsaw-shell-content .puzzle-detail-play-inner,.pw-jigsaw-shell-content .puzzle-detail-play-container,.pw-jigsaw-shell-content .puzzle-detail-play-card,.pw-jigsaw-shell-content .puzzle-detail-play-card-body,.pw-jigsaw-shell-content .jigsaw-renderer-shell { height:100%; min-height:0; overflow:hidden; }
 html:has(.pw-jigsaw-shell-content),body:has(.pw-jigsaw-shell-content) { overflow:hidden; overscroll-behavior:none; }
 .pw-jigsaw-shell-content .puzzle-detail-play-inner { padding:0!important; }
