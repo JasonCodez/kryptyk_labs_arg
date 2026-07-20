@@ -636,7 +636,11 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   const onPointerUp = async (event: React.PointerEvent<HTMLDivElement>) => {
     if (pointerRef.current !== event.pointerId) return;
     if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    const cell = cellFromPoint(event.clientX, event.clientY, true); if (cell) extendDrag(cell);
+    const cell = cellFromPoint(event.clientX, event.clientY, true);
+    // Released outside the board and outside the nearest-cell tolerance — cancel the whole
+    // gesture rather than submitting whatever selection was last valid before going off-board.
+    if (!cell) { cancelSelection(); return; }
+    extendDrag(cell);
     const cells = selectionRef.current; draggingRef.current = false; pointerRef.current = null; dragStartRef.current = null; directionRef.current = null; setSelection([]);
     if (cells.length === 1) {
       const tapped = cells[0];

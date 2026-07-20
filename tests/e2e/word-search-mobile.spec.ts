@@ -462,36 +462,56 @@ test("second pointer: a new pointer mid-drag cancels the gesture and neither poi
   await expect.poll(() => state.found.has("CAT")).toBe(true);
 });
 
-test("off-board release: releasing far outside the board does not submit a stale selection", async ({ page }) => {
+test("off-board release: releasing far outside the board does not submit a stale valid CAT selection", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
   const state = await installRoutes(page, 15);
   await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
 
-  // Row 2, columns 5-6 are plain filler ("XX") in this fixture — neither FISH (whose only
-  // row-2 cell is column 7) nor any other placed word touches them, so a completed selection
-  // here can never coincidentally spell a real word.
-  const a = await cellBox(page, 2, 5);
-  const b = await cellBox(page, 2, 6);
-  await page.mouse.move(cellCenter(a).x, cellCenter(a).y);
+  // Drag across the COMPLETE, valid CAT selection first — this is the exact stale state a
+  // careless off-board release must not be allowed to submit.
+  const start = await cellBox(page, 0, 0);
+  const end = await cellBox(page, 0, 2);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
   await page.mouse.down();
-  await page.mouse.move(cellCenter(b).x, cellCenter(b).y, { steps: 4 });
-  await expect.poll(() => selectedCellCount(page)).toBeGreaterThanOrEqual(2);
+  await page.mouse.move(cellCenter(end).x, cellCenter(end).y, { steps: 8 });
 
+  // Confirm the full, valid CAT selection is live before anything else happens.
+  await expect.poll(() => selectedCellCount(page)).toBe(3);
+  for (const col of [0, 1, 2]) {
+    await expect(page.locator(`[data-ws-row="0"][data-ws-col="${col}"][data-selected]`)).toHaveCount(1);
+  }
+  expect(state.submissions).toHaveLength(0);
+
+  // Continue moving ~400px beyond the board's bottom-right corner, then release there — well
+  // outside the board and outside the 24px nearest-cell tolerance. This jumps directly to the
+  // far point in a single move (no intermediate steps): interpolating through several steps
+  // would cross back over further on-board cells first and re-extend the selection into a new
+  // (non-CAT) line before ever going off-board, masking the exact stale-selection state this
+  // test exists to catch.
   const board = await page.locator(".word-search-board").boundingBox();
   expect(board).not.toBeNull();
-  const farAway = { x: board!.x + board!.width + 400, y: board!.y + board!.height + 400 }; // well past the 24px nearest-cell tolerance
-  await page.mouse.move(farAway.x, farAway.y, { steps: 6 });
+  const farAway = { x: board!.x + board!.width + 400, y: board!.y + board!.height + 400 };
+  await page.mouse.move(farAway.x, farAway.y, { steps: 1 });
+  await expect.poll(() => selectedCellCount(page)).toBe(3); // still the stale, untouched CAT selection
   await page.mouse.up();
-
   await expect(page.locator("[data-selected]")).toHaveCount(0);
-  expect(state.found.size).toBe(0);
+
+  // submitSelection (if wrongly invoked) is async — give the round-trip a moment to land before
+  // asserting its absence; there's no positive DOM signal to poll for a negative outcome here.
+  await page.waitForTimeout(300);
+
+  // The stale, otherwise-complete CAT selection must be cancelled, not submitted.
+  expect(state.found.has("CAT")).toBe(false);
   expect(state.submissions).toHaveLength(0);
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
 
+  // A fresh, ordinary CAT drag afterward still works exactly once.
   await dragWord(page, [0, 0], [0, 2]);
   await expect.poll(() => state.found.has("CAT")).toBe(true);
+  expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1);
+  await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
 });
 
 test("two-tap cancellation: a repeated tap on the same cell cancels the anchor without a stale reuse", async ({ page }) => {
