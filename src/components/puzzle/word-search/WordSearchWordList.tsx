@@ -15,6 +15,61 @@ interface Props {
   onOpenDefinition: (word: string) => void;
 }
 
+function IconCheck() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconChevron() {
+  return (
+    <svg className="word-search-word-item-chevron" width={11} height={11} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Shared, accessible progress indicator: also guards the zero-word edge case against NaN. */
+function WordListProgress({ found, total }: { found: number; total: number }) {
+  const percent = total > 0 ? Math.round((found / total) * 100) : 0;
+  return (
+    <div
+      className="word-search-list-progress"
+      role="progressbar"
+      aria-label="Word progress"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={found}
+      aria-valuetext={`${found} of ${total} words found`}
+    >
+      <span
+        className="word-search-list-progress-fill"
+        style={{ "--word-progress": `${percent}%` } as React.CSSProperties}
+      />
+    </div>
+  );
+}
+
+function WordListHeading({ headingId, found, total }: { headingId: string; found: number; total: number }) {
+  return (
+    <div className="word-search-list-progress-block">
+      <h2 id={headingId}>Words to find</h2>
+      <p>{found} of {total} found</p>
+      <WordListProgress found={found} total={total} />
+    </div>
+  );
+}
+
 function WordItems({ words, foundWords, onOpenDefinition }: Omit<Props, "open" | "onClose">) {
   return (
     <div className="word-search-word-items">
@@ -30,7 +85,16 @@ function WordItems({ words, foundWords, onOpenDefinition }: Omit<Props, "open" |
             onClick={() => onOpenDefinition(word)}
             aria-label={`${word}, ${found ? "found; open definition" : "not found"}`}
           >
-            <span>{word}</span>{found && <span aria-hidden>✓</span>}
+            <span className="word-search-word-item-label">{word}</span>
+            {found && (
+              <span className="word-search-word-item-meta" aria-hidden="true">
+                <span className="word-search-word-status">
+                  <IconCheck />
+                </span>
+                <span className="word-search-word-item-definition-label">Definition</span>
+                <IconChevron />
+              </span>
+            )}
           </button>
         );
       })}
@@ -43,6 +107,7 @@ interface DesktopProps extends Omit<Props, "open" | "onClose"> {
 }
 
 export const WordSearchDesktopWordList = forwardRef<HTMLElement, DesktopProps>(function WordSearchDesktopWordList({ onEscape, ...props }, ref) {
+  const headingId = useId();
   return (
     <aside
       ref={ref}
@@ -55,7 +120,9 @@ export const WordSearchDesktopWordList = forwardRef<HTMLElement, DesktopProps>(f
         onEscape?.();
       }}
     >
-      <div><h2>Words to find</h2><span>{props.foundWords.size}/{props.words.length}</span></div>
+      <div className="word-search-desktop-list-header">
+        <WordListHeading headingId={headingId} found={props.foundWords.size} total={props.words.length} />
+      </div>
       <WordItems {...props} />
     </aside>
   );
@@ -106,7 +173,12 @@ export default function WordSearchWordList({ open, words, foundWords, onClose, o
             onDragEnd={(_e, info) => (info.offset.y > 100 || info.velocity.y > 650) && onClose()}
           >
             <div className="word-search-sheet-handle" aria-hidden />
-            <header><div><h2 id={headingId}>Words to find</h2><p>{foundWords.size} of {words.length} found</p></div><Pressable type="button" onClick={onClose} aria-label="Close word list">×</Pressable></header>
+            <header className="word-search-sheet-header">
+              <WordListHeading headingId={headingId} found={foundWords.size} total={words.length} />
+              <Pressable type="button" className="word-search-sheet-close" onClick={onClose} aria-label="Close word list">
+                <IconClose />
+              </Pressable>
+            </header>
             <WordItems
               words={words}
               foundWords={foundWords}

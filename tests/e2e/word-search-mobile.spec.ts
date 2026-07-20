@@ -1104,3 +1104,351 @@ test("legacy catalog mismatch repairs in place without generic attempt_success",
   await expect.poll(state.attemptSuccess).toBe(0);
   await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
 });
+
+// ── Pass 7: word-list sheet and desktop panel redesign ─────────────────────────────────────
+
+test("Pass 7: mobile sheet visual structure at 390x844 has a bounded, scrollable surface with correct progress", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "Words" }).click();
+  const dialog = page.getByRole("dialog", { name: "Words to find" });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".word-search-desktop-list")).toBeHidden();
+  // Let the entrance spring settle before measuring geometry.
+  await expect.poll(async () => (await dialog.boundingBox())!.y + (await dialog.boundingBox())!.height).toBeLessThanOrEqual(845);
+
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(844 + 1);
+  expect(dialogBox!.height).toBeLessThanOrEqual(844 * 0.84 + 4);
+  expect(dialogBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390 + 1);
+
+  const layerBox = await page.locator(".word-search-sheet-layer").boundingBox();
+  expect(layerBox).not.toBeNull();
+  expect(layerBox!.width).toBeGreaterThanOrEqual(390 - 1);
+  expect(layerBox!.height).toBeGreaterThanOrEqual(844 - 1);
+
+  const closeButton = page.getByRole("button", { name: "Close word list" });
+  const closeBox = await closeButton.boundingBox();
+  expect(closeBox).not.toBeNull();
+  expect(closeBox!.width).toBeGreaterThanOrEqual(44);
+  expect(closeBox!.height).toBeGreaterThanOrEqual(44);
+
+  const progress = dialog.getByRole("progressbar", { name: "Word progress" });
+  await expect(progress).toBeVisible();
+  expect(await progress.getAttribute("aria-valuemin")).toBe("0");
+  expect(await progress.getAttribute("aria-valuemax")).toBe("12");
+  expect(await progress.getAttribute("aria-valuenow")).toBe("0");
+
+  await expect(dialog.locator(".word-search-word-items")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  // The list area itself scrolls; the page behind it does not.
+  const bodyScrollBefore = await page.evaluate(() => window.scrollY);
+  await dialog.locator(".word-search-word-items").evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const bodyScrollAfter = await page.evaluate(() => window.scrollY);
+  expect(bodyScrollAfter).toBe(bodyScrollBefore);
+});
+
+test("Pass 7: mobile word-item hierarchy — unfound stays readable and disabled; found gains a non-color completion cue", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "Words" }).click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+
+  const dog = page.getByRole("button", { name: "DOG, not found" });
+  await expect(dog).toBeVisible();
+  await expect(dog).toBeDisabled();
+  const dogBox = await dog.boundingBox();
+  expect(dogBox).not.toBeNull();
+  expect(dogBox!.height).toBeGreaterThanOrEqual(44);
+  const dogOpacity = await dog.evaluate((element) => getComputedStyle(element).opacity);
+  expect(Number(dogOpacity)).toBeGreaterThanOrEqual(0.85); // no washed-out global fade
+
+  const dialog = page.getByRole("dialog", { name: "Words to find" });
+  const itemLabels = await dialog.locator(".word-search-word-item-label").allTextContents();
+  expect(itemLabels[0]).toBe("CAT");
+  expect(itemLabels[1]).toBe("DOG");
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+
+  await page.getByRole("button", { name: "Words" }).click();
+  const cat = page.getByRole("button", { name: "CAT, found; open definition" });
+  await expect(cat).toBeVisible();
+  await expect(cat).toBeEnabled();
+  await expect(cat.locator("svg")).toHaveCount(2); // completion check + definition chevron
+
+  const catStyle = await cat.evaluate((element) => getComputedStyle(element).borderColor);
+  const dogStyle2 = await page.getByRole("button", { name: "DOG, not found" }).evaluate((element) => getComputedStyle(element).borderColor);
+  expect(catStyle).not.toBe(dogStyle2);
+
+  // CAT keeps its original list position — first, not moved to the top of a reordered list.
+  const reopenedDialog = page.getByRole("dialog", { name: "Words to find" });
+  const labelsAfter = await reopenedDialog.locator(".word-search-word-item-label").allTextContents();
+  expect(labelsAfter[0]).toBe("CAT");
+  expect(labelsAfter[1]).toBe("DOG");
+});
+
+test("Pass 7: mobile definition choreography — the sheet closes before the definition modal opens, never both at once", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+
+  await page.getByRole("button", { name: "Words" }).click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+  await page.getByRole("button", { name: "CAT, found; open definition" }).click();
+
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "CAT definition" })).toHaveCount(0);
+  await expect(page.getByRole("grid")).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+});
+
+test("Pass 7: close methods and focus restoration on the mobile sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  const wordsButton = page.getByRole("button", { name: "Words" });
+
+  // Close button.
+  await wordsButton.focus();
+  await wordsButton.click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+  await page.getByRole("button", { name: "Close word list" }).click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0);
+  await expect(wordsButton).toBeFocused();
+
+  // Escape.
+  await wordsButton.click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0);
+  await expect(wordsButton).toBeFocused();
+
+  // Backdrop click.
+  await wordsButton.click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+  await page.locator(".word-search-sheet-layer").click({ position: { x: 5, y: 5 } });
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0);
+  expect(state.found.size).toBe(0);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+});
+
+test("Pass 7: header stays visible while the mobile word list scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "Words" }).click();
+  const dialog = page.getByRole("dialog", { name: "Words to find" });
+  await expect(dialog).toBeVisible();
+  // Let the entrance spring settle before capturing a stable baseline position.
+  await page.waitForTimeout(400);
+
+  const heading = page.getByRole("heading", { name: "Words to find" });
+  const progress = dialog.getByRole("progressbar", { name: "Word progress" });
+  const closeButton = page.getByRole("button", { name: "Close word list" });
+  const headingBoxBefore = await heading.boundingBox();
+
+  await dialog.locator(".word-search-word-items").evaluate((element) => { element.scrollTop = element.scrollHeight; });
+
+  await expect(heading).toBeVisible();
+  await expect(progress).toBeVisible();
+  await expect(closeButton).toBeVisible();
+  const headingBoxAfter = await heading.boundingBox();
+  expect(headingBoxAfter).not.toBeNull();
+  expect(headingBoxBefore).not.toBeNull();
+  expect(Math.abs(headingBoxAfter!.y - headingBoxBefore!.y)).toBeLessThanOrEqual(1);
+
+  const bodyScroll = await page.evaluate(() => window.scrollY);
+  expect(bodyScroll).toBe(0);
+});
+
+test("Pass 7: narrow 320x710 mobile sheet fits with readable items and a reachable close control", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "Words" }).click();
+  const dialog = page.getByRole("dialog", { name: "Words to find" });
+  await expect(dialog).toBeVisible();
+
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(dialogBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(320 + 1);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  const itemHeights = await dialog.locator(".word-search-word-item").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+  itemHeights.forEach((height) => expect(height).toBeGreaterThanOrEqual(43.9)); // sub-pixel rounding tolerance
+
+  await expect(dialog.locator(".word-search-word-item-label").first()).toHaveText("CAT");
+  await expect(page.getByRole("button", { name: "Close word list" })).toBeVisible();
+});
+
+test("Pass 7: tablet 1024x768 opens the capped, centered sheet rather than the desktop panel", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await expect(page.locator(".word-search-desktop-list")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Words" })).toBeVisible();
+  await page.getByRole("button", { name: "Words" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Words to find" });
+  await expect(dialog).toBeVisible();
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(dialogBox!.width).toBeLessThanOrEqual(620 + 1);
+  expect(dialogBox!.width).toBeLessThan(1024);
+
+  const progress = page.getByRole("progressbar", { name: "Word progress" });
+  await expect(progress).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close word list" })).toBeVisible();
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 7: landscape panel at 844x390 shows the progress header and keeps items usable", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await expect(page.locator(".word-search-list-button")).toBeHidden();
+  const panel = page.locator(".word-search-desktop-list");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Words to find" })).toBeVisible();
+  const progress = panel.getByRole("progressbar", { name: "Word progress" });
+  await expect(progress).toBeVisible();
+
+  const itemHeights = await panel.locator(".word-search-word-item").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+  itemHeights.forEach((height) => expect(height).toBeGreaterThanOrEqual(44));
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect(progress).toHaveAttribute("aria-valuenow", "1");
+
+  await page.getByRole("grid").focus();
+  await page.keyboard.press("w");
+  await expect(panel).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('.word-search-cell[data-active="true"]')).toBeFocused();
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 7: desktop 1440x900 Catalog panel has a sticky, opaque header and updates progress without layout shift", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const panel = page.locator(".word-search-desktop-list");
+  await expect(panel).toBeVisible();
+  await expect(page.locator(".word-search-list-button")).toBeHidden();
+
+  const boardBox = await page.locator(".word-search-board").boundingBox();
+  const panelBox = await panel.boundingBox();
+  expect(boardBox).not.toBeNull();
+  expect(panelBox).not.toBeNull();
+  expect(panelBox!.width).toBeLessThan(boardBox!.width);
+
+  const header = panel.locator(".word-search-desktop-list-header");
+  const headerStyle = await header.evaluate((element) => getComputedStyle(element).position);
+  expect(headerStyle).toBe("sticky");
+  const headerBoxBefore = await header.boundingBox();
+
+  const progress = panel.getByRole("progressbar", { name: "Word progress" });
+  await expect(progress).toHaveAttribute("aria-valuenow", "0");
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect(progress).toHaveAttribute("aria-valuenow", "1");
+
+  const cat = panel.getByRole("button", { name: "CAT, found; open definition" });
+  await expect(cat).toBeEnabled();
+  await cat.click();
+  await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
+  await expect(panel).toBeVisible(); // the panel stays mounted behind the definition
+  await page.keyboard.press("Escape");
+
+  const dog = panel.getByRole("button", { name: "DOG, not found" });
+  await expect(dog).toBeDisabled();
+
+  const headerBoxAfter = await header.boundingBox();
+  expect(headerBoxAfter).not.toBeNull();
+  expect(headerBoxBefore).not.toBeNull();
+  expect(Math.abs(headerBoxAfter!.y - headerBoxBefore!.y)).toBeLessThanOrEqual(1);
+
+  cat.focus();
+  const focusOutline = await cat.evaluate((element) => getComputedStyle(element).outlineStyle);
+  expect(focusOutline).toBe("solid");
+
+  await page.getByRole("grid").focus();
+  await page.keyboard.press("w");
+  await expect(panel).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('.word-search-cell[data-active="true"]')).toBeFocused();
+});
+
+test("Pass 7: Warz word sheet uses the redesigned treatment without opening definitions or affecting timing", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 10, true);
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click();
+  await expect(page.getByTestId("word-search-root")).toBeVisible();
+
+  await page.getByRole("button", { name: "Words" }).click();
+  const dialog = page.getByRole("dialog", { name: "Words to find" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("progressbar", { name: "Word progress" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await page.waitForTimeout(700);
+  // Automatic (non-final and final) definition reveals stay fully suppressed in Warz.
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Words" }).click();
+  await expect(page.getByRole("button", { name: /CAT, found/ })).toBeVisible();
+});
