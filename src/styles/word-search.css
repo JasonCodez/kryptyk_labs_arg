@@ -187,8 +187,9 @@
 .word-search-trail-core { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .word-search-trail-underlay { stroke: var(--ps-active, #6366f1); stroke-width: 13; opacity: .22; }
 .word-search-trail-core { stroke: var(--ps-active, #6366f1); stroke-width: 5; opacity: .92; }
-.word-search-trail-start,
-.word-search-trail-end { fill: var(--ps-active, #6366f1); opacity: .85; }
+.word-search-trail-marker { fill: none; }
+.word-search-trail-start { stroke: var(--ps-active, #6366f1); stroke-width: 2; opacity: .55; }
+.word-search-trail-end { stroke: var(--ps-active, #6366f1); stroke-width: 2.5; opacity: .75; }
 
 /* ── Pass 9: transient found-word success sweep — a separate, short-lived polyline through the
    canonical found cells; never mounted longer than the celebration lifetime. ───────────────── */

@@ -29,6 +29,19 @@ function fixture(size: number, short = false) {
   return { grid, words: selected.map(([word]) => word) };
 }
 
+// Deterministic three-word fixture for the rapid-Warz replacement regression: CAT and DOG are
+// non-final, SUN is the final (third) word, each on its own row so drags never collide.
+function catDogSunFixture(size = 6) {
+  const grid = Array.from({ length: size }, () => Array.from({ length: size }, () => "X"));
+  const placements: Array<[string, number, number, number, number]> = [
+    ["CAT", 0, 0, 0, 1],
+    ["DOG", 1, 0, 0, 1],
+    ["SUN", 2, 0, 0, 1],
+  ];
+  placements.forEach(([word, row, col, dr, dc]) => word.split("").forEach((letter, index) => { grid[row + dr * index][col + dc * index] = letter; }));
+  return { grid, words: placements.map(([word]) => word) };
+}
+
 async function authenticate(page: Page) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
@@ -146,6 +159,48 @@ function cellCenter(box: { x: number; y: number; width: number; height: number }
   return { x: box.x + box.width / 2 + offset.dx, y: box.y + box.height / 2 + offset.dy };
 }
 
+// Verifies a Pass 9 endpoint halo (hollow ring behind the tile) visibly extends past every edge
+// of its endpoint cell, is stroked (not fill-based), non-scaling, and stays board-contained.
+async function expectEndpointHalo(page: Page, markerSelector: string, cellRow: number, cellCol: number, tolerance = 1) {
+  const marker = page.locator(markerSelector);
+  await expect(marker).toHaveCount(1);
+  const markerBox = await marker.boundingBox();
+  const cellBoxValue = await cellBox(page, cellRow, cellCol);
+  expect(markerBox).not.toBeNull();
+  const box = markerBox!;
+
+  expect(Number.isFinite(box.width)).toBe(true);
+  expect(Number.isFinite(box.height)).toBe(true);
+  expect(box.width).toBeGreaterThan(0);
+  expect(box.height).toBeGreaterThan(0);
+
+  // The halo is a ring around the tile, so it must extend past all four of the tile's edges.
+  expect(box.x).toBeLessThan(cellBoxValue.x - tolerance);
+  expect(box.x + box.width).toBeGreaterThan(cellBoxValue.x + cellBoxValue.width + tolerance);
+  expect(box.y).toBeLessThan(cellBoxValue.y - tolerance);
+  expect(box.y + box.height).toBeGreaterThan(cellBoxValue.y + cellBoxValue.height + tolerance);
+
+  const style = await marker.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { stroke: computed.stroke, fill: computed.fill, vectorEffect: element.getAttribute("vector-effect") };
+  });
+  expect(style.stroke).not.toBe("none");
+  expect(style.fill === "none" || style.fill === "transparent" || style.fill === "rgba(0, 0, 0, 0)").toBe(true);
+  expect(style.vectorEffect).toBe("non-scaling-stroke");
+
+  const boardBox = await page.locator(".word-search-board").boundingBox();
+  expect(boardBox).not.toBeNull();
+  // The halo may extend slightly past the outermost tile perimeter but must remain within a
+  // small margin of the board — it should never balloon past the board's own bounds.
+  const margin = Math.max(cellBoxValue.width, cellBoxValue.height);
+  expect(box.x).toBeGreaterThanOrEqual(boardBox!.x - margin);
+  expect(box.y).toBeGreaterThanOrEqual(boardBox!.y - margin);
+  expect(box.x + box.width).toBeLessThanOrEqual(boardBox!.x + boardBox!.width + margin);
+  expect(box.y + box.height).toBeLessThanOrEqual(boardBox!.y + boardBox!.height + margin);
+
+  return box;
+}
+
 async function selectedCellCount(page: Page) {
   return page.locator("[data-selected]").count();
 }
@@ -220,6 +275,39 @@ test("15x15 board uses nearly the full 320px width with a small edge margin", as
   await expect(page.locator('[data-ws-row="0"][data-ws-col="0"]')).toHaveText("C");
   await expect(page.locator(".word-search-word-dock:visible,.word-search-desktop-list:visible")).toBeVisible();
   await expect(page.locator(".word-search-hint-button:visible")).toBeVisible();
+});
+
+test("Pass 9: endpoint halos remain visible outside a ~12px minimum tile at 320x710 without obscuring letters", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  await authenticate(page);
+  await installRoutes(page, 24); // large enough to force the board's 12px minimum cell floor
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const cellPx = await page.locator(".word-search-board").evaluate((element) => parseFloat(getComputedStyle(element).getPropertyValue("--word-search-cell")));
+  expect(cellPx).toBeLessThanOrEqual(13); // confirms the minimum-cell floor is actually in effect
+
+  const start = await cellBox(page, 0, 0);
+  const end = await cellBox(page, 0, 2);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(end).x, cellCenter(end).y, { steps: 6 });
+  await expect.poll(() => selectedCellCount(page)).toBe(3);
+
+  const startBox = await expectEndpointHalo(page, ".word-search-trail-start", 0, 0);
+  const endBox = await expectEndpointHalo(page, ".word-search-trail-end", 0, 2);
+  // Rings stay restrained rather than ballooning: at most roughly double the tiny tile size.
+  expect(startBox.width).toBeLessThanOrEqual(cellPx * 2.5);
+  expect(endBox.width).toBeLessThanOrEqual(cellPx * 2.5);
+
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"]')).toHaveText("C");
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="1"]')).toHaveText("A");
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="2"]')).toHaveText("T");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  await page.mouse.up();
 });
 
 test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, and hint work", async ({ page }) => {
@@ -340,11 +428,15 @@ test("failed daily completion keeps the board and retry records completion once 
   await expect.poll(state.dailyCompletions).toBe(2); await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 5_000 });
 });
 
-test("zoom and pan: selection geometry tracks the pointer during the drag, not only after release", async ({ page }) => {
+test("zoom and pan: selection geometry tracks the pointer during the drag under 2x zoom, with endpoint halos still visible and restrained", async ({ page }) => {
   await page.setViewportSize({ width: 430, height: 932 }); await authenticate(page); const state = await installRoutes(page, 20); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Zoom in" }).click(); await page.getByRole("button", { name: "Zoom in" }).click();
-  await page.locator(".word-search-board-viewport").evaluate((viewport) => { viewport.scrollLeft = 90; viewport.scrollTop = 170; viewport.dispatchEvent(new Event("scroll")); });
+  // Four .25 steps take zoom from 1x to the full 2x cap.
+  for (let i = 0; i < 4; i += 1) await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(page.locator(".word-search-board-viewport")).toHaveAttribute("data-zoomed", "true");
+  // At the full 2x cap the earlier 1.5x-tuned scroll offset can leave the target row out of
+  // view; scroll the target cell itself into the viewport instead of a fixed pixel offset.
+  await page.locator('[data-ws-row="15"][data-ws-col="10"]').evaluate((element) => element.scrollIntoView({ block: "center", inline: "center" }));
 
   // ZOOM occupies row 15, columns 10-13 (horizontal). Drive the drag manually (rather than the
   // atomic dragWord helper) so selection state can be inspected before release.
@@ -369,6 +461,11 @@ test("zoom and pan: selection geometry tracks the pointer during the drag, not o
   const coords = trailPoints!.trim().split(/\s+/).filter(Boolean).map((pair) => pair.split(",").map(Number));
   expect(coords).toHaveLength(4);
   for (const [x, y] of coords) { expect(Number.isFinite(x)).toBe(true); expect(Number.isFinite(y)).toBe(true); }
+
+  // Endpoint halos still extend outside the (now visually magnified) endpoint tiles at 2x zoom,
+  // and — thanks to non-scaling-stroke — the ring's stroke thickness does not visually double.
+  await expectEndpointHalo(page, ".word-search-trail-start", 15, 10);
+  await expectEndpointHalo(page, ".word-search-trail-end", 15, 13);
 
   await page.mouse.up();
   await expect.poll(() => state.found.has("ZOOM")).toBe(true);
@@ -1874,7 +1971,7 @@ async function setHapticsPreference(page: Page, enabled: boolean) {
   await page.addInitScript((value) => { localStorage.setItem("pw-juice-haptics", value ? "1" : "0"); }, enabled);
 }
 
-test("Pass 9: active trail — layered, pointer-transparent, non-scaling stroke, and behind the letter cells", async ({ page }) => {
+test("Pass 9: active trail — layered, pointer-transparent, non-scaling stroke, behind the letter cells, and endpoint halos visible past the tile perimeter", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
   await installVibrateStub(page);
@@ -1914,6 +2011,22 @@ test("Pass 9: active trail — layered, pointer-transparent, non-scaling stroke,
   const coords = points!.trim().split(/\s+/).map((pair) => pair.split(",").map(Number));
   expect(coords).toHaveLength(3);
 
+  // The endpoint halos are hollow rings that visibly extend outside their endpoint tiles, remain
+  // behind the cells, and stay within the board — not merely present in the DOM.
+  const startBox = await expectEndpointHalo(page, ".word-search-trail-start", 0, 0);
+  const endBox = await expectEndpointHalo(page, ".word-search-trail-end", 0, 2);
+  // The end marker reads as at least as visually strong as the start marker (larger or equal
+  // ring size, and no weaker opacity).
+  expect(endBox.width).toBeGreaterThanOrEqual(startBox.width - 0.5);
+  const [startOpacity, endOpacity] = await Promise.all([
+    page.locator(".word-search-trail-start").evaluate((element) => Number(getComputedStyle(element).opacity)),
+    page.locator(".word-search-trail-end").evaluate((element) => Number(getComputedStyle(element).opacity)),
+  ]);
+  expect(endOpacity).toBeGreaterThanOrEqual(startOpacity);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
   expect(await vibrateCalls(page)).toHaveLength(0); // dragging between cells never vibrates
 
   await page.mouse.up();
@@ -1938,10 +2051,13 @@ test("Pass 9: two-tap and keyboard selection also render the polished trail", as
   await page.mouse.down();
   await expect.poll(() => selectedCellCount(page)).toBeGreaterThanOrEqual(2);
   await expect(page.locator(".word-search-trail-core")).toHaveCount(1);
+  await expectEndpointHalo(page, ".word-search-trail-start", 0, 0);
+  await expectEndpointHalo(page, ".word-search-trail-end", 0, 1);
   await page.mouse.up();
   await page.keyboard.press("Escape"); // clear whatever partial gesture remains, cleanly
 
-  // Keyboard: Space to anchor, then extend beyond one cell.
+  // Keyboard: Space to anchor, then extend beyond one cell. The prior pointer gesture left the
+  // active cell at (0,1) (its final drag position), so Space anchors there, not at (0,0).
   await page.locator(".word-search-board").focus();
   await page.keyboard.press(" ");
   await page.keyboard.press("ArrowRight");
@@ -1949,6 +2065,8 @@ test("Pass 9: two-tap and keyboard selection also render the polished trail", as
   await expect(page.locator(".word-search-trail-core")).toHaveCount(1);
   await expect(page.locator(".word-search-trail-start")).toHaveCount(1);
   await expect(page.locator(".word-search-trail-end")).toHaveCount(1);
+  await expectEndpointHalo(page, ".word-search-trail-start", 0, 1);
+  await expectEndpointHalo(page, ".word-search-trail-end", 0, 2);
   await page.keyboard.press("Escape");
 });
 
@@ -2068,31 +2186,64 @@ test("Pass 9: reduced motion — CAT is immediately found with no animated burst
   await expect.poll(() => state.found.has("DOG")).toBe(true);
 });
 
-test("Pass 9: rapid Warz finds — a fast second find replaces the first in the confirmation without a stale cleanup clobbering it", async ({ page }) => {
+test("Pass 9: rapid Warz finds — CAT to DOG replacement survives CAT's stale cleanup, then SUN completes the battle", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
-  const state = await installRoutes(page, 10, true); // CAT (row 0) + DOG (row 1)
+  const state = await installRoutes(page, 10, true, catDogSunFixture()); // CAT/DOG non-final, SUN final
   await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.getByTestId("word-search-root")).toBeVisible();
-  await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
+  await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 3 found");
   await expect(page.locator(".word-search-board").locator('[data-ws-row="0"][data-ws-col="0"]')).toBeVisible();
+
+  const flashWord = page.locator(".word-search-found-flash-word");
 
   // Warz submissions are purely client-side (no server POST for the word itself), so progress
   // is asserted from the rendered UI rather than the mocked route's captured state.
+  const catFoundAt = Date.now();
   await dragWord(page, [0, 0], [0, 2]); // CAT
-  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 3 found");
   await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1);
+  await expect(page.locator(".word-search-found-flash")).toHaveCount(1);
+  await expect(flashWord).toHaveText("CAT");
 
-  // DOG (the final word) is found quickly after CAT — well inside CAT's transient celebration
-  // lifetime — and must trigger the normal, synchronous Warz result transition with no modal and
-  // no internal Word Search success banner behind it.
-  await dragWord(page, [1, 2], [1, 0]); // DOG
+  // DOG (still non-final — SUN remains) is found well inside CAT's 480ms celebration lifetime.
+  await dragWord(page, [1, 0], [1, 2]); // DOG
+  const dogFoundAt = Date.now();
+  await expect(page.locator(".word-search-progress-strip")).toContainText("2 / 3 found");
+  await expect(page.locator('[data-ws-row="1"][data-ws-col="0"][data-found]')).toHaveCount(1);
+  // Only one confirmation exists at a time, and it now reads DOG, not CAT.
+  await expect(page.locator(".word-search-found-flash")).toHaveCount(1);
+  await expect(flashWord).toHaveText("DOG");
+
+  // Wait until just after CAT's original ~480ms cleanup deadline, but comfortably before DOG's
+  // own (later-starting) 480ms deadline — proving CAT's stale timer cannot clobber DOG's
+  // confirmation. Structure: CAT at t=0, DOG at t≈dogFoundAt-catFoundAt, check at CAT_deadline+30ms.
+  const staleCheckAt = catFoundAt + 480 + 30;
+  const dogDeadline = dogFoundAt + 480;
+  if (Date.now() < staleCheckAt) await page.waitForTimeout(staleCheckAt - Date.now());
+  expect(Date.now()).toBeLessThan(dogDeadline - 20); // still comfortably inside DOG's own lifetime
+  await expect(page.locator(".word-search-found-flash")).toHaveCount(1); // CAT's stale cleanup did not remove it
+  await expect(flashWord).toHaveText("DOG");
+
+  // Wait past DOG's own cleanup deadline — its confirmation and transient celebration clear.
+  const afterDogDeadline = dogDeadline + 60 - Date.now();
+  if (afterDogDeadline > 0) await page.waitForTimeout(afterDogDeadline);
+  await expect(page.locator(".word-search-found-flash")).toHaveCount(0);
+  await expect(page.locator("[data-celebrating]")).toHaveCount(0);
+  // Both earlier finds remain permanently found.
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1);
+  await expect(page.locator('[data-ws-row="1"][data-ws-col="0"][data-found]')).toHaveCount(1);
+
+  // SUN is the final word — it must trigger the normal, synchronous Warz result transition with
+  // no modal and no internal Word Search success banner behind it.
+  await dragWord(page, [2, 0], [2, 2]); // SUN
   await expect(page.getByText("Posting your challenge…")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // never opens in Warz
   await expect(page.locator(".word-search-success")).toHaveCount(0);
   expect(state.dictionaryRequests).toHaveLength(0);
+  expect(state.submissions).toHaveLength(0); // Warz never POSTs the word itself
 });
 
 test("Pass 8 verification: letter-tile geometry stays single-row, non-overlapping, and contained across word lengths", async ({ page }) => {

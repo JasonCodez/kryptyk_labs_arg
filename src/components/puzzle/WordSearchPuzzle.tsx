@@ -245,6 +245,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   const [definition, setDefinition] = useState<DefinitionState | null>(null);
   const [celebration, setCelebration] = useState<WordCelebration | null>(null);
   const [trail, setTrail] = useState<Array<{ x: number; y: number }>>([]);
+  const [trailMarkerRadii, setTrailMarkerRadii] = useState<{ start: number | null; end: number | null }>({ start: null, end: null });
   const [zoom, setZoom] = useState(1);
   const [pageVisible, setPageVisible] = useState(true);
   const [catalogLoadAttempt, setCatalogLoadAttempt] = useState(0);
@@ -317,12 +318,31 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     });
   }, [zoom]);
 
+  // Halo radius for an endpoint marker: half the endpoint cell's measured (unselected) size —
+  // in the trail's own unzoomed coordinate space — plus a small extension so the ring clears the
+  // tile. The proportional term also clears the ~1.08x scale a selected cell briefly animates to
+  // (an existing, unchanged bit of feedback the geometry cache doesn't itself track).
+  const endpointMarkerRadius = useCallback((cell: WordSearchCell | undefined, extension: number) => {
+    const geometry = geometryRef.current;
+    if (!geometry || !cell) return null;
+    const rect = geometry.cells.get(keyOf(cell));
+    if (!rect) return null;
+    const halfTile = Math.min(rect.width, rect.height) / (2 * zoom);
+    if (!Number.isFinite(halfTile) || halfTile <= 0) return null;
+    const radius = halfTile + halfTile * 0.12 + extension;
+    return Number.isFinite(radius) && radius > 0 ? radius : null;
+  }, [zoom]);
+
   useLayoutEffect(() => {
-    if (selection.length < 2) { setTrail([]); return; }
+    if (selection.length < 2) { setTrail([]); setTrailMarkerRadii({ start: null, end: null }); return; }
     setTrail(pointsForCells(selection));
-    // geometryVersion is a dependency only for its change signal — pointsForCells reads the
-    // geometry ref directly rather than depending on it as a value.
-  }, [geometryVersion, selection, pointsForCells]);
+    setTrailMarkerRadii({
+      start: endpointMarkerRadius(selection[0], 1.5),
+      end: endpointMarkerRadius(selection[selection.length - 1], 2.5),
+    });
+    // geometryVersion is a dependency only for its change signal — pointsForCells and
+    // endpointMarkerRadius read the geometry ref directly rather than depending on it as a value.
+  }, [geometryVersion, selection, pointsForCells, endpointMarkerRadius]);
 
   const foundTrailPoints = useMemo(() => {
     if (!celebration || reduceMotion) return [];
@@ -820,8 +840,24 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                 <svg className="word-search-trail" aria-hidden="true">
                   <polyline className="word-search-trail-underlay" vectorEffect="non-scaling-stroke" points={svgPoints(trail)} />
                   <polyline className="word-search-trail-core" vectorEffect="non-scaling-stroke" points={svgPoints(trail)} />
-                  <circle className="word-search-trail-start" cx={trail[0].x} cy={trail[0].y} r={4.5} />
-                  <circle className="word-search-trail-end" cx={trail[trail.length - 1].x} cy={trail[trail.length - 1].y} r={5.5} />
+                  {trailMarkerRadii.start !== null && (
+                    <circle
+                      className="word-search-trail-marker word-search-trail-start"
+                      cx={trail[0].x}
+                      cy={trail[0].y}
+                      r={trailMarkerRadii.start}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                  {trailMarkerRadii.end !== null && (
+                    <circle
+                      className="word-search-trail-marker word-search-trail-end"
+                      cx={trail[trail.length - 1].x}
+                      cy={trail[trail.length - 1].y}
+                      r={trailMarkerRadii.end}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
                 </svg>
               )}
               {celebration && !reduceMotion && foundTrailPoints.length > 1 && (
