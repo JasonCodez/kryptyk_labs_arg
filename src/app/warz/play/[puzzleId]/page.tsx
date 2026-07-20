@@ -425,7 +425,11 @@ export default function WarzPlayPage() {
 
   // ── Active play ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen px-4 pt-24 pb-8 max-w-4xl mx-auto" style={{ backgroundColor: "#0A0800" }}>
+    <div
+      data-testid="warz-active-play-shell"
+      className="min-h-screen px-4 pt-4 min-[1032px]:pt-24 pb-8 max-w-4xl mx-auto"
+      style={{ backgroundColor: "#0A0800" }}
+    >
       {submitting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(10,8,0,0.85)" }}>
           <div className="text-center">

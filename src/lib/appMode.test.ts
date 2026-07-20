@@ -42,6 +42,25 @@ describe("getAppMode", () => {
     expect(getAppMode("/admin/reports")).toBe("admin");
   });
 
+  test("browse: Warz hub", () => {
+    expect(getAppMode("/warz")).toBe("browse");
+  });
+
+  test("play: Warz gameplay routes", () => {
+    expect(getAppMode("/warz/play/puzzle-123")).toBe("play");
+    expect(getAppMode("/warz/challenge/challenge-123")).toBe("play");
+  });
+
+  test("browse: incomplete Warz paths are not swept into play", () => {
+    expect(getAppMode("/warz/play")).toBe("browse");
+    expect(getAppMode("/warz/challenge")).toBe("browse");
+  });
+
+  test("browse: deeper nested Warz paths are not swept into play", () => {
+    expect(getAppMode("/warz/play/puzzle-123/extra")).toBe("browse");
+    expect(getAppMode("/warz/challenge/challenge-123/extra")).toBe("browse");
+  });
+
   test("unrelated nested routes under /puzzles are not swept into play", () => {
     // Browse: filtered puzzle-type listing, not a solve screen.
     expect(getAppMode("/puzzles/type/riddle")).toBe("browse");
@@ -71,5 +90,13 @@ describe("isPlayMode", () => {
     expect(isPlayMode("/puzzles")).toBe(false);
     expect(isPlayMode("/puzzles/type/riddle")).toBe(false);
     expect(isPlayMode("/")).toBe(false);
+  });
+
+  test("mirrors getAppMode === 'play' for Warz routes", () => {
+    expect(isPlayMode("/warz/play/puzzle-123")).toBe(true);
+    expect(isPlayMode("/warz/challenge/challenge-123")).toBe(true);
+    expect(isPlayMode("/warz")).toBe(false);
+    expect(isPlayMode("/warz/play")).toBe(false);
+    expect(isPlayMode("/warz/challenge")).toBe(false);
   });
 });

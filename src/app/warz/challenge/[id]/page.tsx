@@ -290,7 +290,11 @@ export default function WarzChallengePage() {
   // ── Active play ──────────────────────────────────────────────────────────
   if (playing) {
     return (
-      <div className="min-h-screen px-4 pt-24 pb-8 max-w-4xl mx-auto" style={{ backgroundColor: "#0A0800" }}>
+      <div
+        data-testid="warz-active-play-shell"
+        className="min-h-screen px-4 pt-4 min-[1032px]:pt-24 pb-8 max-w-4xl mx-auto"
+        style={{ backgroundColor: "#0A0800" }}
+      >
         {submittingResult && (
           <div className="flex items-center justify-center mb-4 gap-2">
             <div className="w-3 h-3 rounded-full bg-yellow-400 animate-bounce" />

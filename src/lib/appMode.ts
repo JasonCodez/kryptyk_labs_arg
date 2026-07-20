@@ -24,6 +24,21 @@ const PUZZLE_SOLVE_RE = /^\/puzzles\/(?!type$)[^/]+$/;
 /** Playable daily route: /daily/<puzzle>, e.g. /daily/crossword. */
 const DAILY_PLAY_RE = /^\/daily\/[^/]+$/;
 
+/**
+ * Warz gameplay routes: /warz itself is a browse hub (challenge list, entry
+ * points), so it's deliberately excluded here.
+ *   /warz/play/<puzzleId>      — the wager-and-create battle flow; contains
+ *                                 active play once the player starts.
+ *   /warz/challenge/<id>       — intentionally hybrid: the pre-battle accept
+ *                                 screen, the active battle, and the result
+ *                                 screen all live under this one URL (no
+ *                                 navigation between them), so the whole
+ *                                 route is classified as play mode.
+ * Anchored to exactly one segment after play/challenge, same as
+ * PUZZLE_SOLVE_RE/DAILY_PLAY_RE, so deeper nested paths are not swept in.
+ */
+const WARZ_PLAY_RE = /^\/warz\/(?:play|challenge)\/[^/]+$/;
+
 export function getAppMode(pathname: string | null | undefined): AppMode {
   if (!pathname) return "browse";
 
@@ -42,6 +57,10 @@ export function getAppMode(pathname: string | null | undefined): AppMode {
   // Individual puzzle solve pages are play; the /puzzles library, and any
   // nested non-solve route under /puzzles/<id>/*, are browse.
   if (PUZZLE_SOLVE_RE.test(pathname)) return "play";
+
+  // Warz gameplay routes are play; the /warz hub, and any deeper/incomplete
+  // Warz path, are browse.
+  if (WARZ_PLAY_RE.test(pathname)) return "play";
 
   return "browse";
 }
