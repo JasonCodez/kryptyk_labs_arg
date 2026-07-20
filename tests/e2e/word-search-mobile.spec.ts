@@ -51,6 +51,9 @@ async function installRoutes(page: Page, size: number, short = false) {
   let repairRequired = false;
   let reconciliations = 0;
   const dictionaryRequests: string[] = [];
+  let dictionaryOverride: Partial<{ found: boolean; partOfSpeech: string | null; definition: string; example: string | null; audioUrl: string | null; phonetic: string | null }> | null = null;
+  let dictionaryGate: Promise<void> | null = null;
+  let releaseDictionaryGate: (() => void) | null = null;
   await page.route("**/api/**", async (route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/\/$/, ""); const method = request.method();
     const fulfill = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
@@ -89,8 +92,18 @@ async function installRoutes(page: Page, size: number, short = false) {
     if (path === "/api/warz/check-eligible") return fulfill({ eligible: true });
     if (path === "/api/user/profile") return fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
     if (path === "/api/dictionary/define") {
-      dictionaryRequests.push(url.searchParams.get("word") ?? "");
-      return fulfill({ found: true, partOfSpeech: "noun", definition: `Definition of ${url.searchParams.get("word")}`, example: null, audioUrl: null, phonetic: null });
+      const word = url.searchParams.get("word") ?? "";
+      dictionaryRequests.push(word);
+      if (dictionaryGate) await dictionaryGate;
+      if (dictionaryOverride?.found === false) return fulfill({ found: false });
+      return fulfill({
+        found: true,
+        partOfSpeech: dictionaryOverride?.partOfSpeech ?? "noun",
+        definition: dictionaryOverride?.definition ?? `Definition of ${word}`,
+        example: dictionaryOverride?.example ?? null,
+        audioUrl: dictionaryOverride?.audioUrl ?? null,
+        phonetic: dictionaryOverride?.phonetic ?? null,
+      });
     }
     return fulfill({});
   });
@@ -103,6 +116,9 @@ async function installRoutes(page: Page, size: number, short = false) {
     hintConsumes: () => hintConsumes,
     reconciliations: () => reconciliations,
     dictionaryRequests,
+    setDictionaryResponse: (override: typeof dictionaryOverride) => { dictionaryOverride = override; },
+    holdDictionaryResponse: () => { dictionaryGate = new Promise((resolve) => { releaseDictionaryGate = resolve; }); },
+    releaseDictionaryResponse: () => { releaseDictionaryGate?.(); dictionaryGate = null; releaseDictionaryGate = null; },
     failNextDaily: () => { failDailyOnce = true; },
     setDailyDay: (day: number) => { dailyDayNumber = day; },
     seedLegacyRepair: () => { data.words.forEach((word) => found.add(word)); repairRequired = true; catalogSolved = false; },
@@ -281,12 +297,12 @@ test("catalog uses server reward authority, keeps modal outside More, restores p
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
   await page.getByRole("button", { name: /CAT, found/ }).click();
   await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
-  await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+  await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep searching/i }).click();
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("button", { name: /CAT, found/ })).toBeVisible({ timeout: 15_000 });
 
   // DOG is the final word — it opens automatically, and Continue stays gated until dismissal.
-  await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.size).toBe(2); await expect.poll(state.attemptSuccess).toBe(0); await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible(); await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+  await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.size).toBe(2); await expect.poll(state.attemptSuccess).toBe(0); await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible(); await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep searching/i }).click(); await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // no queued CAT modal appears afterward
 
   // Pass 5: the parent reward flow (the "Continue" step above) is the only fresh-completion
@@ -320,7 +336,7 @@ test("failed daily completion keeps the board and retry records completion once 
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
   await dragWord(page, [1, 0], [1, 2]);
   await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await expect.poll(state.dailyCompletions).toBe(1); await expect(page.getByText("Solved for today!")).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await page.reload({ waitUntil: "domcontentloaded" }); await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 }); await page.getByRole("button", { name: "Retry Completion" }).click();
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await expect.poll(state.dailyCompletions).toBe(1); await expect(page.getByText("Solved for today!")).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep searching/i }).click(); await page.reload({ waitUntil: "domcontentloaded" }); await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 }); await page.getByRole("button", { name: "Retry Completion" }).click();
   await expect.poll(state.dailyCompletions).toBe(2); await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 5_000 });
 });
 
@@ -1502,4 +1518,310 @@ test("Pass 7: Warz word sheet uses the redesigned treatment without opening defi
   await page.waitForTimeout(300);
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
   expect(state.dictionaryRequests).toHaveLength(0);
+});
+
+// ── Pass 8: definition modal polish ─────────────────────────────────────────────────────────
+
+async function openCatDefinitionFromList(page: Page) {
+  await page.getByRole("button", { name: "Words" }).click();
+  await page.getByRole("button", { name: "CAT, found; open definition" }).click();
+  return page.getByRole("dialog", { name: "CAT definition" });
+}
+
+test("Pass 8: mobile found definition modal at 390x844 is polished, contained, and dismissible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+
+  await page.getByRole("button", { name: "Words" }).click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+  await page.getByRole("button", { name: "CAT, found; open definition" }).click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0); // sheet closes first
+
+  const dialog = page.getByRole("dialog", { name: "CAT definition" });
+  await expect(dialog).toBeVisible();
+
+  const box = await dialog.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390 + 1);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844 + 1);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  const styles = await dialog.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { backgroundImage: computed.backgroundImage, border: computed.borderStyle, shadow: computed.boxShadow };
+  });
+  expect(styles.backgroundImage).not.toBe("none"); // layered gradient surface, not a flat/transparent card
+  expect(styles.border).toBe("solid");
+  expect(styles.shadow).not.toBe("none");
+
+  const closeBox = await page.getByRole("button", { name: "Close", exact: true }).boundingBox();
+  expect(closeBox!.width).toBeGreaterThanOrEqual(44);
+  expect(closeBox!.height).toBeGreaterThanOrEqual(44);
+  const ctaBox = await page.getByRole("button", { name: /Keep searching/i }).boundingBox();
+  expect(ctaBox!.height).toBeGreaterThanOrEqual(44);
+
+  await expect(dialog.getByText("Word found")).toBeVisible();
+  await expect(dialog.locator(".word-definition-tile")).toHaveCount(3);
+  await expect(dialog.getByText("noun")).toBeVisible();
+  await expect(dialog.getByText("Definition of CAT")).toBeVisible();
+  await expect(dialog.getByRole("link", { name: /View full definition/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Keep searching/i })).toBeVisible();
+  expect(await dialog.textContent()).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+
+  // Clicking inside the card must never dismiss it.
+  await dialog.click({ position: { x: 10, y: 10 } });
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole("button", { name: /Keep searching/i }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("grid")).toBeVisible();
+  await dragWord(page, [1, 0], [1, 2]);
+  await expect.poll(() => state.found.has("DOG")).toBe(true); // board is usable again
+});
+
+test("Pass 8: loading-to-found definition transition stays accessible and stable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+
+  state.holdDictionaryResponse();
+  const dialog = await openCatDefinitionFromList(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-busy", "true");
+  await expect(dialog).toHaveAttribute("data-definition-status", "loading");
+  await expect(dialog.locator(".word-definition-skeleton").first()).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Keep searching/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+  await page.waitForTimeout(400); // let the entrance spring settle before measuring geometry
+  const loadingBox = await dialog.boundingBox();
+  expect(loadingBox).not.toBeNull();
+  expect(loadingBox!.y).toBeGreaterThanOrEqual(0);
+  expect(loadingBox!.y + loadingBox!.height).toBeLessThanOrEqual(844 + 1);
+  const loadingWidth = loadingBox!.width;
+
+  state.releaseDictionaryResponse();
+  await expect(dialog).toHaveAttribute("aria-busy", "false");
+  await expect(dialog).toHaveAttribute("data-definition-status", "found");
+  await expect(dialog.getByText("Definition of CAT")).toBeVisible();
+  await expect(dialog.locator(".word-definition-skeleton")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: /Keep searching/i })).toBeEnabled();
+
+  const foundBox = await dialog.boundingBox();
+  expect(Math.abs(foundBox!.width - loadingWidth)).toBeLessThanOrEqual(1);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 8: not-found definition shows calm fallback copy and the Merriam-Webster link", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  state.setDictionaryResponse({ found: false });
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const dialog = await openCatDefinitionFromList(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("data-definition-status", "not-found");
+
+  await expect(dialog.getByText("A quick definition was not available for this word.")).toBeVisible();
+  expect(await dialog.textContent()).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+
+  const link = dialog.getByRole("link", { name: /View full definition/ });
+  await expect(link).toBeVisible();
+  expect(await link.getAttribute("href")).toContain("merriam-webster.com/dictionary/cat");
+  await expect(dialog.getByRole("button", { name: /Hear pronunciation/ })).toHaveCount(0);
+
+  await dialog.getByRole("button", { name: /Keep searching/i }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("grid")).toBeVisible();
+});
+
+test("Pass 8: pronunciation control attempts playback without dismissing the modal", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  state.setDictionaryResponse({ audioUrl: "https://example.test/cat.mp3" });
+  await page.addInitScript(() => {
+    class FakeAudio {
+      volume = 1;
+      src: string;
+      constructor(src: string) {
+        this.src = src;
+        (window as unknown as { __audioPlays: { src: string }[] }).__audioPlays ??= [];
+        (window as unknown as { __audioPlays: { src: string }[] }).__audioPlays.push({ src });
+      }
+      play() {
+        (window as unknown as { __audioLastVolume: number }).__audioLastVolume = this.volume;
+        return Promise.resolve();
+      }
+    }
+    // @ts-expect-error test-only global override, not a production hook
+    window.Audio = FakeAudio;
+  });
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const dialog = await openCatDefinitionFromList(page);
+  await expect(dialog).toBeVisible();
+
+  const pronunciation = dialog.getByRole("button", { name: "Hear pronunciation for CAT" });
+  await expect(pronunciation).toBeVisible();
+  await page.waitForTimeout(400); // let the card's entrance spring settle before measuring geometry
+  const box = await pronunciation.boundingBox();
+  expect(box!.height).toBeGreaterThanOrEqual(43.9); // sub-pixel rounding tolerance
+  await expect(pronunciation.locator("svg")).toHaveCount(1);
+
+  await pronunciation.click();
+  await expect(dialog).toBeVisible(); // clicking pronunciation never dismisses the modal
+  const plays = await page.evaluate(() => (window as unknown as { __audioPlays: { src: string }[] }).__audioPlays);
+  expect(plays).toEqual([{ src: "https://example.test/cat.mp3" }]);
+  const volume = await page.evaluate(() => (window as unknown as { __audioLastVolume: number }).__audioLastVolume);
+  expect(volume).toBe(0.7);
+});
+
+test("Pass 8: narrow 320x710 definition modal fits with reachable controls", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const dialog = await openCatDefinitionFromList(page);
+  await expect(dialog).toBeVisible();
+
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320 + 1);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  const tiles = dialog.locator(".word-definition-tile");
+  const tileBoxes = await tiles.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect()));
+  const rowY = tileBoxes[0].y;
+  for (const tileBox of tileBoxes) expect(Math.abs(tileBox.y - rowY)).toBeLessThanOrEqual(1); // single row
+
+  await expect(page.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("link", { name: /View full definition/ })).toBeVisible();
+  await dialog.getByRole("button", { name: /Keep searching/i }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Pass 8: landscape 844x390 definition modal fits via internal scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  // At this landscape breakpoint the embedded desktop-style panel replaces the mobile sheet's
+  // "Words" button, so the found word is clicked directly from the panel.
+  await page.locator(".word-search-desktop-list").getByRole("button", { name: "CAT, found; open definition" }).click();
+  const dialog = page.getByRole("dialog", { name: "CAT definition" });
+  await expect(dialog).toBeVisible();
+
+  const box = await dialog.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(390 + 1);
+  const overflow = await page.evaluate(() => ({
+    x: document.documentElement.scrollWidth > window.innerWidth + 1,
+    y: document.documentElement.scrollHeight > window.innerHeight + 1,
+  }));
+  expect(overflow.x).toBe(false);
+  expect(overflow.y).toBe(false);
+
+  await expect(page.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+  const cta = dialog.getByRole("button", { name: /Keep searching/i });
+  await expect(cta).toBeVisible();
+  await cta.focus();
+  await expect(cta).toBeFocused();
+  await cta.click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Pass 8: desktop 1440x900 Catalog definition modal stays capped with the panel mounted behind it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const catButton = page.getByRole("button", { name: "CAT, found; open definition" });
+  await catButton.click();
+
+  const dialog = page.getByRole("dialog", { name: "CAT definition" });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".word-search-desktop-list")).toBeVisible(); // panel stays mounted behind it
+
+  const box = await dialog.boundingBox();
+  expect(box!.width).toBeLessThanOrEqual(440 + 1);
+
+  const definitionAlign = await dialog.locator(".word-definition-copy").evaluate((element) => getComputedStyle(element).textAlign);
+  expect(definitionAlign).toBe("left");
+
+  // Tab via the keyboard (rather than a scripted .focus()) so Chromium's :focus-visible
+  // heuristic actually engages. No audioUrl in this fixture, so the order is Close, source
+  // link, Keep searching. Wait for the dialog's own initial-focus handoff (an rAF after mount)
+  // to land before tabbing, or the first Tab could still be relative to the trigger button.
+  await expect(dialog).toBeFocused();
+  const cta = dialog.getByRole("button", { name: /Keep searching/i });
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(cta).toBeFocused();
+  const outline = await cta.evaluate((element) => getComputedStyle(element).outlineStyle);
+  expect(outline).not.toBe("none");
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(catButton).toBeFocused();
+});
+
+test("Pass 8: reduced motion definition modal opens without a transformed entrance", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const dialog = await openCatDefinitionFromList(page);
+  await expect(dialog).toBeVisible();
+
+  const tiles = dialog.locator(".word-definition-tile");
+  await expect(tiles).toHaveCount(3);
+  for (const tile of await tiles.all()) {
+    const opacity = await tile.evaluate((element) => getComputedStyle(element).opacity);
+    expect(Number(opacity)).toBe(1); // immediately in final position, no stagger-in
+  }
+  await expect(dialog.locator(".word-definition-skeleton")).toHaveCount(0); // found already, no loading skeleton
+
+  await dialog.getByRole("button", { name: /Keep searching/i }).click();
+  await expect(dialog).toHaveCount(0);
 });

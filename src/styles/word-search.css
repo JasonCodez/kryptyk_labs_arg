@@ -298,6 +298,188 @@
 .word-search-dialog p { color: #cbd5e1; line-height: 1.55; }
 .word-search-dialog > button { width: 100%; background: #fde74c; color: #020202; font-weight: 900; }
 
+/* ── Word Trove definition modal (Pass 8) ─────────────────────────────────────────────────── */
+
+.word-definition-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2,4,10,.68);
+  backdrop-filter: blur(6px);
+}
+.word-definition-card {
+  position: relative;
+  width: min(calc(100vw - 24px), 440px);
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--pw-surface-2, #1e293b) 92%, #000 30%), color-mix(in srgb, var(--pw-surface-2, #1e293b) 68%, #000 55%));
+  border: 1px solid color-mix(in srgb, var(--word-definition-border, #818cf8) 45%, transparent);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.03), 0 24px 60px rgba(0,0,0,.55);
+  outline: none;
+}
+.word-definition-glow {
+  position: absolute;
+  top: -70px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: var(--word-definition-border, #818cf8);
+  opacity: .18;
+  filter: blur(52px);
+  pointer-events: none;
+}
+.word-definition-texture {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(to bottom, black, transparent 80%);
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 80%);
+  pointer-events: none;
+}
+.word-definition-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--word-definition-border, #818cf8) 80%, transparent), transparent);
+  pointer-events: none;
+}
+.word-definition-close {
+  box-sizing: border-box;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--pw-text-secondary, #94a3b8);
+}
+.word-definition-close:hover { background: rgba(255,255,255,.08); color: var(--pw-text-primary, #f8fafc); }
+.word-definition-close:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
+.word-definition-content {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 15px;
+  padding: 30px 24px 22px;
+}
+.word-definition-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: var(--word-definition-bg, rgba(99,102,241,.18));
+  border: 1px solid color-mix(in srgb, var(--word-definition-border, #818cf8) 55%, transparent);
+  color: var(--word-definition-text, #e0e7ff);
+}
+.word-definition-badge svg { color: inherit; flex-shrink: 0; }
+.word-definition-tiles { display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 2px 4px; }
+.word-definition-tile {
+  box-sizing: border-box;
+  container-type: inline-size;
+  flex: 0 1 2.5rem;
+  min-width: 14px;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-weight: 900;
+  font-size: 52cqi;
+  line-height: 1;
+  background: var(--word-definition-bg);
+  border: 2px solid var(--word-definition-border);
+  color: var(--word-definition-text);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--word-definition-border, #000) 40%, transparent), inset 0 1px 0 rgba(255,255,255,.12);
+}
+.word-definition-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; padding-top: 4px; }
+.word-definition-skeleton { display: block; height: 11px; border-radius: 999px; background: rgba(255,255,255,.08); }
+.word-definition-fallback { margin: 0; font-size: .85rem; line-height: 1.55; color: var(--pw-text-secondary, #9ca3af); text-align: center; }
+.word-definition-pronunciation {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--pw-surface-2, rgba(255,255,255,.06));
+  border: 1px solid var(--pw-border-default, rgba(148,163,184,.25));
+  color: var(--pw-text-primary, #e2e8f0);
+  font-size: .78rem;
+  font-weight: 700;
+}
+.word-definition-pronunciation svg { flex-shrink: 0; }
+.word-definition-pronunciation:hover { background: color-mix(in srgb, var(--pw-surface-2, #1e293b) 80%, #fff 6%); }
+.word-definition-pronunciation:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
+.word-definition-part { margin: 0; font-size: .74rem; font-weight: 700; letter-spacing: .03em; color: var(--word-definition-text, #cbd5e1); opacity: .92; }
+.word-definition-copy { margin: 0; width: 100%; text-align: left; font-size: .92rem; line-height: 1.6; color: var(--pw-text-primary, #e2e8f0); overflow-wrap: anywhere; }
+.word-definition-example { width: 100%; text-align: left; padding: 8px 0 8px 12px; border-left: 3px solid color-mix(in srgb, var(--word-definition-border, #818cf8) 55%, transparent); }
+.word-definition-example-label { display: block; margin-bottom: 3px; font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--word-definition-text, #94a3b8); opacity: .85; }
+.word-definition-example p { margin: 0; font-size: .82rem; line-height: 1.55; color: var(--pw-text-secondary, #a8b3c7); overflow-wrap: anywhere; }
+.word-definition-source { box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; height: 44px; min-height: 44px; padding: 4px; font-size: .74rem; font-weight: 700; color: var(--pw-text-secondary, #9aa5b8); text-decoration: underline; text-underline-offset: 2px; }
+.word-definition-source svg { flex-shrink: 0; }
+.word-definition-source:hover { color: var(--pw-text-primary, #e2e8f0); }
+.word-definition-source:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; border-radius: 4px; }
+.word-definition-action {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  margin-top: 4px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--word-definition-border, #818cf8) 55%, transparent);
+  background: color-mix(in srgb, var(--word-definition-bg, #6366f1) 55%, var(--pw-surface-2, #1e293b));
+  color: var(--word-definition-text, #fff);
+  font-size: .85rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.word-definition-action:hover:not(:disabled) { filter: brightness(1.1); }
+.word-definition-action:disabled { opacity: .4; cursor: not-allowed; }
+.word-definition-action:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
+
+@media (max-width: 359px) {
+  .word-definition-content { padding: 26px 16px 18px; }
+}
+
 @media (max-width: 1031px) {
   .pw-word-search-shell-content { min-height: 0; overflow: hidden !important; padding: 0 !important; }
   .pw-word-search-shell-content > div,
@@ -382,5 +564,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .word-search-root *, .word-search-sheet, .word-search-dialog { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  .word-search-root *, .word-search-sheet, .word-search-dialog, .word-definition-card, .word-definition-card * { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
