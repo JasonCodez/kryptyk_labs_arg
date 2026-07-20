@@ -40,6 +40,7 @@ async function authenticate(page: Page) {
 async function installRoutes(page: Page, size: number, short = false) {
   const data = fixture(size, short);
   const found = new Set<string>();
+  const submissions: string[] = [];
   let dailySolved = false;
   let catalogSolved = false;
   let dailyCompletions = 0;
@@ -70,6 +71,7 @@ async function installRoutes(page: Page, size: number, short = false) {
           reconciliations += 1; repairRequired = false; catalogSolved = true;
           return fulfill({ valid: true, persisted: true, submissionsComplete: true, completionCommitted: true, allFound: true, foundCount: found.size, total: data.words.length });
         }
+        submissions.push(body.word);
         found.add(body.word); if (found.size === data.words.length && !body.dailyMode) catalogSolved = true;
         return fulfill({ valid: true, persisted: !body.dailyMode, completionCommitted: !body.dailyMode && found.size === data.words.length, foundCount: found.size, total: data.words.length, allFound: found.size === data.words.length });
       }
@@ -91,6 +93,7 @@ async function installRoutes(page: Page, size: number, short = false) {
   return {
     data,
     found,
+    submissions,
     dailyCompletions: () => dailyCompletions,
     attemptSuccess: () => attemptSuccess,
     hintConsumes: () => hintConsumes,
@@ -105,6 +108,54 @@ async function dragWord(page: Page, start: [number, number], end: [number, numbe
   const first = page.locator(`[data-ws-row="${start[0]}"][data-ws-col="${start[1]}"]`); const last = page.locator(`[data-ws-row="${end[0]}"][data-ws-col="${end[1]}"]`);
   const a = await first.boundingBox(); const b = await last.boundingBox(); expect(a).not.toBeNull(); expect(b).not.toBeNull();
   await page.mouse.move(a!.x + a!.width / 2, a!.y + a!.height / 2); await page.mouse.down(); await page.mouse.move(b!.x + b!.width / 2, b!.y + b!.height / 2, { steps: 8 }); await page.mouse.up();
+}
+
+// ── Pointer-gesture regression helpers (local to this spec; see the "rapid drag" /
+// "imprecise diagonal" / "pointer cancel" / "second pointer" / "off-board release" /
+// "two-tap cancellation" / "zoom and pan" tests below) ──────────────────────────────
+
+async function cellBox(page: Page, row: number, col: number) {
+  const box = await page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`).boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+}
+
+function cellCenter(box: { x: number; y: number; width: number; height: number }, offset: { dx: number; dy: number } = { dx: 0, dy: 0 }) {
+  return { x: box.x + box.width / 2 + offset.dx, y: box.y + box.height / 2 + offset.dy };
+}
+
+async function selectedCellCount(page: Page) {
+  return page.locator("[data-selected]").count();
+}
+
+/** Records every real pointerdown pointerId the board actually receives, so a synthetic
+ * cancel/interruption never has to assume a hard-coded id like 1. */
+async function installPointerIdCapture(page: Page) {
+  await page.locator(".word-search-board").evaluate((element) => {
+    const store = window as unknown as { __wsPointerIds: number[] };
+    store.__wsPointerIds = [];
+    element.addEventListener("pointerdown", (event) => store.__wsPointerIds.push((event as PointerEvent).pointerId));
+  });
+}
+
+async function lastCapturedPointerId(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __wsPointerIds: number[] }).__wsPointerIds.at(-1)!);
+}
+
+/** Dispatches a genuine (bubbling) native PointerEvent straight at the board so React's
+ * delegated pointer handlers run exactly as they would for real input — used only for the
+ * cancellation/interruption cases a scripted mouse sequence can't otherwise produce. */
+async function dispatchBoardPointerEvent(page: Page, type: string, pointerId: number, point: { x: number; y: number }, pointerType: "mouse" | "touch" = "mouse") {
+  await page.locator(".word-search-board").evaluate((element, args) => {
+    element.dispatchEvent(new PointerEvent(args.type, {
+      pointerId: args.pointerId,
+      pointerType: args.pointerType,
+      clientX: args.x,
+      clientY: args.y,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, { type, pointerId, pointerType, x: point.x, y: point.y });
 }
 
 async function expectMobileFit(page: Page) {
@@ -190,14 +241,42 @@ test("failed daily completion keeps the board and retry records completion once 
   await expect.poll(state.dailyCompletions).toBe(2); await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 5_000 });
 });
 
-test("20x20 board keeps selection geometry after zooming and panning", async ({ page }) => {
+test("zoom and pan: selection geometry tracks the pointer during the drag, not only after release", async ({ page }) => {
   await page.setViewportSize({ width: 430, height: 932 }); await authenticate(page); const state = await installRoutes(page, 20); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Zoom in" }).click(); await page.getByRole("button", { name: "Zoom in" }).click();
   await page.locator(".word-search-board-viewport").evaluate((viewport) => { viewport.scrollLeft = 90; viewport.scrollTop = 170; viewport.dispatchEvent(new Event("scroll")); });
-  await dragWord(page, [15, 10], [15, 13]);
+
+  // ZOOM occupies row 15, columns 10-13 (horizontal). Drive the drag manually (rather than the
+  // atomic dragWord helper) so selection state can be inspected before release.
+  const start = await cellBox(page, 15, 10);
+  const end = await cellBox(page, 15, 13);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(end).x, cellCenter(end).y, { steps: 8 });
+
+  // The intended cells must already be selected while the pointer is still down, under zoom
+  // and after panning — not merely eventually true once the word is found post-release.
+  await expect.poll(() => selectedCellCount(page)).toBe(4);
+  for (const col of [10, 11, 12, 13]) {
+    await expect(page.locator(`[data-ws-row="15"][data-ws-col="${col}"][data-selected]`)).toHaveCount(1);
+  }
+
+  // Trail geometry stays finite and aligned (one point per selected cell) under the active
+  // zoom/pan transform.
+  const trailPoints = await page.locator(".word-search-trail polyline").getAttribute("points");
+  expect(trailPoints).toBeTruthy();
+  const coords = trailPoints!.trim().split(/\s+/).filter(Boolean).map((pair) => pair.split(",").map(Number));
+  expect(coords).toHaveLength(4);
+  for (const [x, y] of coords) { expect(Number.isFinite(x)).toBe(true); expect(Number.isFinite(y)).toBe(true); }
+
+  await page.mouse.up();
   await expect.poll(() => state.found.has("ZOOM")).toBe(true);
+  await expect(page.locator("[data-selected]")).toHaveCount(0); // selection clears after release
   await expect(page.getByRole("dialog", { name: "ZOOM definition" })).toBeVisible();
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
 });
 
 test("catalog, daily days, and consecutive Warz rounds remain isolated for the same puzzle id", async ({ page }) => {
@@ -264,6 +343,186 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(overflow).toBe(false);
+});
+
+// ── Pointer-gesture regression coverage (Pass 2: hardening only — no mechanics changed) ────
+
+test("rapid drag: many fast pointer moves still find the word exactly once with no stale selection", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const start = await cellBox(page, 0, 0);
+  const end = await cellBox(page, 0, 2);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  // A high step count over a short 2-cell gap fires many pointermove events well within a
+  // single animation-frame window, exercising the rAF-batched onPointerMove path directly.
+  await page.mouse.move(cellCenter(end).x, cellCenter(end).y, { steps: 40 });
+  await page.mouse.up();
+
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  expect(state.found.size).toBe(1);
+  expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1); // no duplicate submission
+  await expect(page.locator("[data-selected]")).toHaveCount(0); // selection clears after release
+  await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+
+  // The board accepts another gesture immediately afterward.
+  await dragWord(page, [1, 0], [1, 2]);
+  await expect.poll(() => state.found.has("DOG")).toBe(true);
+});
+
+test("imprecise diagonal: a slightly off-center FISH drag still resolves the correct diagonal word", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  // FISH runs diagonally from (0,5) to (3,8). Offset every point a few pixels off the exact
+  // cell center — comfortably inside the component's own nearest-cell tolerance — without
+  // touching that tolerance value in production.
+  const jitter = { dx: 5, dy: -4 };
+  const start = cellCenter(await cellBox(page, 0, 5), jitter);
+  const mid = cellCenter(await cellBox(page, 2, 7), jitter);
+  const end = cellCenter(await cellBox(page, 3, 8), jitter);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(mid.x, mid.y, { steps: 6 });
+  await page.mouse.move(end.x, end.y, { steps: 6 });
+  await page.mouse.up();
+
+  await expect.poll(() => state.found.has("FISH")).toBe(true);
+  expect(state.submissions).toEqual(["FISH"]); // exactly one submission, and no neighboring word
+  expect(state.found.size).toBe(1);
+  await expect(page.getByRole("dialog", { name: "FISH definition" })).toBeVisible();
+  await page.getByRole("dialog", { name: "FISH definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+});
+
+test("pointer cancel: cancelling an in-flight drag clears the selection and the stale pointer cannot complete it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await installPointerIdCapture(page);
+
+  const start = await cellBox(page, 0, 0);
+  const mid = await cellBox(page, 0, 1);
+  const end = await cellBox(page, 0, 2);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(mid).x, cellCenter(mid).y, { steps: 4 });
+  await expect.poll(() => selectedCellCount(page)).toBeGreaterThan(1); // a real multi-cell selection is live
+
+  const pointerId = await lastCapturedPointerId(page);
+  await dispatchBoardPointerEvent(page, "pointercancel", pointerId, cellCenter(mid));
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+
+  // A stray pointerup on the now-cancelled pointer must not resurrect or complete the selection.
+  await dispatchBoardPointerEvent(page, "pointerup", pointerId, cellCenter(end));
+  expect(state.found.has("CAT")).toBe(false);
+  expect(state.submissions).toHaveLength(0);
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+
+  await page.mouse.up(); // release the real OS-level button state before starting a fresh gesture
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+});
+
+test("second pointer: a new pointer mid-drag cancels the gesture and neither pointer can submit it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await installPointerIdCapture(page);
+
+  const start = await cellBox(page, 0, 0);
+  const mid = await cellBox(page, 0, 1);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(mid).x, cellCenter(mid).y, { steps: 4 });
+  await expect.poll(() => selectedCellCount(page)).toBeGreaterThan(1);
+
+  const firstPointerId = await lastCapturedPointerId(page);
+  const secondPointerId = firstPointerId + 1000; // distinct on purpose; never assumed to be 1
+  await dispatchBoardPointerEvent(page, "pointerdown", secondPointerId, cellCenter(mid), "touch");
+  await expect(page.locator("[data-selected]")).toHaveCount(0); // the interruption cancels immediately
+
+  // Releasing the ORIGINAL pointer afterward must not resurrect or submit the cancelled selection.
+  await page.mouse.up();
+  expect(state.found.has("CAT")).toBe(false);
+  expect(state.submissions).toHaveLength(0);
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+});
+
+test("off-board release: releasing far outside the board does not submit a stale selection", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  // Row 2, columns 5-6 are plain filler ("XX") in this fixture — neither FISH (whose only
+  // row-2 cell is column 7) nor any other placed word touches them, so a completed selection
+  // here can never coincidentally spell a real word.
+  const a = await cellBox(page, 2, 5);
+  const b = await cellBox(page, 2, 6);
+  await page.mouse.move(cellCenter(a).x, cellCenter(a).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(b).x, cellCenter(b).y, { steps: 4 });
+  await expect.poll(() => selectedCellCount(page)).toBeGreaterThanOrEqual(2);
+
+  const board = await page.locator(".word-search-board").boundingBox();
+  expect(board).not.toBeNull();
+  const farAway = { x: board!.x + board!.width + 400, y: board!.y + board!.height + 400 }; // well past the 24px nearest-cell tolerance
+  await page.mouse.move(farAway.x, farAway.y, { steps: 6 });
+  await page.mouse.up();
+
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+  expect(state.found.size).toBe(0);
+  expect(state.submissions).toHaveLength(0);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+});
+
+test("two-tap cancellation: a repeated tap on the same cell cancels the anchor without a stale reuse", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  const tap = (row: number, col: number) => page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`).click();
+
+  await tap(0, 0);
+  await expect(page.locator("[data-selected]")).toHaveCount(1);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-selected]')).toHaveCount(1);
+
+  await tap(0, 0); // second tap on the same anchor cell cancels it
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+  expect(state.found.has("CAT")).toBe(false);
+  expect(state.submissions).toHaveLength(0); // no network submission from the cancellation itself
+
+  // A different cell afterward must start a brand-new anchor — if the cancelled (0,0) anchor
+  // were still live, tapping (0,2) next would complete CAT's exact cells and submit it.
+  await tap(0, 4);
+  await expect(page.locator("[data-selected]")).toHaveCount(1);
+  await tap(0, 2);
+  expect(state.found.has("CAT")).toBe(false);
+
+  // A fresh, correct two-tap CAT selection still submits exactly once.
+  await tap(0, 0);
+  await tap(0, 2);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1);
 });
 
 test("legacy catalog mismatch repairs in place without generic attempt_success", async ({ page }) => {
