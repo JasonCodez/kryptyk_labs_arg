@@ -41,6 +41,7 @@
 }
 .word-search-board-viewport {
   grid-area: board;
+  position: relative;
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -123,6 +124,34 @@
   box-shadow: inset 0 1px 2px rgba(0,0,0,.35), inset 0 -1px 0 rgba(255,255,255,.06);
 }
 .word-search-cell[data-hinted]::after { content: ""; position: absolute; inset: 2px; border: 1px dashed #fde047; border-radius: inherit; }
+
+/* ── Pass 9: sequential cell celebration ──────────────────────────────────────────────────── */
+@keyframes word-search-cell-wave {
+  0% { transform: scale(1); filter: brightness(1); }
+  45% { transform: scale(1.14); filter: brightness(1.28); }
+  75% { transform: scale(.98); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+.word-search-cell[data-celebrating] {
+  animation: word-search-cell-wave 260ms ease-out both;
+  animation-delay: var(--ws-celebrate-delay, 0ms);
+}
+@keyframes word-search-cell-burst-ring {
+  0% { opacity: 0; transform: scale(.7); }
+  35% { opacity: .9; transform: scale(1.2); }
+  100% { opacity: 0; transform: scale(1.55); }
+}
+.word-search-cell-burst {
+  position: absolute;
+  inset: -3px;
+  z-index: 6;
+  border-radius: inherit;
+  border: 2px solid var(--word-color-border, currentColor);
+  pointer-events: none;
+  opacity: 0;
+  animation: word-search-cell-burst-ring 300ms ease-out both;
+  animation-delay: var(--ws-celebrate-delay, 0ms);
+}
 .word-search-cell[data-selected] { z-index: 3; border: 2px solid #fff; background-color: var(--ps-active, #6366f1); background-image: none; color: #fff; box-shadow: var(--ws-selected-glow); }
 .word-search-cell[data-active]:not([data-selected]) { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 1px; }
 .word-search-cell[data-tap-anchor] {
@@ -150,8 +179,62 @@
   border-color: var(--word-color-border);
   color: var(--word-color-text);
 }
-.word-search-trail { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.word-search-trail polyline { fill: none; stroke: var(--ps-board-border, #818cf8); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
+/* ── Pass 9: active selection trail — layered underlay + core + start/end markers, all behind
+   the letter cells (z-index 1 vs. 2) and fully pointer-transparent. ────────────────────────── */
+.word-search-trail,
+.word-search-found-trail { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.word-search-trail-underlay,
+.word-search-trail-core { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.word-search-trail-underlay { stroke: var(--ps-active, #6366f1); stroke-width: 13; opacity: .22; }
+.word-search-trail-core { stroke: var(--ps-active, #6366f1); stroke-width: 5; opacity: .92; }
+.word-search-trail-start,
+.word-search-trail-end { fill: var(--ps-active, #6366f1); opacity: .85; }
+
+/* ── Pass 9: transient found-word success sweep — a separate, short-lived polyline through the
+   canonical found cells; never mounted longer than the celebration lifetime. ───────────────── */
+.word-search-found-trail-underlay,
+.word-search-found-trail-core { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: word-search-found-sweep 360ms ease-out forwards; }
+.word-search-found-trail-underlay { stroke: var(--ws-found-trail-color, #22c55e); stroke-width: 13; opacity: .2; }
+.word-search-found-trail-core { stroke: var(--ws-found-trail-color, #22c55e); stroke-width: 5; opacity: .95; }
+@keyframes word-search-found-sweep { to { stroke-dashoffset: 0; } }
+
+/* ── Pass 9: compact "word found" confirmation — a non-layout overlay inside the board viewport,
+   hidden from assistive technology (the polite live region below carries the one announcement). */
+.word-search-found-flash {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(88%, 320px);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #05070d 78%, var(--ws-found-flash-color, #22c55e) 22%);
+  border: 1px solid color-mix(in srgb, var(--ws-found-flash-color, #22c55e) 55%, transparent);
+  color: var(--ws-found-flash-color, #22c55e);
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .03em;
+  pointer-events: none;
+  opacity: 0;
+  animation: word-search-found-flash-life 480ms ease-out both;
+}
+.word-search-found-flash-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.word-search-found-flash-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.word-search-found-flash-label { flex-shrink: 0; opacity: .78; font-weight: 700; letter-spacing: .06em; }
+@keyframes word-search-found-flash-life {
+  0% { opacity: 0; transform: translate(-50%, -10px) scale(.92); }
+  14% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -6px) scale(.96); }
+}
+.word-search-found-flash--static {
+  animation: none;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 
 .word-search-word-dock { grid-area: dock; display: flex; align-items: stretch; gap: 8px; min-width: 0; }
 .word-search-progress-strip { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; min-height: 46px; padding: 6px 10px; border: 1px solid var(--pw-border-default); border-radius: var(--ws-control-radius); background: var(--pw-surface-2); box-shadow: var(--ws-control-shadow); font-size: .78rem; }

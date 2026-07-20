@@ -103,6 +103,43 @@ const WORD_COLORS = [
 const keyOf = ({ row, col }: WordSearchCell) => `${row},${col}`;
 const sameCell = (a: WordSearchCell | null, b: WordSearchCell) => Boolean(a && a.row === b.row && a.col === b.col);
 
+// One robust, ordered celebration model (Pass 9) replaces the old simultaneous `poppingCells`
+// pop and screen-reader-only `flashWord`. Every found word gets a monotonically increasing id so
+// a rapid second find can safely replace the first without a stale cleanup timer clobbering it.
+type WordCelebration = {
+  id: number;
+  word: string;
+  colorIdx: number;
+  cells: WordSearchCell[];
+  hinted: boolean;
+  final: boolean;
+};
+
+const CELEBRATION_LIFETIME_MS = 480;
+const REDUCED_CELEBRATION_LIFETIME_MS = 160;
+const CELL_WAVE_STEP_MS = 16;
+const CELL_WAVE_STEP_CAP_MS = 150;
+
+/** Short, distinct vibration patterns — lighter for a hint reveal, a touch stronger for the
+ * word that completes the puzzle, restrained everywhere else (including Warz, which never sets
+ * `final` since its own completion handoff is synchronous and must not be delayed). */
+function successHapticPattern(hinted: boolean, final: boolean): number[] {
+  if (final) return [10, 20, 14, 32, 18];
+  if (hinted) return [8, 16, 8];
+  return [10, 22, 14];
+}
+
+/** Maps each canonical placement cell to its 0-based wave index, so the first letter always
+ * reacts first and the last letter last — regardless of which direction the player dragged. */
+function celebrationCellIndexes(cells: WordSearchCell[]): Map<string, number> {
+  const map = new Map<string, number>();
+  cells.forEach((cell, index) => { if (!map.has(keyOf(cell))) map.set(keyOf(cell), index); });
+  return map;
+}
+
+const cellWaveDelayMs = (index: number) => Math.min(index * CELL_WAVE_STEP_MS, CELL_WAVE_STEP_CAP_MS);
+const svgPoints = (points: Array<{ x: number; y: number }>) => points.map(({ x, y }) => `${x},${y}`).join(" ");
+
 function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const returnRef = useRef<HTMLElement | null>(null);
@@ -180,6 +217,8 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   const definitionQueueRef = useRef<DefinitionState[]>([]);
   const definitionRef = useRef<DefinitionState | null>(null);
   const gridShake = useAnimationControls();
+  const celebrationIdRef = useRef(0);
+  const celebrationTimerRef = useRef<number | null>(null);
 
   const restore = useMemo(() => restoreWordSearchProgress({
     storage: typeof window === "undefined" ? null : localStorage,
@@ -204,8 +243,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   const [showIntro, setShowIntro] = useState(false);
   const [wordListOpen, setWordListOpen] = useState(false);
   const [definition, setDefinition] = useState<DefinitionState | null>(null);
-  const [flashWord, setFlashWord] = useState<string | null>(null);
-  const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set());
+  const [celebration, setCelebration] = useState<WordCelebration | null>(null);
   const [trail, setTrail] = useState<Array<{ x: number; y: number }>>([]);
   const [zoom, setZoom] = useState(1);
   const [pageVisible, setPageVisible] = useState(true);
@@ -264,17 +302,45 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     return () => cancelAnimationFrame(frame);
   }, [measureBoard, zoom]);
 
-  useLayoutEffect(() => {
+  // Shared by the active selection trail and the transient found-word sweep — both are derived
+  // from the same measured cell centers, so zoom/viewport changes keep them aligned without any
+  // extra geometry system. Reads geometryRef.current directly rather than during render.
+  const pointsForCells = useCallback((cells: WordSearchCell[]) => {
     const geometry = geometryRef.current;
-    if (!geometry || selection.length < 2) { setTrail([]); return; }
-    setTrail(selection.flatMap((cell) => {
+    if (!geometry) return [];
+    return cells.flatMap((cell) => {
       const rect = geometry.cells.get(keyOf(cell));
       return rect ? [{
         x: (rect.left - geometry.board.left + rect.width / 2) / zoom,
         y: (rect.top - geometry.board.top + rect.height / 2) / zoom,
       }] : [];
-    }));
-  }, [geometryVersion, selection, zoom]);
+    });
+  }, [zoom]);
+
+  useLayoutEffect(() => {
+    if (selection.length < 2) { setTrail([]); return; }
+    setTrail(pointsForCells(selection));
+    // geometryVersion is a dependency only for its change signal — pointsForCells reads the
+    // geometry ref directly rather than depending on it as a value.
+  }, [geometryVersion, selection, pointsForCells]);
+
+  const foundTrailPoints = useMemo(() => {
+    if (!celebration || reduceMotion) return [];
+    return pointsForCells(celebration.cells);
+    // geometryVersion is a dependency only for its change signal, as above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [celebration, reduceMotion, geometryVersion, pointsForCells]);
+
+  const celebrationIndexByCell = useMemo(
+    () => (celebration && !reduceMotion ? celebrationCellIndexes(celebration.cells) : null),
+    [celebration, reduceMotion],
+  );
+
+  // Exactly one active celebration cleanup timer at a time — cleared on unmount so a stale
+  // callback can never fire (and update state) after the component is gone.
+  useEffect(() => () => {
+    if (celebrationTimerRef.current !== null) window.clearTimeout(celebrationTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (alreadySolved || effectiveScope === "none" || typeof window === "undefined") return;
@@ -420,18 +486,27 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     setFoundWords((previous) => previous.includes(word) ? previous : [...previous, word]);
     if (hinted) setHintedWords((previous) => new Set(previous).add(word));
     if (final) finalDefinitionPendingRef.current = true;
-    haptic([12, 30, 12]);
-    setFlashWord(word);
-    const keys = cells.map(keyOf);
-    setPoppingCells((previous) => new Set([...previous, ...keys]));
-    window.setTimeout(() => { setFlashWord(null); setPoppingCells((previous) => { const next = new Set(previous); keys.forEach((key) => next.delete(key)); return next; }); }, reduceMotion ? 80 : 500);
+    haptic(successHapticPattern(hinted, final));
+    const colorIdx = words.indexOf(word) % WORD_COLORS.length;
+    const id = ++celebrationIdRef.current;
+    setCelebration({ id, word, colorIdx, cells, hinted, final });
+    // One cleanup timer at a time: a rapid second find (e.g. back-to-back Warz submissions)
+    // replaces the transient celebration immediately, and this fresh timer supersedes — not
+    // stacks with — any timer still pending for the word that was just replaced. The stale
+    // callback below still fires on schedule, but confirms it's clearing *this* celebration (by
+    // id) before touching state, so it can never clear a newer one out from under it.
+    if (celebrationTimerRef.current !== null) window.clearTimeout(celebrationTimerRef.current);
+    celebrationTimerRef.current = window.setTimeout(() => {
+      celebrationTimerRef.current = null;
+      setCelebration((current) => (current && current.id === id ? null : current));
+    }, reduceMotion ? REDUCED_CELEBRATION_LIFETIME_MS : CELEBRATION_LIFETIME_MS);
     // A competitive Warz round must never be interrupted by the definition modal — it fully
     // covers the board and blocks the next selection, which would cost real time in a timed
     // match. Outside Warz, only the final word opens automatically — earlier finds stay
     // available on demand via openDefinition (tapping the word in the word list) so a run of
     // quick finds doesn't force a sequence of full-screen interruptions.
     if (!warzMode && final) queueDefinition(word, final);
-  }, [haptic, queueDefinition, reduceMotion, warzMode]);
+  }, [haptic, queueDefinition, reduceMotion, warzMode, words]);
 
   const finishCompletionHandoff = useCallback(async () => {
     if (!onComplete || completionRef.current) return;
@@ -741,12 +816,34 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
               onPointerUp={onPointerUp}
               onPointerCancel={cancelSelection}
             >
-              {trail.length > 1 && <svg className="word-search-trail" aria-hidden><polyline points={trail.map(({ x, y }) => `${x},${y}`).join(" ")} /></svg>}
+              {trail.length > 1 && (
+                <svg className="word-search-trail" aria-hidden="true">
+                  <polyline className="word-search-trail-underlay" vectorEffect="non-scaling-stroke" points={svgPoints(trail)} />
+                  <polyline className="word-search-trail-core" vectorEffect="non-scaling-stroke" points={svgPoints(trail)} />
+                  <circle className="word-search-trail-start" cx={trail[0].x} cy={trail[0].y} r={4.5} />
+                  <circle className="word-search-trail-end" cx={trail[trail.length - 1].x} cy={trail[trail.length - 1].y} r={5.5} />
+                </svg>
+              )}
+              {celebration && !reduceMotion && foundTrailPoints.length > 1 && (
+                <svg
+                  className="word-search-found-trail"
+                  aria-hidden="true"
+                  style={{ "--ws-found-trail-color": WORD_COLORS[celebration.colorIdx].border } as React.CSSProperties}
+                >
+                  <polyline className="word-search-found-trail-underlay" vectorEffect="non-scaling-stroke" pathLength={1} points={svgPoints(foundTrailPoints)} />
+                  <polyline className="word-search-found-trail-core" vectorEffect="non-scaling-stroke" pathLength={1} points={svgPoints(foundTrailPoints)} />
+                </svg>
+              )}
               {grid.map((row, rowIndex) => (
                 <div role="row" className="word-search-row" key={rowIndex}>
                   {row.map((letter, colIndex) => {
                     const cell = { row: rowIndex, col: colIndex };
                     const key = keyOf(cell); const colorIndex = cellColors.get(key); const found = colorIndex !== undefined; const selected = selectedSet.has(key); const active = sameCell(activeCell, cell); const hinted = [...hintedWords].some((word) => placements.get(word)?.some((item) => sameCell(item, cell))); const isTapAnchor = sameCell(tapAnchor, cell);
+                    const celebrateIndex = celebrationIndexByCell?.get(key);
+                    const celebrating = celebrateIndex !== undefined;
+                    const cellStyle: Record<string, string> = {};
+                    if (found) { cellStyle["--word-color-bg"] = WORD_COLORS[colorIndex].bg; cellStyle["--word-color-border"] = WORD_COLORS[colorIndex].border; cellStyle["--word-color-text"] = WORD_COLORS[colorIndex].text; }
+                    if (celebrating) cellStyle["--ws-celebrate-delay"] = `${cellWaveDelayMs(celebrateIndex)}ms`;
                     return <motion.div
                       role="gridcell"
                       key={key}
@@ -757,25 +854,39 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                       data-selected={selected || undefined}
                       data-active={active || undefined}
                       data-tap-anchor={isTapAnchor || undefined}
+                      data-celebrating={celebrating || undefined}
                       tabIndex={active ? 0 : -1}
                       aria-selected={selected}
                       aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}, letter ${letter}${found ? ", found word" : ""}${isTapAnchor ? ", start selected; tap another letter to finish" : ""}`}
                       className="word-search-cell"
                       onFocus={() => { activeCellRef.current = cell; setActiveCell(cell); }}
-                      animate={reduceMotion ? undefined : { scale: poppingCells.has(key) ? [1, 1.25, 1] : selected ? 1.08 : 1 }}
-                      style={found ? { "--word-color-bg": WORD_COLORS[colorIndex].bg, "--word-color-border": WORD_COLORS[colorIndex].border, "--word-color-text": WORD_COLORS[colorIndex].text } as React.CSSProperties : undefined}
-                    >{letter}</motion.div>;
+                      animate={reduceMotion ? undefined : { scale: selected ? 1.08 : 1 }}
+                      style={Object.keys(cellStyle).length ? (cellStyle as React.CSSProperties) : undefined}
+                    >{letter}{celebrating && <span className="word-search-cell-burst" aria-hidden="true" />}</motion.div>;
                   })}
                 </div>
               ))}
             </motion.div>
+            {celebration && (
+              <div
+                className={`word-search-found-flash${reduceMotion ? " word-search-found-flash--static" : ""}`}
+                aria-hidden="true"
+                style={{ "--ws-found-flash-color": WORD_COLORS[celebration.colorIdx].border } as React.CSSProperties}
+              >
+                <svg className="word-search-found-flash-icon" viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M4 10.5l3.8 3.8L16 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="word-search-found-flash-word">{celebration.word}</span>
+                <span className="word-search-found-flash-label">{celebration.hinted ? "REVEALED" : "FOUND"}</span>
+              </div>
+            )}
           </div>
 
           <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={openAppropriateWordList} showProgress={displayMode !== "app-shell"} />
           <WordSearchControls hintTokens={hintTokens} hintPending={hintPending} disabled={status !== "playing"} canZoom={canZoom} zoomed={zoom > 1} onHint={() => void requestHint()} onZoomIn={() => setZoom((value) => Math.min(2, value + .25))} onZoomOut={() => setZoom((value) => Math.max(1, value - .25))} onResetZoom={() => setZoom(1)} />
           <WordSearchDesktopWordList ref={desktopListRef} words={words} foundWords={foundSet} onOpenDefinition={openDefinition} onEscape={focusBoard} definitionsEnabled={!warzMode} />
         </div>
-        {flashWord && <span className="word-search-live" aria-live="polite">Found {flashWord}</span>}
+        {celebration && <span className="word-search-live" aria-live="polite">Found {celebration.word}</span>}
       </div>
     </div>
   );

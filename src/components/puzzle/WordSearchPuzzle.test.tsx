@@ -16,7 +16,15 @@ jest.mock("framer-motion", () => ({
 jest.mock("@/components/puzzle/WordDefinitionModal", () => ({ __esModule: true, default: ({ word, onDismiss }: { word: string; onDismiss: () => void }) => <div role="dialog" aria-label={`${word} definition`}><button onClick={onDismiss}>Close definition</button></div> }));
 jest.mock("@/components/juice/Pressable", () => function Pressable({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props}>{children}</button>; });
 jest.mock("@/hooks/usePuzzleSkin", () => ({ usePuzzleSkin: () => ({ _key: "default", backdropScrim: "transparent", boardBorder: "#818cf8" }) }));
-jest.mock("@/lib/juice", () => ({ isHapticsEnabled: () => false, prefersReducedMotion: () => false }));
+
+// Configurable per test: haptics default to disabled/no-reduced-motion so existing tests are
+// unaffected, but Pass 9 tests can flip either flag via setJuicePrefs before rendering.
+const juicePrefs = { haptics: false, reducedMotion: false };
+function setJuicePrefs(overrides: Partial<typeof juicePrefs>) { Object.assign(juicePrefs, overrides); }
+jest.mock("@/lib/juice", () => ({
+  isHapticsEnabled: () => juicePrefs.haptics,
+  prefersReducedMotion: () => juicePrefs.reducedMotion,
+}));
 
 const DATA = {
   grid: [
@@ -36,9 +44,10 @@ beforeAll(() => {
   Object.defineProperty(window, "requestAnimationFrame", { writable: true, value: (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0) });
   Object.defineProperty(window, "cancelAnimationFrame", { writable: true, value: clearTimeout });
   Object.defineProperty(window, "scrollTo", { writable: true, value: jest.fn() });
+  Object.defineProperty(navigator, "vibrate", { writable: true, configurable: true, value: jest.fn() });
 });
 
-afterEach(() => { cleanup(); localStorage.clear(); jest.clearAllMocks(); });
+afterEach(() => { cleanup(); localStorage.clear(); jest.clearAllMocks(); setJuicePrefs({ haptics: false, reducedMotion: false }); });
 
 function installFetch({ failCompletion = false } = {}) {
   let found: string[] = [];
@@ -701,4 +710,247 @@ test("rapid finds do not create a non-final definition queue", async () => {
   await settlePastDefinitionReveal();
   expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
   expect(dictionaryRequests).toEqual(["SUN"]);
+});
+
+// ── Pass 9: polished selection trail and word-found feedback ────────────────────────────────
+
+const THREE_WORD_DATA = {
+  grid: [
+    ["C", "A", "T", "X", "X"],
+    ["X", "X", "O", "X", "X"],
+    ["D", "O", "G", "X", "X"],
+    ["S", "U", "N", "X", "X"],
+    ["X", "X", "X", "X", "X"],
+  ],
+  words: ["CAT", "DOG", "SUN"],
+};
+
+const CAT_CELLS: Array<[number, number]> = [[0, 0], [0, 1], [0, 2]];
+const DOG_CELLS: Array<[number, number]> = [[2, 0], [2, 1], [2, 2]];
+
+/** Waits past the Pass 9 celebration lifetime (480ms normal / 160ms reduced motion) with a
+ * comfortable margin, using real timers. */
+async function settlePastCelebration() {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 650)); });
+}
+
+function cellAt(container: HTMLElement, [row, col]: [number, number]) {
+  return container.querySelector(`[data-ws-row="${row}"][data-ws-col="${col}"]`);
+}
+
+async function findCatByKeyboard() {
+  const board = screen.getByRole("grid");
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  fireEvent.keyDown(board, { key: " " });
+  fireEvent.keyDown(board, { key: "ArrowRight" });
+  fireEvent.keyDown(board, { key: "ArrowRight" });
+  fireEvent.keyDown(board, { key: "Enter" });
+}
+
+async function findDogByKeyboard() {
+  const board = screen.getByRole("grid");
+  fireEvent.keyDown(board, { key: "ArrowDown" });
+  fireEvent.keyDown(board, { key: "ArrowDown" });
+  fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " });
+  fireEvent.keyDown(board, { key: "ArrowRight" });
+  fireEvent.keyDown(board, { key: "ArrowRight" });
+  fireEvent.keyDown(board, { key: "Enter" });
+}
+
+test("Pass 9: a successful keyboard find celebrates exactly CAT's canonical cells and announces once", async () => {
+  const view = renderGame();
+  await findCatByKeyboard();
+  await waitForFoundCount(view, 1);
+
+  for (const coords of CAT_CELLS) {
+    expect(cellAt(view.container, coords)?.getAttribute("data-celebrating")).toBe("true");
+    expect(cellAt(view.container, coords)?.getAttribute("data-found")).toBe("true");
+  }
+  // An unrelated cell (part of DOG, not found) must not celebrate.
+  expect(cellAt(view.container, [2, 0])?.getAttribute("data-celebrating")).toBeNull();
+
+  const flash = view.container.querySelector(".word-search-found-flash");
+  expect(flash?.textContent).toContain("CAT");
+  expect(flash?.getAttribute("aria-hidden")).toBe("true");
+
+  const liveRegions = view.container.querySelectorAll(".word-search-live");
+  expect(liveRegions).toHaveLength(1);
+  expect(liveRegions[0].textContent).toBe("Found CAT");
+
+  await settlePastCelebration();
+  for (const coords of CAT_CELLS) {
+    expect(cellAt(view.container, coords)?.getAttribute("data-found")).toBe("true"); // permanent state survives cleanup
+  }
+});
+
+test("Pass 9: celebration cleanup removes transient state without any extra network activity", async () => {
+  const fetchMock = installFetch();
+  const view = renderPuzzle({ puzzleId: "cleanup-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142 });
+  await findCatByKeyboard();
+  await waitForFoundCount(view, 1);
+  const callsBeforeCleanup = fetchMock.mock.calls.length;
+
+  await settlePastCelebration();
+
+  expect(view.container.querySelectorAll("[data-celebrating]")).toHaveLength(0);
+  expect(view.container.querySelector(".word-search-cell-burst")).toBeNull();
+  expect(view.container.querySelector(".word-search-found-flash")).toBeNull();
+  expect(view.container.querySelector(".word-search-live")).toBeNull();
+  expect(cellAt(view.container, [0, 0])?.getAttribute("data-found")).toBe("true");
+  expect(fetchMock.mock.calls.length).toBe(callsBeforeCleanup); // cleanup itself never talks to the network
+});
+
+test("Pass 9: a rapid second find replaces the transient celebration and survives the first word's stale cleanup", async () => {
+  const { fetchMock } = installFetchWithDictionaryTracking({ total: 3 });
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  jest.useFakeTimers();
+  try {
+    const view = renderPuzzle({ puzzleId: "rapid-celebrate", wordSearchData: THREE_WORD_DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142 });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    fireEvent.keyDown(screen.getByRole("grid"), { key: " " });
+    fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("grid"), { key: "Enter" });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(view.container.querySelector(".word-search-found-flash-word")?.textContent).toBe("CAT");
+
+    // DOG is found only 100ms later — well inside CAT's 480ms celebration lifetime.
+    act(() => { jest.advanceTimersByTime(100); });
+    await findDogByKeyboard();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(view.container.querySelector(".word-search-found-flash-word")?.textContent).toBe("DOG"); // replaced immediately
+
+    // Advance to just past CAT's original deadline (t=480 from CAT, i.e. +380 from here at t=100).
+    act(() => { jest.advanceTimersByTime(390); });
+    expect(view.container.querySelector(".word-search-found-flash-word")?.textContent).toBe("DOG"); // survives CAT's stale cleanup
+    for (const coords of DOG_CELLS) expect(cellAt(view.container, coords)?.getAttribute("data-celebrating")).toBe("true");
+
+    // Advance past DOG's own deadline (armed at t=100, clears at t=580; we're now well past it).
+    act(() => { jest.advanceTimersByTime(300); });
+    expect(view.container.querySelector(".word-search-found-flash")).toBeNull();
+    expect(view.container.querySelectorAll("[data-celebrating]")).toHaveLength(0);
+
+    // Both remain permanently found.
+    expect(cellAt(view.container, [0, 0])?.getAttribute("data-found")).toBe("true");
+    expect(cellAt(view.container, [2, 0])?.getAttribute("data-found")).toBe("true");
+  } finally {
+    jest.useRealTimers();
+  }
+  void fetchMock;
+});
+
+test("Pass 9: a normal find vibrates exactly once with the normal pattern when haptics are enabled", async () => {
+  setJuicePrefs({ haptics: true });
+  const vibrate = navigator.vibrate as unknown as jest.Mock;
+  const view = renderGame();
+  await findCatByKeyboard();
+  await waitForFoundCount(view, 1);
+  expect(vibrate).toHaveBeenCalledTimes(1);
+  expect(vibrate).toHaveBeenCalledWith([10, 22, 14]);
+});
+
+test("Pass 9: haptics stay silent when the preference is disabled", async () => {
+  setJuicePrefs({ haptics: false });
+  const vibrate = navigator.vibrate as unknown as jest.Mock;
+  const view = renderGame();
+  await findCatByKeyboard();
+  await waitForFoundCount(view, 1);
+  expect(vibrate).not.toHaveBeenCalled();
+});
+
+test("Pass 9: a hinted word uses the lighter haptic pattern and keeps its dashed marker after the wave clears", async () => {
+  setJuicePrefs({ haptics: true });
+  const vibrate = navigator.vibrate as unknown as jest.Mock;
+  const randomSpy = jest.spyOn(Math, "random").mockReturnValue(0); // deterministically hints CAT first
+  try {
+    const onHintUsed = jest.fn(async () => true);
+    const view = renderGame({ hintTokens: 2, onHintUsed });
+    fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+    await waitForFoundCount(view, 1);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    expect(vibrate).toHaveBeenCalledWith([8, 16, 8]);
+    expect(cellAt(view.container, [0, 0])?.getAttribute("data-hinted")).toBe("true");
+
+    await settlePastCelebration();
+    expect(view.container.querySelectorAll("[data-celebrating]")).toHaveLength(0);
+    expect(cellAt(view.container, [0, 0])?.getAttribute("data-hinted")).toBe("true"); // dashed marker persists
+  } finally {
+    randomSpy.mockRestore();
+  }
+});
+
+test("Pass 9: the final word of a two-word puzzle uses the distinct final haptic pattern exactly once", async () => {
+  setJuicePrefs({ haptics: true });
+  const vibrate = navigator.vibrate as unknown as jest.Mock;
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const onSolved = jest.fn();
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const view = renderPuzzle({ puzzleId: "final-haptic-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142, onComplete, onSolved });
+
+  await findCatByKeyboard();
+  await waitForFoundCount(view, 1);
+  expect(vibrate).toHaveBeenCalledTimes(1);
+  expect(vibrate).toHaveBeenLastCalledWith([10, 22, 14]);
+
+  await findDogByKeyboard();
+  expect(await screen.findByRole("dialog", { name: "DOG definition" })).toBeTruthy();
+  expect(dictionaryRequests).toEqual(["DOG"]);
+  expect(vibrate).toHaveBeenCalledTimes(2);
+  expect(vibrate).toHaveBeenLastCalledWith([10, 20, 14, 32, 18]);
+
+  // Completion behavior is unchanged: gated on final-definition dismissal.
+  expect(onSolved).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onSolved).toHaveBeenCalledTimes(1);
+});
+
+test("Pass 9: reduced motion skips the cell wave, burst, and moving trail while keeping found state and announcement immediate", async () => {
+  setJuicePrefs({ haptics: true, reducedMotion: true });
+  const vibrate = navigator.vibrate as unknown as jest.Mock;
+  const view = renderGame();
+  await findCatByKeyboard();
+  await waitForFoundCount(view, 1);
+
+  for (const coords of CAT_CELLS) expect(cellAt(view.container, coords)?.getAttribute("data-found")).toBe("true"); // permanent color immediate
+  expect(view.container.querySelectorAll("[data-celebrating]")).toHaveLength(0); // no cell wave
+  expect(view.container.querySelector(".word-search-cell-burst")).toBeNull(); // no burst child
+  expect(view.container.querySelector(".word-search-found-trail")).toBeNull(); // no moving success line
+
+  const flash = view.container.querySelector(".word-search-found-flash");
+  expect(flash).not.toBeNull();
+  expect(flash?.className).toContain("word-search-found-flash--static");
+
+  expect(view.container.querySelector(".word-search-live")?.textContent).toBe("Found CAT"); // announcement remains
+
+  // Haptics remain governed by their own separate preference, unaffected by reduced motion.
+  expect(vibrate).toHaveBeenCalledTimes(1);
+  expect(vibrate).toHaveBeenCalledWith([10, 22, 14]);
+});
+
+test("Pass 9: restored found words render as found without celebrating, announcing, or vibrating", async () => {
+  installFetch();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const seed = renderPuzzle({ puzzleId: "restored-progress-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142 });
+  await findCatByKeyboard();
+  await waitForFoundCount(seed, 1);
+  await waitFor(() => expect(localStorage.getItem("word-search:v3:daily:142:restored-progress-test")).toContain("CAT"));
+  seed.unmount();
+  cleanup();
+
+  setJuicePrefs({ haptics: true });
+  const vibrate = navigator.vibrate as unknown as jest.Mock;
+  vibrate.mockClear();
+  const view = renderPuzzle({ puzzleId: "restored-progress-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142 });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+
+  expect(cellAt(view.container, [0, 0])?.getAttribute("data-found")).toBe("true"); // restored, not freshly found
+  expect(view.container.querySelectorAll("[data-celebrating]")).toHaveLength(0);
+  expect(view.container.querySelector(".word-search-found-flash")).toBeNull();
+  expect(view.container.querySelector(".word-search-live")).toBeNull();
+  expect(vibrate).not.toHaveBeenCalled();
 });

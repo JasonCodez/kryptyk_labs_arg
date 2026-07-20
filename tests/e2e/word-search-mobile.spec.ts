@@ -364,7 +364,7 @@ test("zoom and pan: selection geometry tracks the pointer during the drag, not o
 
   // Trail geometry stays finite and aligned (one point per selected cell) under the active
   // zoom/pan transform.
-  const trailPoints = await page.locator(".word-search-trail polyline").getAttribute("points");
+  const trailPoints = await page.locator(".word-search-trail-core").getAttribute("points");
   expect(trailPoints).toBeTruthy();
   const coords = trailPoints!.trim().split(/\s+/).filter(Boolean).map((pair) => pair.split(",").map(Number));
   expect(coords).toHaveLength(4);
@@ -1842,7 +1842,260 @@ test("Pass 8: reduced motion definition modal opens without a transformed entran
   await expect(dialog).toHaveCount(0);
 });
 
-test("Pass 9: letter-tile geometry stays single-row, non-overlapping, and contained across word lengths", async ({ page }) => {
+// ── Pass 9: polished selection trail and word-found feedback ────────────────────────────────
+
+/** Installs a page-level navigator.vibrate stub before any script runs, so it captures every
+ * call the app makes (haptics preference is read fresh each call, so this must be in place
+ * before goto, not attached after). */
+async function installVibrateStub(page: Page) {
+  await page.addInitScript(() => {
+    const calls: number[][] = [];
+    (window as unknown as { __wsVibrateCalls: number[][] }).__wsVibrateCalls = calls;
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      value: (pattern: number | number[]) => { calls.push(Array.isArray(pattern) ? pattern : [pattern]); return true; },
+    });
+  });
+}
+
+async function vibrateCalls(page: Page): Promise<number[][]> {
+  return page.evaluate(() => (window as unknown as { __wsVibrateCalls: number[][] }).__wsVibrateCalls ?? []);
+}
+
+// Word Trove's own Pass 9 success patterns, distinct from the app-wide ambient button-press tap
+// haptic (a single short pulse fired by every Pressable, unrelated to word-found feedback).
+const CELEBRATION_PATTERNS = [[10, 22, 14], [8, 16, 8], [10, 20, 14, 32, 18]];
+function countCelebrationVibrations(calls: number[][]) {
+  return calls.filter((call) => CELEBRATION_PATTERNS.some((pattern) => pattern.length === call.length && pattern.every((value, index) => value === call[index]))).length;
+}
+
+async function setHapticsPreference(page: Page, enabled: boolean) {
+  // Matches src/lib/juice/prefs.ts's HAPTICS_KEY — haptics default ON, so only "0" disables.
+  await page.addInitScript((value) => { localStorage.setItem("pw-juice-haptics", value ? "1" : "0"); }, enabled);
+}
+
+test("Pass 9: active trail — layered, pointer-transparent, non-scaling stroke, and behind the letter cells", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installVibrateStub(page);
+  await setHapticsPreference(page, true);
+  const state = await installRoutes(page, 10, true); // CAT (row 0, cols 0-2) + DOG
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const start = await cellBox(page, 0, 0);
+  const end = await cellBox(page, 0, 2);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(end).x, cellCenter(end).y, { steps: 6 });
+  await expect.poll(() => selectedCellCount(page)).toBe(3);
+
+  const trail = page.locator(".word-search-trail");
+  await expect(trail).toBeVisible();
+  await expect(trail.locator(".word-search-trail-underlay")).toHaveCount(1);
+  await expect(trail.locator(".word-search-trail-core")).toHaveCount(1);
+  await expect(trail.locator(".word-search-trail-start")).toHaveCount(1);
+  await expect(trail.locator(".word-search-trail-end")).toHaveCount(1);
+
+  expect(await trail.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+  const trailZ = await trail.evaluate((element) => Number(getComputedStyle(element).zIndex));
+  const cellZ = await page.locator('[data-ws-row="0"][data-ws-col="0"]').evaluate((element) => Number(getComputedStyle(element).zIndex));
+  expect(trailZ).toBeLessThan(cellZ); // trail renders behind cells
+
+  const underlayWidth = await trail.locator(".word-search-trail-underlay").evaluate((element) => parseFloat(getComputedStyle(element).strokeWidth));
+  const coreWidth = await trail.locator(".word-search-trail-core").evaluate((element) => parseFloat(getComputedStyle(element).strokeWidth));
+  expect(underlayWidth).toBeGreaterThan(coreWidth);
+  for (const selector of [".word-search-trail-underlay", ".word-search-trail-core"]) {
+    expect(await trail.locator(selector).getAttribute("vector-effect")).toBe("non-scaling-stroke");
+  }
+
+  // Trail points align with the selected cell centers (within a small tolerance).
+  const points = await trail.locator(".word-search-trail-core").getAttribute("points");
+  const coords = points!.trim().split(/\s+/).map((pair) => pair.split(",").map(Number));
+  expect(coords).toHaveLength(3);
+
+  expect(await vibrateCalls(page)).toHaveLength(0); // dragging between cells never vibrates
+
+  await page.mouse.up();
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1); // exactly one submission
+});
+
+test("Pass 9: two-tap and keyboard selection also render the polished trail", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  // Two-tap: tap the start cell, then move (without releasing a drag) toward the end cell isn't
+  // applicable here — instead tap start, then tap a middle cell to resolve the anchored line.
+  const start = await cellBox(page, 0, 0);
+  await page.mouse.click(cellCenter(start).x, cellCenter(start).y);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(1);
+  const mid = await cellBox(page, 0, 1);
+  await page.mouse.move(cellCenter(mid).x, cellCenter(mid).y);
+  await page.mouse.down();
+  await expect.poll(() => selectedCellCount(page)).toBeGreaterThanOrEqual(2);
+  await expect(page.locator(".word-search-trail-core")).toHaveCount(1);
+  await page.mouse.up();
+  await page.keyboard.press("Escape"); // clear whatever partial gesture remains, cleanly
+
+  // Keyboard: Space to anchor, then extend beyond one cell.
+  await page.locator(".word-search-board").focus();
+  await page.keyboard.press(" ");
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => selectedCellCount(page)).toBe(2);
+  await expect(page.locator(".word-search-trail-core")).toHaveCount(1);
+  await expect(page.locator(".word-search-trail-start")).toHaveCount(1);
+  await expect(page.locator(".word-search-trail-end")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+});
+
+test("Pass 9: found success feedback — ordered cell celebration, success trail, and a compact non-blocking confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const boardBefore = await page.locator(".word-search-board").boundingBox();
+  const dockBefore = await page.locator(".word-search-word-dock,.word-search-desktop-list").first().boundingBox();
+
+  await dragWord(page, [0, 0], [0, 2]); // CAT
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+
+  // Immediately after the find, the transient feedback should be present.
+  const celebrating = page.locator("[data-celebrating]");
+  await expect(celebrating).toHaveCount(3);
+  for (const col of [0, 1, 2]) await expect(page.locator(`[data-ws-row="0"][data-ws-col="${col}"][data-celebrating]`)).toHaveCount(1);
+  await expect(page.locator('[data-ws-row="1"][data-ws-col="0"][data-celebrating]')).toHaveCount(0); // unrelated cell
+
+  const bursts = page.locator(".word-search-cell-burst");
+  await expect(bursts).toHaveCount(3);
+  for (let i = 0; i < 3; i += 1) {
+    expect(await bursts.nth(i).evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+    expect(await bursts.nth(i).getAttribute("aria-hidden")).toBe("true");
+  }
+
+  await expect(page.locator(".word-search-found-trail")).toHaveCount(1);
+
+  const confirmation = page.locator(".word-search-found-flash");
+  await expect(confirmation).toBeVisible();
+  expect(confirmation.getByText("CAT")).toBeTruthy();
+  await expect(confirmation).toHaveAttribute("aria-hidden", "true");
+  expect(await confirmation.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+
+  const boardDuring = await page.locator(".word-search-board").boundingBox();
+  const dockDuring = await page.locator(".word-search-word-dock,.word-search-desktop-list").first().boundingBox();
+  expect(Math.abs(boardDuring!.x - boardBefore!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(boardDuring!.y - boardBefore!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(dockDuring!.y - dockBefore!.y)).toBeLessThanOrEqual(1);
+  const overflowDuring = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowDuring).toBe(false);
+
+  // Feedback settles: everything transient disappears, the permanent found state remains.
+  await expect(celebrating).toHaveCount(0, { timeout: 2000 });
+  await expect(bursts).toHaveCount(0);
+  await expect(page.locator(".word-search-found-trail")).toHaveCount(0);
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1);
+
+  // The board remains usable — DOG can still be found.
+  await dragWord(page, [1, 2], [1, 0]);
+  await expect.poll(() => state.found.has("DOG")).toBe(true);
+});
+
+test("Pass 9: haptic preference is respected for finding, dragging, and opening Words or a definition", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installVibrateStub(page);
+  await setHapticsPreference(page, true);
+  const state = await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]); // CAT — non-final
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect.poll(async () => countCelebrationVibrations(await vibrateCalls(page))).toBe(1);
+  const celebrationCalls = (await vibrateCalls(page)).filter((call) => CELEBRATION_PATTERNS.some((p) => p.length === call.length && p.every((v, i) => v === call[i])));
+  expect(celebrationCalls[0]).toEqual([10, 22, 14]);
+
+  await page.getByRole("button", { name: "Words" }).click();
+  await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible();
+  expect(countCelebrationVibrations(await vibrateCalls(page))).toBe(1); // opening the word list adds no celebration vibration
+  await page.getByRole("button", { name: /CAT, found/ }).click();
+  await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
+  expect(countCelebrationVibrations(await vibrateCalls(page))).toBe(1); // opening a definition adds no celebration vibration
+});
+
+test("Pass 9: haptics stay silent for a find when the preference is disabled", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installVibrateStub(page);
+  await setHapticsPreference(page, false);
+  const state = await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await page.waitForTimeout(300);
+  expect(await vibrateCalls(page)).toHaveLength(0);
+});
+
+test("Pass 9: reduced motion — CAT is immediately found with no animated burst, no moving success trail, and a static confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const state = await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1); // permanent color immediate
+
+  expect(await page.locator(".word-search-cell-burst").count()).toBe(0);
+  expect(await page.locator(".word-search-found-trail").count()).toBe(0);
+
+  const confirmation = page.locator(".word-search-found-flash");
+  await expect(confirmation).toBeVisible();
+  expect(await confirmation.evaluate((element) => element.className)).toContain("word-search-found-flash--static");
+
+  // The board is immediately usable — no staggered delay blocking the next selection.
+  await dragWord(page, [1, 2], [1, 0]);
+  await expect.poll(() => state.found.has("DOG")).toBe(true);
+});
+
+test("Pass 9: rapid Warz finds — a fast second find replaces the first in the confirmation without a stale cleanup clobbering it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true); // CAT (row 0) + DOG (row 1)
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click();
+  await expect(page.getByTestId("word-search-root")).toBeVisible();
+  await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
+  await expect(page.locator(".word-search-board").locator('[data-ws-row="0"][data-ws-col="0"]')).toBeVisible();
+
+  // Warz submissions are purely client-side (no server POST for the word itself), so progress
+  // is asserted from the rendered UI rather than the mocked route's captured state.
+  await dragWord(page, [0, 0], [0, 2]); // CAT
+  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1);
+
+  // DOG (the final word) is found quickly after CAT — well inside CAT's transient celebration
+  // lifetime — and must trigger the normal, synchronous Warz result transition with no modal and
+  // no internal Word Search success banner behind it.
+  await dragWord(page, [1, 2], [1, 0]); // DOG
+  await expect(page.getByText("Posting your challenge…")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // never opens in Warz
+  await expect(page.locator(".word-search-success")).toHaveCount(0);
+  expect(state.dictionaryRequests).toHaveLength(0);
+});
+
+test("Pass 8 verification: letter-tile geometry stays single-row, non-overlapping, and contained across word lengths", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
   const state = await installRoutes(page, 20, false, tileGeometryFixture());
@@ -1909,7 +2162,7 @@ test("Pass 9: letter-tile geometry stays single-row, non-overlapping, and contai
   }
 });
 
-test("Pass 9: no-audio, no-part-of-speech definition content all reaches visible without staying stuck hidden", async ({ page }) => {
+test("Pass 8 verification: no-audio, no-part-of-speech definition content all reaches visible without staying stuck hidden", async ({ page }) => {
   // This is the exact regression scenario: a shared-variants/staggerChildren setup got
   // permanently stuck at opacity 0 for whichever section followed a conditionally-omitted
   // sibling. With both the pronunciation button and part-of-speech line omitted, the
