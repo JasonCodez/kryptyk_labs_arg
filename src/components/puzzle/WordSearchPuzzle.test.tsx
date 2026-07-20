@@ -130,8 +130,8 @@ test("imperative controls open help and the word sheet and restore focus", async
   expect(helpDialog).toBeTruthy();
   // Documents both selection methods and same-cell cancellation (Pass 4).
   expect(helpDialog.textContent).toContain("Drag from the first letter to the last");
-  expect(helpDialog.textContent).toContain("tap a start letter and then tap the end letter");
-  expect(helpDialog.textContent).toContain("tap it again to cancel");
+  expect(helpDialog.textContent).toContain("Tap a starting letter, then tap the ending letter");
+  expect(helpDialog.textContent).toContain("again to cancel");
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   act(() => ref.current?.openWordList()); expect(screen.getByRole("dialog", { name: "Words to find" })).toBeTruthy();
   fireEvent.keyDown(window, { key: "Escape" }); await waitFor(() => expect(screen.queryByRole("dialog", { name: "Words to find" })).toBeNull());
@@ -569,7 +569,7 @@ test("Daily: only the final word opens automatically, and completion stays gated
 
   // Pass 5: Daily's brief internal success presentation is unaffected by the Catalog-only
   // suppression rule — it still bridges Daily's ~700ms delay to the parent solved card.
-  expect(document.querySelector(".word-search-success")).toBeTruthy();
+  expect(document.querySelector('.word-search-state-notice[data-notice-kind="success"]')).toBeTruthy();
   expect(screen.getByText(/All 2 words found/)).toBeTruthy();
 
   // No queued CAT modal surfaces after the final one is dismissed.
@@ -605,7 +605,7 @@ test("Catalog: only the final word opens automatically, and completion stays gat
 
   // Pass 5: a fresh app-shell Catalog completion has no internal success banner — the parent
   // XP/comparison/rating flow (driven by onComplete/onSolved) is the only fresh presentation.
-  expect(document.querySelector(".word-search-success")).toBeNull();
+  expect(document.querySelector('.word-search-state-notice[data-notice-kind="success"]')).toBeNull();
   expect(screen.queryByText(/All 2 words found/)).toBeNull();
   expect(screen.queryByText("Word Trove completed")).toBeNull();
 
@@ -629,7 +629,7 @@ test("Pass 5: a restored, already-completed app-shell Catalog puzzle shows a cle
 
   // A clean, non-emoji completed state remains visible — the app-shell is not left blank —
   // but no fresh reward flow is triggered merely by reopening an already-solved puzzle.
-  const success = document.querySelector(".word-search-success");
+  const success = document.querySelector('.word-search-state-notice[data-notice-kind="success"]');
   expect(success).toBeTruthy();
   expect(success?.textContent).toContain("Word Trove completed");
   expect(success?.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
@@ -660,7 +660,7 @@ test("Pass 5: a standalone completion still shows an internal result, unaffected
 
   // Standalone has no parent app-shell reward presentation, so its own internal result must
   // remain — the same displayMode==="app-shell" && catalog rule must not leak into standalone.
-  expect(document.querySelector(".word-search-success")).toBeTruthy();
+  expect(document.querySelector('.word-search-state-notice[data-notice-kind="success"]')).toBeTruthy();
   expect(screen.getByText(/All 2 words found/)).toBeTruthy();
   expect(dictionaryRequests).toContain("DOG");
 });
@@ -953,4 +953,268 @@ test("Pass 9: restored found words render as found without celebrating, announci
   expect(view.container.querySelector(".word-search-found-flash")).toBeNull();
   expect(view.container.querySelector(".word-search-live")).toBeNull();
   expect(vibrate).not.toHaveBeenCalled();
+});
+
+// ── Pass 10: onboarding, help, and lifecycle-state notices ─────────────────────────────────
+
+function installDeferredFetch() {
+  const pending: Array<{ url: string; resolve: (value: Response) => void; reject: (reason?: unknown) => void }> = [];
+  const fetchMock = jest.fn((input: RequestInfo | URL) => new Promise<Response>((resolve, reject) => {
+    pending.push({ url: String(input), resolve, reject });
+  }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+  return {
+    fetchMock,
+    resolveNext: (body: unknown, ok = true) => { pending.shift()?.resolve({ ok, json: async () => body } as Response); },
+    rejectNext: (reason: unknown) => { pending.shift()?.reject(reason); },
+    pendingCount: () => pending.length,
+  };
+}
+
+test("Pass 10: first-run intro shows a polished, accessible three-step structure", async () => {
+  installFetch(); localStorage.removeItem("wordTroveIntroSeen");
+  render(<WordSearchPuzzle puzzleId="intro-structure-test" wordSearchData={DATA} dailyMode />);
+  const dialog = await screen.findByRole("dialog", { name: "More than a word search" });
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+  const titleId = dialog.getAttribute("aria-labelledby");
+  expect(titleId).toBeTruthy();
+  expect(document.getElementById(titleId!)?.textContent).toBe("More than a word search");
+  expect(within(dialog).getByText("WORD TROVE")).toBeTruthy();
+  expect(dialog.textContent).toContain("Find every hidden word, then explore what it means.");
+  expect(within(dialog).getByText("Find")).toBeTruthy();
+  expect(within(dialog).getByText("Discover")).toBeTruthy();
+  expect(within(dialog).getByText("Finish")).toBeTruthy();
+  const startButton = within(dialog).getByRole("button", { name: "Start searching" });
+  expect(startButton).toBeTruthy();
+  const closeButton = within(dialog).getByRole("button", { name: "Close" });
+  expect(closeButton.querySelector("svg")).toBeTruthy();
+  expect(closeButton.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  expect(dialog.textContent).not.toContain("×");
+  expect(dialog.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+  await waitFor(() => expect(document.activeElement).toBe(dialog));
+});
+
+test("Pass 10: Start searching closes the intro and records the flag permanently", async () => {
+  installFetch(); localStorage.removeItem("wordTroveIntroSeen");
+  const view = render(<WordSearchPuzzle puzzleId="intro-start-test" wordSearchData={DATA} dailyMode />);
+  const dialog = await screen.findByRole("dialog", { name: "More than a word search" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Start searching" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "More than a word search" })).toBeNull());
+  expect(localStorage.getItem("wordTroveIntroSeen")).toBe("1");
+  view.unmount(); cleanup();
+
+  render(<WordSearchPuzzle puzzleId="intro-start-test" wordSearchData={DATA} dailyMode />);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  expect(screen.queryByRole("dialog", { name: "More than a word search" })).toBeNull();
+});
+
+test.each([
+  ["the Close button", (dialog: HTMLElement) => fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))],
+  ["Escape", () => fireEvent.keyDown(window, { key: "Escape" })],
+  ["a backdrop click", (dialog: HTMLElement) => fireEvent.pointerDown(dialog.parentElement!)],
+])("Pass 10: dismissing the intro via %s records the flag and does not reopen it", async (_label, dismiss) => {
+  installFetch(); localStorage.removeItem("wordTroveIntroSeen");
+  const trigger = document.createElement("button");
+  trigger.textContent = "outside trigger";
+  document.body.appendChild(trigger);
+  trigger.focus();
+  const view = render(<WordSearchPuzzle puzzleId="intro-dismiss-test" wordSearchData={DATA} dailyMode />);
+  const dialog = await screen.findByRole("dialog", { name: "More than a word search" });
+  dismiss(dialog);
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "More than a word search" })).toBeNull());
+  expect(localStorage.getItem("wordTroveIntroSeen")).toBe("1");
+  view.unmount(); cleanup();
+  trigger.remove();
+
+  render(<WordSearchPuzzle puzzleId="intro-dismiss-test" wordSearchData={DATA} dailyMode />);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  expect(screen.queryByRole("dialog", { name: "More than a word search" })).toBeNull();
+});
+
+test("Pass 10: standard Help is concise, mode-accurate, and free of emoji or raw close glyphs", async () => {
+  const ref = createRef<WordSearchPuzzleHandle>();
+  renderGame({ ref });
+  act(() => ref.current?.openInstructions());
+  const dialog = screen.getByRole("dialog", { name: "How to play Word Trove" });
+  expect(within(dialog).getByText("HOW TO PLAY")).toBeTruthy();
+  expect(within(dialog).getByText("Drag")).toBeTruthy();
+  expect(within(dialog).getByText("Two taps")).toBeTruthy();
+  expect(within(dialog).getByText("Keyboard")).toBeTruthy();
+  expect(dialog.textContent).toContain("again to cancel");
+  expect(dialog.textContent).toContain("horizontally, vertically, diagonally, forwards, or backwards");
+  expect(dialog.querySelectorAll("kbd").length).toBeGreaterThanOrEqual(5);
+  expect(dialog.textContent).toContain("Arrow keys");
+  expect(within(dialog).getByText("Definitions")).toBeTruthy();
+  expect(within(dialog).getByRole("button", { name: "Why Word Trove?" })).toBeTruthy();
+  expect(within(dialog).getByRole("button", { name: "Got it" })).toBeTruthy();
+  expect(dialog.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+  expect(dialog.textContent).not.toContain("×");
+});
+
+test("Pass 10: Why Word Trove? closes Help, opens the intro, and does not erase the seen flag", async () => {
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const ref = createRef<WordSearchPuzzleHandle>();
+  renderGame({ ref });
+  act(() => ref.current?.openInstructions());
+  const helpDialog = screen.getByRole("dialog", { name: "How to play Word Trove" });
+  fireEvent.click(within(helpDialog).getByRole("button", { name: "Why Word Trove?" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "How to play Word Trove" })).toBeNull());
+  const introDialog = await screen.findByRole("dialog", { name: "More than a word search" });
+  expect(screen.getAllByRole("dialog")).toHaveLength(1); // only one dialog mounted at a time
+  await waitFor(() => expect(document.activeElement).toBe(introDialog));
+  // The intro-seen flag from before opening Help is untouched by this navigation.
+  expect(localStorage.getItem("wordTroveIntroSeen")).toBe("1");
+  fireEvent.click(within(introDialog).getByRole("button", { name: "Start searching" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+test("Pass 10: Warz Help shows battle rules only, with no definition instructions or Why Word Trove", async () => {
+  const fetchMock = installNoOpFetch();
+  const ref = createRef<WordSearchPuzzleHandle>();
+  renderPuzzle({ ref, puzzleId: "warz-help-test", wordSearchData: DATA, displayMode: "app-shell", warzMode: true, persistenceScope: "none" });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  act(() => ref.current?.openInstructions());
+  const dialog = screen.getByRole("dialog", { name: "How to play Word Trove" });
+  expect(within(dialog).getByText("Battle rules")).toBeTruthy();
+  expect(dialog.textContent).toContain("Definitions stay closed during timed matches");
+  expect(within(dialog).queryByText("Definitions")).toBeNull();
+  expect(within(dialog).queryByRole("button", { name: "Why Word Trove?" })).toBeNull();
+  expect(within(dialog).getByRole("button", { name: "Got it" })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Got it" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "How to play Word Trove" })).toBeNull());
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("Pass 10: Help focus is trapped between Close and the final action", async () => {
+  const ref = createRef<WordSearchPuzzleHandle>();
+  renderGame({ ref });
+  act(() => ref.current?.openInstructions());
+  const dialog = screen.getByRole("dialog", { name: "How to play Word Trove" });
+  const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])'));
+  expect(focusable[0]).toBe(within(dialog).getByRole("button", { name: "Close" }));
+  const last = focusable.at(-1)!;
+  expect(last).toBe(within(dialog).getByRole("button", { name: "Got it" }));
+  last.focus();
+  fireEvent.keyDown(dialog, { key: "Tab" });
+  expect(document.activeElement).toBe(focusable[0]);
+  focusable[0].focus();
+  fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(last);
+});
+
+test("Pass 10: a Catalog loading notice is accurate, polite, and clears once restoration resolves", async () => {
+  const deferred = installDeferredFetch();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  render(<WordSearchPuzzle puzzleId="loading-notice-test" wordSearchData={DATA} displayMode="app-shell" persistenceScope="catalog" />);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("aria-busy")).toBe("true"));
+  expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("loading");
+  const notice = document.querySelector('[data-notice-kind="loading"]');
+  expect(notice).toBeTruthy();
+  expect(notice?.textContent).toContain("Restoring progress");
+  expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+  expect(screen.getByRole("grid")).toBeTruthy(); // board stays mounted while loading
+
+  deferred.resolveNext({ foundWords: [], allFound: false });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  const busy = screen.getByTestId("word-search-root").getAttribute("aria-busy");
+  expect(busy === "false" || busy === null).toBe(true);
+  expect(document.querySelector('[data-notice-kind="loading"]')).toBeNull();
+});
+
+test("Pass 10: a saving notice appears while completion is in flight and clears without a premature success message", async () => {
+  let resolveComplete!: (value: { success: boolean }) => void;
+  const onComplete = jest.fn(() => new Promise<{ success: boolean }>((resolve) => { resolveComplete = resolve; }));
+  const view = renderGame({ onComplete, hintTokens: 2, onHintUsed: async () => true });
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ })); await waitForFoundCount(view, 1);
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("completing"));
+  expect(screen.getByTestId("word-search-root").getAttribute("aria-busy")).toBe("true");
+  const notice = document.querySelector('[data-notice-kind="saving"]');
+  expect(notice).toBeTruthy();
+  expect(notice?.textContent).toContain("Saving completion");
+  expect(screen.queryByText(/All \d+ words found/)).toBeNull();
+
+  act(() => resolveComplete({ success: true }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onComplete).toHaveBeenCalledTimes(1);
+});
+
+test("Pass 10: a Catalog restore failure shows Retry Restore, and a successful retry reaches playing", async () => {
+  const deferred = installDeferredFetch();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  render(<WordSearchPuzzle puzzleId="restore-retry-test" wordSearchData={DATA} displayMode="app-shell" persistenceScope="catalog" />);
+  await waitFor(() => expect(deferred.pendingCount()).toBe(1));
+  deferred.rejectNext(new Error("Network down"));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("error"));
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toContain("Network down");
+  const retry = screen.getByRole("button", { name: "Retry Restore" });
+  expect(screen.getByRole("grid")).toBeTruthy();
+
+  fireEvent.click(retry);
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("loading"));
+  expect(document.querySelector('[data-notice-kind="loading"]')?.textContent).toContain("Restoring progress");
+  await waitFor(() => expect(deferred.pendingCount()).toBe(1));
+  deferred.resolveNext({ foundWords: [], allFound: false });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+});
+
+test("Pass 10: an ordinary word-save error shows no Retry Completion or Retry Restore button, and a retry succeeds", async () => {
+  let postCount = 0;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/dictionary/")) return { ok: true, json: async () => ({ found: false }) } as Response;
+    if (!init?.method) return { ok: true, json: async () => ({ foundWords: [], allFound: false, completionCommitted: false }) } as Response;
+    postCount += 1;
+    if (postCount === 1) return { ok: false, json: async () => ({ valid: false, persisted: false, error: "Save failed" }) } as Response;
+    return { ok: true, json: async () => ({ valid: true, persisted: true, completionCommitted: false, allFound: false, foundCount: 1, total: 2 }) } as Response;
+  }) as jest.Mock;
+  const view = renderPuzzle({ puzzleId: "word-search-test", wordSearchData: DATA, displayMode: "app-shell" });
+  const board = screen.getByRole("grid");
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Save failed");
+  expect(screen.queryByRole("button", { name: "Retry Completion" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry Restore" })).toBeNull();
+  expect(view.latestPresentation()?.foundCount).toBe(0);
+  expect(document.querySelector(".word-search-found-flash")).toBeNull(); // no found celebration ran
+
+  fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  await waitForFoundCount(view, 1);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("Pass 10: the internal success notice uses a decorative check and no celebration emoji", async () => {
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const view = renderGame({ onComplete, hintTokens: 2, onHintUsed: async () => true });
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ })); await waitForFoundCount(view, 1);
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+
+  const notice = document.querySelector('[data-notice-kind="success"]');
+  expect(notice).toBeTruthy();
+  expect(notice?.querySelector("svg")).toBeTruthy();
+  expect(notice?.textContent).toContain("All 2 words found");
+  expect(notice?.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+});
+
+test("Pass 10: reduced motion renders the intro and a lifecycle notice with no entrance animation classes", async () => {
+  setJuicePrefs({ reducedMotion: true });
+  const deferred = installDeferredFetch();
+  localStorage.removeItem("wordTroveIntroSeen");
+  render(<WordSearchPuzzle puzzleId="reduced-motion-notice-test" wordSearchData={DATA} displayMode="app-shell" persistenceScope="catalog" />);
+  const notice = await screen.findByText("Restoring progress");
+  expect(notice.closest(".word-search-state-notice")?.className).toContain("word-search-state-notice--static");
+  deferred.resolveNext({ foundWords: [], allFound: false });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+
+  localStorage.removeItem("wordTroveIntroSeen");
+  cleanup();
+  installFetch();
+  render(<WordSearchPuzzle puzzleId="reduced-motion-intro-test" wordSearchData={DATA} dailyMode />);
+  const dialog = await screen.findByRole("dialog", { name: "More than a word search" });
+  expect(dialog.className).toContain("word-search-info-card--static");
 });

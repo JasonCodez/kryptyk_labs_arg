@@ -5,6 +5,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -140,9 +141,110 @@ function celebrationCellIndexes(cells: WordSearchCell[]): Map<string, number> {
 const cellWaveDelayMs = (index: number) => Math.min(index * CELL_WAVE_STEP_MS, CELL_WAVE_STEP_CAP_MS);
 const svgPoints = (points: Array<{ x: number; y: number }>) => points.map(({ x, y }) => `${x},${y}`).join(" ");
 
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function InfoCloseIcon() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+      <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IntroFindIcon() {
+  return (
+    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <rect x="2" y="9" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="9.5" y="9" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="17" y="9" width="5" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M4 6.5L20 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeDasharray="1 3.2" />
+    </svg>
+  );
+}
+
+function IntroDiscoverIcon() {
+  return (
+    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <path d="M4 4.5h9.5A2.5 2.5 0 0 1 16 7v13a2 2 0 0 0-2-1.5H4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M20 4.5h-2.5A2.5 2.5 0 0 0 15 7v13a2 2 0 0 1 2-1.5h3z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IntroFinishIcon() {
+  return (
+    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7.5 12.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function HeaderHelpIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+      <circle cx="10" cy="10" r="8.2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M7.6 7.7a2.4 2.4 0 1 1 3.4 2.2c-.7.35-1 .8-1 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="10" cy="14" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function NoticeSpinnerIcon({ reduceMotion }: { reduceMotion: boolean }) {
+  return (
+    <svg
+      width={18}
+      height={18}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      className={`word-search-state-notice-spinner${reduceMotion ? " word-search-state-notice-spinner--static" : ""}`}
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.4" opacity=".25" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function NoticeErrorIcon() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+      <circle cx="10" cy="10" r="8.3" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 6.2v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="10" cy="13.6" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function NoticeSuccessIcon() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+      <path d="M4 10.5l3.8 3.8L16 6" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+type NoticeKind = "loading" | "saving" | "error" | "success";
+
+function noticeIcon(kind: NoticeKind, reduceMotion: boolean) {
+  if (kind === "loading" || kind === "saving") return <NoticeSpinnerIcon reduceMotion={reduceMotion} />;
+  if (kind === "error") return <NoticeErrorIcon />;
+  return <NoticeSuccessIcon />;
+}
+
+/** A single reusable information surface (first-run intro + Help) — the same focus-trapping,
+ * scroll-locking, dismissible dialog shell the previous plain `Dialog` provided, wrapped in a
+ * premium, Word-Trove-specific presentation. */
+function WordSearchInfoDialog({ eyebrow, title, onClose, reduceMotion, children, actions }: {
+  eyebrow: string;
+  title: string;
+  onClose: () => void;
+  reduceMotion: boolean;
+  children: React.ReactNode;
+  actions: React.ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const returnRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
   useBodyScrollLock();
   useEffect(() => {
     returnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -159,11 +261,54 @@ function Dialog({ title, onClose, children }: { title: string; onClose: () => vo
     return () => { cancelAnimationFrame(frame); removeEventListener("keydown", key); returnRef.current?.focus(); };
   }, [onClose]);
   return (
-    <div className="word-search-dialog-layer" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="word-search-dialog">
-        <header><h2>{title}</h2><button type="button" onClick={onClose} aria-label="Close">×</button></header>
-        {children}
+    <div className="word-search-info-layer" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={`word-search-info-card${reduceMotion ? " word-search-info-card--static" : ""}`}
+      >
+        <header className="word-search-info-header">
+          <div>
+            <p className="word-search-info-eyebrow">{eyebrow}</p>
+            <h2 id={titleId} className="word-search-info-title">{title}</h2>
+          </div>
+          <button type="button" className="word-search-info-close" onClick={onClose} aria-label="Close">
+            <InfoCloseIcon />
+          </button>
+        </header>
+        <div className="word-search-info-content">{children}</div>
+        <div className="word-search-info-actions">{actions}</div>
       </div>
+    </div>
+  );
+}
+
+/** One cohesive lifecycle-state presentation (Pass 10) — loading, saving, error/retry, and
+ * internal success all share this shape so the board never gains or loses layout space when
+ * one appears or clears (see the absolute overlay it's rendered into in the board viewport). */
+function WordSearchStateNotice({ kind, title, detail, action, reduceMotion }: {
+  kind: NoticeKind;
+  title: string;
+  detail?: string;
+  action?: React.ReactNode;
+  reduceMotion: boolean;
+}) {
+  return (
+    <div
+      className={`word-search-state-notice${reduceMotion ? " word-search-state-notice--static" : ""}`}
+      data-notice-kind={kind}
+      role={kind === "error" ? "alert" : "status"}
+      aria-atomic="true"
+    >
+      <span className="word-search-state-notice-icon" aria-hidden="true">{noticeIcon(kind, reduceMotion)}</span>
+      <span className="word-search-state-notice-copy">
+        <span className="word-search-state-notice-title">{title}</span>
+        {detail && <span className="word-search-state-notice-detail">{detail}</span>}
+      </span>
+      {action && <span className="word-search-state-notice-action">{action}</span>}
     </div>
   );
 }
@@ -361,6 +506,10 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   useEffect(() => () => {
     if (celebrationTimerRef.current !== null) window.clearTimeout(celebrationTimerRef.current);
   }, []);
+
+  const markIntroSeen = useCallback(() => { try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }, []);
+  const closeIntro = useCallback(() => { setShowIntro(false); markIntroSeen(); }, [markIntroSeen]);
+  const openIntroFromHelp = useCallback(() => { setShowHelp(false); setShowIntro(true); }, []);
 
   useEffect(() => {
     if (alreadySolved || effectiveScope === "none" || typeof window === "undefined") return;
@@ -798,25 +947,155 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     return null;
   })();
 
+  const isBusy = status === "loading" || status === "completing";
+
+  const stateNotice = (() => {
+    if (status === "loading") {
+      return (
+        <WordSearchStateNotice
+          kind="loading"
+          reduceMotion={reduceMotion}
+          title={effectiveScope === "catalog" ? "Restoring progress" : "Preparing Word Trove"}
+          detail={effectiveScope === "catalog" ? "Checking your saved words…" : "Getting the board ready…"}
+        />
+      );
+    }
+    if (status === "completing") {
+      return <WordSearchStateNotice kind="saving" reduceMotion={reduceMotion} title="Saving completion" detail="Recording your result…" />;
+    }
+    if (error) {
+      return (
+        <WordSearchStateNotice
+          kind="error"
+          reduceMotion={reduceMotion}
+          title={error}
+          action={
+            status === "completion-pending" ? (
+              <button type="button" className="word-search-state-notice-retry" onClick={() => void finishCompletionHandoff()}>Retry Completion</button>
+            ) : status === "error" && !dailyMode ? (
+              <button type="button" className="word-search-state-notice-retry" onClick={() => { setStatus("loading"); setCatalogLoadAttempt((value) => value + 1); }}>Retry Restore</button>
+            ) : undefined
+          }
+        />
+      );
+    }
+    if (status === "won" && !warzMode && !isAppShellCatalog) {
+      return <WordSearchStateNotice kind="success" reduceMotion={reduceMotion} title={`All ${words.length} words found`} />;
+    }
+    if (status === "won" && isAppShellCatalog && !catalogCompletionHandoffStartedRef.current) {
+      return <WordSearchStateNotice kind="success" reduceMotion={reduceMotion} title="Word Trove completed" />;
+    }
+    return null;
+  })();
+
   return (
-    <div className="word-search-root" data-testid="word-search-root" data-display-mode={displayMode} data-status={status} data-grid-size={size} data-skin={skin._key ?? "default"}>
+    <div className="word-search-root" data-testid="word-search-root" data-display-mode={displayMode} data-status={status} data-grid-size={size} data-skin={skin._key ?? "default"} aria-busy={isBusy}>
       {pageVisible && selectedBackground}
       <div className="word-search-scrim" aria-hidden style={{ background: skin.backdropScrim }} />
-      {showIntro && <Dialog title="More than a word search" onClose={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}><p>Every word you find unlocks its real definition, turning each puzzle into a quick vocabulary discovery. Tap a found word in the word list any time to explore it.</p><p>Your final find opens its definition automatically, with pronunciation, part of speech, examples, and audio when available.</p><button type="button" onClick={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}>Start searching</button></Dialog>}
-      {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag from the first letter to the last, or tap a start letter and then tap the end letter. A marked start letter is waiting for your second tap; tap it again to cancel. You can also use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><p>Found words unlock their definitions — open the word list and tap any found word to read it.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
+      {showIntro && (
+        <WordSearchInfoDialog
+          eyebrow="WORD TROVE"
+          title="More than a word search"
+          onClose={closeIntro}
+          reduceMotion={reduceMotion}
+          actions={<button type="button" className="word-search-info-primary" onClick={closeIntro}>Start searching</button>}
+        >
+          <p className="word-search-info-lead">Find every hidden word, then explore what it means.</p>
+          <ol className="word-search-info-steps">
+            <li className="word-search-info-step">
+              <span className="word-search-info-step-icon" aria-hidden="true"><IntroFindIcon /></span>
+              <div className="word-search-info-step-copy">
+                <h3>Find</h3>
+                <p>Drag from the first letter to the last. Two-tap selection works too — tap the start, then tap the end.</p>
+              </div>
+            </li>
+            <li className="word-search-info-step">
+              <span className="word-search-info-step-icon" aria-hidden="true"><IntroDiscoverIcon /></span>
+              <div className="word-search-info-step-copy">
+                <h3>Discover</h3>
+                <p>Found words become available from the Words list. Select one to open its definition.</p>
+              </div>
+            </li>
+            <li className="word-search-info-step">
+              <span className="word-search-info-step-icon" aria-hidden="true"><IntroFinishIcon /></span>
+              <div className="word-search-info-step-copy">
+                <h3>Finish</h3>
+                <p>The final definition opens automatically. Completion continues once you dismiss it.</p>
+              </div>
+            </li>
+          </ol>
+        </WordSearchInfoDialog>
+      )}
+      {showHelp && (
+        <WordSearchInfoDialog
+          eyebrow="HOW TO PLAY"
+          title="How to play Word Trove"
+          onClose={() => setShowHelp(false)}
+          reduceMotion={reduceMotion}
+          actions={warzMode ? (
+            <button type="button" className="word-search-info-primary" onClick={() => setShowHelp(false)}>Got it</button>
+          ) : (
+            <>
+              <button type="button" className="word-search-info-secondary" onClick={openIntroFromHelp}>Why Word Trove?</button>
+              <button type="button" className="word-search-info-primary" onClick={() => setShowHelp(false)}>Got it</button>
+            </>
+          )}
+        >
+          <div className="word-search-info-step">
+            <div className="word-search-info-step-copy">
+              <h3>Drag</h3>
+              <p>Drag from the first letter to the last.</p>
+            </div>
+          </div>
+          <div className="word-search-info-step">
+            <div className="word-search-info-step-copy">
+              <h3>Two taps</h3>
+              <p>Tap a starting letter, then tap the ending letter. Tap the marked starting letter again to cancel.</p>
+            </div>
+          </div>
+          <div className="word-search-info-step">
+            <div className="word-search-info-step-copy">
+              <h3>Keyboard</h3>
+              <ul className="word-search-info-keys">
+                <li><kbd className="word-search-key">Arrow keys</kbd> move the active cell.</li>
+                <li><kbd className="word-search-key">Space</kbd> or <kbd className="word-search-key">Enter</kbd> starts and completes a selection.</li>
+                <li><kbd className="word-search-key">Escape</kbd> cancels.</li>
+                <li><kbd className="word-search-key">W</kbd> opens Words.</li>
+                <li><kbd className="word-search-key">H</kbd> opens Help.</li>
+              </ul>
+            </div>
+          </div>
+          <p className="word-search-info-tip">Words may run horizontally, vertically, diagonally, forwards, or backwards.</p>
+          {warzMode ? (
+            <div className="word-search-info-step">
+              <div className="word-search-info-step-copy">
+                <h3>Battle rules</h3>
+                <p>Find every word as quickly as possible. Definitions stay closed during timed matches.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="word-search-info-step">
+              <div className="word-search-info-step-copy">
+                <h3>Definitions</h3>
+                <p>Found words unlock their definitions — open Words and select a found word. Your final find opens its definition automatically.</p>
+              </div>
+            </div>
+          )}
+        </WordSearchInfoDialog>
+      )}
       {definition && <WordDefinitionModal word={definition.word} color={WORD_COLORS[definition.colorIdx]} status={definition.status} data={definition.data} onDismiss={dismissDefinition} />}
       <WordSearchWordList open={wordListOpen} words={words} foundWords={foundSet} onClose={() => setWordListOpen(false)} onOpenDefinition={openDefinition} definitionsEnabled={!warzMode} />
 
       <div className="word-search-game-surface">
-        {displayMode === "standalone" && <header className="word-search-standalone-header"><div><h2>WORD TROVE</h2><p>{foundWords.length} / {words.length} found</p></div><button type="button" onClick={() => setShowHelp(true)}>Help</button></header>}
-        {status === "won" && !warzMode && !isAppShellCatalog && <div className="word-search-success" role="status">🎉 All {words.length} words found!</div>}
-        {status === "won" && isAppShellCatalog && !catalogCompletionHandoffStartedRef.current && <div className="word-search-success" role="status">Word Trove completed</div>}
-        {status === "completing" && <div className="word-search-message" role="status">Saving completion…</div>}
-        {error && <div className="word-search-error" role="alert">
-          {error}
-          {status === "completion-pending" && <button type="button" onClick={() => void finishCompletionHandoff()}>Retry Completion</button>}
-          {status === "error" && !dailyMode && <button type="button" onClick={() => { setStatus("loading"); setCatalogLoadAttempt((value) => value + 1); }}>Retry Restore</button>}
-        </div>}
+        {displayMode === "standalone" && (
+          <header className="word-search-standalone-header">
+            <div><h2>WORD TROVE</h2><p>{foundWords.length} / {words.length} found</p></div>
+            <button type="button" className="word-search-standalone-help" onClick={() => setShowHelp(true)}>
+              <HeaderHelpIcon />
+              <span>Help</span>
+            </button>
+          </header>
+        )}
 
         <div className="word-search-play-layout">
           <div ref={viewportRef} className="word-search-board-viewport" data-zoomed={zoom > 1 || undefined}>
@@ -916,6 +1195,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                 <span className="word-search-found-flash-label">{celebration.hinted ? "REVEALED" : "FOUND"}</span>
               </div>
             )}
+            {stateNotice && <div className="word-search-state-notice-layer">{stateNotice}</div>}
           </div>
 
           <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={openAppropriateWordList} showProgress={displayMode !== "app-shell"} />

@@ -42,12 +42,18 @@ function catDogSunFixture(size = 6) {
   return { grid, words: placements.map(([word]) => word) };
 }
 
-async function authenticate(page: Page) {
+async function authenticate(page: Page, { seedIntroSeen = true }: { seedIntroSeen?: boolean } = {}) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
   const token = await encode({ secret, maxAge: 3600, token: { sub: "e2e-user", id: "e2e-user", name: "Word Trove Tester", email: "trove@example.test", role: "user", betaApproved: true } });
   await page.context().addCookies([{ name: "next-auth.session-token", value: token, url: "http://localhost:3000", httpOnly: true, sameSite: "Lax" }]);
-  await page.addInitScript(() => localStorage.setItem("wordTroveIntroSeen", "1"));
+  // Seeded on every navigation (including reloads) so most tests never see the first-run intro;
+  // the dedicated Pass 10 onboarding tests opt out via seedIntroSeen: false so real dismissal
+  // persistence (not this seed) is what keeps the intro from reopening on their reload/re-visit.
+  if (seedIntroSeen) await page.addInitScript(() => localStorage.setItem("wordTroveIntroSeen", "1"));
+  // Suppresses the unrelated fixed-position cookie banner, which can otherwise sit on top of
+  // (and intercept clicks on) controls near the bottom of the viewport in these tests.
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
 }
 
 async function installRoutes(page: Page, size: number, short = false, customFixture?: { grid: string[][]; words: string[] }) {
@@ -67,6 +73,9 @@ async function installRoutes(page: Page, size: number, short = false, customFixt
   let dictionaryOverride: Partial<{ found: boolean; partOfSpeech: string | null; definition: string; example: string | null; audioUrl: string | null; phonetic: string | null }> | null = null;
   let dictionaryGate: Promise<void> | null = null;
   let releaseDictionaryGate: (() => void) | null = null;
+  let catalogRestoreGate: Promise<void> | null = null;
+  let releaseCatalogRestoreGate: (() => void) | null = null;
+  let catalogRestoreShouldFail = false;
   await page.route("**/api/**", async (route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/\/$/, ""); const method = request.method();
     const fulfill = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
@@ -92,6 +101,10 @@ async function installRoutes(page: Page, size: number, short = false, customFixt
         found.add(body.word); if (found.size === data.words.length && !body.dailyMode) catalogSolved = true;
         return fulfill({ valid: true, persisted: !body.dailyMode, completionCommitted: !body.dailyMode && found.size === data.words.length, foundCount: found.size, total: data.words.length, allFound: found.size === data.words.length });
       }
+      if (catalogRestoreGate) await catalogRestoreGate;
+      // Sticky (not one-shot): a dev-mode double effect invocation can fire this GET twice in
+      // quick succession, and a one-shot failure would let the second attempt silently succeed.
+      if (catalogRestoreShouldFail) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Restore failed" }) });
       return fulfill({ foundWords: [...found], foundCount: found.size, total: data.words.length, submissionsComplete: found.size === data.words.length, repairRequired, allFound: catalogSolved && found.size === data.words.length, completionCommitted: catalogSolved });
     }
     if (path === `/api/puzzles/${PUZZLE_ID}/progress`) {
@@ -132,6 +145,10 @@ async function installRoutes(page: Page, size: number, short = false, customFixt
     setDictionaryResponse: (override: typeof dictionaryOverride) => { dictionaryOverride = override; },
     holdDictionaryResponse: () => { dictionaryGate = new Promise((resolve) => { releaseDictionaryGate = resolve; }); },
     releaseDictionaryResponse: () => { releaseDictionaryGate?.(); dictionaryGate = null; releaseDictionaryGate = null; },
+    holdCatalogRestore: () => { catalogRestoreGate = new Promise((resolve) => { releaseCatalogRestoreGate = resolve; }); },
+    releaseCatalogRestore: () => { releaseCatalogRestoreGate?.(); catalogRestoreGate = null; releaseCatalogRestoreGate = null; },
+    failCatalogRestore: () => { catalogRestoreShouldFail = true; },
+    allowCatalogRestore: () => { catalogRestoreShouldFail = false; },
     failNextDaily: () => { failDailyOnce = true; },
     setDailyDay: (day: number) => { dailyDayNumber = day; },
     seedLegacyRepair: () => { data.words.forEach((word) => found.add(word)); repairRequired = true; catalogSolved = false; },
@@ -395,7 +412,7 @@ test("catalog uses server reward authority, keeps modal outside More, restores p
 
   // Pass 5: the parent reward flow (the "Continue" step above) is the only fresh-completion
   // presentation — no duplicate internal emoji success banner appears behind or after it.
-  await expect(page.locator(".word-search-success")).toHaveCount(0);
+  await expect(page.locator(".word-search-state-notice[data-notice-kind='success']")).toHaveCount(0);
   await expect(page.getByText(/All 2 words found/)).toHaveCount(0);
 });
 
@@ -590,7 +607,7 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
   await expect(page.getByText("Posting your challenge…")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
-  await expect(page.locator(".word-search-success")).toHaveCount(0);
+  await expect(page.locator(".word-search-state-notice[data-notice-kind='success']")).toHaveCount(0);
   expect(state.dictionaryRequests).toHaveLength(0);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -2241,7 +2258,7 @@ test("Pass 9: rapid Warz finds — CAT to DOG replacement survives CAT's stale c
   await expect(page.getByText("Posting your challenge…")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // never opens in Warz
-  await expect(page.locator(".word-search-success")).toHaveCount(0);
+  await expect(page.locator(".word-search-state-notice[data-notice-kind='success']")).toHaveCount(0);
   expect(state.dictionaryRequests).toHaveLength(0);
   expect(state.submissions).toHaveLength(0); // Warz never POSTs the word itself
 });
@@ -2353,5 +2370,355 @@ test("Pass 8 verification: no-audio, no-part-of-speech definition content all re
   }
 
   await dialog.getByRole("button", { name: /Keep searching/i }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+// ── Pass 10: onboarding, help, and lifecycle-state notices ─────────────────────────────────
+
+test("Pass 10: first-run mobile onboarding fits, is dismissible every way, and never reopens — 390x844", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page, { seedIntroSeen: false });
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+
+  const dialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(dialogBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
+  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390 + 1);
+  expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(844 + 1);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  const closeButton = dialog.getByRole("button", { name: "Close" });
+  const closeBox = await closeButton.boundingBox();
+  // A hairline sub-pixel rounding tolerance — the CSS target is exactly 44px.
+  expect(closeBox!.width).toBeGreaterThanOrEqual(43.9);
+  expect(closeBox!.height).toBeGreaterThanOrEqual(43.9);
+  const startButton = dialog.getByRole("button", { name: "Start searching" });
+  const startBox = await startButton.boundingBox();
+  expect(startBox!.height).toBeGreaterThanOrEqual(44);
+
+  await expect(dialog.getByRole("heading", { name: "Find" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Discover" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Finish" })).toBeVisible();
+  const dialogText = await dialog.textContent();
+  expect(dialogText).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+  expect(dialogText).not.toContain("×");
+
+  // The body behind the dialog does not scroll while it's open.
+  const bodyOverflow = await page.evaluate(() => getComputedStyle(document.body).overflow);
+  expect(bodyOverflow).toBe("hidden");
+
+  // A click inside the card must not dismiss it.
+  await dialog.click({ position: { x: 10, y: 10 } });
+  await expect(dialog).toBeVisible();
+
+  await startButton.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".word-search-board")).toBeVisible();
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("dialog", { name: "More than a word search" })).toHaveCount(0);
+});
+
+test("Pass 10: narrow mobile onboarding fits with internal scrolling and reachable actions — 320x710", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  await authenticate(page, { seedIntroSeen: false });
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+
+  const dialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox!.width).toBeLessThanOrEqual(320);
+  const closeButton = dialog.getByRole("button", { name: "Close" });
+  await expect(closeButton).toBeVisible();
+  const startButton = dialog.getByRole("button", { name: "Start searching" });
+  await expect(startButton).toBeVisible();
+  const startBox = await startButton.boundingBox();
+  expect(startBox!.height).toBeGreaterThanOrEqual(44);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+
+  await startButton.click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Pass 10: pressing H opens Help without submitting the active selection, and Escape returns focus to the board", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const board = page.locator(".word-search-board");
+  await board.focus();
+  await page.keyboard.press("ArrowRight"); // move the active cell without starting a selection
+  await page.keyboard.press("h");
+
+  const dialog = page.getByRole("dialog", { name: "How to play Word Trove" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Drag" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Two taps" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Keyboard" })).toBeVisible();
+  await expect(dialog.locator("kbd").first()).toBeVisible();
+
+  // Focus trapping: Tab from the last action wraps back to Close.
+  const closeButton = dialog.getByRole("button", { name: "Close" });
+  const gotIt = dialog.getByRole("button", { name: "Got it" });
+  await gotIt.focus();
+  await page.keyboard.press("Tab");
+  await expect(closeButton).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(board).toBeFocused();
+
+  // Neither the transient H/Space keystrokes nor opening Help submitted anything.
+  expect(state.found.size).toBe(0);
+  expect(state.submissions).toHaveLength(0);
+});
+
+test("Pass 10: Why Word Trove? swaps Help for the intro with exactly one dialog mounted", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await page.locator(".word-search-board").focus();
+  await page.keyboard.press("h");
+  const helpDialog = page.getByRole("dialog", { name: "How to play Word Trove" });
+  await expect(helpDialog).toBeVisible();
+  await helpDialog.getByRole("button", { name: "Why Word Trove?" }).click();
+
+  await expect(helpDialog).toHaveCount(0);
+  const introDialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(introDialog).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+
+  await introDialog.getByRole("button", { name: "Start searching" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("dialog", { name: "More than a word search" })).toHaveCount(0);
+});
+
+test("Pass 10: Warz Help shows battle rules only and returns to an uninterrupted match", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click();
+  await expect(page.getByTestId("word-search-root")).toBeVisible();
+
+  await dragWord(page, [0, 0], [0, 2]); // CAT — 1 of 2 found
+  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+
+  await page.locator(".word-search-board").focus();
+  await page.keyboard.press("h");
+  const dialog = page.getByRole("dialog", { name: "How to play Word Trove" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Battle rules" })).toBeVisible();
+  await expect(dialog.getByText(/Definitions stay closed during timed matches/)).toBeVisible();
+  await expect(dialog.getByText("Definitions", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Why Word Trove?" })).toHaveCount(0);
+  const gotIt = dialog.getByRole("button", { name: "Got it" });
+  await expect(gotIt).toBeVisible();
+  await gotIt.click();
+  await expect(dialog).toHaveCount(0);
+
+  // The match itself is untouched by the detour through Help.
+  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+  expect(state.dictionaryRequests).toHaveLength(0);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+});
+
+test("Pass 10: a delayed Catalog restoration shows a contained loading notice without shifting board, dock, or panel geometry", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  state.holdCatalogRestore();
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "loading", { timeout: 15_000 });
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("aria-busy", "true");
+  const notice = page.locator('[data-notice-kind="loading"]');
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("Restoring progress");
+  await expect(page.getByRole("button", { name: /Retry/ })).toHaveCount(0);
+  await expect(page.locator(".word-search-board")).toBeVisible();
+
+  const boardBefore = await page.locator(".word-search-board").boundingBox();
+  const dockBefore = await page.locator(".word-search-progress-strip").boundingBox();
+  const panelBefore = await page.locator(".word-search-desktop-list").boundingBox();
+
+  state.releaseCatalogRestore();
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  const busy = await page.getByTestId("word-search-root").getAttribute("aria-busy");
+  expect(busy === "false" || busy === null).toBe(true);
+  await expect(notice).toHaveCount(0);
+
+  const boardAfter = await page.locator(".word-search-board").boundingBox();
+  const dockAfter = await page.locator(".word-search-progress-strip").boundingBox();
+  const panelAfter = await page.locator(".word-search-desktop-list").boundingBox();
+  for (const [before, after] of [[boardBefore, boardAfter], [dockBefore, dockAfter], [panelBefore, panelAfter]] as const) {
+    expect(Math.abs(before!.x - after!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(before!.y - after!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(before!.width - after!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(before!.height - after!.height)).toBeLessThanOrEqual(1);
+  }
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 10: a Catalog restore failure shows Retry Restore, and a successful retry reaches playing without erasing local fallback", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  state.failCatalogRestore();
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "error", { timeout: 15_000 });
+  const alert = page.locator('[data-notice-kind="error"]');
+  await expect(alert).toBeVisible();
+  const retry = page.getByRole("button", { name: "Retry Restore" });
+  await expect(retry).toBeVisible();
+  const retryBox = await retry.boundingBox();
+  expect(retryBox!.height).toBeGreaterThanOrEqual(44);
+  await expect(page.locator(".word-search-board")).toBeVisible();
+
+  state.allowCatalogRestore();
+  await retry.click();
+  // The retry's own GET resolves immediately (no artificial delay here — that's covered by the
+  // dedicated delayed-restoration test above), so only the final settled state is asserted.
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  await expect(alert).toHaveCount(0);
+});
+
+test("Pass 10: an ordinary word-save error shows a contained notice with no board shift, and a retry succeeds normally", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  let failedOnce = false;
+  await page.route(`**/api/puzzles/${PUZZLE_ID}/word_search`, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && !failedOnce) {
+      failedOnce = true;
+      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ valid: false, error: "Save failed" }) });
+    }
+    return route.fallback(); // defer to installRoutes' catch-all handler for the real response
+  });
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const boardBefore = await page.locator(".word-search-board").boundingBox();
+  await dragWord(page, [0, 0], [0, 2]); // CAT
+
+  const alert = page.locator('[data-notice-kind="error"]');
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("Save failed");
+  const boardAfter = await page.locator(".word-search-board").boundingBox();
+  expect(Math.abs(boardBefore!.x - boardAfter!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(boardBefore!.y - boardAfter!.y)).toBeLessThanOrEqual(1);
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry Restore" })).toHaveCount(0);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  await dragWord(page, [0, 0], [0, 2]); // retry CAT
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect(alert).toHaveCount(0);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1);
+});
+
+test("Pass 10: Daily completion shows an internal success notice with a decorative check and no board shift", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const boardBefore = await page.locator(".word-search-board").boundingBox();
+  await dragWord(page, [0, 0], [0, 2]); // CAT
+  await dragWord(page, [1, 0], [1, 2]); // DOG — final
+  await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible();
+  await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep searching/i }).click();
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "won", { timeout: 15_000 });
+
+  const notice = page.locator('[data-notice-kind="success"]');
+  await expect(notice).toBeVisible();
+  await expect(notice.locator("svg")).toHaveCount(1);
+  const noticeText = await notice.textContent();
+  expect(noticeText).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+  expect(await notice.evaluate((element) => getComputedStyle(element).pointerEvents)).not.toBe("none");
+
+  const boardAfter = await page.locator(".word-search-board").boundingBox();
+  expect(Math.abs(boardBefore!.width - boardAfter!.width)).toBeLessThanOrEqual(1);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 10: landscape 844x390 — Help fits via internal scrolling and a retry notice stays contained", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  state.failCatalogRestore();
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "error", { timeout: 15_000 });
+
+  const retry = page.getByRole("button", { name: "Retry Restore" });
+  await expect(retry).toBeVisible();
+  const alertBox = await page.locator('[data-notice-kind="error"]').boundingBox();
+  expect(alertBox!.y).toBeGreaterThanOrEqual(0);
+  expect(alertBox!.y + alertBox!.height).toBeLessThanOrEqual(390 + 1);
+
+  state.allowCatalogRestore();
+  await retry.click();
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  await page.locator(".word-search-board").focus();
+  await page.keyboard.press("h");
+  const dialog = page.getByRole("dialog", { name: "How to play Word Trove" });
+  await expect(dialog).toBeVisible();
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
+  expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(390 + 1);
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Got it" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  await expect(page.locator(".word-search-desktop-list")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 10: reduced motion — intro and a lifecycle notice appear with no translated/scaled entrance", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  state.holdCatalogRestore();
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  const notice = page.locator('[data-notice-kind="loading"]');
+  await expect(notice).toBeVisible({ timeout: 15_000 });
+  expect(await notice.evaluate((element) => element.className)).toContain("word-search-state-notice--static");
+  state.releaseCatalogRestore();
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  await page.addInitScript(() => localStorage.removeItem("wordTroveIntroSeen"));
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  const dialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  expect(await dialog.evaluate((element) => element.className)).toContain("word-search-info-card--static");
+  await dialog.getByRole("button", { name: "Start searching" }).click();
   await expect(dialog).toHaveCount(0);
 });

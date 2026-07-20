@@ -17,18 +17,26 @@
 .word-search-root > [class*="background"] { position: absolute; inset: 0; z-index: -2; }
 .word-search-scrim { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
 .word-search-game-surface { position: relative; width: 100%; min-width: 0; }
+/* ── Pass 10: standalone header polish — compact, no extra progress bar (the dock/word list
+   already own detailed progress). ─────────────────────────────────────────────────────────── */
 .word-search-standalone-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px 6px; }
 .word-search-standalone-header h2 { margin: 0; font-size: 1rem; letter-spacing: .14em; }
 .word-search-standalone-header p { margin: 2px 0 0; color: #cbd5e1; font-size: .75rem; }
-.word-search-standalone-header button,
-.word-search-dialog button { min-width: 44px; min-height: 44px; border-radius: 10px; }
-.word-search-success,
-.word-search-message,
-.word-search-error { margin: 4px auto 8px; width: min(94%, 560px); padding: 8px 12px; border-radius: 10px; text-align: center; font-size: .8rem; font-weight: 700; }
-.word-search-success { background: rgba(34,197,94,.15); border: 1px solid rgba(34,197,94,.5); color: #86efac; }
-.word-search-message { background: rgba(56,145,166,.15); border: 1px solid rgba(56,145,166,.5); }
-.word-search-error { background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.45); color: #fecaca; }
-.word-search-error button { margin-left: 10px; min-width: 44px; min-height: 44px; padding: 4px 10px; border-radius: 8px; background: #fff; color: #7f1d1d; }
+.word-search-standalone-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-border-default, rgba(148,163,184,.3));
+  background: var(--pw-surface-2, rgba(30,41,59,.72));
+  color: var(--pw-text-primary, #f8fafc);
+  font-weight: 700;
+}
+.word-search-standalone-help svg { color: var(--pw-info, #38bdf8); flex-shrink: 0; }
+.word-search-standalone-help:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
 
 .word-search-play-layout {
   display: grid;
@@ -317,8 +325,7 @@
 .word-search-desktop-list-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .word-search-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-.word-search-sheet-layer,
-.word-search-dialog-layer { position: fixed; inset: 0; z-index: 500; display: flex; align-items: flex-end; justify-content: center; padding: 12px 12px 0; background: rgba(2,4,10,.68); backdrop-filter: blur(6px); }
+.word-search-sheet-layer { position: fixed; inset: 0; z-index: 500; display: flex; align-items: flex-end; justify-content: center; padding: 12px 12px 0; background: rgba(2,4,10,.68); backdrop-filter: blur(6px); }
 .word-search-sheet {
   width: min(100%, 620px);
   max-height: min(82dvh, 720px);
@@ -333,16 +340,13 @@
   outline: none;
 }
 .word-search-sheet-handle { width: 40px; height: 4px; margin: 2px auto 10px; border-radius: 9px; background: rgba(148,163,184,.55); flex-shrink: 0; }
-.word-search-sheet-header,
-.word-search-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-shrink: 0; padding-bottom: 8px; }
+.word-search-sheet-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-shrink: 0; padding-bottom: 8px; }
 .word-search-sheet h2,
-.word-search-dialog h2,
 .word-search-desktop-list h2 { margin: 0; font-size: 1.02rem; letter-spacing: .01em; }
 .word-search-list-progress-block { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 .word-search-list-progress-block p { margin: 0; color: var(--pw-text-secondary, #94a3b8); font-size: .74rem; font-weight: 600; }
 .word-search-list-progress { width: 100%; max-width: 260px; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--pw-text-secondary, #94a3b8) 25%, transparent); overflow: hidden; }
 .word-search-list-progress-fill { display: block; height: 100%; width: var(--word-progress, 0%); border-radius: inherit; background: linear-gradient(90deg, var(--pw-info, #38bdf8), color-mix(in srgb, var(--pw-info, #38bdf8) 55%, #22c55e)); }
-.word-search-dialog header button { min-width: 44px; min-height: 44px; font-size: 1.5rem; }
 .word-search-sheet-close { min-width: 44px; min-height: 44px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ws-control-radius, 11px); background: var(--pw-surface-2, #1e293b); border: 1px solid var(--pw-border-default, rgba(148,163,184,.3)); color: var(--pw-text-primary, #f8fafc); }
 .word-search-sheet-close:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
 
@@ -377,10 +381,162 @@
 .word-search-word-status { display: inline-flex; }
 .word-search-word-item-definition-label { display: none; font-size: .68rem; font-weight: 700; letter-spacing: .02em; opacity: .85; }
 .word-search-word-item-chevron { flex-shrink: 0; opacity: .8; }
-.word-search-dialog-layer { align-items: center; padding-bottom: 12px; }
-.word-search-dialog { width: min(100%, 480px); max-height: 84dvh; overflow: auto; padding: 18px; border: 1px solid rgba(129,140,248,.45); border-radius: 16px; background: #0f111b; outline: none; }
-.word-search-dialog p { color: #cbd5e1; line-height: 1.55; }
-.word-search-dialog > button { width: 100%; background: #fde74c; color: #020202; font-weight: 900; }
+/* ── Pass 10: shared information dialog (first-run intro + Help) — a premium surface consistent
+   with the Pass 8 definition modal, replacing the old plain `Dialog` + raw `×` glyph. ────────── */
+.word-search-info-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: rgba(2,4,10,.7);
+  backdrop-filter: blur(6px);
+}
+.word-search-info-card {
+  position: relative;
+  width: min(calc(100vw - 24px), 480px);
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 20px;
+  padding: 18px;
+  gap: 4px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--pw-surface-2, #1e293b) 92%, #000 30%), color-mix(in srgb, var(--pw-surface-2, #1e293b) 68%, #000 55%));
+  border: 1px solid color-mix(in srgb, var(--pw-info, #818cf8) 40%, transparent);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.03), 0 24px 60px rgba(0,0,0,.55);
+  outline: none;
+  animation: word-search-info-card-in 200ms ease-out both;
+}
+.word-search-info-card--static { animation: none; }
+@keyframes word-search-info-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+.word-search-info-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-shrink: 0; padding-bottom: 10px; background: inherit; }
+.word-search-info-eyebrow { margin: 0 0 2px; font-size: .68rem; font-weight: 800; letter-spacing: .12em; color: var(--pw-info, #818cf8); }
+.word-search-info-title { margin: 0; font-size: 1.08rem; letter-spacing: .01em; color: var(--pw-text-primary, #f8fafc); }
+.word-search-info-close {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ws-control-radius, 11px);
+  background: var(--pw-surface-2, #1e293b);
+  border: 1px solid var(--pw-border-default, rgba(148,163,184,.3));
+  color: var(--pw-text-primary, #f8fafc);
+}
+.word-search-info-close:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
+.word-search-info-content { display: flex; flex-direction: column; gap: 12px; color: #cbd5e1; }
+.word-search-info-lead { margin: 0; line-height: 1.5; color: var(--pw-text-secondary, #cbd5e1); }
+.word-search-info-steps { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.word-search-info-step { display: flex; align-items: flex-start; gap: 10px; }
+.word-search-info-step-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pw-info, #818cf8) 16%, transparent);
+  color: var(--pw-info, #818cf8);
+}
+.word-search-info-step-copy h3 { margin: 0 0 2px; font-size: .86rem; font-weight: 800; color: var(--pw-text-primary, #f8fafc); }
+.word-search-info-step-copy p { margin: 0; line-height: 1.5; font-size: .82rem; color: var(--pw-text-secondary, #cbd5e1); }
+.word-search-info-keys { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.word-search-info-keys li { line-height: 1.5; font-size: .82rem; color: var(--pw-text-secondary, #cbd5e1); }
+.word-search-key {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-right: 2px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--pw-border-default, rgba(148,163,184,.4));
+  background: var(--pw-surface-3, rgba(148,163,184,.14));
+  color: var(--pw-text-primary, #f8fafc);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .76rem;
+  font-weight: 700;
+  text-align: center;
+}
+.word-search-info-tip { margin: 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--pw-info, #818cf8) 10%, transparent); font-size: .78rem; line-height: 1.5; color: var(--pw-text-secondary, #cbd5e1); }
+.word-search-info-actions { position: sticky; bottom: 0; z-index: 1; display: flex; flex-direction: column-reverse; gap: 8px; margin-top: 14px; padding-top: 10px; background: inherit; }
+.word-search-info-primary,
+.word-search-info-secondary { min-height: 44px; width: 100%; border-radius: 11px; font-weight: 800; }
+.word-search-info-primary { background: var(--pw-info, #38bdf8); color: #04121c; border: none; }
+.word-search-info-secondary { background: transparent; border: 1px solid var(--pw-border-default, rgba(148,163,184,.4)); color: var(--pw-text-primary, #f8fafc); }
+.word-search-info-primary:focus-visible,
+.word-search-info-secondary:focus-visible { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 2px; }
+@media (min-width: 480px) {
+  .word-search-info-actions { flex-direction: row-reverse; justify-content: flex-start; }
+  .word-search-info-primary,
+  .word-search-info-secondary { width: auto; min-width: 140px; }
+}
+
+/* ── Pass 10: lifecycle-state notices (loading / saving / error / internal success) — a single
+   absolute overlay inside the board viewport so appearing/clearing never shifts board, dock, or
+   control layout. ─────────────────────────────────────────────────────────────────────────── */
+.word-search-state-notice-layer {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  width: min(92%, 380px);
+  pointer-events: none;
+}
+.word-search-state-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #05070d 82%, var(--pw-surface-2, #1e293b) 18%);
+  border: 1px solid var(--pw-border-default, rgba(148,163,184,.35));
+  color: var(--pw-text-primary, #f8fafc);
+  font-size: .78rem;
+  pointer-events: auto;
+  opacity: 0;
+  animation: word-search-state-notice-in 180ms ease-out forwards;
+}
+.word-search-state-notice--static { animation: none; opacity: 1; }
+@keyframes word-search-state-notice-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.word-search-state-notice-icon { flex-shrink: 0; display: inline-flex; color: var(--pw-info, #818cf8); }
+.word-search-state-notice[data-notice-kind="error"] { border-color: color-mix(in srgb, #ef4444 55%, transparent); }
+.word-search-state-notice[data-notice-kind="error"] .word-search-state-notice-icon { color: #fca5a5; }
+.word-search-state-notice[data-notice-kind="success"] { border-color: color-mix(in srgb, #22c55e 55%, transparent); }
+.word-search-state-notice[data-notice-kind="success"] .word-search-state-notice-icon { color: #86efac; }
+.word-search-state-notice-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.word-search-state-notice-title { font-weight: 800; overflow-wrap: anywhere; }
+.word-search-state-notice-detail { font-size: .72rem; font-weight: 500; color: var(--pw-text-secondary, #94a3b8); overflow-wrap: anywhere; }
+.word-search-state-notice-action { flex-shrink: 0; }
+.word-search-state-notice-retry {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: none;
+  background: var(--pw-info, #38bdf8);
+  color: #04121c;
+  font-weight: 800;
+  font-size: .76rem;
+}
+.word-search-state-notice-retry:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.word-search-state-notice-spinner { animation: word-search-spin 900ms linear infinite; }
+.word-search-state-notice-spinner--static { animation: none; }
+@keyframes word-search-spin { to { transform: rotate(360deg); } }
 
 /* ── Word Trove definition modal (Pass 8) ─────────────────────────────────────────────────── */
 
@@ -572,10 +728,6 @@
   .word-search-root[data-display-mode="app-shell"] { height: 100%; border-radius: 0; }
   .word-search-root[data-display-mode="app-shell"] .word-search-game-surface { height: 100%; }
   .word-search-root[data-display-mode="app-shell"] .word-search-play-layout { height: 100%; }
-  .word-search-root[data-status="won"] .word-search-play-layout,
-  .word-search-root[data-status="completing"] .word-search-play-layout,
-  .word-search-root[data-status="completion-pending"] .word-search-play-layout,
-  .word-search-root[data-status="error"] .word-search-play-layout { height: calc(100% - 52px); }
   html:has(.word-search-root[data-display-mode="app-shell"]),
   body:has(.word-search-root[data-display-mode="app-shell"]) {
     width: 100%;
@@ -644,5 +796,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .word-search-root *, .word-search-sheet, .word-search-dialog, .word-definition-card, .word-definition-card * { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  .word-search-root *, .word-search-sheet, .word-search-info-card, .word-search-state-notice, .word-definition-card, .word-definition-card * { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
