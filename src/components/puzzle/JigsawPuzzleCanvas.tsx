@@ -38,6 +38,7 @@ import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
 import JigsawPreviewDialog from "./jigsaw/JigsawPreviewDialog";
 import JigsawResetDialog from "./jigsaw/JigsawResetDialog";
+import JigsawSystemMessage from "./jigsaw/JigsawSystemMessage";
 import {
   buildJigsawEdges,
   calculateJigsawCompletion,
@@ -3191,11 +3192,12 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
             top offset; centered, it's wide enough on a narrow phone screen to otherwise overlap
             the stats badges sitting flush left. */}
         {resumed && (
-          <div style={{ position: "absolute", top: 46, left: "50%", transform: "translateX(-50%)",
-                        zIndex: 9000, background: "rgba(16,185,129,0.92)", color: "white",
-                        fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 20,
-                        pointerEvents: "none", whiteSpace: "nowrap", boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>
-            ✓ Progress restored — pick up where you left off
+          <div className="jigsaw-system-message-restored-slot">
+            <JigsawSystemMessage
+              variant="restored"
+              title="Progress restored"
+              message="Your puzzle is ready where you left off."
+            />
           </div>
         )}
 
@@ -3209,25 +3211,6 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
                            cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 5 }}>
             🖼 {showPreview ? "Hide Preview" : "Preview Image"}
           </button>
-        )}
-
-        {/* Preview overlay */}
-        {false && showPreview && effectiveUrl && (
-          <div onClick={() => setShowPreview(false)}
-               style={{ position: "fixed", inset: 0, zIndex: 9500, display: "flex",
-                        alignItems: "center", justifyContent: "center",
-                        background: "rgba(0,0,0,0.85)", cursor: "pointer" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={effectiveUrl} alt="Puzzle preview"
-                 style={{ maxWidth: "90vw", maxHeight: "80vh", width: "auto", height: "auto",
-                          objectFit: "contain", borderRadius: 8,
-                          boxShadow: "0 8px 40px rgba(0,0,0,0.7)", border: "2px solid rgba(255,255,255,0.2)",
-                          pointerEvents: "none", display: "block" }} />
-            <div style={{ position: "absolute", top: 12, right: 12, color: "rgba(255,255,255,0.7)",
-                          fontSize: 13, fontWeight: 600 }}>
-              Tap to close
-            </div>
-          </div>
         )}
 
         {displayMode !== "app-shell" && !isSolved && (
@@ -3245,9 +3228,14 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         )}
 
         {status === "completion-pending" && (
-          <div className="jigsaw-completion-error" role="alert">
-            {completionError || "This completed puzzle still needs to be recorded."}
-            <button type="button" onClick={() => void requestCompletion()}>Retry Completion</button>
+          <div className="jigsaw-system-message-completion-error-slot">
+            <JigsawSystemMessage
+              variant="completion-error"
+              title="Puzzle solved — save pending"
+              message={`Your solve is safe on this device, but it has not been recorded yet. ${completionError || "This completed puzzle still needs to be recorded."}`}
+              actionLabel="Retry Completion"
+              onAction={() => void requestCompletion()}
+            />
           </div>
         )}
 
@@ -3258,19 +3246,31 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </div>
         )}
 
+        {/* Loading — the image is still being fetched/prepared (also covers an image retry
+            in flight, since a retry resets imageOk back to null). */}
+        {imageOk === null && (
+          <div className="jigsaw-system-message-overlay">
+            <JigsawSystemMessage
+              variant="loading"
+              title="Preparing puzzle"
+              message="Loading the image and building your pieces."
+            />
+          </div>
+        )}
+
         {/* Image error */}
         {imageOk === false && (
-          <div style={{ position: "absolute", left: 12, top: 12, background: "rgba(0,0,0,0.6)",
-                        color: "white", padding: "6px 10px", borderRadius: 8, fontSize: 12, zIndex: 200 }}>
-            Image failed to load.{" "}
-            <button type="button" onClick={() => {
-                      setImageOk(null); setReloadKey(k => k + 1);
-                      setProxyTried(false); setEffectiveUrl(imageUrl ?? "");
-                    }}
-                    style={{ marginLeft: 8, background: "#2b6cb0", color: "white", border: "none",
-                             padding: "4px 8px", borderRadius: 6, cursor: "pointer" }}>
-              Retry
-            </button>
+          <div className="jigsaw-system-message-overlay">
+            <JigsawSystemMessage
+              variant="image-error"
+              title="Image couldn’t load"
+              message="Check your connection and try loading the puzzle again."
+              actionLabel="Try Again"
+              onAction={() => {
+                setImageOk(null); setReloadKey(k => k + 1);
+                setProxyTried(false); setEffectiveUrl(imageUrl ?? "");
+              }}
+            />
           </div>
         )}
 

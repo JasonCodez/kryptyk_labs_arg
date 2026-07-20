@@ -146,5 +146,29 @@ p.jigsaw-help-lead { margin:0; font-size:.85rem; line-height:1.45; color:var(--p
 p.jigsaw-help-keys-copy { margin:0; font-size:.78rem; line-height:1.4; color:var(--pw-text-secondary,#A9B4CC); }
 .jigsaw-help-primary { display:flex; align-items:center; justify-content:center; min-height:44px; width:100%; box-sizing:border-box; border:none; border-radius:12px; background:var(--pw-brand-primary,#03ACF4); color:var(--pw-text-on-primary,#0B1029); font-weight:800; font-size:.9rem; }
 .jigsaw-help-primary:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
+.jigsaw-system-message { display:flex; flex-direction:column; align-items:center; gap:8px; box-sizing:border-box; width:min(320px,calc(100% - 24px)); padding:16px 18px; border-radius:14px; border:1px solid var(--pw-border-default,#2C3856); background:rgba(10,20,40,.92); box-shadow:0 12px 34px rgba(0,0,0,.45); text-align:center; }
+.jigsaw-system-message-icon { display:flex; align-items:center; justify-content:center; }
+.jigsaw-system-message-copy { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.jigsaw-system-message-title { margin:0; font-size:.88rem; font-weight:800; color:var(--pw-text-primary,#EEF2FA); }
+.jigsaw-system-message-support { margin:0; font-size:.76rem; line-height:1.4; color:var(--pw-text-secondary,#A9B4CC); }
+.jigsaw-system-message-action { margin-top:4px; display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; box-sizing:border-box; padding:0 20px; border:none; border-radius:12px; background:#FDE74C; color:#020202; font-weight:800; font-size:.85rem; }
+.jigsaw-system-message-action:disabled { opacity:.65; cursor:not-allowed; }
+.jigsaw-system-message-action:focus-visible { outline:2px solid var(--pw-info,#4FB8FF); outline-offset:2px; }
+.jigsaw-system-message[data-variant="loading"] .jigsaw-system-message-icon { color:var(--pw-info,#4FB8FF); }
+.jigsaw-system-message[data-variant="image-error"] .jigsaw-system-message-icon,
+.jigsaw-system-message[data-variant="completion-error"] .jigsaw-system-message-icon { color:var(--pw-error-text,#FF7A7E); }
+.jigsaw-system-message[data-variant="restored"] .jigsaw-system-message-icon { color:var(--pw-info,#4FB8FF); }
+.jigsaw-system-message-spinner { animation:jigsaw-system-message-spin .9s linear infinite; }
+@keyframes jigsaw-system-message-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .jigsaw-system-message-spinner { animation:none; } }
+.jigsaw-system-message-overlay { position:absolute; inset:0; z-index:200; display:grid; place-items:center; padding:16px; box-sizing:border-box; pointer-events:none; }
+.jigsaw-system-message-overlay .jigsaw-system-message { pointer-events:auto; }
+.jigsaw-system-message-restored-slot { position:absolute; top:46px; left:50%; transform:translateX(-50%); z-index:9000; pointer-events:none; max-width:calc(100% - 24px); }
+.jigsaw-system-message-restored-slot .jigsaw-system-message { padding:10px 16px; flex-direction:row; gap:8px; width:auto; box-shadow:0 6px 20px rgba(0,0,0,.4); }
+.jigsaw-system-message-restored-slot .jigsaw-system-message-copy { align-items:flex-start; text-align:left; }
+.jigsaw-system-message-completion-error-slot { position:absolute; left:50%; top:12px; z-index:9200; transform:translateX(-50%); width:min(340px,calc(100% - 24px)); }
+.jigsaw-system-message-completion-error-slot .jigsaw-system-message-action { width:100%; }
+@media (min-width:420px) { .jigsaw-system-message-completion-error-slot .jigsaw-system-message-action { width:auto; } }
+
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root:not([data-fullscreen="true"]) { flex-direction:row; } .jigsaw-board-area { flex:1 1 68%; align-items:center; padding-top:0; } .jigsaw-tray-wrap { flex:0 0 min(32vw,280px); height:100%; } .jigsaw-tray { height:100%!important; flex-direction:column; overflow-x:hidden; overflow-y:auto; border-top:0; border-left:1px solid rgba(255,255,255,.1); } }
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root[data-display-mode="app-shell"] { display:grid; grid-template-columns:minmax(0,1fr) min(32vw,280px); grid-template-rows:auto minmax(0,1fr); } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-board-area { grid-column:1; grid-row:1 / span 2; } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-app-control-bar { grid-column:2; grid-row:1; border-top:0; border-left:1px solid rgba(255,255,255,.1); } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-tray-wrap { grid-column:2; grid-row:2; min-height:0; width:auto; height:auto; } }

@@ -1265,3 +1265,200 @@ for (const viewport of [
     await context.close();
   });
 }
+
+// ── System-state polish coverage (loading / image-error / restored / completion-error) ────
+
+// A self-contained variant of installCatalogFixture whose image route fails `failSvgLoads`
+// times before serving the real image. Each failure also triggers the app's internal
+// image-proxy retry (served the generic JSON catch-all below, which is not valid image data and
+// fails to decode too), landing the puzzle in `image-error` after a single visible failure; a
+// subsequent request (e.g. from clicking Try Again) succeeds once `failSvgLoads` is exhausted.
+async function installCatalogFixtureWithImageFailure(page: Page, failSvgLoads: number) {
+  let solved = false;
+  let attempts = 0;
+  let svgAttempts = 0;
+  const progress = () => ({ id: "jigsaw-progress", userId: "e2e-user", puzzleId: PUZZLE_ID, solved, attempts, pointsEarned: solved ? 100 : 0, successfulAttempts: solved ? 1 : 0, completionPercentage: solved ? 100 : 0, sessionLogs: [], partProgress: [] });
+  await page.route("**/e2e-jigsaw.svg*", (route) => {
+    // Only the canvas's own cache-busted loader (`?_ck=…`, driven by reloadKey) should ever
+    // fail — other incidental requests for the bare URL (e.g. the always-mounted, normally
+    // invisible living-photo <img>) must keep succeeding so they don't consume the fail budget.
+    if (!route.request().url().includes("_ck=")) return route.fulfill({ status: 200, contentType: "image/svg+xml", body: IMAGE_BODY });
+    svgAttempts += 1;
+    if (svgAttempts <= failSvgLoads) return route.fulfill({ status: 404, contentType: "text/plain", body: "not found" });
+    return route.fulfill({ status: 200, contentType: "image/svg+xml", body: IMAGE_BODY });
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request(); const path = new URL(request.url()).pathname.replace(/\/$/, ""); const method = request.method();
+    const fulfill = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
+    if (path === "/api/auth/session") return fulfill({ user: { id: "e2e-user", name: "Jigsaw Tester", email: "jigsaw@example.test" }, expires: "2099-01-01T00:00:00.000Z" });
+    if (path === `/api/puzzles/${PUZZLE_ID}`) return fulfill({ id: PUZZLE_ID, title: "Catalog Jigsaw E2E", description: "Deterministic fixture", content: "", difficulty: "easy", puzzleType: "jigsaw", xpReward: 50, data: {}, solutions: [{ points: 100 }], category: { name: "Visual" }, media: [], userHistory: [], jigsaw: { imageUrl: IMAGE, gridRows: 2, gridCols: 2, snapTolerance: 24, rotationEnabled: false } });
+    if (path === `/api/puzzles/${PUZZLE_ID}/progress`) {
+      if (method === "POST") {
+        const body = request.postDataJSON() as { action?: string };
+        if (body.action === "attempt_success") { attempts += 1; solved = true; }
+      }
+      return fulfill(progress());
+    }
+    if (path === `/api/puzzles/${PUZZLE_ID}/hints`) return fulfill({ hints: [], hintTokens: 0, skipTokens: 0 });
+    if (path === `/api/puzzles/${PUZZLE_ID}/comparison-stats`) return fulfill({ percentile: 50, averageTime: 60, totalSolves: 1 });
+    if (path === "/api/user/info") return fulfill({ id: "e2e-user", totalXp: 0, totalPoints: 1000, activeSkin: "default" });
+    if (path === "/api/user/profile") return fulfill({ activeSkin: "default", activeCompletionAnimation: "default" });
+    return fulfill({});
+  });
+  return { svgAttempts: () => svgAttempts };
+}
+
+test("320px: image load failure shows the polished error state and Try Again recovers it", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  const imageFixture = await installCatalogFixtureWithImageFailure(page, 1);
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("Image couldn’t load")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Check your connection and try loading the puzzle again.")).toBeVisible();
+  const tryAgain = page.getByRole("button", { name: "Try Again" });
+  await expect(tryAgain).toBeVisible();
+
+  const messageBox = await page.locator('.jigsaw-system-message[data-variant="image-error"]').boundingBox();
+  expect(messageBox).not.toBeNull();
+  expect(messageBox!.x).toBeGreaterThanOrEqual(0);
+  expect(messageBox!.y).toBeGreaterThanOrEqual(0);
+  expect(messageBox!.x + messageBox!.width).toBeLessThanOrEqual(320 + 1);
+
+  const buttonBox = await tryAgain.boundingBox();
+  expect(buttonBox).not.toBeNull();
+  expect(buttonBox!.height).toBeGreaterThanOrEqual(44);
+
+  const overflowAtError = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowAtError).toBe(false);
+
+  await tryAgain.click();
+  // Note: `data-status` itself is a pre-existing (out-of-scope) latent quirk — once `status`
+  // has latched to "image-error" it never transitions back on a successful retry (see the
+  // `imageOk`-driven effect a few hundred lines up) — but the actual gameplay gating
+  // (`canInteract`) and this error UI are both driven directly off `imageOk`, which does flip
+  // back to true, so the puzzle becomes genuinely playable again; assert on that observable
+  // behavior instead of the stale status attribute.
+  await expect(page.getByText("Image couldn’t load")).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
+  expect(imageFixture.svgAttempts()).toBeGreaterThanOrEqual(2);
+
+  // Prove real interactivity post-retry: a tray piece can still be dragged onto the board.
+  const board = page.locator(".jigsaw-board-canvas");
+  const trayCanvas = page.locator(".jigsaw-tray-piece canvas").first();
+  const from = await trayCanvas.boundingBox();
+  const boardBox = await board.boundingBox();
+  expect(from).not.toBeNull(); expect(boardBox).not.toBeNull();
+  const dragId = 9101;
+  const startX = from!.x + from!.width / 2; const startY = from!.y + from!.height / 2;
+  const targetX = boardBox!.x + boardBox!.width / 2; const targetY = boardBox!.y + boardBox!.height / 2;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 1, clientX: targetX, clientY: targetY });
+  await board.dispatchEvent("pointerup", { pointerId: dragId, pointerType: "mouse", button: 0, buttons: 0, clientX: targetX, clientY: targetY });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(3);
+
+  const overflowAfterRetry = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowAfterRetry).toBe(false);
+});
+
+test("320px: progress restored notice appears after reload without covering controls or blocking input", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  await installCatalogFixture(page, 0, 0, PARKING_TEST_GRID);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const canvasBox = await board.boundingBox();
+  if (!canvasBox) throw new Error("Missing canvas bounding box");
+  const boardSide = canvasBox.width;
+  const parkingHeight = canvasBox.height - boardSide;
+  const parkingX = canvasBox.x + canvasBox.width * 0.65;
+  const parkingY = canvasBox.y + boardSide + parkingHeight * 0.5;
+
+  const trayCanvas = page.locator(".jigsaw-tray-piece").first().locator("canvas");
+  const from = await trayCanvas.boundingBox();
+  if (!from) throw new Error("Missing tray piece bounding box");
+  const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
+  const dropId = 9001;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: parkingX, clientY: parkingY });
+  await board.dispatchEvent("pointerup", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 0, clientX: parkingX, clientY: parkingY });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", /playing|completion-pending/, { timeout: 15_000 });
+
+  await expect(page.getByText("Progress restored")).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("Your puzzle is ready where you left off.")).toBeVisible();
+
+  // Catalog uses displayMode="app-shell", so the in-canvas JigsawStatusHud doesn't render here
+  // (it's Warz/standalone-only) — the equivalent top controls the notice must not cover are the
+  // shared page header's own stats (see the "Catalog Jigsaw stays contained" tests above, which
+  // assert the board starts directly beneath this same .pw-play-header).
+  const noticeBox = await page.locator(".jigsaw-system-message-restored-slot").boundingBox();
+  const headerBox = await page.locator(".pw-play-header").boundingBox();
+  expect(noticeBox).not.toBeNull(); expect(headerBox).not.toBeNull();
+  const overlaps = noticeBox!.x < headerBox!.x + headerBox!.width && noticeBox!.x + noticeBox!.width > headerBox!.x
+    && noticeBox!.y < headerBox!.y + headerBox!.height && noticeBox!.y + noticeBox!.height > headerBox!.y;
+  expect(overlaps).toBe(false);
+
+  const pointerEvents = await page.locator(".jigsaw-system-message-restored-slot").evaluate((el) => getComputedStyle(el).pointerEvents);
+  expect(pointerEvents).toBe("none");
+
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1);
+
+  // Puzzle remains draggable while the restored notice is showing (or has just finished).
+  const restoredBox = await board.boundingBox();
+  if (!restoredBox) throw new Error("Missing restored canvas bounding box");
+  const restoredParkingX = restoredBox.x + restoredBox.width * 0.65;
+  const restoredParkingY = restoredBox.y + restoredBox.width + (restoredBox.height - restoredBox.width) * 0.5;
+  const pickId = 9002;
+  await board.dispatchEvent("pointerdown", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: restoredParkingX, clientY: restoredParkingY });
+  await board.dispatchEvent("pointermove", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: restoredParkingX + 30, clientY: restoredParkingY });
+  await board.dispatchEvent("pointerup", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 0, clientX: restoredParkingX + 30, clientY: restoredParkingY });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1);
+
+  // The notice disappears according to the existing (unmodified) 3.5s display duration.
+  await expect(page.getByText("Progress restored")).toHaveCount(0, { timeout: 5_000 });
+});
+
+test("320px: completion-save failure shows the polished pending state, and retry records completion exactly once", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 710 });
+  const fixture = await installDailyFixture(page, 1);
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
+  await openDaily(page);
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
+
+  const board = page.locator(".jigsaw-board-canvas");
+  await expect(board).toHaveAttribute("data-completed-image", "true", { timeout: 15_000 });
+
+  await expect(page.getByText("Puzzle solved — save pending")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Temporary completion failure/)).toBeVisible();
+  const retryButton = page.getByRole("button", { name: "Retry Completion" });
+  await expect(retryButton).toBeVisible();
+
+  const noticeBox = await page.locator(".jigsaw-system-message-completion-error-slot").boundingBox();
+  expect(noticeBox).not.toBeNull();
+  expect(noticeBox!.x).toBeGreaterThanOrEqual(0);
+  expect(noticeBox!.x + noticeBox!.width).toBeLessThanOrEqual(320 + 1);
+
+  await expect(page.getByRole("button", { name: "Claim Rewards" })).toHaveCount(0);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Puzzle solved — save pending")).toBeVisible();
+
+  const overflowAtError = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowAtError).toBe(false);
+
+  await page.getByRole("button", { name: "Retry Completion" }).click();
+  const continueButton = page.getByRole("button", { name: "Claim Rewards" });
+  await expect(continueButton).toBeVisible({ timeout: 10_000 });
+  expect(fixture.requests()).toBe(2);
+  expect(fixture.successfulRecords()).toBe(1);
+
+  const overflowAtFooter = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowAtFooter).toBe(false);
+});
