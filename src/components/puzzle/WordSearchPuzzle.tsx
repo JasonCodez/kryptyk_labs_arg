@@ -420,8 +420,11 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     const keys = cells.map(keyOf);
     setPoppingCells((previous) => new Set([...previous, ...keys]));
     window.setTimeout(() => { setFlashWord(null); setPoppingCells((previous) => { const next = new Set(previous); keys.forEach((key) => next.delete(key)); return next; }); }, reduceMotion ? 80 : 500);
-    queueDefinition(word, final);
-  }, [haptic, queueDefinition, reduceMotion]);
+    // A competitive Warz round must never be interrupted by the definition modal — it fully
+    // covers the board and blocks the next selection, which would cost real time in a timed
+    // match. Daily/Catalog keep the full queue-and-reveal experience unchanged.
+    if (!warzMode) queueDefinition(word, final);
+  }, [haptic, queueDefinition, reduceMotion, warzMode]);
 
   const finishCompletionHandoff = useCallback(async () => {
     if (!onComplete || completionRef.current) return;

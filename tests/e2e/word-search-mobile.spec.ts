@@ -232,6 +232,40 @@ test("catalog, daily days, and consecutive Warz rounds remain isolated for the s
   await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
 });
 
+// A competitive Warz round must never be interrupted by the word-definition modal (it fully
+// covers the board and blocks the next selection, costing real time in a timed match). This
+// exercises both a mid-match (non-final) find and the final find, waiting past the normal
+// definition-reveal delay each time so a regression that merely delays the modal (rather than
+// never queueing it) would still be caught.
+test("Warz: finding words never opens a definition modal, mid-match or on the final word", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 10, true);
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click();
+  await expect(page.getByTestId("word-search-root")).toBeVisible();
+  await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
+
+  // Non-final word (CAT).
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+  await page.waitForTimeout(700); // past the normal (320ms) and final-word (520ms) reveal delay
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  // The board must remain immediately interactive — prove it by finding the final word next.
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "playing");
+
+  // Final word (DOG) — the normal Warz result transition must occur, with no modal over it.
+  await dragWord(page, [1, 0], [1, 2]);
+  await expect(page.getByText("Posting your challenge…")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
 test("legacy catalog mismatch repairs in place without generic attempt_success", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 850 });
   await authenticate(page);

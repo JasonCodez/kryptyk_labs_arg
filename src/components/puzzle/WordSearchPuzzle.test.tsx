@@ -318,3 +318,87 @@ test("legacy server mismatch enters repair pending and reconciles without a word
   const posts = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === "POST");
   expect(posts).toHaveLength(1);
 });
+
+// A competitive Warz round must never be interrupted by the word-definition modal — it fully
+// covers the board and blocks the next selection, which would cost real time in a timed match.
+// These tests wait past the normal (320ms) AND final-word (520ms) reveal delay used by
+// queueDefinition/showNextDefinition, so a regression that merely delays the modal (rather than
+// never queueing it) would still be caught.
+const DEFINITION_REVEAL_SETTLE_MS = 700;
+
+async function settlePastDefinitionReveal() {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, DEFINITION_REVEAL_SETTLE_MS)); });
+}
+
+function installNoOpFetch() {
+  const fetchMock = jest.fn(async () => ({ ok: true, json: async () => ({ found: false }) } as Response));
+  global.fetch = fetchMock;
+  return fetchMock;
+}
+
+test("Warz: a normally selected word does not open a definition dialog, even after the usual delay", async () => {
+  const fetchMock = installNoOpFetch();
+  const view = renderPuzzle({ puzzleId: "warz-def-normal", wordSearchData: DATA, displayMode: "app-shell", warzMode: true, persistenceScope: "none" });
+  await keyboardFindCat(view);
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(view.latestPresentation()?.foundCount).toBe(1);
+  expect(view.container.querySelector('[data-ws-row="0"][data-ws-col="0"]')?.getAttribute("data-found")).toBe("true");
+  expect(view.container.querySelector('[data-ws-row="0"][data-ws-col="2"]')?.getAttribute("data-found")).toBe("true");
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("Warz: a hinted word does not open a definition dialog, even after the usual delay", async () => {
+  const fetchMock = installNoOpFetch();
+  const onHintUsed = jest.fn(async () => true);
+  const view = renderPuzzle({ puzzleId: "warz-def-hint", wordSearchData: DATA, displayMode: "app-shell", warzMode: true, persistenceScope: "none", hintTokens: 2, onHintUsed });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+  fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+  await waitForFoundCount(view, 1);
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(onHintUsed).toHaveBeenCalledTimes(1);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("Warz: the final word calls onSolved exactly once, synchronously, without a definition dialog ever appearing", async () => {
+  const fetchMock = installNoOpFetch();
+  const onSolved = jest.fn();
+  const view = renderPuzzle({ puzzleId: "warz-def-final", wordSearchData: DATA, displayMode: "app-shell", warzMode: true, persistenceScope: "none", onSolved });
+  const board = screen.getByRole("grid");
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+
+  // Find CAT (row 0, cols 0-2) — the non-final word.
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  await waitForFoundCount(view, 1);
+  expect(onSolved).not.toHaveBeenCalled();
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+
+  // Find DOG (row 2, cols 0-2) — the final word. The active cell is at (0,2) after the moves
+  // above, so navigate to (2,0) before starting the second selection.
+  fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+
+  // onSolved must fire synchronously with the final word being accepted — not after a timeout,
+  // an animation, or a definition fetch/modal — since the Warz timer depends on this handoff.
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onSolved).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("Daily mode still opens a definition dialog after finding a word", async () => {
+  const view = renderGame();
+  await keyboardFindCat(view);
+  expect(await screen.findByRole("dialog", { name: "CAT definition" })).toBeTruthy();
+});
+
+test("Catalog mode still opens a definition dialog after finding a word", async () => {
+  installFetch();
+  const view = renderPuzzle({ puzzleId: "catalog-def-test", wordSearchData: DATA, displayMode: "app-shell", persistenceScope: "catalog" });
+  await keyboardFindCat(view);
+  expect(await screen.findByRole("dialog", { name: "CAT definition" })).toBeTruthy();
+});
