@@ -43,7 +43,7 @@ async function installDailyFixture(page: Page, failCompletions = 0, grid = { row
   return { requests: () => requests, successfulRecords: () => successfulRecords };
 }
 
-async function installCatalogFixture(page: Page, failCompletions = 0, skipTokens = 0) {
+async function installCatalogFixture(page: Page, failCompletions = 0, skipTokens = 0, grid = { rows: 2, cols: 2 }) {
   let solved = false;
   let attempts = 0;
   const progress = () => ({ id: "jigsaw-progress", userId: "e2e-user", puzzleId: PUZZLE_ID, solved, attempts, pointsEarned: solved ? 100 : 0, successfulAttempts: solved ? 1 : 0, completionPercentage: solved ? 100 : 0, sessionLogs: [], partProgress: [] });
@@ -52,7 +52,7 @@ async function installCatalogFixture(page: Page, failCompletions = 0, skipTokens
     const request = route.request(); const path = new URL(request.url()).pathname.replace(/\/$/, ""); const method = request.method();
     const fulfill = (body: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
     if (path === "/api/auth/session") return fulfill({ user: { id: "e2e-user", name: "Jigsaw Tester", email: "jigsaw@example.test" }, expires: "2099-01-01T00:00:00.000Z" });
-    if (path === `/api/puzzles/${PUZZLE_ID}`) return fulfill({ id: PUZZLE_ID, title: "Catalog Jigsaw E2E", description: "Deterministic fixture", content: "", difficulty: "easy", puzzleType: "jigsaw", xpReward: 50, data: {}, solutions: [{ points: 100 }], category: { name: "Visual" }, media: [], userHistory: [], jigsaw: { imageUrl: IMAGE, gridRows: 2, gridCols: 2, snapTolerance: 24, rotationEnabled: false } });
+    if (path === `/api/puzzles/${PUZZLE_ID}`) return fulfill({ id: PUZZLE_ID, title: "Catalog Jigsaw E2E", description: "Deterministic fixture", content: "", difficulty: "easy", puzzleType: "jigsaw", xpReward: 50, data: {}, solutions: [{ points: 100 }], category: { name: "Visual" }, media: [], userHistory: [], jigsaw: { imageUrl: IMAGE, gridRows: grid.rows, gridCols: grid.cols, snapTolerance: 24, rotationEnabled: false } });
     if (path === `/api/puzzles/${PUZZLE_ID}/progress`) {
       if (method === "POST") {
         const body = request.postDataJSON() as { action?: string };
@@ -99,6 +99,10 @@ async function openDaily(page: Page) {
 // BOARD_SIZE logical square with no stage margin, so the rendered board canvas IS the grid),
 // not from any solution data the app exposes. Only valid for a square grid (rows === cols),
 // which is what every fixture below uses.
+//
+// The canvas itself is no longer square while unsolved — it's the square board PLUS a fixed
+// parking shelf beneath it (see PLAY_STAGE_HEIGHT in JigsawPuzzleCanvas.tsx) — so the square
+// board's own side length is always the canvas's rendered WIDTH, never its (now taller) height.
 async function dragEachTrayPieceToItsSlot(page: Page, gridRows: number, gridCols: number) {
   if (gridRows !== gridCols) throw new Error("dragEachTrayPieceToItsSlot only supports square grids");
   const board = page.locator(".jigsaw-board-canvas");
@@ -114,8 +118,9 @@ async function dragEachTrayPieceToItsSlot(page: Page, gridRows: number, gridCols
     const from = await trayPiece.locator("canvas").boundingBox();
     const boardBox = await board.boundingBox();
     if (!from || !boardBox) throw new Error("Missing bounding box for drag");
-    const targetX = boardBox.x + (col + 0.5) * cellFrac * boardBox.width;
-    const targetY = boardBox.y + (row + 0.5) * cellFrac * boardBox.height;
+    const renderedBoardSide = boardBox.width;
+    const targetX = boardBox.x + (col + 0.5) * cellFrac * renderedBoardSide;
+    const targetY = boardBox.y + (row + 0.5) * cellFrac * renderedBoardSide;
     const id = pointerId++;
     const trayCanvas = trayPiece.locator("canvas");
     const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
@@ -158,12 +163,17 @@ for (const viewport of [
     for (const [width, height] of targets) { expect(width).toBeGreaterThanOrEqual(44); expect(height).toBeGreaterThanOrEqual(44); }
 
     // The board is a fixed square (BOARD_SIZE=640 logical, no stage margin) scaled to fit
-    // `.jigsaw-board-area` — the canvas itself must stay square and fill most of that area.
+    // `.jigsaw-board-area` — but while unsolved, the canvas also carries a fixed parking shelf
+    // beneath the board (see PLAY_STAGE_HEIGHT), so the canvas itself is taller than it is wide;
+    // the square board portion is still exactly canvasBox.width on a side.
     const boardAreaBox = await page.locator(".jigsaw-board-area").boundingBox();
     expect(boardAreaBox).not.toBeNull();
-    expect(Math.abs(canvasBox!.width - canvasBox!.height)).toBeLessThanOrEqual(1);
-    const availableSide = Math.min(boardAreaBox!.width, boardAreaBox!.height);
-    expect(canvasBox!.width).toBeGreaterThanOrEqual(availableSide * 0.94);
+    expect(canvasBox!.height).toBeGreaterThan(canvasBox!.width);
+    // The full (taller) canvas must still fit entirely inside .jigsaw-board-area.
+    expect(canvasBox!.x).toBeGreaterThanOrEqual(boardAreaBox!.x - 1);
+    expect(canvasBox!.y).toBeGreaterThanOrEqual(boardAreaBox!.y - 1);
+    expect(canvasBox!.x + canvasBox!.width).toBeLessThanOrEqual(boardAreaBox!.x + boardAreaBox!.width + 1);
+    expect(canvasBox!.y + canvasBox!.height).toBeLessThanOrEqual(boardAreaBox!.y + boardAreaBox!.height + 1);
     // Portrait layouts (`align-items:flex-start`) must not leave a large dead gap above the
     // board; the short-landscape media query re-centers the board area instead, so only assert
     // "no gap" when the viewport is actually portrait/tall enough to hit the default rule.
@@ -197,10 +207,15 @@ for (const viewport of [
     const cardBox = await page.locator(".puzzle-detail-play-card").boundingBox();
     expect(canvasBox).not.toBeNull(); expect(boardAreaBox).not.toBeNull(); expect(cardBox).not.toBeNull();
 
-    // Square canvas, using most of the available width.
-    expect(Math.abs(canvasBox!.width - canvasBox!.height)).toBeLessThanOrEqual(1);
-    const availableSide = Math.min(boardAreaBox!.width, boardAreaBox!.height);
-    expect(canvasBox!.width).toBeGreaterThanOrEqual(availableSide * 0.94);
+    // While unsolved, the canvas carries a fixed parking shelf beneath the square board (see
+    // PLAY_STAGE_HEIGHT), so it's taller than it is wide — the square board portion is still
+    // exactly canvasBox.width on a side. The full (taller) canvas must still fit inside
+    // .jigsaw-board-area.
+    expect(canvasBox!.height).toBeGreaterThan(canvasBox!.width);
+    expect(canvasBox!.x).toBeGreaterThanOrEqual(boardAreaBox!.x - 1);
+    expect(canvasBox!.y).toBeGreaterThanOrEqual(boardAreaBox!.y - 1);
+    expect(canvasBox!.x + canvasBox!.width).toBeLessThanOrEqual(boardAreaBox!.x + boardAreaBox!.width + 1);
+    expect(canvasBox!.y + canvasBox!.height).toBeLessThanOrEqual(boardAreaBox!.y + boardAreaBox!.height + 1);
 
     // The board must begin directly beneath the shared header (no large dead region above it —
     // the exact regression the broken puzzle-detail-play-* height chain caused).
@@ -306,6 +321,158 @@ test("Catalog supports tray drag, return, and header controls", async ({ page })
   await page.getByRole("button", { name: "More puzzle actions" }).click();
   await page.getByRole("menuitem", { name: "Return Loose Pieces" }).click();
   await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(4);
+});
+
+// Regression coverage for the parking-shelf bug fix: a piece released between the square board
+// and the tray used to commit to an off-stage position, get culled by the renderer, and become
+// permanently unrecoverable except via "Return loose pieces to tray". The shelf is now real,
+// hit-testable stage space (see PARKING_ZONE_HEIGHT in JigsawPuzzleCanvas.tsx).
+//
+// Uses a 4x4 grid (piece size 160 logical) rather than the 2x2 default: at 2x2 a single piece
+// (320 logical) is bigger than the whole shelf and the safety clamp legitimately repositions it,
+// which is correct product behavior but makes "drop here, expect it to stay exactly there"
+// assertions flaky. At 4x4 a piece comfortably fits inside the shelf with room to spare.
+const PARKING_TEST_GRID = { rows: 4, cols: 4 };
+const PARKING_TEST_PIECE_COUNT = PARKING_TEST_GRID.rows * PARKING_TEST_GRID.cols;
+
+test("A piece dropped in the parking shelf stays visible, unsnapped, and recoverable", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page, 0, 0, PARKING_TEST_GRID);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  const trayPiece = page.locator(".jigsaw-tray-piece").first();
+  const label = await trayPiece.getAttribute("aria-label");
+  const match = label?.match(/row (\d+) column (\d+)/i);
+  if (!match) throw new Error(`Could not parse row/column from tray piece aria-label: ${label}`);
+  const row = Number(match[1]) - 1;
+  const col = Number(match[2]) - 1;
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const canvasBox = await board.boundingBox();
+  if (!canvasBox) throw new Error("Missing canvas bounding box");
+  const boardSide = canvasBox.width;
+  const parkingHeight = canvasBox.height - boardSide;
+  expect(parkingHeight).toBeGreaterThan(0); // the shelf must actually exist while unsolved
+
+  const parkingX = canvasBox.x + canvasBox.width * 0.65;
+  const parkingY = canvasBox.y + boardSide + parkingHeight * 0.5;
+
+  const trayCanvas = trayPiece.locator("canvas");
+  const from = await trayCanvas.boundingBox();
+  if (!from) throw new Error("Missing tray piece bounding box");
+  const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
+  const dropId = 8001;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: parkingX, clientY: parkingY });
+  await board.dispatchEvent("pointerup", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 0, clientX: parkingX, clientY: parkingY });
+
+  // Left the tray, but did not count as a board placement — it's parked, not snapped.
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+
+  // Pick it back up from its parked position — proving it's real, hit-testable stage content,
+  // not an invisible/unreachable off-stage commit — and drag it onto its correct board cell.
+  const cellFrac = 1 / PARKING_TEST_GRID.rows;
+  const targetX = canvasBox.x + (col + 0.5) * cellFrac * boardSide;
+  const targetY = canvasBox.y + (row + 0.5) * cellFrac * boardSide;
+  const pickId = 8002;
+  await board.dispatchEvent("pointerdown", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: parkingX, clientY: parkingY });
+  await board.dispatchEvent("pointermove", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: targetX, clientY: targetY });
+  await board.dispatchEvent("pointerup", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 0, clientX: targetX, clientY: targetY });
+
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "1");
+});
+
+test("A piece released just below the playable stage (not over the tray) is clamped visible, never lost", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page, 0, 0, PARKING_TEST_GRID);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const trayCanvas = page.locator(".jigsaw-tray-piece").first().locator("canvas");
+  const from = await trayCanvas.boundingBox();
+  const canvasBox = await board.boundingBox();
+  const trayBox = await page.locator(".jigsaw-tray").boundingBox();
+  if (!from || !canvasBox || !trayBox) throw new Error("Missing bounding box");
+
+  // A point in the DOM gap between the bottom of the (taller) canvas and the top of the tray —
+  // below the whole playable stage, but not inside the tray rect either.
+  const gapX = canvasBox.x + canvasBox.width / 2;
+  const gapY = (canvasBox.y + canvasBox.height + trayBox.y) / 2;
+  expect(gapY).toBeGreaterThan(canvasBox.y + canvasBox.height);
+  expect(gapY).toBeLessThan(trayBox.y);
+
+  const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
+  const dropId = 8003;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: gapX, clientY: gapY });
+  await board.dispatchEvent("pointerup", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 0, clientX: gapX, clientY: gapY });
+
+  // Never silently returned to the tray, never snapped, and never lost — it must still be
+  // present, visible, and pickable somewhere on the (real) stage.
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+  const trayCountAfterDrop = await page.locator(".jigsaw-tray-piece").count();
+  expect(trayCountAfterDrop).toBe(PARKING_TEST_PIECE_COUNT - 1);
+
+  // Recoverability proof: it can still be picked up from wherever the safety clamp parked it
+  // and moved elsewhere on the stage.
+  const parkedX = canvasBox.x + canvasBox.width * 0.5;
+  const parkedY = canvasBox.y + canvasBox.height - 20; // just inside the clamped stage bottom
+  const pickId = 8004;
+  await board.dispatchEvent("pointerdown", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: parkedX, clientY: parkedY });
+  await board.dispatchEvent("pointermove", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: parkedX - 40, clientY: parkedY - 10 });
+  await board.dispatchEvent("pointerup", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 0, clientX: parkedX - 40, clientY: parkedY - 10 });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1); // still not back in the tray, still not snapped, still on-stage
+});
+
+test("A parked piece restores visibly and remains draggable after reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installCatalogFixture(page, 0, 0, PARKING_TEST_GRID);
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  const board = page.locator(".jigsaw-board-canvas");
+  const canvasBox = await board.boundingBox();
+  if (!canvasBox) throw new Error("Missing canvas bounding box");
+  const boardSide = canvasBox.width;
+  const parkingHeight = canvasBox.height - boardSide;
+  const parkingX = canvasBox.x + canvasBox.width * 0.35;
+  const parkingY = canvasBox.y + boardSide + parkingHeight * 0.5;
+
+  const trayCanvas = page.locator(".jigsaw-tray-piece").first().locator("canvas");
+  const from = await trayCanvas.boundingBox();
+  if (!from) throw new Error("Missing tray piece bounding box");
+  const startX = from.x + from.width / 2; const startY = from.y + from.height / 2;
+  const dropId = 8005;
+  await trayCanvas.dispatchEvent("pointerdown", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY });
+  await trayCanvas.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: startX, clientY: startY - 20 });
+  await board.dispatchEvent("pointermove", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 1, clientX: parkingX, clientY: parkingY });
+  await board.dispatchEvent("pointerup", { pointerId: dropId, pointerType: "mouse", button: 0, buttons: 0, clientX: parkingX, clientY: parkingY });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+
+  // Restored: still parked (not back in the tray, not snapped), and elapsed time/tray order
+  // restore normally (the existing "resumed" banner is the app's own signal for that).
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1);
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-placed-pieces", "0");
+
+  // Still draggable after restoration — pick it up from the shelf and confirm it moves.
+  const restoredBoard = page.locator(".jigsaw-board-canvas");
+  const restoredBox = await restoredBoard.boundingBox();
+  if (!restoredBox) throw new Error("Missing restored canvas bounding box");
+  const restoredParkingX = restoredBox.x + restoredBox.width * 0.35;
+  const restoredParkingY = restoredBox.y + restoredBox.width + (restoredBox.height - restoredBox.width) * 0.5;
+  const pickId = 8006;
+  await restoredBoard.dispatchEvent("pointerdown", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: restoredParkingX, clientY: restoredParkingY });
+  await restoredBoard.dispatchEvent("pointermove", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 1, clientX: restoredParkingX + 30, clientY: restoredParkingY });
+  await restoredBoard.dispatchEvent("pointerup", { pointerId: pickId, pointerType: "mouse", button: 0, buttons: 0, clientX: restoredParkingX + 30, clientY: restoredParkingY });
+  await expect(page.locator(".jigsaw-tray-piece")).toHaveCount(PARKING_TEST_PIECE_COUNT - 1); // still parked, not returned to tray, drag was accepted
 });
 
 test("Desktop has no zoom controls, and Plus/Minus/0 do not alter the board", async ({ page }) => {
@@ -586,7 +753,10 @@ for (const deviceScaleFactor of [1, 2, 3]) {
     expect(before.dpr).toBe(deviceScaleFactor);
     expect(Math.abs(before.attrWidth - before.boundingWidth * before.dpr)).toBeLessThanOrEqual(1);
     expect(Math.abs(before.attrHeight - before.boundingHeight * before.dpr)).toBeLessThanOrEqual(1);
-    expect(Math.abs(before.boundingWidth - before.boundingHeight)).toBeLessThanOrEqual(1); // CSS board stays square
+    // While unsolved, the canvas carries a fixed parking shelf beneath the square board (see
+    // PLAY_STAGE_HEIGHT) — taller than it is wide, not square. The square board portion is
+    // still exactly boundingWidth on a side.
+    expect(before.boundingHeight).toBeGreaterThan(before.boundingWidth);
     expect(before.boundingWidth).toBeLessThanOrEqual(320);
 
     const dimsBefore = await page.evaluate(() => document.documentElement.scrollWidth);

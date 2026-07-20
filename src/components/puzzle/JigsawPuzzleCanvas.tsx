@@ -39,6 +39,7 @@ import JigsawResetDialog from "./jigsaw/JigsawResetDialog";
 import {
   buildJigsawEdges,
   calculateJigsawCompletion,
+  clampGroupToStage,
   jigsawGenerationSeed,
   jigsawPuzzleSignature,
   shuffledJigsawIds,
@@ -354,6 +355,17 @@ const BOARD_SIZE = 640;
 // from BOARD_SIZE (the fixed logical coordinate space pieces/paths are authored in). On very
 // wide viewports the board would otherwise grow to fill all available width/height.
 const MAX_BOARD_CSS_WIDTH = 800;
+
+// A fixed logical "parking shelf" beneath the square board — real playable stage, not dead
+// space. A piece released between the board and the tray used to commit below the stage's
+// bounds entirely (outside stageDimsRef, so the renderer culled it and hit-testing could never
+// find it again — the only recovery was "Return loose pieces to tray"). Giving that area real,
+// fixed logical bounds means a released piece always lands somewhere the stage actually owns:
+// visible, hit-testable, and still draggable onto the board or back to the tray. Fixed in
+// logical coordinates (not viewport-dependent) so dragging, resizing, and persistence all stay
+// stable regardless of what size the stage is scaled to on screen.
+const PARKING_ZONE_HEIGHT = 200;
+const PLAY_STAGE_HEIGHT = BOARD_SIZE + PARKING_ZONE_HEIGHT;
 
 // A jigsaw grid reaching the player must be a square N×N grid within this supported range
 // (matches the admin-side allowed sizes) — a corrupt/out-of-range record (e.g. rows=0, a
@@ -741,7 +753,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   // p.pos / p.correct are in stage coords.
   const boardOffXRef  = useRef(0);
   const boardOffYRef  = useRef(0);
-  const stageDimsRef  = useRef({ w: BOARD_SIZE, h: BOARD_SIZE });
+  const stageDimsRef  = useRef({ w: BOARD_SIZE, h: PLAY_STAGE_HEIGHT });
   // CSS-px offset applied only when the completion frame is being shown (see `showFrame`
   // below) — the canvas itself grows beyond the board's own size once solved so the frame's
   // decorative border has real pixels to draw into instead of being clipped at the canvas
@@ -1361,11 +1373,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       // leaving the frame nowhere to render but on top of/clipped by the board's own edge.
       const holeW = FRAME_HOLE.right - FRAME_HOLE.left;
       const holeH = FRAME_HOLE.bottom - FRAME_HOLE.top;
+      // While unsolved, the playable stage is taller than the square board (see
+      // PLAY_STAGE_HEIGHT) — fit that whole taller rect into the available area uniformly
+      // (never stretching the square board itself) rather than fitting the board alone.
+      const stageAspect = PLAY_STAGE_HEIGHT / BOARD_SIZE;
       const boardSide = showFrame
         ? Math.max(120, Math.floor(Math.min(availableWidth * holeW, availableHeight * holeH)))
-        : Math.max(120, Math.floor(Math.min(availableWidth, availableHeight)));
+        : Math.max(120, Math.floor(Math.min(availableWidth, availableHeight / stageAspect)));
       const canvasCssW = showFrame ? Math.round(boardSide / holeW) : boardSide;
-      const canvasCssH = showFrame ? Math.round(boardSide / holeH) : boardSide;
+      const canvasCssH = showFrame ? Math.round(boardSide / holeH) : Math.round(boardSide * stageAspect);
       boardInsetPxRef.current = showFrame
         ? { x: (FRAME_HOLE.left / holeW) * boardSide, y: (FRAME_HOLE.top / holeH) * boardSide }
         : { x: 0, y: 0 };
@@ -1631,6 +1647,24 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       // this rect's own border is the whole visible board outline; no separate stage frame is
       // drawn behind it anymore.
       if (!solved) {
+        // Parking shelf — the fixed strip beneath the board (see PARKING_ZONE_HEIGHT) a loose
+        // piece now lands in when released between the board and the tray, instead of
+        // committing off-stage and becoming invisible. Restrained on purpose: a lighter navy
+        // than the root black, with a thin divider along the board's own bottom edge, so it
+        // reads as usable space without competing visually with the puzzle itself.
+        const shelfTop = _bOffY + gridH;
+        const shelfHeight = stageDimsRef.current.h - gridH;
+        if (shelfHeight > 0) {
+          ctx.fillStyle = "#12182a";
+          ctx.fillRect(_bOffX, shelfTop, gridW, shelfHeight);
+          ctx.strokeStyle = "#2C3856";
+          ctx.lineWidth = 1 / sCss;
+          ctx.beginPath();
+          ctx.moveTo(_bOffX, shelfTop);
+          ctx.lineTo(_bOffX + gridW, shelfTop);
+          ctx.stroke();
+        }
+
         const boardRectPath = roundedRectPath(_bOffX, _bOffY, gridW, gridH, pathOpts.cornerInset ?? 0);
         ctx.fillStyle = "#111111";
         ctx.fill(boardRectPath);
@@ -1990,21 +2024,19 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     canvas.style.transform = `scale(${toTray ? tray.w / board.w : 1})`;
   }, []);
 
-  // Screen-space Y of the board's own visible bottom edge — deliberately NOT the canvas
-  // element's own bounding rect. The canvas is sized to the full *stage* (board + STAGE_MARGIN
-  // buffer on every side, for tab overflow and for resting a loose piece just off the board),
-  // which extends further down than where the board visually appears to end. Gating the
-  // ghost/tray transition on the canvas element's true edge meant a piece dragged toward the
-  // tray kept getting clamped to the (still visually "on the canvas") margin strip below the
-  // board — reading as stuck at a wall for that whole buffer before finally popping free right
-  // at the tray. Using the board's actual rendered edge instead removes that dead zone.
-  const getBoardBottomClientY = useCallback((): number | null => {
+  // Screen-space Y of the *playable stage's* bottom edge (board + parking shelf) —
+  // deliberately not the board's own bottom edge. A piece must stay a normal full-size
+  // canvas-rendered piece while the pointer is anywhere over the board OR the parking shelf;
+  // only crossing below the whole stage (heading toward the tray) should hand it off to the
+  // floating DOM ghost. Gating this on the board's edge alone would ghost a piece the instant
+  // it left the board, well before it ever reached the shelf.
+  const getPlayableStageBottomClientY = useCallback((): number | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const boardBottomStage = boardOffYRef.current + gridH;
-    return rect.top + boardBottomStage * scaleRef.current;
-  }, [gridH]);
+    const stageBottomStage = boardOffYRef.current + stageDimsRef.current.h;
+    return rect.top + stageBottomStage * scaleRef.current;
+  }, []);
 
   // Draws the ghost's content (once, at board scale) and positions its wrapper, centered at
   // (clientX, clientY) using the wrapper's fixed board-scale footprint — the visible piece is
@@ -2266,7 +2298,11 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
     if (!hit) return; // empty board space: do nothing — no pan, no capture
 
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // Mirrors confirmTrayDrag's own try/catch below: capture can fail (e.g. a pointerId the
+    // browser doesn't consider "active" for a script-dispatched event, or a capture already
+    // lost by the time this runs) without that failure being fatal to starting the drag itself
+    // — the drag still tracks correctly via dragRef/pointermove on this element either way.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
     e.stopPropagation();
 
     const group = piecesRef.current.filter(p => p.groupId === hit.groupId);
@@ -2305,21 +2341,17 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     // between "just started/stopped ghosting" and "how the position gets clamped".
     //
     // Two separate thresholds, not one:
-    //  - "ghosting" (detach from the board into a floating thumbnail) triggers the instant the
-    //    pointer passes the board's own visible bottom edge — NOT the canvas element's bounding
-    //    rect, which is sized to the full *stage* (board + a STAGE_MARGIN buffer around every
-    //    side, for tab overflow / resting a loose piece just off the board) and so extends
-    //    further down than the board visually appears to. Gating on the canvas element's true
-    //    edge left that whole margin strip reading as "still on the canvas" — the piece stayed
-    //    clamped there, looking stuck at a wall, until the pointer reached all the way down to
-    //    the tray itself.
+    //  - "ghosting" (detach into a floating thumbnail) triggers only once the pointer passes
+    //    the whole *playable stage's* bottom edge — board AND parking shelf. A piece stays a
+    //    normal full-size canvas-rendered piece anywhere over either of those; only heading
+    //    further down, toward the tray, hands it off to the DOM ghost.
     //  - "over tray" (drives the reorder-gap preview and whether a release lands in the tray at
     //    all) still specifically means "over the tray strip's own rect".
     // The size itself is a discrete on-canvas-vs-off-canvas state (see the "Tray drag-ghost
     // helpers" block above) — crossing this line flips the target size once, animated by a CSS
     // transition, rather than continuously resizing along with further pointer movement.
-    const boardBottomY = getBoardBottomClientY();
-    const shouldGhost = boardBottomY !== null && e.clientY > boardBottomY;
+    const stageBottomY = getPlayableStageBottomClientY();
+    const shouldGhost = stageBottomY !== null && e.clientY > stageBottomY;
 
     if (shouldGhost) {
       // Reversed back off the board while a "grow back, then hand off" was pending — cancel the
@@ -2401,7 +2433,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
       wasOverTrayRef.current = false;
       setTrayInsertIndex(null);
     }
-  }, [clientToLogical, getBoardBottomClientY, applyGhostScale, showGhostFor, hideGhost, moveGhost, snapshotTrayLayout, setTrayInsertIndex, computeTrayInsertIndex]);
+  }, [clientToLogical, getPlayableStageBottomClientY, applyGhostScale, showGhostFor, hideGhost, moveGhost, snapshotTrayLayout, setTrayInsertIndex, computeTrayInsertIndex]);
 
   // Commits a real drop — the pointer was actually released, as opposed to cancelDrag's
   // pointercancel/interruption path, which always restores instead of committing.
@@ -2465,6 +2497,27 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           return copy;
         });
         return;
+      }
+
+      // Safe-drop guarantee: a release that neither snapped to the board nor landed in the tray
+      // (below the playable stage, in the sliver of DOM between the canvas and the tray, or any
+      // other stray release) must never commit a group outside the stage — that's exactly how a
+      // piece used to become invisible with no recovery but "Return loose pieces to tray". The
+      // whole group is clamped as one rigid unit so a connected cluster keeps its shape; a piece
+      // dropped cleanly inside the board or the parking shelf is already in-bounds and this is a
+      // no-op for it.
+      const groupMembers = next
+        .filter(p => p.groupId === groupId)
+        .map(p => ({ id: p.id, x: p.pos.x, y: p.pos.y }));
+      const { w: stageW, h: stageH } = stageDimsRef.current;
+      const clamped = clampGroupToStage(groupMembers, pwRef.current, phRef.current, stageW, stageH);
+      next = next.map(p => {
+        const pos = clamped.get(p.id);
+        return pos ? { ...p, pos } : p;
+      });
+      const landedInParkingShelf = [...clamped.values()].some(pos => pos.y + phRef.current > BOARD_SIZE + 0.5);
+      if (landedInParkingShelf) {
+        setScreenReaderStatus("Piece placed in the workspace below the board.");
       }
     }
 

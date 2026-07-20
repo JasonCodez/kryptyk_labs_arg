@@ -112,3 +112,50 @@ export function uniqueLooseGroupIds<T extends { groupId: string; snapped: boolea
   }
   return result;
 }
+
+export interface JigsawGroupMemberPos {
+  id: string;
+  x: number;
+  y: number;
+}
+
+function clampAxis(min: number, size: number, stageSize: number): number {
+  // A group wider/taller than the available axis can't satisfy both edges at once — anchor its
+  // near edge to 0 rather than producing a division or an unbounded/NaN result.
+  if (size >= stageSize) return -min;
+  if (min < 0) return -min;
+  if (min + size > stageSize) return stageSize - size - min;
+  return 0;
+}
+
+/**
+ * Clamps a whole piece group into `0 <= x, 0 <= y, x+pieceW <= stageWidth, y+pieceH <= stageHeight`
+ * as one rigid unit — every member shifts by the same delta, so relative offsets between
+ * connected pieces are always preserved. Never mutates `members`.
+ */
+export function clampGroupToStage(
+  members: JigsawGroupMemberPos[],
+  pieceW: number,
+  pieceH: number,
+  stageWidth: number,
+  stageHeight: number,
+): Map<string, { x: number; y: number }> {
+  const result = new Map<string, { x: number; y: number }>();
+  if (members.length === 0) return result;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const member of members) {
+    minX = Math.min(minX, member.x);
+    minY = Math.min(minY, member.y);
+    maxX = Math.max(maxX, member.x + pieceW);
+    maxY = Math.max(maxY, member.y + pieceH);
+  }
+
+  const dx = clampAxis(minX, maxX - minX, stageWidth);
+  const dy = clampAxis(minY, maxY - minY, stageHeight);
+
+  for (const member of members) {
+    result.set(member.id, { x: member.x + dx, y: member.y + dy });
+  }
+  return result;
+}
