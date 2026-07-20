@@ -422,8 +422,10 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     window.setTimeout(() => { setFlashWord(null); setPoppingCells((previous) => { const next = new Set(previous); keys.forEach((key) => next.delete(key)); return next; }); }, reduceMotion ? 80 : 500);
     // A competitive Warz round must never be interrupted by the definition modal — it fully
     // covers the board and blocks the next selection, which would cost real time in a timed
-    // match. Daily/Catalog keep the full queue-and-reveal experience unchanged.
-    if (!warzMode) queueDefinition(word, final);
+    // match. Outside Warz, only the final word opens automatically — earlier finds stay
+    // available on demand via openDefinition (tapping the word in the word list) so a run of
+    // quick finds doesn't force a sequence of full-screen interruptions.
+    if (!warzMode && final) queueDefinition(word, final);
   }, [haptic, queueDefinition, reduceMotion, warzMode]);
 
   const finishCompletionHandoff = useCallback(async () => {
@@ -696,8 +698,8 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     <div className="word-search-root" data-testid="word-search-root" data-display-mode={displayMode} data-status={status} data-grid-size={size} data-skin={skin._key ?? "default"}>
       {pageVisible && selectedBackground}
       <div className="word-search-scrim" aria-hidden style={{ background: skin.backdropScrim }} />
-      {showIntro && <Dialog title="More than a word search" onClose={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}><p>Every word you find opens its real definition, turning each puzzle into a quick vocabulary discovery.</p><p>Definitions include pronunciation, part of speech, examples, and audio when available.</p><button type="button" onClick={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}>Start searching</button></Dialog>}
-      {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag across letters, or use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
+      {showIntro && <Dialog title="More than a word search" onClose={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}><p>Every word you find unlocks its real definition, turning each puzzle into a quick vocabulary discovery. Tap a found word in the word list any time to explore it.</p><p>Your final find opens its definition automatically, with pronunciation, part of speech, examples, and audio when available.</p><button type="button" onClick={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}>Start searching</button></Dialog>}
+      {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag across letters, or use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><p>Found words unlock their definitions — open the word list and tap any found word to read it.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
       {definition && <WordDefinitionModal word={definition.word} color={WORD_COLORS[definition.colorIdx]} status={definition.status} data={definition.data} onDismiss={dismissDefinition} />}
       <WordSearchWordList open={wordListOpen} words={words} foundWords={foundSet} onClose={() => setWordListOpen(false)} onOpenDefinition={openDefinition} />
 

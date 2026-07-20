@@ -203,22 +203,29 @@ test("15x15 board uses nearly the full 320px width with a small edge margin", as
 test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, and hint work", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const state = await installRoutes(page, 15); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+  // None of these finds is the puzzle's final word (12 total), so — per Pass 3 — none of them
+  // opens a definition automatically; the player continues solving without a dismissal step.
   await dragWord(page, [0, 0], [0, 2]); await expect.poll(() => state.found.has("CAT")).toBe(true);
-  const catDefinition = page.getByRole("dialog", { name: "CAT definition" });
-  const definitionTargets = await catDefinition.locator("button,a").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
-  definitionTargets.forEach((height) => expect(height).toBeGreaterThanOrEqual(44));
-  await catDefinition.getByRole("button", { name: /Keep Searching/ }).click();
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
   await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.has("DOG")).toBe(true);
-  await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click();
   await dragWord(page, [0, 14], [3, 14]); await expect.poll(() => state.found.has("BIRD")).toBe(true);
-  await page.getByRole("dialog", { name: "BIRD definition" }).getByRole("button", { name: /Keep Searching/ }).click();
   await dragWord(page, [0, 5], [3, 8]); await expect.poll(() => state.found.has("FISH")).toBe(true);
-  await page.getByRole("dialog", { name: "FISH definition" }).getByRole("button", { name: /Keep Searching/ }).click();
   const board = page.getByRole("grid"); await board.focus(); for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft"); for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown"); await page.keyboard.press("Space"); for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight"); await page.keyboard.press("Enter");
-  await expect.poll(() => state.found.has("STAR")).toBe(true); await page.getByRole("dialog", { name: "STAR definition" }).getByRole("button", { name: /Keep Searching/ }).click();
-  await page.locator('[data-ws-row="4"][data-ws-col="0"]').click(); await page.locator('[data-ws-row="4"][data-ws-col="3"]').click(); await expect.poll(() => state.found.has("MOON")).toBe(true); await page.getByRole("dialog", { name: "MOON definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+  await expect.poll(() => state.found.has("STAR")).toBe(true);
+  await page.locator('[data-ws-row="4"][data-ws-col="0"]').click(); await page.locator('[data-ws-row="4"][data-ws-col="3"]').click(); await expect.poll(() => state.found.has("MOON")).toBe(true);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // still no auto-opens after 6 non-final finds
+
+  // Definitions remain available on demand — open CAT explicitly from the word list.
   await page.getByRole("button", { name: "Words" }).click(); await expect(page.getByRole("dialog", { name: "Words to find" })).toBeVisible(); await page.getByRole("button", { name: /CAT, found/ }).click();
-  await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible(); await page.keyboard.press("Escape");
+  const catDefinition = page.getByRole("dialog", { name: "CAT definition" });
+  await expect(catDefinition).toBeVisible();
+  // The modal's spring entrance animation may still be settling right after this on-demand
+  // open; poll rather than measuring once mid-transition.
+  await expect.poll(async () => {
+    const heights = await catDefinition.locator("button,a").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+    return Math.min(...heights);
+  }).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "How to play Word Trove" }).click(); await expect(page.getByRole("dialog", { name: "How to play Word Trove" })).toBeVisible(); await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /Hint/ }).click(); await expect.poll(state.hintConsumes).toBe(1);
 });
@@ -228,15 +235,29 @@ test("catalog uses server reward authority, keeps modal outside More, restores p
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 }); await expect(page.locator(".word-search-desktop-list")).toBeVisible(); await expect(page.locator(".word-search-list-button")).toBeHidden();
   await page.getByRole("grid").focus(); await page.keyboard.press("w"); await expect(page.locator(".word-search-desktop-list")).toBeFocused(); await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0); await page.keyboard.press("Escape"); await expect(page.locator('.word-search-cell[data-active="true"]')).toBeFocused();
   await page.getByRole("button", { name: "More puzzle actions" }).click(); await page.getByRole("menuitem", { name: "Report Bug" }).click(); await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeVisible(); await expect(page.getByRole("menu")).toHaveCount(0); await page.keyboard.press("Escape");
-  await dragWord(page, [0, 0], [0, 2]); await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await page.reload({ waitUntil: "domcontentloaded" });
+
+  // CAT is non-final (the fixture has 2 words) — it stays opt-in, not automatic.
+  await dragWord(page, [0, 0], [0, 2]); await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /CAT, found/ }).click();
+  await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
+  await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("button", { name: /CAT, found/ })).toBeVisible({ timeout: 15_000 });
+
+  // DOG is the final word — it opens automatically, and Continue stays gated until dismissal.
   await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.size).toBe(2); await expect.poll(state.attemptSuccess).toBe(0); await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible(); await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // no queued CAT modal appears afterward
 });
 
 test("failed daily completion keeps the board and retry records completion once more", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const state = await installRoutes(page, 10, true); state.failNextDaily(); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
-  await dragWord(page, [0, 0], [0, 2]); await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await dragWord(page, [1, 0], [1, 2]);
+  // CAT is non-final and stays opt-in; DOG is the final word and opens automatically.
+  await dragWord(page, [0, 0], [0, 2]); await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  await dragWord(page, [1, 0], [1, 2]);
+  await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await expect.poll(state.dailyCompletions).toBe(1); await expect(page.getByText("Solved for today!")).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await page.reload({ waitUntil: "domcontentloaded" }); await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 }); await page.getByRole("button", { name: "Retry Completion" }).click();
   await expect.poll(state.dailyCompletions).toBe(2); await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 5_000 });
 });
@@ -273,6 +294,12 @@ test("zoom and pan: selection geometry tracks the pointer during the drag, not o
   await page.mouse.up();
   await expect.poll(() => state.found.has("ZOOM")).toBe(true);
   await expect(page.locator("[data-selected]")).toHaveCount(0); // selection clears after release
+  // ZOOM is the first word found here (1 of 13), so it is non-final and stays opt-in.
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  // It remains available on demand from the word list.
+  await page.getByRole("button", { name: "Words" }).click();
+  await page.getByRole("button", { name: /ZOOM, found/ }).click();
   await expect(page.getByRole("dialog", { name: "ZOOM definition" })).toBeVisible();
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -367,9 +394,9 @@ test("rapid drag: many fast pointer moves still find the word exactly once with 
   expect(state.found.size).toBe(1);
   expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1); // no duplicate submission
   await expect(page.locator("[data-selected]")).toHaveCount(0); // selection clears after release
-  await page.getByRole("dialog", { name: "CAT definition" }).getByRole("button", { name: /Keep Searching/ }).click();
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // non-final CAT stays opt-in
 
-  // The board accepts another gesture immediately afterward.
+  // The board accepts another gesture immediately afterward — no dismissal step required.
   await dragWord(page, [1, 0], [1, 2]);
   await expect.poll(() => state.found.has("DOG")).toBe(true);
 });
@@ -397,8 +424,12 @@ test("imprecise diagonal: a slightly off-center FISH drag still resolves the cor
   await expect.poll(() => state.found.has("FISH")).toBe(true);
   expect(state.submissions).toEqual(["FISH"]); // exactly one submission, and no neighboring word
   expect(state.found.size).toBe(1);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // non-final FISH stays opt-in
+
+  // FISH remains available on demand from the word list.
+  await page.getByRole("button", { name: "Words" }).click();
+  await page.getByRole("button", { name: /FISH, found/ }).click();
   await expect(page.getByRole("dialog", { name: "FISH definition" })).toBeVisible();
-  await page.getByRole("dialog", { name: "FISH definition" }).getByRole("button", { name: /Keep Searching/ }).click();
 });
 
 test("pointer cancel: cancelling an in-flight drag clears the selection and the stale pointer cannot complete it", async ({ page }) => {
@@ -511,6 +542,11 @@ test("off-board release: releasing far outside the board does not submit a stale
   await dragWord(page, [0, 0], [0, 2]);
   await expect.poll(() => state.found.has("CAT")).toBe(true);
   expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // non-final CAT stays opt-in
+
+  // Still available on demand.
+  await page.getByRole("button", { name: "Words" }).click();
+  await page.getByRole("button", { name: /CAT, found/ }).click();
   await expect(page.getByRole("dialog", { name: "CAT definition" })).toBeVisible();
 });
 

@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createRef } from "react";
 import WordSearchPuzzle, { type WordSearchPresentationState, type WordSearchPuzzleHandle } from "./WordSearchPuzzle";
 
@@ -141,7 +141,6 @@ test("daily completion waits for success and exposes retry without losing the bo
   expect(screen.getByRole("grid")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry Completion" }));
   fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
   await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
   expect(onComplete).toHaveBeenCalledTimes(2);
 });
@@ -151,7 +150,6 @@ test("a successful daily completion callback is guarded exactly once", async () 
   const view = renderGame({ onComplete, hintTokens: 2, onHintUsed: async () => true });
   fireEvent.click(screen.getByRole("button", { name: /Hint/ })); await waitForFoundCount(view, 1);
   fireEvent.click(screen.getByRole("button", { name: /Hint/ })); fireEvent.click(screen.getByRole("button", { name: /Finding|Hint/ }));
-  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
   fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
   await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
   expect(onComplete).toHaveBeenCalledTimes(1);
@@ -232,7 +230,7 @@ test("catalog completion handoff waits for final definition dismissal and can re
   await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
   fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
   await waitForFoundCount(view, 1);
-  fireEvent.click(await screen.findByRole("button", { name: "Close definition" }));
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull(); // non-final hint stays opt-in
   fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
   expect(await screen.findByRole("dialog", { name: /definition/ })).toBeTruthy();
   expect(onComplete).not.toHaveBeenCalled();
@@ -390,15 +388,204 @@ test("Warz: the final word calls onSolved exactly once, synchronously, without a
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test("Daily mode still opens a definition dialog after finding a word", async () => {
-  const view = renderGame();
-  await keyboardFindCat(view);
+// ── Pass 3: Daily/Catalog definition pacing — non-final finds are opt-in, only the final find
+// opens automatically. Warz's own definition-suppression tests above are unaffected. ──────────
+
+function installFetchWithDictionaryTracking({ failCompletion = false, total = 2 } = {}) {
+  let found: string[] = [];
+  const dictionaryRequests: string[] = [];
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/dictionary/")) {
+      dictionaryRequests.push(new URL(url, "http://localhost").searchParams.get("word") ?? "");
+      return { ok: true, json: async () => ({ found: false }) } as Response;
+    }
+    if (!init?.method) return { ok: true, json: async () => ({ foundWords: found, allFound: false }) } as Response;
+    const body = JSON.parse(String(init.body)) as { word: string };
+    found = [...new Set([...found, body.word])];
+    return { ok: !failCompletion, json: async () => failCompletion ? ({ error: "Offline" }) : ({ valid: true, persisted: true, completionCommitted: found.length === total, allFound: found.length === total, foundCount: found.length, total }) } as Response;
+  });
+  global.fetch = fetchMock;
+  return { fetchMock, dictionaryRequests, found: () => found };
+}
+
+/** Opens the mobile word-list sheet and clicks the given found word's button. The always-mounted
+ * desktop word list (hidden only via a CSS media query jsdom doesn't apply) exposes an
+ * identically-labeled button, so the click is scoped to the open sheet dialog specifically. */
+async function openFoundWordFromList(word: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Words" }));
+  const sheet = await screen.findByRole("dialog", { name: "Words to find" });
+  fireEvent.click(within(sheet).getByRole("button", { name: new RegExp(`^${word}, found`) }));
+}
+
+test("Daily: a non-final find stays opt-in, and opens on demand from the word list", async () => {
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const view = renderPuzzle({ puzzleId: "word-search-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142 });
+
+  await keyboardFindCat(view); // CAT — 1 of 2, non-final
+  expect(view.container.querySelector('[data-ws-row="0"][data-ws-col="0"]')?.getAttribute("data-found")).toBe("true");
+  expect(view.container.querySelector('[data-ws-row="0"][data-ws-col="2"]')?.getAttribute("data-found")).toBe("true");
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toHaveLength(0);
+  expect(screen.getByRole("grid")).toBeTruthy(); // board remains playable, no interruption
+
+  await openFoundWordFromList("CAT");
   expect(await screen.findByRole("dialog", { name: "CAT definition" })).toBeTruthy();
+  expect(dictionaryRequests).toEqual(["CAT"]); // fetched only once the player asked
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "CAT definition" })).toBeNull());
+  expect(screen.getByRole("grid")).toBeTruthy();
 });
 
-test("Catalog mode still opens a definition dialog after finding a word", async () => {
-  installFetch();
+test("Catalog: a non-final find stays opt-in, and opens on demand while server persistence is unaffected", async () => {
+  const { fetchMock, dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
   const view = renderPuzzle({ puzzleId: "catalog-def-test", wordSearchData: DATA, displayMode: "app-shell", persistenceScope: "catalog" });
+
   await keyboardFindCat(view);
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toHaveLength(0);
+  expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === "POST")).toHaveLength(1); // catalog submission flow unchanged
+
+  await openFoundWordFromList("CAT");
   expect(await screen.findByRole("dialog", { name: "CAT definition" })).toBeTruthy();
+  expect(dictionaryRequests).toEqual(["CAT"]);
+});
+
+test("a non-final hinted word does not auto-open, and remains available on demand", async () => {
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const randomSpy = jest.spyOn(Math, "random").mockReturnValue(0); // deterministically hints CAT first
+  try {
+    const onHintUsed = jest.fn(async () => true);
+    // renderGame() installs its own (non-tracking) fetch mock, which would clobber the
+    // dictionary-request tracking set up above — build the same render config directly instead.
+    const view = renderPuzzle({ puzzleId: "word-search-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142, hintTokens: 2, onHintUsed });
+    fireEvent.click(screen.getByRole("button", { name: /Hint/ }));
+    expect(onHintUsed).toHaveBeenCalledTimes(1);
+    await waitForFoundCount(view, 1);
+    expect(view.container.querySelector('[data-ws-row="0"][data-ws-col="0"]')?.getAttribute("data-hinted")).toBe("true");
+    await settlePastDefinitionReveal();
+    expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+    expect(dictionaryRequests).toHaveLength(0);
+
+    await openFoundWordFromList("CAT");
+    expect(await screen.findByRole("dialog", { name: "CAT definition" })).toBeTruthy();
+    expect(dictionaryRequests).toEqual(["CAT"]);
+  } finally {
+    randomSpy.mockRestore();
+  }
+});
+
+test("Daily: only the final word opens automatically, and completion stays gated on its dismissal", async () => {
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const onSolved = jest.fn();
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const view = renderPuzzle({ puzzleId: "word-search-test", wordSearchData: DATA, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142, onComplete, onSolved });
+
+  await keyboardFindCat(view); // CAT — non-final
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(onComplete).not.toHaveBeenCalled();
+
+  // Find DOG (row 2, cols 0-2) — the final word. Active cell is (0,2) after keyboardFindCat.
+  const board = screen.getByRole("grid");
+  fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowDown" });
+  fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+
+  expect(await screen.findByRole("dialog", { name: "DOG definition" })).toBeTruthy(); // final word auto-opens
+  expect(dictionaryRequests).toEqual(["DOG"]); // CAT was never fetched automatically
+  await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1)); // daily records completion immediately
+  expect(onSolved).not.toHaveBeenCalled(); // the visual "won" handoff still waits on dismissal
+
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onSolved).toHaveBeenCalledTimes(1);
+  expect(onComplete).toHaveBeenCalledTimes(1);
+
+  // No queued CAT modal surfaces after the final one is dismissed.
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toEqual(["DOG"]);
+});
+
+test("Catalog: only the final word opens automatically, and completion stays gated on its dismissal", async () => {
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const view = renderPuzzle({ puzzleId: "catalog-final-test", wordSearchData: DATA, displayMode: "app-shell", persistenceScope: "catalog", onComplete });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+
+  await keyboardFindCat(view);
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(onComplete).not.toHaveBeenCalled();
+
+  const board = screen.getByRole("grid");
+  fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowDown" });
+  fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+
+  expect(await screen.findByRole("dialog", { name: "DOG definition" })).toBeTruthy();
+  expect(dictionaryRequests).toEqual(["DOG"]);
+  expect(onComplete).not.toHaveBeenCalled(); // catalog's handoff waits on dismissal, unlike daily's immediate call
+
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onComplete).toHaveBeenCalledTimes(1);
+
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull(); // no queued CAT modal
+});
+
+test("rapid finds do not create a non-final definition queue", async () => {
+  const threeWordData = {
+    grid: [
+      ["C", "A", "T", "X", "X"],
+      ["X", "X", "O", "X", "X"],
+      ["D", "O", "G", "X", "X"],
+      ["S", "U", "N", "X", "X"],
+      ["X", "X", "X", "X", "X"],
+    ],
+    words: ["CAT", "DOG", "SUN"],
+  };
+  const { dictionaryRequests } = installFetchWithDictionaryTracking({ total: 3 });
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const view = renderPuzzle({ puzzleId: "rapid-def-test", wordSearchData: threeWordData, displayMode: "app-shell", dailyMode: true, persistenceScope: "daily", dailyDayNumber: 142 });
+  const board = screen.getByRole("grid");
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+
+  // Find CAT then DOG back-to-back — each submission still has to clear the component's own
+  // in-flight `submitting` guard before the next one is accepted, so CAT is awaited first, but
+  // both land in a small fraction of the old 320ms non-final reveal delay (the mocked fetch
+  // resolves near-instantly), which is the actual invariant this test is protecting.
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  await waitForFoundCount(view, 1);
+  fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowDown" });
+  fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  await waitForFoundCount(view, 2);
+
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toHaveLength(0);
+
+  // Find the final word, SUN.
+  fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+  expect(await screen.findByRole("dialog", { name: "SUN definition" })).toBeTruthy();
+  expect(dictionaryRequests).toEqual(["SUN"]); // only the automatic final fetch has happened
+
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "SUN definition" })).toBeNull());
+
+  // No hidden CAT/DOG backlog surfaces once the final modal is dismissed.
+  await settlePastDefinitionReveal();
+  expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
+  expect(dictionaryRequests).toEqual(["SUN"]);
 });
