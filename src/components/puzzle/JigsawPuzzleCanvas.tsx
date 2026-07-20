@@ -350,6 +350,11 @@ interface BurstParticle {
 // pieces instead). Piece/tab overflow just resolves within the board itself.
 const BOARD_SIZE = 640;
 
+// Upper bound on the board canvas's rendered (CSS pixel) width — purely a display cap, distinct
+// from BOARD_SIZE (the fixed logical coordinate space pieces/paths are authored in). On very
+// wide viewports the board would otherwise grow to fill all available width/height.
+const MAX_BOARD_CSS_WIDTH = 800;
+
 // A jigsaw grid reaching the player must be a square N×N grid within this supported range
 // (matches the admin-side allowed sizes) — a corrupt/out-of-range record (e.g. rows=0, a
 // non-integer, or an absurdly large value) must never reach geometry math (NaN/Infinity, or
@@ -1345,7 +1350,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     // branching or hardcoded pixel reservations needed.
     const update = () => {
       const horizontalInset = 8;
-      const availableWidth = boardArea.clientWidth - horizontalInset;
+      const availableWidth = Math.min(boardArea.clientWidth - horizontalInset, MAX_BOARD_CSS_WIDTH);
       const availableHeight = boardArea.clientHeight - 4;
 
       // The decorative completion frame's border extends past its transparent "hole" (see
