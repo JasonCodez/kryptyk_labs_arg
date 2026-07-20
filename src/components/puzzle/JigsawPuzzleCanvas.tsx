@@ -1271,6 +1271,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setCompletionReadyForContinue(false);
     setIsContinuing(false);
     continueRequestedRef.current = false;
+    // A genuinely new puzzle session (as opposed to a mid-celebration Reset, handled below)
+    // can still start up mid-flight if the previous puzzle's celebration hadn't finished —
+    // make sure the living-photo overlay isn't left showing a stale reveal.
+    if (livingPhotoOuterRef.current) {
+      gsap.set(livingPhotoOuterRef.current, { autoAlpha: 0, visibility: "hidden", pointerEvents: "none" });
+    }
+    if (livingPhotoImgRef.current) {
+      gsap.set(livingPhotoImgRef.current, { scale: 1, xPercent: 0, yPercent: 0 });
+    }
     setShowFrame(false);
     piecesRef.current = finalPieces;
     setPiecesState(finalPieces);
@@ -2754,18 +2763,27 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         const label = "flare";
         tl.addLabel(label);
 
-        // Positions `el` to exactly cover the board's current on-screen rect.
+        // Positions `el` to exactly cover the board's current on-screen rect. Once the framed
+        // layout is active, the square board no longer starts at the canvas's own CSS
+        // upper-left corner — the canvas has grown to fit the decorative frame's overhang, and
+        // the board sits inset within it by boardInsetPxRef (already in CSS px — see the resize
+        // effect's `showFrame` branch, which computes it directly from boardSide/holeW/holeH, no
+        // further scale multiplication needed). Omitting that inset here left the living-photo
+        // overlay positioned from the canvas's raw corner instead of the frame's inner image
+        // opening — a second, misaligned rectangle over the upper-left of the framed puzzle.
+        // {0,0} at every other time (unframed layout), so this is a no-op there, same as before.
         const positionBoardOverlay = (el: HTMLElement) => {
           const canvas = canvasRef.current;
           if (!canvas || !el.parentElement) return;
           const canvasRect = canvas.getBoundingClientRect();
           const parentRect = el.parentElement.getBoundingClientRect();
           const cssScale = scaleRef.current;
+          const frameInset = boardInsetPxRef.current;
           const boardCssX = boardOffXRef.current * cssScale;
           const boardCssY = boardOffYRef.current * cssScale;
           el.style.inset  = '';
-          el.style.left   = `${canvasRect.left - parentRect.left + boardCssX}px`;
-          el.style.top    = `${canvasRect.top  - parentRect.top  + boardCssY}px`;
+          el.style.left   = `${canvasRect.left - parentRect.left + frameInset.x + boardCssX}px`;
+          el.style.top    = `${canvasRect.top  - parentRect.top  + frameInset.y + boardCssY}px`;
           el.style.width  = `${gridW * cssScale}px`;
           el.style.height = `${gridH * cssScale}px`;
         };
@@ -2833,6 +2851,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           kbTl.call(() => { revealCompletedImage(); }, undefined, "-=0.4");
           kbTl.to(outer, { autoAlpha: 0, duration: 0.5, ease: "power1.in" }, "-=0.4");
           await new Promise<void>(res => kbTl.eventCallback("onComplete", res));
+          // Belt-and-suspenders on top of the autoAlpha:0 tween above (which already sets
+          // opacity:0 + visibility:hidden at the end of the fade) — guarantees the overlay has
+          // no visible pixels and can't intercept pointer input for the rest of the wait for
+          // Continue, and resets its transform so a later completion (e.g. after Reset) doesn't
+          // inherit this run's zoom/pan.
+          gsap.set(outer, { autoAlpha: 0, visibility: "hidden", pointerEvents: "none" });
+          gsap.set(img, { scale: 1, xPercent: 0, yPercent: 0 });
         } else {
           // No living-photo overlay to hide behind with reduced motion — reveal the permanent
           // image immediately so the pieces never sit visible during this wait either.
@@ -2945,6 +2970,15 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     setCompletionReadyForContinue(false);
     setIsContinuing(false);
     continueRequestedRef.current = false;
+    // "Reset Puzzle" can fire mid-celebration (e.g. a completion-pending retry loop) — make
+    // sure the living-photo overlay doesn't stay stuck showing a stale reveal/zoom over what
+    // should now be a normal, unsolved, piece-rendered board.
+    if (livingPhotoOuterRef.current) {
+      gsap.set(livingPhotoOuterRef.current, { autoAlpha: 0, visibility: "hidden", pointerEvents: "none" });
+    }
+    if (livingPhotoImgRef.current) {
+      gsap.set(livingPhotoImgRef.current, { scale: 1, xPercent: 0, yPercent: 0 });
+    }
     setShowFrame(false);
     // Deliberately leave startTimeRef/elapsedSeconds untouched — "Reset Puzzle" clears the piece
     // arrangement only (per the reset dialog's own copy: "Every piece will return to its initial
@@ -3134,8 +3168,11 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
                         willChange: "transform,opacity" }} />
         </div>
 
-        {/* Living photo reveal — Ken Burns zoom/pan on the completed image */}
+        {/* Living photo reveal — Ken Burns zoom/pan on the completed image. Test-observability
+            class only (see the completion effect's gsap.set autoAlpha/visibility cleanup after
+            the reveal finishes) — never read to drive behavior. */}
         <div ref={livingPhotoOuterRef}
+             className="jigsaw-living-photo"
              style={{ position: "absolute", pointerEvents: "none", opacity: 0, zIndex: 1002, overflow: "hidden" }}>
           {effectiveUrl && (
             // eslint-disable-next-line @next/next/no-img-element

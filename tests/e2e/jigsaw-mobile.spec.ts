@@ -394,6 +394,112 @@ test("Warz completes automatically with no completion footer and no wait for Con
   await expect(page.getByRole("heading", { name: "Puzzle complete" })).toHaveCount(0);
 });
 
+// Regression coverage for two 320px mobile bugs found after manual reproduction:
+//  1. PuzzleXpModal's XP/points reward row overflowed a 320px-wide modal ("+50 XP" clipped on
+//     the left, "+100 pts" clipped on the right).
+//  2. positionBoardOverlay() never accounted for boardInsetPxRef (the frame's CSS-px inset),
+//     so once the framed layout was active, the living-photo DOM overlay was positioned from
+//     the canvas's raw top-left corner instead of the frame's inner image opening — a second,
+//     misaligned rectangle over the upper-left of the framed puzzle. Full motion is required
+//     here (not reduced-motion) since the living-photo overlay never renders at all under
+//     reduced motion, and this test exists specifically to catch it misbehaving.
+test("320px: no living-photo duplication in the framed completion state, and the rewards modal doesn't overflow", async ({ page }) => {
+  // This test exists specifically to catch the living-photo overlay misbehaving — it never
+  // renders at all under reduced motion (see the completion effect's `!reduced` branch), so
+  // override the file-wide beforeEach's reduced-motion emulation back to full motion here.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 320, height: 710 });
+  await installCatalogFixture(page);
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
+
+  const board = page.locator(".jigsaw-board-canvas");
+  await expect(board).toHaveAttribute("data-completed-image", "true", { timeout: 15_000 });
+
+  // Jigsaw's own completion footer appears — by this point the living-photo reveal (and its
+  // fade-out) has fully finished.
+  const jigsawContinue = page.getByRole("button", { name: "Continue" });
+  await expect(jigsawContinue).toBeVisible({ timeout: 15_000 });
+
+  const canvasBox = await board.boundingBox();
+  const boardAreaBox = await page.locator(".jigsaw-board-area").boundingBox();
+  expect(canvasBox).not.toBeNull(); expect(boardAreaBox).not.toBeNull();
+  expect(canvasBox!.x).toBeGreaterThanOrEqual(boardAreaBox!.x - 1);
+  expect(canvasBox!.y).toBeGreaterThanOrEqual(boardAreaBox!.y - 1);
+  expect(canvasBox!.x + canvasBox!.width).toBeLessThanOrEqual(boardAreaBox!.x + boardAreaBox!.width + 1);
+  expect(canvasBox!.y + canvasBox!.height).toBeLessThanOrEqual(boardAreaBox!.y + boardAreaBox!.height + 1);
+
+  // The temporary living-photo overlay must have no visible pixels left, and must not sit over
+  // the upper-left of the frame.
+  const overlay = page.locator(".jigsaw-living-photo");
+  const overlayState = await overlay.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return { opacity: style.opacity, visibility: style.visibility, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  });
+  console.log("living-photo overlay state at footer-ready:", overlayState);
+  const hasNoVisiblePixels = overlayState.visibility === "hidden" || Number(overlayState.opacity) === 0;
+  expect(hasNoVisiblePixels).toBe(true);
+
+  const overflowAtFooter = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowAtFooter).toBe(false);
+
+  await page.screenshot({ path: "test-results/_e2e-jigsaw-completion-320.png" });
+
+  // The parent rewards modal must only appear after Jigsaw's own Continue action.
+  await expect(page.getByText("Puzzle Complete!")).toHaveCount(0);
+  await jigsawContinue.click();
+
+  const rewardsModal = page.getByRole("heading", { name: "Puzzle Complete!" });
+  await expect(rewardsModal).toBeVisible({ timeout: 10_000 });
+
+  const modalCard = page.locator(".puzzle-xp-modal-card");
+  await expect(modalCard).toBeVisible();
+  const modalBox = await modalCard.boundingBox();
+  console.log("rewards modal card box at 320px:", modalBox);
+  expect(modalBox).not.toBeNull();
+  expect(modalBox!.x).toBeGreaterThanOrEqual(0);
+  expect(modalBox!.x + modalBox!.width).toBeLessThanOrEqual(320 + 1);
+
+  const rewardsGrid = page.locator(".puzzle-xp-rewards");
+  const gridBox = await rewardsGrid.boundingBox();
+  expect(gridBox).not.toBeNull();
+  expect(gridBox!.x).toBeGreaterThanOrEqual(modalBox!.x - 1);
+  expect(gridBox!.x + gridBox!.width).toBeLessThanOrEqual(modalBox!.x + modalBox!.width + 1);
+
+  // Checked against the modal card's own boundary (the actual overflow limit that matters, and
+  // what the original bug report described — "+50 XP" clipped on the left, "+100 pts" clipped
+  // on the right of the *modal*) rather than the tighter grid box: bold tabular-nums glyph ink
+  // can extend a couple of CSS px past its own layout box without representing real overflow,
+  // which made a grid-relative comparison flaky. The page-level scrollWidth check above is the
+  // authoritative "did anything actually overflow the viewport" signal either way.
+  const rewardLines = page.locator(".puzzle-xp-reward-line");
+  await expect(rewardLines).toHaveCount(2);
+  for (let i = 0; i < 2; i++) {
+    const lineBox = await rewardLines.nth(i).boundingBox();
+    expect(lineBox).not.toBeNull();
+    expect(lineBox!.x).toBeGreaterThanOrEqual(modalBox!.x - 2);
+    expect(lineBox!.x + lineBox!.width).toBeLessThanOrEqual(modalBox!.x + modalBox!.width + 2);
+  }
+
+  await expect(modalCard.getByText("+50")).toBeVisible();
+  await expect(modalCard.getByText("XP", { exact: true })).toBeVisible();
+  await expect(modalCard.getByText("+100")).toBeVisible();
+  await expect(modalCard.getByText("pts", { exact: true })).toBeVisible();
+
+  const modalContinueButton = modalCard.getByRole("button", { name: "Continue" });
+  await expect(modalContinueButton).toBeVisible();
+  const continueBox = await modalContinueButton.boundingBox();
+  expect(continueBox!.height).toBeGreaterThanOrEqual(30); // real tap target, not clipped to 0
+
+  const overflowAtModal = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflowAtModal).toBe(false);
+
+  await page.screenshot({ path: "test-results/_e2e-rewards-modal-320.png" });
+});
+
 test("Catalog supports tray drag, return, and header controls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installCatalogFixture(page);
