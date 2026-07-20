@@ -32,6 +32,7 @@ import JigsawControls from "./jigsaw/JigsawControls";
 import JigsawStatusHud from "./jigsaw/JigsawStatusHud";
 import JigsawTrayStatus, { JigsawTrayBadge } from "./jigsaw/JigsawTrayStatus";
 import JigsawCompletionCard from "./jigsaw/JigsawCompletionCard";
+import JigsawCompletionFooter from "./jigsaw/JigsawCompletionFooter";
 import JigsawQuickTip from "./jigsaw/JigsawQuickTip";
 import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
@@ -995,12 +996,47 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
   const completionResultRef = useRef<JigsawCompletionResult | null>(null);
   const finalHandoffRef = useRef(false);
   const completionElapsedRef = useRef(0);
-  // When the decorative frame should start fading in — set once the living-photo reveal
-  // (which fully covers the board while it plays) begins dissolving away, not the instant
-  // the puzzle is solved, since the frame would otherwise finish fading in while still
-  // hidden underneath that overlay and the fade would never actually be seen.
+  // When the decorative frame should start fading in — now set only once the framed canvas
+  // layout has actually been confirmed ready (see frameLayoutReadyRef below), not merely once
+  // the living-photo reveal begins — otherwise the frame starts fading in while the canvas is
+  // still sized for the unframed board, showing a clipped/partial frame until the resize
+  // effect catches up a beat later.
   const frameFadeStartRef = useRef<number | null>(null);
   const FRAME_FADE_DUR = 3200;
+
+  // Frame-layout readiness: resolves once the responsive resize effect has (a) computed the
+  // framed boardSide/canvasCssW/H, (b) applied the DPR-aware backing-store dimensions and CSS
+  // size, and (c) let at least one animation frame render at that final size — see the
+  // `showFrame` branch inside the resize effect's `update()`, which is what actually flips
+  // frameLayoutReadyRef and resolves any queued waiters.
+  const frameLayoutReadyRef = useRef(false);
+  const frameLayoutWaitersRef = useRef<Array<() => void>>([]);
+  const waitForFrameLayoutReady = useCallback((): Promise<void> => {
+    if (frameLayoutReadyRef.current) return Promise.resolve();
+    return new Promise<void>((resolve) => { frameLayoutWaitersRef.current.push(resolve); });
+  }, []);
+
+  // Persistent completed-image rendering: once revealed, the Canvas2D board draws the clean,
+  // un-seamed source image directly over the assembled pieces (see the render loop) instead of
+  // ever going back to visibly piece-rendered artwork — otherwise the moment the living-photo
+  // DOM overlay finishes fading away, the piece seams/bevels underneath would flash back into
+  // view. The ref drives the imperative render loop; the state mirrors it for React rendering,
+  // the `data-completed-image` test attribute, and predictable effect-driven resets.
+  const completedImageVisibleRef = useRef(false);
+  const [completedImageVisible, setCompletedImageVisible] = useState(false);
+  const revealCompletedImage = useCallback(() => {
+    completedImageVisibleRef.current = true;
+    setCompletedImageVisible(true);
+    requestCanvasRenderRef.current();
+  }, []);
+
+  // Non-Warz completion now waits for the player to press Continue (see
+  // JigsawCompletionFooter) before the final parent handoff runs; Warz keeps its existing
+  // fully automatic handoff and never shows this footer.
+  const [completionReadyForContinue, setCompletionReadyForContinue] = useState(false);
+  const [isContinuing, setIsContinuing] = useState(false);
+  const continueRequestedRef = useRef(false);
+
   const [awardedPoints, setAwardedPoints]   = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startTimeRef  = useRef(0);
@@ -1228,6 +1264,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     completionResultRef.current = null;
     finalHandoffRef.current = false;
     frameFadeStartRef.current = null;
+    frameLayoutReadyRef.current = false;
+    frameLayoutWaitersRef.current = [];
+    completedImageVisibleRef.current = false;
+    setCompletedImageVisible(false);
+    setCompletionReadyForContinue(false);
+    setIsContinuing(false);
+    continueRequestedRef.current = false;
     setShowFrame(false);
     piecesRef.current = finalPieces;
     setPiecesState(finalPieces);
@@ -1418,6 +1461,21 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         // both marks it dirty and schedules a fresh frame if none is pending, so a just-cleared
         // canvas always gets repainted.
         requestCanvasRenderRef.current();
+      }
+
+      // Frame-layout readiness: once the framed CSS size/backing store above have actually
+      // been applied, resolve on the *next* animation frame — guaranteeing at least one paint
+      // has happened at the final framed dimensions — rather than resolving synchronously,
+      // which would fire before the browser has had a chance to render the new size at all.
+      // Re-running this on every ResizeObserver tick while framed is harmless (it just
+      // re-confirms readiness for whatever the current framed size is); the waiters array is
+      // drained via splice, so there's nothing left to double-resolve on the next tick.
+      if (showFrame) {
+        requestAnimationFrame(() => {
+          frameLayoutReadyRef.current = true;
+          const waiters = frameLayoutWaitersRef.current.splice(0);
+          for (const resolve of waiters) resolve();
+        });
       }
 
       // Piece thumbnail size in the tray is derived from the tray strip's own measured
@@ -1850,6 +1908,19 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           }
         }
 
+        ctx.restore();
+      }
+
+      // Persistent clean source image — once revealed (see revealCompletedImage), drawn over
+      // every assembled piece so the board permanently reads as the finished photo rather than
+      // ever reverting to visible piece seams/bevels once the living-photo DOM overlay above
+      // finishes fading away. Clipped to the board's own shape so it can't bleed out past the
+      // board into the frame's overhang once the frame is drawn on top of it below.
+      if (solved && completedImageVisibleRef.current && imageOk && imgRef.current) {
+        const boardShape = roundedRectPath(_bOffX, _bOffY, gridW, gridH, pathOpts.cornerInset ?? 0);
+        ctx.save();
+        ctx.clip(boardShape);
+        ctx.drawImage(imgRef.current, _bOffX, _bOffY, gridW, gridH);
         ctx.restore();
       }
 
@@ -2580,13 +2651,37 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
   const finishConfirmedCompletion = useCallback(() => {
     if (!completionConfirmedRef.current || !celebrationCompleteRef.current || finalHandoffRef.current) return;
+    // Non-Warz modes stop here the first time through: the visual completion (frame, clean
+    // image, temporary reward card) is ready, but the final parent handoff is deliberately held
+    // until the player presses Continue in the completion footer. Warz is the one exception —
+    // it never shows that footer and keeps its existing fully automatic handoff below.
+    if (mode !== "warz" && !continueRequestedRef.current) {
+      setCompletionReadyForContinue(true);
+      setScreenReaderStatus("Puzzle complete. Continue when ready.");
+      return;
+    }
     finalHandoffRef.current = true;
     setStatus("won");
     setCompletionError("");
     const result = completionResultRef.current ?? { success: true };
     onCelebrationComplete?.(result);
     onShowRatingModal?.();
-  }, [onCelebrationComplete, onShowRatingModal]);
+  }, [mode, onCelebrationComplete, onShowRatingModal]);
+
+  // Guarded Continue handler for the completion footer (non-Warz only) — exits fullscreen
+  // (mirroring Warz's own exit duration) and then performs the same final handoff
+  // finishConfirmedCompletion already gates behind completionConfirmed/celebrationComplete/
+  // finalHandoff, now additionally unblocked by continueRequestedRef being set here.
+  const handleContinue = useCallback(async () => {
+    if (!completionReadyForContinue || isContinuing || continueRequestedRef.current) return;
+    continueRequestedRef.current = true;
+    setIsContinuing(true);
+    if (isFullscreen) {
+      setIsFullscreen(false);
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    finishConfirmedCompletion();
+  }, [completionReadyForContinue, finishConfirmedCompletion, isContinuing, isFullscreen]);
 
   const requestCompletion = useCallback(async () => {
     if (completionRequestInFlightRef.current || completionConfirmedRef.current) return;
@@ -2700,6 +2795,24 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         // before the living-photo reveal plays.
         // Completion persistence started immediately when the solved board was detected.
 
+        // ── Switch into framed-completion layout, and wait for it to actually be ready ──
+        // Requesting the framed layout (and waiting for the resize effect to apply the new
+        // CSS size, DPR-aware backing store, and paint at least one frame at that size) BEFORE
+        // starting the living-photo reveal or the frame fade is what prevents the frame from
+        // ever fading in while the canvas is still sized for the plain unframed board — the
+        // previous ordering set the frame fade's start time as a side effect of the
+        // living-photo reveal, well before `setShowFrame(true)` ran, so the frame started
+        // fading into a canvas that hadn't grown to fit it yet.
+        frameLayoutReadyRef.current = false;
+        const framedLayoutReady = waitForFrameLayoutReady();
+        setShowFrame(true);
+        await framedLayoutReady;
+
+        // Only now — with the framed layout confirmed on-screen — start the frame fade and the
+        // living-photo reveal together.
+        frameFadeStartRef.current = performance.now();
+        requestCanvasRenderRef.current();
+
         // ── Living photo reveal — slow Ken Burns zoom/pan on the completed image ──
         if (!reduced && livingPhotoOuterRef.current && livingPhotoImgRef.current) {
           const outer = livingPhotoOuterRef.current;
@@ -2711,22 +2824,23 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           const kbTl = gsap.timeline();
           kbTl.to(outer, { autoAlpha: 1, duration: 0.35, ease: "power1.out" }, 0);
           kbTl.to(img, { scale: 1.14, xPercent: panX, yPercent: panY, duration: 3.8, ease: "sine.inOut" }, 0);
-          // Start the frame's (slow) fade-in right at the top of the reveal instead of
-          // waiting until the overlay starts dissolving — it's hidden underneath the
-          // still-opaque overlay either way, so starting early just means a slower fade has
-          // enough time to finish before the overlay clears, instead of still visibly
-          // fading once the photo is already dissolving away.
-          kbTl.call(() => { frameFadeStartRef.current = performance.now(); requestCanvasRenderRef.current(); }, undefined, 0);
+          // Hand off to the permanent Canvas2D image at the exact same position the overlay
+          // starts fading out (see revealCompletedImage) — the canvas re-render this triggers
+          // and the fade-out's own first tick both land in the same upcoming paint, so the
+          // flat image is already covering the assembled pieces before the overlay has lost
+          // any opacity, and the pieces' seams/bevels never become visible again once the
+          // overlay finishes dissolving away.
+          kbTl.call(() => { revealCompletedImage(); }, undefined, "-=0.4");
           kbTl.to(outer, { autoAlpha: 0, duration: 0.5, ease: "power1.in" }, "-=0.4");
           await new Promise<void>(res => kbTl.eventCallback("onComplete", res));
         } else {
-          frameFadeStartRef.current = performance.now();
-          requestCanvasRenderRef.current();
+          // No living-photo overlay to hide behind with reduced motion — reveal the permanent
+          // image immediately so the pieces never sit visible during this wait either.
+          revealCompletedImage();
           await new Promise(r => setTimeout(r, 1000));
         }
 
         celebrationCompleteRef.current = true;
-        setShowFrame(true);
 
         if (completionConfirmedRef.current && !suppressInternalCongrats) {
           if (messageRef.current)
@@ -2737,17 +2851,21 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         if (completionConfirmedRef.current && messageRef.current)
           await new Promise<void>(res =>
             gsap.to(messageRef.current!, { autoAlpha: 0, y: 8, duration: 0.45, ease: "power2.in", onComplete: res }));
-        if (isFullscreen) { setIsFullscreen(false); await new Promise(r => setTimeout(r, 200)); }
+        // Warz keeps its existing fully automatic handoff (including the fullscreen exit here);
+        // every other mode now waits for the player to press Continue in the completion footer
+        // — finishConfirmedCompletion itself gates on that (see its own definition) and defers
+        // both the fullscreen exit and the final handoff to handleContinue instead.
+        if (mode === "warz" && isFullscreen) { setIsFullscreen(false); await new Promise(r => setTimeout(r, 200)); }
         finishConfirmedCompletion();
       } catch (err) {
         console.error("Jigsaw completion error:", err);
         celebrationCompleteRef.current = true;
         setShowFrame(true);
-        if (isFullscreen) setIsFullscreen(false);
+        if (mode === "warz" && isFullscreen) setIsFullscreen(false);
         finishConfirmedCompletion();
       }
     })();
-  }, [finishConfirmedCompletion, gridH, gridW, isFullscreen, isSolved, playPuzzleCompleteSfx, requestCompletion, saveCurrentProgress, suppressInternalCongrats]);
+  }, [finishConfirmedCompletion, gridH, gridW, isFullscreen, isSolved, mode, playPuzzleCompleteSfx, requestCompletion, revealCompletedImage, saveCurrentProgress, suppressInternalCongrats, waitForFrameLayoutReady]);
 
   // ── Controls API ─────────────────────────────────────────────────────────
 
@@ -2820,6 +2938,13 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
     completionResultRef.current = null;
     finalHandoffRef.current = false;
     frameFadeStartRef.current = null;
+    frameLayoutReadyRef.current = false;
+    frameLayoutWaitersRef.current = [];
+    completedImageVisibleRef.current = false;
+    setCompletedImageVisible(false);
+    setCompletionReadyForContinue(false);
+    setIsContinuing(false);
+    continueRequestedRef.current = false;
     setShowFrame(false);
     // Deliberately leave startTimeRef/elapsedSeconds untouched — "Reset Puzzle" clears the piece
     // arrangement only (per the reset dialog's own copy: "Every piece will return to its initial
@@ -2979,6 +3104,8 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           tabIndex={0}
           role="application"
           aria-label={`${puzzleTitle || "Jigsaw puzzle"} board. ${pieces.filter((piece) => piece.snapped).length} of ${pieces.length} pieces placed.`}
+          // Test-observability only (see revealCompletedImage) — never read to drive behavior.
+          data-completed-image={completedImageVisible ? "true" : "false"}
           style={{
             display: "block", position: "relative",
             touchAction: "none", userSelect: "none", cursor: "default",
@@ -3145,63 +3272,76 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           />
         </div>
       )}
-      <div className="jigsaw-tray-wrap">
-        {trayOrder.length > 0 && (
-          <div className="jigsaw-tray-badge-holder">
-            <JigsawTrayBadge remainingCount={trayOrder.length} />
-          </div>
-        )}
-        <div
-          ref={trayStripRef}
-          className="jigsaw-tray no-scrollbar"
-          role="list"
-          aria-label="Loose puzzle pieces"
-        >
-          <JigsawTrayStatus remainingCount={trayOrder.length} isSolved={isSolved} />
-          {trayOrder.map((groupId, i) => (
-            <TrayPieceThumb
-              key={groupId}
-              groupId={groupId}
-              members={piecesByGroup.get(groupId) ?? []}
-              pw={pw} ph={ph}
-              pathCache={pathCacheRef.current}
-              img={imageOk ? imgRef.current : null}
-              gridW={gridW} gridH={gridH}
-              rows={rows} cols={cols}
-              cellPx={trayCellPx}
-              onPick={beginPendingTrayPickup}
-              onPickMove={onTrayPiecePointerMove}
-              onPickEnd={onTrayPiecePointerEnd}
-              registerNode={registerTrayNode}
-              shiftPx={trayInsertIndex !== null && i >= trayInsertIndex ? ghostTraySizeRef.current.w + 10 : 0}
-              index={i}
-              selected={selectedGroupId === groupId}
-              onSelect={(selected) => {
-                setSelectedGroupId(selected);
-                setScreenReaderStatus(`Selected piece group ${i + 1}. Use arrow keys to move it, Enter to place it, or T to return it.`);
-              }}
-            />
-          ))}
+      {isSolved && mode !== "warz" ? (
+        // Replaces the tray with a shell reserving the exact same responsive height (see
+        // .jigsaw-completion-footer-shell in jigsaw.css) — rendered as soon as the puzzle is
+        // solved, before the footer's own content is ready, so the board never has to resize a
+        // second time once the decorative frame is already visible. Only the footer *content*
+        // (the Continue button) appears later, once completionReadyForContinue flips true.
+        <div className="jigsaw-completion-footer-shell">
+          {completionReadyForContinue && (
+            <JigsawCompletionFooter continuing={isContinuing} onContinue={handleContinue} />
+          )}
         </div>
-
-        {/* Persistent draggable scrollbar — its own touch target below the tray, entirely
-            separate from the piece thumbnails, so it never competes with picking a piece up. */}
-        {trayThumbGeometry && (
-          <div className="jigsaw-tray-scrollbar" onPointerDown={onTrayTrackPointerDown}>
-            <div
-              ref={trayThumbRef}
-              className="jigsaw-tray-scrollbar-thumb"
-              onPointerDown={onTrayThumbPointerDown}
-              onPointerMove={onTrayThumbPointerMove}
-              onPointerUp={onTrayThumbPointerUp}
-              onPointerCancel={onTrayThumbPointerUp}
-              style={{
-                left: `${trayThumbGeometry.leftPct}%`, width: `${trayThumbGeometry.widthPct}%`,
-              }}
-            />
+      ) : (
+        <div className="jigsaw-tray-wrap">
+          {trayOrder.length > 0 && (
+            <div className="jigsaw-tray-badge-holder">
+              <JigsawTrayBadge remainingCount={trayOrder.length} />
+            </div>
+          )}
+          <div
+            ref={trayStripRef}
+            className="jigsaw-tray no-scrollbar"
+            role="list"
+            aria-label="Loose puzzle pieces"
+          >
+            <JigsawTrayStatus remainingCount={trayOrder.length} isSolved={isSolved} />
+            {trayOrder.map((groupId, i) => (
+              <TrayPieceThumb
+                key={groupId}
+                groupId={groupId}
+                members={piecesByGroup.get(groupId) ?? []}
+                pw={pw} ph={ph}
+                pathCache={pathCacheRef.current}
+                img={imageOk ? imgRef.current : null}
+                gridW={gridW} gridH={gridH}
+                rows={rows} cols={cols}
+                cellPx={trayCellPx}
+                onPick={beginPendingTrayPickup}
+                onPickMove={onTrayPiecePointerMove}
+                onPickEnd={onTrayPiecePointerEnd}
+                registerNode={registerTrayNode}
+                shiftPx={trayInsertIndex !== null && i >= trayInsertIndex ? ghostTraySizeRef.current.w + 10 : 0}
+                index={i}
+                selected={selectedGroupId === groupId}
+                onSelect={(selected) => {
+                  setSelectedGroupId(selected);
+                  setScreenReaderStatus(`Selected piece group ${i + 1}. Use arrow keys to move it, Enter to place it, or T to return it.`);
+                }}
+              />
+            ))}
           </div>
-        )}
-      </div>
+
+          {/* Persistent draggable scrollbar — its own touch target below the tray, entirely
+              separate from the piece thumbnails, so it never competes with picking a piece up. */}
+          {trayThumbGeometry && (
+            <div className="jigsaw-tray-scrollbar" onPointerDown={onTrayTrackPointerDown}>
+              <div
+                ref={trayThumbRef}
+                className="jigsaw-tray-scrollbar-thumb"
+                onPointerDown={onTrayThumbPointerDown}
+                onPointerMove={onTrayThumbPointerMove}
+                onPointerUp={onTrayThumbPointerUp}
+                onPointerCancel={onTrayThumbPointerUp}
+                style={{
+                  left: `${trayThumbGeometry.leftPct}%`, width: `${trayThumbGeometry.widthPct}%`,
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Floating drag-ghost — shown while a piece/cluster is being dragged past the board's
           edge, since the board canvas is clamped to its own bounds and can't visually follow

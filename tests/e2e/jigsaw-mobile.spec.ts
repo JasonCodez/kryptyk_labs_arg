@@ -265,14 +265,24 @@ test("Preview is an accessible, focus-restoring dialog", async ({ page }) => {
   await expect(page.locator(".jigsaw-board-canvas")).toBeFocused();
 });
 
-test("Daily completion is recorded once after the celebration", async ({ page }) => {
+test("Daily completion is recorded once after the celebration, and waits for Continue before the final handoff", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await installDailyFixture(page);
   await openDaily(page);
   await dragEachTrayPieceToItsSlot(page, 2, 2);
-  await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 15_000 });
+
+  // The completion footer appears once the celebration (frame + clean image + temporary
+  // reward card) has finished — but the final parent handoff must NOT happen automatically.
+  const continueButton = page.getByRole("button", { name: "Continue" });
+  await expect(continueButton).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Puzzle complete" })).toBeVisible();
+  await expect(page.getByText("Solved for today!")).toHaveCount(0);
   expect(fixture.requests()).toBe(1);
   expect(fixture.successfulRecords()).toBe(1);
+
+  await continueButton.click();
+  await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 10_000 });
+  expect(fixture.requests()).toBe(1); // Continue must not resubmit completion
 });
 
 test("failed Daily completion survives reload and retries only completion", async ({ page }) => {
@@ -284,21 +294,104 @@ test("failed Daily completion survives reload and retries only completion", asyn
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Retry Completion" }).click();
+  const continueButton = page.getByRole("button", { name: "Continue" });
+  await expect(continueButton).toBeVisible({ timeout: 10_000 });
+  await continueButton.click();
   await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 10_000 });
   expect(fixture.requests()).toBe(2);
   expect(fixture.successfulRecords()).toBe(1);
 });
 
-test("Catalog sends attempt_success once and delays its result UI until celebration", async ({ page }) => {
+test("Catalog sends attempt_success once and delays its result UI until Continue is pressed", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const fixture = await installCatalogFixture(page);
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-mode", "catalog", { timeout: 15_000 });
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing");
   await dragEachTrayPieceToItsSlot(page, 2, 2);
-  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "won", { timeout: 15_000 });
+
+  const continueButton = page.getByRole("button", { name: "Continue" });
+  await expect(continueButton).toBeVisible({ timeout: 15_000 });
   expect(fixture.attempts()).toBe(1);
+  // The rating/completion modal handoff has not happened yet — still waiting on Continue.
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "completing");
+  await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toHaveCount(0);
+
+  await continueButton.click();
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "won", { timeout: 15_000 });
+  expect(fixture.attempts()).toBe(1); // Continue must not resubmit the attempt
   await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toBeVisible({ timeout: 10_000 });
+});
+
+// Regression coverage for the completion-sequence fix: the decorative frame used to start
+// fading in while the canvas was still sized for the plain unframed board (a partial/clipped
+// frame that only became whole once a later resize caught up), and the completed puzzle used
+// to revert from the clean source image back to visibly piece-rendered artwork once the
+// living-photo overlay finished fading away. Also proves the framed layout is fully settled —
+// and stays settled, with no second resize — by the time the completion footer appears.
+test("Completion reaches a stable framed layout with the clean image before the footer appears, and Continue fires the handoff exactly once", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const fixture = await installCatalogFixture(page);
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing", { timeout: 15_000 });
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
+
+  const board = page.locator(".jigsaw-board-canvas");
+  await expect(board).toHaveAttribute("data-completed-image", "true", { timeout: 15_000 });
+
+  // Footer appears in non-Warz mode, and the final handoff has not happened yet.
+  const continueButton = page.getByRole("button", { name: "Continue" });
+  await expect(continueButton).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Puzzle complete" })).toBeVisible();
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "completing");
+  await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toHaveCount(0);
+
+  // The framed canvas must already be at its final size, fully contained in .jigsaw-board-area.
+  const canvasBoxAtFooter = await board.boundingBox();
+  const boardAreaBox = await page.locator(".jigsaw-board-area").boundingBox();
+  expect(canvasBoxAtFooter).not.toBeNull(); expect(boardAreaBox).not.toBeNull();
+  expect(canvasBoxAtFooter!.x).toBeGreaterThanOrEqual(boardAreaBox!.x - 1);
+  expect(canvasBoxAtFooter!.y).toBeGreaterThanOrEqual(boardAreaBox!.y - 1);
+  expect(canvasBoxAtFooter!.x + canvasBoxAtFooter!.width).toBeLessThanOrEqual(boardAreaBox!.x + boardAreaBox!.width + 1);
+  expect(canvasBoxAtFooter!.y + canvasBoxAtFooter!.height).toBeLessThanOrEqual(boardAreaBox!.y + boardAreaBox!.height + 1);
+
+  // No second canvas-size change while the footer/reward-card sequence plays out, and the
+  // clean completed-image state remains true throughout.
+  await page.waitForTimeout(500);
+  const canvasBoxAfterWait = await board.boundingBox();
+  expect(Math.abs(canvasBoxAfterWait!.width - canvasBoxAtFooter!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(canvasBoxAfterWait!.height - canvasBoxAtFooter!.height)).toBeLessThanOrEqual(1);
+  await expect(board).toHaveAttribute("data-completed-image", "true");
+
+  await continueButton.click();
+  // Continue disables/relabels itself while the handoff is in flight.
+  await expect(page.getByRole("button", { name: "Continuing…" })).toBeVisible();
+
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "won", { timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toBeVisible({ timeout: 10_000 });
+  expect(fixture.attempts()).toBe(1); // handoff didn't resubmit the attempt
+
+  const canvasBoxAfterContinue = await board.boundingBox();
+  expect(Math.abs(canvasBoxAfterContinue!.width - canvasBoxAtFooter!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(canvasBoxAfterContinue!.height - canvasBoxAtFooter!.height)).toBeLessThanOrEqual(1);
+});
+
+// Warz keeps its existing fully automatic completion — no footer, no waiting on the player.
+test("Warz completes automatically with no completion footer and no wait for Continue", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installWarzFixture(page);
+  await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
+  await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /Start Battle/ }).click();
+  await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-mode", "warz", { timeout: 15_000 });
+  await dragEachTrayPieceToItsSlot(page, 2, 2);
+
+  // Warz's own automatic "submitting result" UI appears without any Continue interaction.
+  await expect(page.getByText(/Solved in .*! Submitting result/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Puzzle complete" })).toHaveCount(0);
 });
 
 test("Catalog supports tray drag, return, and header controls", async ({ page }) => {
