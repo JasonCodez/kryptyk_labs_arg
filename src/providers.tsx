@@ -12,7 +12,6 @@ import { useModalQueueStore } from "@/lib/modal-queue-store";
 import { useSlotModalStore } from "@/lib/slot-modal-store";
 import TeamLobbyInviteModalProvider from "@/components/teams/TeamLobbyInviteModalProvider";
 
-const AppSplashScreen = dynamic(() => import("@/components/AppSplashScreen"), { ssr: false });
 const AppChrome = dynamic(() => import("@/components/app-shell/AppChrome"), { ssr: false });
 
 let globalSocket: any = null;
@@ -294,7 +293,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <PwaRegistration />
-      <AppSplashScreen />
       <AppChrome />
       <GlobalAchievementModal />
       <GlobalSlotMachineModal />

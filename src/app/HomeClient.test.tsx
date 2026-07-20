@@ -8,6 +8,15 @@ jest.mock("next-auth/react", () => ({
   useSession: () => mockUseSession(),
 }));
 
+// Narrow mock: HomeClient's own tests only need to know whether the launch
+// overlay is asked to render eligible — AppSplashScreen's own mode/timing/
+// persistence behavior is covered by AppSplashScreen.test.tsx.
+jest.mock("@/components/AppSplashScreen", () => ({
+  __esModule: true,
+  default: ({ launchCandidate }: { launchCandidate?: boolean }) =>
+    launchCandidate ? <div data-testid="mock-app-splash-eligible" /> : null,
+}));
+
 // jsdom has no IntersectionObserver; framer-motion's whileInView needs one.
 beforeAll(() => {
   class StubIntersectionObserver {
@@ -31,8 +40,8 @@ function mockFetch() {
   }) as jest.Mock;
 }
 
-async function renderHome() {
-  render(<HomeClient />);
+async function renderHome(launchCandidate?: boolean) {
+  render(<HomeClient launchCandidate={launchCandidate} />);
   await act(async () => {
     await Promise.resolve();
   });
@@ -76,5 +85,21 @@ describe("HomeClient", () => {
     // Pass 3: Daily hero CTA copy is now state-driven ("Start Daily Run" /
     // "Continue Daily Run" / "View Results") rather than the old "Play Now".
     expect(hero.textContent).toContain("Start Daily Run");
+  });
+
+  it("does not render a visible launch overlay when launchCandidate is false (the default)", async () => {
+    mockUseSession.mockReturnValue({ data: null, status: "unauthenticated" });
+    mockFetch();
+    await renderHome();
+
+    expect(document.querySelector('[data-testid="mock-app-splash-eligible"]')).toBeNull();
+  });
+
+  it("passes launch eligibility through to the splash sequence when launchCandidate is true", async () => {
+    mockUseSession.mockReturnValue({ data: null, status: "unauthenticated" });
+    mockFetch();
+    await renderHome(true);
+
+    expect(document.querySelector('[data-testid="mock-app-splash-eligible"]')).not.toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import PressableCard from "@/components/ui/PressableCard";
 import PageContainer from "@/components/ui/PageContainer";
 import ContinuePlayingCard from "@/components/home/ContinuePlayingCard";
 import DailyPuzzleHeroCard from "@/components/home/DailyPuzzleHeroCard";
+import AppSplashScreen from "@/components/AppSplashScreen";
 
 // Discovery roles: daily = secondary (streaks/resets are gold territory),
 // catalog = primary (general play), Warz = accent (the one "featured" slot).
@@ -48,13 +49,15 @@ const ACCENT_TOKEN: Record<(typeof FEATURES)[number]["accent"], string> = {
   accent: "var(--pw-brand-accent)",
 };
 
-export default function HomeClient() {
+export default function HomeClient({ launchCandidate = false }: { launchCandidate?: boolean }) {
   const { data: session } = useSession();
   const competeHref = session ? "/warz" : "/auth/register";
   const reduceMotion = useAppReducedMotion();
 
   return (
-    <main
+    <>
+      <AppSplashScreen launchCandidate={launchCandidate} />
+      <main
       style={{
         // Restrained layered background: base surface plus one subtle blue glow
         // (general play) near the top and one faint gold glow (Daily/reward
@@ -162,6 +165,7 @@ export default function HomeClient() {
           <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>Start fast. Stay sharp. Finish strong.</p>
         </div>
       </PageContainer>
-    </main>
+      </main>
+    </>
   );
 }
