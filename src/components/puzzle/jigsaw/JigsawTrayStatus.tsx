@@ -25,26 +25,35 @@ function IconCheckPiece() {
   );
 }
 
+export type JigsawTrayBadgeProps = {
+  remainingCount: number;
+};
+
+/** Sits outside the scrolling tray strip (above its border), so it never overlaps pieces. */
+export function JigsawTrayBadge({ remainingCount }: JigsawTrayBadgeProps) {
+  if (remainingCount <= 0) return null;
+  return (
+    <div
+      className="jigsaw-tray-status"
+      aria-label={`${remainingCount} loose piece group${remainingCount === 1 ? "" : "s"} remaining`}
+    >
+      <span className="jigsaw-tray-status-icon"><IconPieceStack /></span>
+      <span className="jigsaw-tray-status-copy">
+        <span className="jigsaw-tray-status-label">LOOSE PIECES</span>
+        <span className="jigsaw-tray-status-count">{remainingCount}</span>
+      </span>
+    </div>
+  );
+}
+
 export type JigsawTrayStatusProps = {
   remainingCount: number;
   isSolved: boolean;
 };
 
+/** Renders the empty-tray messaging inside the tray strip; renders nothing while pieces remain. */
 export default function JigsawTrayStatus({ remainingCount, isSolved }: JigsawTrayStatusProps) {
-  if (remainingCount > 0) {
-    return (
-      <div
-        className="jigsaw-tray-status"
-        aria-label={`${remainingCount} loose piece group${remainingCount === 1 ? "" : "s"} remaining`}
-      >
-        <span className="jigsaw-tray-status-icon"><IconPieceStack /></span>
-        <span className="jigsaw-tray-status-copy">
-          <span className="jigsaw-tray-status-label">LOOSE PIECES</span>
-          <span className="jigsaw-tray-status-count">{remainingCount}</span>
-        </span>
-      </div>
-    );
-  }
+  if (remainingCount > 0) return null;
 
   return (
     <div className="jigsaw-tray-empty" aria-label={isSolved ? "Puzzle complete" : "All pieces are on the board"}>

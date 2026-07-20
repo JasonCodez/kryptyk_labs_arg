@@ -30,7 +30,7 @@ import { createPortal } from "react-dom";
 import gsap from "gsap";
 import JigsawControls from "./jigsaw/JigsawControls";
 import JigsawStatusHud from "./jigsaw/JigsawStatusHud";
-import JigsawTrayStatus from "./jigsaw/JigsawTrayStatus";
+import JigsawTrayStatus, { JigsawTrayBadge } from "./jigsaw/JigsawTrayStatus";
 import JigsawQuickTip from "./jigsaw/JigsawQuickTip";
 import JigsawOrientationLock from "./jigsaw/JigsawOrientationLock";
 import JigsawHelpDialog from "./jigsaw/JigsawHelpDialog";
@@ -3105,6 +3105,11 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         </div>
       )}
       <div className="jigsaw-tray-wrap">
+        {trayOrder.length > 0 && (
+          <div className="jigsaw-tray-badge-holder">
+            <JigsawTrayBadge remainingCount={trayOrder.length} />
+          </div>
+        )}
         <div
           ref={trayStripRef}
           className="jigsaw-tray no-scrollbar"

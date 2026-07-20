@@ -7,7 +7,8 @@
 @media (min-width:640px) { .jigsaw-tray { height:140px; padding:10px 14px max(10px,env(safe-area-inset-bottom)); } }
 .jigsaw-tray-piece { display:block; flex:0 0 auto; border:2px solid transparent; border-radius:8px; background:transparent; padding:2px; min-width:44px; min-height:44px; }
 .jigsaw-tray-piece:focus-visible,.jigsaw-tray-piece[aria-pressed="true"] { border-color:#facc15; outline:none; }
-.jigsaw-tray-status { position:sticky; left:0; z-index:2; flex:0 0 auto; display:flex; align-items:center; gap:6px; box-sizing:border-box; padding:4px 10px; border-radius:10px; border:1px solid var(--pw-border-default,#2C3856); background:var(--pw-surface-2,#1A2336); pointer-events:none; }
+.jigsaw-tray-badge-holder { display:flex; justify-content:center; padding:4px 0; pointer-events:none; }
+.jigsaw-tray-status { display:flex; align-items:center; gap:6px; box-sizing:border-box; padding:4px 10px; border-radius:10px; border:1px solid var(--pw-border-default,#2C3856); background:var(--pw-surface-2,#1A2336); box-shadow:0 4px 14px rgba(0,0,0,.35); pointer-events:none; }
 .jigsaw-tray-status-icon { display:flex; color:var(--pw-info,#4FB8FF); flex-shrink:0; }
 .jigsaw-tray-status-copy { display:flex; flex-direction:column; line-height:1.15; }
 .jigsaw-tray-status-label { font-size:.58rem; font-weight:800; letter-spacing:.08em; color:var(--pw-text-secondary,#A9B4CC); white-space:nowrap; }
