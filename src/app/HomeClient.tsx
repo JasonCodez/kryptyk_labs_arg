@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 import PressableCard from "@/components/ui/PressableCard";
+import PageContainer from "@/components/ui/PageContainer";
 import ContinuePlayingCard from "@/components/home/ContinuePlayingCard";
 import DailyPuzzleHeroCard from "@/components/home/DailyPuzzleHeroCard";
 
@@ -52,15 +53,15 @@ export default function HomeClient() {
       }}
     >
       {/* ── Hero: Continue Playing (if active) then Daily Puzzle ── */}
-      <section className="px-4 pt-6 pb-2 lg:max-w-2xl lg:mx-auto">
+      <PageContainer as="section" size="reading" className="pt-6 pb-2" data-testid="home-hero-container">
         <div className="flex flex-col gap-4">
           <ContinuePlayingCard />
           <DailyPuzzleHeroCard />
         </div>
-      </section>
+      </PageContainer>
 
       {/* ── Feature strip ── */}
-      <section className="px-4 py-10 lg:max-w-4xl lg:mx-auto">
+      <PageContainer as="section" size="content" className="py-10" data-testid="home-feature-container">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {FEATURES.map((feature, index) => (
             <motion.div
@@ -81,10 +82,10 @@ export default function HomeClient() {
             </motion.div>
           ))}
         </div>
-      </section>
+      </PageContainer>
 
       {/* ── Footer ── */}
-      <footer className="px-4 py-10 lg:max-w-4xl lg:mx-auto" style={{ borderTop: "1px solid var(--pw-border-subtle)" }}>
+      <PageContainer as="footer" size="content" className="py-10" style={{ borderTop: "1px solid var(--pw-border-subtle)" }} data-testid="home-footer-container">
         <div className="flex flex-wrap justify-between items-start gap-8 mb-6">
           <div>
             <div className="inline-flex items-center gap-2 mb-2">
@@ -115,7 +116,7 @@ export default function HomeClient() {
           <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>&copy; 2026 PuzzleWarz &middot; All rights reserved</p>
           <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>Start fast. Stay sharp. Finish strong.</p>
         </div>
-      </footer>
+      </PageContainer>
     </main>
   );
 }
