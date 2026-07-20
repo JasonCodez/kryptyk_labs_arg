@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { motion, AnimatePresence, type Variants, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 export interface WordDefinitionData {
@@ -70,18 +70,28 @@ function IconArrowRight() {
 // Spells the found word out as grid-style letter tiles — the same visual language as the
 // puzzle board itself — instead of plain text, so the modal reads as a direct continuation
 // of the find rather than a generic dialog bolted on top of it. The row never wraps (a single
-// orphaned letter dropping to its own line would look broken); instead each tile is a flex
-// item with a capped basis that shrinks — together with a per-tile container-query font size —
-// as more letters compete for the same row, so short words stay comfortably large while very
-// long ones scale down smoothly without ever truncating a letter or scrolling horizontally.
+// orphaned letter dropping to its own line would look broken); tile/font/gap sizes are computed
+// directly from the letter count in pixels (rather than via CSS container queries, which —
+// combined with aspect-ratio on a flex item — resolved to runaway oversized tiles in real
+// browsers), so short words stay comfortably large while long ones scale down smoothly to a
+// definite, non-runaway size without ever truncating a letter or wrapping to a second row.
+function tileMetrics(length: number) {
+  const size = Math.max(12, Math.min(34, 210 / length));
+  const font = Math.max(7, size * 0.46);
+  const gap = length <= 8 ? 6 : length <= 14 ? 3 : 2;
+  return { size, font, gap };
+}
+
 function LetterTiles({ word, reduceMotion }: { word: string; reduceMotion: boolean }) {
   const letters = word.toUpperCase().split("");
+  const { size, font, gap } = tileMetrics(letters.length);
   return (
-    <div className="word-definition-tiles" data-tile-layout="single-row">
+    <div className="word-definition-tiles" data-tile-layout="single-row" style={{ gap: `${gap}px` }}>
       {letters.map((ch, i) => (
         <motion.span
           key={i}
           className="word-definition-tile"
+          style={{ width: `${size}px`, height: `${size}px`, fontSize: `${font}px` }}
           initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.88 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={reduceMotion ? { duration: 0 } : { delay: Math.min(i * 0.02, 0.3), duration: 0.22, ease: "easeOut" }}
@@ -123,12 +133,24 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
     } catch {}
   }, [data]);
 
-  const containerVariants: Variants = reduceMotion
-    ? { hidden: {}, show: {} }
-    : { hidden: {}, show: { transition: { staggerChildren: 0.045, delayChildren: 0.04 } } };
-  const itemVariants: Variants = reduceMotion
-    ? { hidden: { opacity: 1 }, show: { opacity: 1 } }
-    : { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: { duration: 0.24, ease: "easeOut" } } };
+  // Each visible section gets its own explicit initial/animate/transition with a manually
+  // incremented delay, rather than a shared parent "variants" + staggerChildren orchestration.
+  // The variants-propagation approach was observed to get permanently stuck: whichever content
+  // section followed a conditionally-omitted sibling (e.g. the definition paragraph, right
+  // after a skipped pronunciation button) never progressed past its "hidden" (opacity: 0)
+  // frame, even seconds later — while earlier, unconditional siblings animated in fine. Driving
+  // each item's own delay explicitly sidesteps that entirely and is just as short a sequence.
+  let animationIndex = 0;
+  const itemMotion = () => {
+    const index = animationIndex++;
+    return reduceMotion
+      ? { initial: false as const, animate: { opacity: 1, y: 0 } }
+      : {
+          initial: { opacity: 0, y: 8 },
+          animate: { opacity: 1, y: 0 },
+          transition: { delay: Math.min(0.04 + index * 0.045, 0.4), duration: 0.24, ease: "easeOut" as const },
+        };
+  };
 
   const statusText = status === "loading"
     ? `Loading definition for ${word}`
@@ -177,13 +199,13 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
 
           <p className="sr-only" aria-live="polite">{statusText}</p>
 
-          <motion.div variants={containerVariants} initial="hidden" animate="show" className="word-definition-content">
-            <motion.div variants={itemVariants} className="word-definition-badge">
+          <div className="word-definition-content">
+            <motion.div {...itemMotion()} className="word-definition-badge">
               <IconCheck />
               <span>Word found</span>
             </motion.div>
 
-            <motion.div variants={itemVariants}>
+            <motion.div {...itemMotion()}>
               <LetterTiles word={word} reduceMotion={reduceMotion} />
             </motion.div>
 
@@ -197,7 +219,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
             )}
 
             {status === "not-found" && (
-              <motion.p variants={itemVariants} className="word-definition-fallback">
+              <motion.p {...itemMotion()} className="word-definition-fallback">
                 A quick definition was not available for this word.
               </motion.p>
             )}
@@ -209,7 +231,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
                   // doesn't read phonetic alphabet, so the audio button remains the only
                   // pronunciation aid shown.
                   <motion.button
-                    variants={itemVariants}
+                    {...itemMotion()}
                     type="button"
                     onClick={playPronunciation}
                     className="word-definition-pronunciation"
@@ -221,17 +243,17 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
                 )}
 
                 {data.partOfSpeech && (
-                  <motion.p variants={itemVariants} className="word-definition-part">
+                  <motion.p {...itemMotion()} className="word-definition-part">
                     {data.partOfSpeech}
                   </motion.p>
                 )}
 
-                <motion.p variants={itemVariants} className="word-definition-copy">
+                <motion.p {...itemMotion()} className="word-definition-copy">
                   {data.definition}
                 </motion.p>
 
                 {data.example && (
-                  <motion.div variants={itemVariants} className="word-definition-example">
+                  <motion.div {...itemMotion()} className="word-definition-example">
                     <span className="word-definition-example-label">Example</span>
                     <p>{data.example}</p>
                   </motion.div>
@@ -241,7 +263,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
 
             {(status === "found" || status === "not-found") && (
               <motion.a
-                variants={itemVariants}
+                {...itemMotion()}
                 href={merriamWebsterUrl(word)}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -254,7 +276,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
             )}
 
             <motion.button
-              variants={itemVariants}
+              {...itemMotion()}
               type="button"
               onClick={onDismiss}
               disabled={status === "loading"}
@@ -263,7 +285,7 @@ export default function WordDefinitionModal({ word, color, status, data, onDismi
               <span>Keep searching</span>
               <IconArrowRight />
             </motion.button>
-          </motion.div>
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>

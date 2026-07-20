@@ -407,16 +407,12 @@
 .word-definition-tiles { display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 2px 4px; }
 .word-definition-tile {
   box-sizing: border-box;
-  container-type: inline-size;
-  flex: 0 1 2.5rem;
-  min-width: 14px;
-  aspect-ratio: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
   font-weight: 900;
-  font-size: 52cqi;
   line-height: 1;
   background: var(--word-definition-bg);
   border: 2px solid var(--word-definition-border);
