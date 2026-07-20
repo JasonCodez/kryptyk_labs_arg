@@ -231,16 +231,29 @@ function noticeIcon(kind: NoticeKind, reduceMotion: boolean) {
   return <NoticeSuccessIcon />;
 }
 
+/** A captured pre-open focus target is only worth restoring if it's still a real, usable focus
+ * target — automatic first-run onboarding opens from an effect, where `document.activeElement`
+ * is often `document.body` or another unusable container rather than a real control. */
+function canRestoreFocus(target: HTMLElement | null): target is HTMLElement {
+  if (!target) return false;
+  if (!target.isConnected) return false;
+  if (target === document.body || target === document.documentElement) return false;
+  if (target.hasAttribute("disabled")) return false;
+  if (target.getAttribute("aria-hidden") === "true" || target.closest('[aria-hidden="true"]')) return false;
+  return true;
+}
+
 /** A single reusable information surface (first-run intro + Help) — the same focus-trapping,
  * scroll-locking, dismissible dialog shell the previous plain `Dialog` provided, wrapped in a
  * premium, Word-Trove-specific presentation. */
-function WordSearchInfoDialog({ eyebrow, title, onClose, reduceMotion, children, actions }: {
+function WordSearchInfoDialog({ eyebrow, title, onClose, reduceMotion, children, actions, fallbackFocus }: {
   eyebrow: string;
   title: string;
   onClose: () => void;
   reduceMotion: boolean;
   children: React.ReactNode;
   actions: React.ReactNode;
+  fallbackFocus?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const returnRef = useRef<HTMLElement | null>(null);
@@ -258,8 +271,14 @@ function WordSearchInfoDialog({ eyebrow, title, onClose, reduceMotion, children,
       if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0].focus(); }
     };
     addEventListener("keydown", key);
-    return () => { cancelAnimationFrame(frame); removeEventListener("keydown", key); returnRef.current?.focus(); };
-  }, [onClose]);
+    return () => {
+      cancelAnimationFrame(frame);
+      removeEventListener("keydown", key);
+      const target = returnRef.current;
+      if (canRestoreFocus(target)) target.focus();
+      else fallbackFocus?.();
+    };
+  }, [onClose, fallbackFocus]);
   return (
     <div className="word-search-info-layer" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <div
@@ -998,6 +1017,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
           title="More than a word search"
           onClose={closeIntro}
           reduceMotion={reduceMotion}
+          fallbackFocus={focusBoard}
           actions={<button type="button" className="word-search-info-primary" onClick={closeIntro}>Start searching</button>}
         >
           <p className="word-search-info-lead">Find every hidden word, then explore what it means.</p>
@@ -1032,6 +1052,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
           title="How to play Word Trove"
           onClose={() => setShowHelp(false)}
           reduceMotion={reduceMotion}
+          fallbackFocus={focusBoard}
           actions={warzMode ? (
             <button type="button" className="word-search-info-primary" onClick={() => setShowHelp(false)}>Got it</button>
           ) : (
@@ -1098,6 +1119,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
         )}
 
         <div className="word-search-play-layout">
+          <div className="word-search-board-stage" data-zoomed={zoom > 1 || undefined}>
           <div ref={viewportRef} className="word-search-board-viewport" data-zoomed={zoom > 1 || undefined}>
             <motion.div
               ref={boardRef}
@@ -1195,7 +1217,8 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                 <span className="word-search-found-flash-label">{celebration.hinted ? "REVEALED" : "FOUND"}</span>
               </div>
             )}
-            {stateNotice && <div className="word-search-state-notice-layer">{stateNotice}</div>}
+          </div>
+          {stateNotice && <div className="word-search-state-notice-layer">{stateNotice}</div>}
           </div>
 
           <WordSearchWordDock foundCount={foundWords.length} totalWords={words.length} selectedText={selectedText} onOpenWordList={openAppropriateWordList} showProgress={displayMode !== "app-shell"} />

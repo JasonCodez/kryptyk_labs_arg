@@ -1066,6 +1066,53 @@ test("Pass 10: Why Word Trove? closes Help, opens the intro, and does not erase 
   expect(localStorage.getItem("wordTroveIntroSeen")).toBe("1");
   fireEvent.click(within(introDialog).getByRole("button", { name: "Start searching" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // Help was opened imperatively (no real prior trigger), so both the Help→intro handoff and the
+  // intro's own close fall back to the puzzle rather than leaving focus stranded.
+  const board = screen.getByRole("grid");
+  await waitFor(() => expect(document.activeElement).toBe(board.querySelector('[data-active="true"]')));
+});
+
+test("Pass 10 correction: closing Help returns focus to the standalone Help button that opened it", async () => {
+  renderGame({ displayMode: "standalone" });
+  const helpButton = screen.getByRole("button", { name: "Help" });
+  helpButton.focus();
+  fireEvent.click(helpButton);
+  const dialog = await screen.findByRole("dialog", { name: "How to play Word Trove" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "How to play Word Trove" })).toBeNull());
+  expect(document.activeElement).toBe(helpButton);
+});
+
+test("Pass 10 correction: opening Help via H and closing it returns focus to the board", async () => {
+  renderGame();
+  const board = screen.getByRole("grid");
+  board.focus();
+  fireEvent.keyDown(board, { key: "h" });
+  const dialog = await screen.findByRole("dialog", { name: "How to play Word Trove" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "How to play Word Trove" })).toBeNull());
+  expect(document.activeElement).toBe(board);
+});
+
+test.each([
+  ["Start searching", (dialog: HTMLElement) => fireEvent.click(within(dialog).getByRole("button", { name: "Start searching" }))],
+  ["Close", (dialog: HTMLElement) => fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))],
+  ["Escape", () => fireEvent.keyDown(window, { key: "Escape" })],
+  ["a backdrop click", (dialog: HTMLElement) => fireEvent.pointerDown(dialog.parentElement!)],
+])("Pass 10 correction: automatic first-run intro dismissal via %s falls back focus to the puzzle when there is no valid prior trigger", async (_label, dismiss) => {
+  installFetch();
+  localStorage.removeItem("wordTroveIntroSeen");
+  render(<WordSearchPuzzle puzzleId="intro-focus-fallback-test" wordSearchData={DATA} dailyMode />);
+  const dialog = await screen.findByRole("dialog", { name: "More than a word search" });
+  dismiss(dialog);
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "More than a word search" })).toBeNull());
+  expect(localStorage.getItem("wordTroveIntroSeen")).toBe("1");
+  const board = screen.getByRole("grid");
+  // document.activeElement was document.body when the intro auto-opened — no real trigger to
+  // restore — so focus must fall back to the active grid cell rather than being left on body.
+  await waitFor(() => expect(document.activeElement).toBe(board.querySelector('[data-active="true"]')));
+  expect(document.querySelectorAll("[data-found]")).toHaveLength(0);
+  expect(screen.getAllByRole("gridcell").filter((cell) => cell.getAttribute("data-selected"))).toHaveLength(0);
 });
 
 test("Pass 10: Warz Help shows battle rules only, with no definition instructions or Why Word Trove", async () => {

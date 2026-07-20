@@ -42,6 +42,18 @@ function catDogSunFixture(size = 6) {
   return { grid, words: placements.map(([word]) => word) };
 }
 
+// CAT sits on the top row; DOG sits centered on the bottom row, where the mobile board's
+// content-sized height puts it directly behind the lower-center lifecycle notice — used to prove
+// the board stays operable underneath a noninteractive notice (Pass 10 correction).
+function catDogBottomCenterFixture(size = 10) {
+  const grid = Array.from({ length: size }, () => Array.from({ length: size }, () => "X"));
+  "CAT".split("").forEach((letter, index) => { grid[0][index] = letter; });
+  const dogRow = size - 1;
+  const dogStartCol = Math.floor((size - 3) / 2);
+  "DOG".split("").forEach((letter, index) => { grid[dogRow][dogStartCol + index] = letter; });
+  return { grid, words: ["CAT", "DOG"], dogRow, dogStartCol };
+}
+
 async function authenticate(page: Page, { seedIntroSeen = true }: { seedIntroSeen?: boolean } = {}) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
@@ -1026,19 +1038,21 @@ test("Pass 6: board prominence — the board dominates the 390x844 viewport with
   const dimensions = await page.evaluate(() => ({ height: innerHeight, docHeight: document.documentElement.scrollHeight }));
   expect(dimensions.docHeight).toBeLessThanOrEqual(dimensions.height + 1);
 
-  // Non-transparent surface treatments and a visible, non-layout-affecting depth treatment.
+  // Non-transparent surface treatments and a visible, non-layout-affecting depth treatment. The
+  // stage shadow lives on the non-scrolling stage wrapper (Pass 10 correction) so the lifecycle
+  // notice layer can anchor to it independent of the scrollable viewport's own coordinate space.
   const styles = await page.evaluate(() => {
     const boardEl = document.querySelector(".word-search-board")!;
-    const viewportEl = document.querySelector(".word-search-board-viewport")!;
+    const stageEl = document.querySelector(".word-search-board-stage")!;
     return {
       boardBackground: getComputedStyle(boardEl).backgroundColor,
       boardBoxShadow: getComputedStyle(boardEl).boxShadow,
-      viewportBoxShadow: getComputedStyle(viewportEl).boxShadow,
+      stageBoxShadow: getComputedStyle(stageEl).boxShadow,
     };
   });
   expect(styles.boardBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles.boardBoxShadow).not.toBe("none");
-  expect(styles.viewportBoxShadow).not.toBe("none");
+  expect(styles.stageBoxShadow).not.toBe("none");
 });
 
 test("Pass 6: idle tile depth — an unfound, unselected tile has visible background, border, and depth", async ({ page }) => {
@@ -1264,9 +1278,12 @@ test("legacy catalog mismatch repairs in place without generic attempt_success",
   const state = await installRoutes(page, 10, true);
   state.seedLegacyRepair();
   await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 });
+  const retryCompletion = page.getByRole("button", { name: "Retry Completion" });
+  await expect(retryCompletion).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("grid")).toBeVisible();
-  await page.getByRole("button", { name: "Retry Completion" }).click();
+  expect(await page.locator('[data-notice-kind="error"]').evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+  expect(await retryCompletion.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("auto");
+  await retryCompletion.click();
   await expect.poll(state.reconciliations).toBe(1);
   await expect.poll(state.attemptSuccess).toBe(0);
   await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
@@ -2419,10 +2436,58 @@ test("Pass 10: first-run mobile onboarding fits, is dismissible every way, and n
   await startButton.click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".word-search-board")).toBeVisible();
+  // The auto-opened intro has no real prior trigger to restore — focus must fall back to the
+  // puzzle (the active grid cell) rather than being left on document.body.
+  await expect(page.locator('[data-active="true"]')).toBeFocused();
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: "More than a word search" })).toHaveCount(0);
+});
+
+test("Pass 10: closing the auto-opened intro via Close focuses the puzzle — 390x844", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page, { seedIntroSeen: false });
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+
+  const dialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-active="true"]')).toBeFocused();
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+});
+
+test("Pass 10: dismissing the auto-opened intro via Escape focuses the puzzle — 390x844", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page, { seedIntroSeen: false });
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+
+  const dialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-active="true"]')).toBeFocused();
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+});
+
+test("Pass 10: dismissing the auto-opened intro via a backdrop click focuses the puzzle — 390x844", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page, { seedIntroSeen: false });
+  await installRoutes(page, 10, true);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+
+  const dialog = page.getByRole("dialog", { name: "More than a word search" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  // The dismiss handler only listens for pointerdown directly on the backdrop layer — dispatching
+  // just that event (rather than a full click gesture) avoids a stray mouseup/click landing on
+  // whatever the dialog's removal reveals underneath and stealing focus back off the board.
+  await page.locator(".word-search-info-layer").dispatchEvent("pointerdown", { bubbles: true });
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-active="true"]')).toBeFocused();
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
 });
 
 test("Pass 10: narrow mobile onboarding fits with internal scrolling and reachable actions — 320x710", async ({ page }) => {
@@ -2501,9 +2566,11 @@ test("Pass 10: Why Word Trove? swaps Help for the intro with exactly one dialog 
   const introDialog = page.getByRole("dialog", { name: "More than a word search" });
   await expect(introDialog).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(introDialog).toBeFocused();
 
   await introDialog.getByRole("button", { name: "Start searching" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".word-search-board")).toBeFocused();
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
@@ -2554,6 +2621,7 @@ test("Pass 10: a delayed Catalog restoration shows a contained loading notice wi
   await expect(notice).toContainText("Restoring progress");
   await expect(page.getByRole("button", { name: /Retry/ })).toHaveCount(0);
   await expect(page.locator(".word-search-board")).toBeVisible();
+  expect(await notice.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
 
   const boardBefore = await page.locator(".word-search-board").boundingBox();
   const dockBefore = await page.locator(".word-search-progress-strip").boundingBox();
@@ -2594,6 +2662,9 @@ test("Pass 10: a Catalog restore failure shows Retry Restore, and a successful r
   const retryBox = await retry.boundingBox();
   expect(retryBox!.height).toBeGreaterThanOrEqual(44);
   await expect(page.locator(".word-search-board")).toBeVisible();
+  // The notice itself stays pointer-transparent; only the retry action is interactive.
+  expect(await alert.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+  expect(await retry.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("auto");
 
   state.allowCatalogRestore();
   await retry.click();
@@ -2632,11 +2703,135 @@ test("Pass 10: an ordinary word-save error shows a contained notice with no boar
   await expect(page.getByRole("button", { name: "Retry Restore" })).toHaveCount(0);
   await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  // An actionless error notice must not intercept pointer input meant for the board.
+  expect(await alert.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
 
   await dragWord(page, [0, 0], [0, 2]); // retry CAT
   await expect.poll(() => state.found.has("CAT")).toBe(true);
   await expect(alert).toHaveCount(0);
   await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(1);
+});
+
+test("Pass 10: the board stays operable underneath an actionless error notice — a real selection passes through it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const size = 10;
+  const data = catDogBottomCenterFixture(size);
+  const state = await installRoutes(page, size, false, data);
+  let failedOnce = false;
+  await page.route(`**/api/puzzles/${PUZZLE_ID}/word_search`, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && !failedOnce) {
+      failedOnce = true;
+      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ valid: false, error: "Save failed" }) });
+    }
+    return route.fallback();
+  });
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]); // CAT — forced to fail once
+
+  const notice = page.locator('[data-notice-kind="error"]');
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("Save failed");
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-found]')).toHaveCount(0);
+  await expect(page.locator(".word-search-found-flash")).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry Restore" })).toHaveCount(0);
+
+  // DOG's cell centers must actually sit under the notice's visible rectangle for this to be a
+  // real proof — not merely an inspection of the pointer-events CSS declaration.
+  const { dogRow, dogStartCol } = data;
+  const dogCells = [0, 1, 2].map((offset) => page.locator(`[data-ws-row="${dogRow}"][data-ws-col="${dogStartCol + offset}"]`));
+  const noticeBox = await notice.boundingBox();
+  expect(noticeBox).not.toBeNull();
+  const dogBoxes = await Promise.all(dogCells.map((locator) => locator.boundingBox()));
+  for (const box of dogBoxes) {
+    expect(box).not.toBeNull();
+    const centerX = box!.x + box!.width / 2;
+    const centerY = box!.y + box!.height / 2;
+    expect(centerX).toBeGreaterThanOrEqual(noticeBox!.x);
+    expect(centerX).toBeLessThanOrEqual(noticeBox!.x + noticeBox!.width);
+    expect(centerY).toBeGreaterThanOrEqual(noticeBox!.y);
+    expect(centerY).toBeLessThanOrEqual(noticeBox!.y + noticeBox!.height);
+  }
+
+  // A real pointer drag through the visible notice rectangle must still reach the board.
+  await dragWord(page, [dogRow, dogStartCol], [dogRow, dogStartCol + 2]);
+  await expect.poll(() => state.found.has("DOG")).toBe(true);
+  await expect(page.locator(`[data-ws-row="${dogRow}"][data-ws-col="${dogStartCol}"][data-found]`)).toHaveCount(1);
+  await expect(page.locator(".word-search-found-flash-word")).toHaveText("DOG");
+  // The ordinary error clears through the existing success behavior — no click was absorbed.
+  await expect(notice).toHaveCount(0);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 10: the lifecycle notice stays stage-anchored through 2x zoom and two-axis panning — 430x932", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await authenticate(page);
+  await installRoutes(page, 20); // > 18x18 so zoom controls are enabled
+  let failedOnce = false;
+  await page.route(`**/api/puzzles/${PUZZLE_ID}/word_search`, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && !failedOnce) {
+      failedOnce = true;
+      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ valid: false, error: "Save failed" }) });
+    }
+    return route.fallback();
+  });
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  for (let i = 0; i < 4; i += 1) await zoomIn.click(); // four .25 steps reach the 2x cap
+  const viewport = page.locator(".word-search-board-viewport");
+  await expect(viewport).toHaveAttribute("data-zoomed", "true");
+
+  // CAT must still be reachable by a real pointer drag, so trigger the error at the natural
+  // (home) scroll position before panning anywhere.
+  const catBoxHome = await cellBox(page, 0, 0);
+  await dragWord(page, [0, 0], [0, 2]); // CAT — forced to fail once
+  const notice = page.locator('[data-notice-kind="error"]');
+  await expect(notice).toBeVisible();
+  await page.waitForTimeout(300); // let the notice's entrance animation settle before measuring geometry
+
+  const stageBox = await page.locator(".word-search-board-stage").boundingBox();
+  expect(stageBox).not.toBeNull();
+  const noticeBoxHome = await notice.boundingBox();
+  expect(noticeBoxHome).not.toBeNull();
+  // Contained inside the visible stage on all four sides.
+  expect(noticeBoxHome!.x).toBeGreaterThanOrEqual(stageBox!.x - 1);
+  expect(noticeBoxHome!.y).toBeGreaterThanOrEqual(stageBox!.y - 1);
+  expect(noticeBoxHome!.x + noticeBoxHome!.width).toBeLessThanOrEqual(stageBox!.x + stageBox!.width + 1);
+  expect(noticeBoxHome!.y + noticeBoxHome!.height).toBeLessThanOrEqual(stageBox!.y + stageBox!.height + 1);
+  // Horizontally centered on the stage, and anchored near its bottom edge.
+  const stageCenterX = stageBox!.x + stageBox!.width / 2;
+  expect(Math.abs((noticeBoxHome!.x + noticeBoxHome!.width / 2) - stageCenterX)).toBeLessThanOrEqual(4);
+  expect(stageBox!.y + stageBox!.height - (noticeBoxHome!.y + noticeBoxHome!.height)).toBeLessThanOrEqual(40);
+
+  // Pan to the far corner — the notice must not move, even though board content visibly does.
+  await viewport.evaluate((element) => { element.scrollLeft = element.scrollWidth; element.scrollTop = element.scrollHeight; });
+  const catBoxPanned = await cellBox(page, 0, 0);
+  expect(Math.abs(catBoxPanned.x - catBoxHome.x) + Math.abs(catBoxPanned.y - catBoxHome.y)).toBeGreaterThan(5);
+  const noticeBoxPanned = await notice.boundingBox();
+  expect(noticeBoxPanned).not.toBeNull();
+  expect(Math.abs(noticeBoxPanned!.x - noticeBoxHome!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(noticeBoxPanned!.y - noticeBoxHome!.y)).toBeLessThanOrEqual(1);
+
+  // Pan to another extreme — the notice's bounding box must remain unchanged.
+  await viewport.evaluate((element) => { element.scrollLeft = 0; element.scrollTop = element.scrollHeight; });
+  const noticeBoxOtherExtreme = await notice.boundingBox();
+  expect(noticeBoxOtherExtreme).not.toBeNull();
+  expect(Math.abs(noticeBoxOtherExtreme!.x - noticeBoxHome!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(noticeBoxOtherExtreme!.y - noticeBoxHome!.y)).toBeLessThanOrEqual(1);
+
+  expect(await notice.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
 });
 
 test("Pass 10: Daily completion shows an internal success notice with a decorative check and no board shift", async ({ page }) => {
@@ -2658,7 +2853,8 @@ test("Pass 10: Daily completion shows an internal success notice with a decorati
   await expect(notice.locator("svg")).toHaveCount(1);
   const noticeText = await notice.textContent();
   expect(noticeText).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
-  expect(await notice.evaluate((element) => getComputedStyle(element).pointerEvents)).not.toBe("none");
+  // Noninteractive lifecycle notices must never intercept pointer input meant for the board.
+  expect(await notice.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe("none");
 
   const boardAfter = await page.locator(".word-search-board").boundingBox();
   expect(Math.abs(boardBefore!.width - boardAfter!.width)).toBeLessThanOrEqual(1);
