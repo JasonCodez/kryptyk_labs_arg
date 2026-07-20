@@ -20,12 +20,14 @@ function IconWordList() {
 }
 
 export default function WordSearchWordDock({ foundCount, totalWords, selectedText, onOpenWordList, showProgress = true }: Props) {
+  const hasSelection = selectedText.length > 0;
   return (
     <section className="word-search-word-dock" aria-label="Word progress">
-      <div className="word-search-progress-strip" role="status" aria-live="polite">
+      <div className="word-search-progress-strip" role="status" aria-live="polite" data-selection-active={hasSelection || undefined}>
         <div className="word-search-selection">
-          <span className="word-search-selection-label">CURRENT SELECTION</span>
-          <span className="word-search-selected-text">{selectedText || "Drag through a word"}</span>
+          <span className="word-search-selected-text" aria-label={hasSelection ? `Current selection: ${selectedText}` : undefined}>
+            {hasSelection ? selectedText : "Drag or tap to select"}
+          </span>
         </div>
         {showProgress && (
           <span className="word-search-found-count">{foundCount} / {totalWords} found</span>

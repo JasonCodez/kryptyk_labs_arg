@@ -514,6 +514,11 @@ test("Daily: only the final word opens automatically, and completion stays gated
   expect(onSolved).toHaveBeenCalledTimes(1);
   expect(onComplete).toHaveBeenCalledTimes(1);
 
+  // Pass 5: Daily's brief internal success presentation is unaffected by the Catalog-only
+  // suppression rule — it still bridges Daily's ~700ms delay to the parent solved card.
+  expect(document.querySelector(".word-search-success")).toBeTruthy();
+  expect(screen.getByText(/All 2 words found/)).toBeTruthy();
+
   // No queued CAT modal surfaces after the final one is dismissed.
   await settlePastDefinitionReveal();
   expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull();
@@ -545,8 +550,66 @@ test("Catalog: only the final word opens automatically, and completion stays gat
   await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
   expect(onComplete).toHaveBeenCalledTimes(1);
 
+  // Pass 5: a fresh app-shell Catalog completion has no internal success banner — the parent
+  // XP/comparison/rating flow (driven by onComplete/onSolved) is the only fresh presentation.
+  expect(document.querySelector(".word-search-success")).toBeNull();
+  expect(screen.queryByText(/All 2 words found/)).toBeNull();
+  expect(screen.queryByText("Word Trove completed")).toBeNull();
+
   await settlePastDefinitionReveal();
   expect(screen.queryByRole("dialog", { name: /definition/ })).toBeNull(); // no queued CAT modal
+});
+
+test("Pass 5: a restored, already-completed app-shell Catalog puzzle shows a clean completed state, not a fresh reward flow", async () => {
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/dictionary/")) return { ok: true, json: async () => ({ found: false }) } as Response;
+    if (!init?.method) return { ok: true, json: async () => ({ foundWords: ["CAT", "DOG"], allFound: true, completionCommitted: true }) } as Response;
+    throw new Error("no submission expected for a puzzle restored as already complete");
+  });
+  global.fetch = fetchMock;
+  render(<WordSearchPuzzle puzzleId="already-complete-test" wordSearchData={DATA} displayMode="app-shell" persistenceScope="catalog" onComplete={onComplete} />);
+
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+
+  // A clean, non-emoji completed state remains visible — the app-shell is not left blank —
+  // but no fresh reward flow is triggered merely by reopening an already-solved puzzle.
+  const success = document.querySelector(".word-search-success");
+  expect(success).toBeTruthy();
+  expect(success?.textContent).toContain("Word Trove completed");
+  expect(success?.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
+  expect(screen.queryByText(/All 2 words found/)).toBeNull();
+  expect(onComplete).not.toHaveBeenCalled();
+  expect(screen.getByRole("grid")).toBeTruthy(); // still a real board, not a blank shell
+});
+
+test("Pass 5: a standalone completion still shows an internal result, unaffected by the Catalog app-shell suppression rule", async () => {
+  const onComplete = jest.fn(async () => ({ success: true }));
+  const { dictionaryRequests } = installFetchWithDictionaryTracking();
+  localStorage.setItem("wordTroveIntroSeen", "1");
+  const view = renderPuzzle({ puzzleId: "standalone-catalog-test", wordSearchData: DATA, displayMode: "standalone", persistenceScope: "catalog", onComplete });
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("playing"));
+
+  await keyboardFindCat(view); // CAT — non-final
+  await settlePastDefinitionReveal();
+
+  const board = screen.getByRole("grid");
+  fireEvent.keyDown(board, { key: "ArrowDown" }); fireEvent.keyDown(board, { key: "ArrowDown" });
+  fireEvent.keyDown(board, { key: "ArrowLeft" }); fireEvent.keyDown(board, { key: "ArrowLeft" });
+  fireEvent.keyDown(board, { key: " " }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "ArrowRight" }); fireEvent.keyDown(board, { key: "Enter" });
+
+  expect(await screen.findByRole("dialog", { name: "DOG definition" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close definition" }));
+  await waitFor(() => expect(screen.getByTestId("word-search-root").getAttribute("data-status")).toBe("won"));
+  expect(onComplete).toHaveBeenCalledTimes(1);
+
+  // Standalone has no parent app-shell reward presentation, so its own internal result must
+  // remain — the same displayMode==="app-shell" && catalog rule must not leak into standalone.
+  expect(document.querySelector(".word-search-success")).toBeTruthy();
+  expect(screen.getByText(/All 2 words found/)).toBeTruthy();
+  expect(dictionaryRequests).toContain("DOG");
 });
 
 test("rapid finds do not create a non-final definition queue", async () => {

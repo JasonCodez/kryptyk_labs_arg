@@ -23,16 +23,6 @@ describe("WordSearchWordDock", () => {
     expect(screen.queryByText("1 / 5 found")).toBeNull();
   });
 
-  it("shows the selected text", () => {
-    render(<WordSearchWordDock {...baseProps} selectedText="CAT" />);
-    expect(screen.getByText("CAT")).toBeTruthy();
-  });
-
-  it('shows "Drag through a word" when selection is empty', () => {
-    render(<WordSearchWordDock {...baseProps} selectedText="" />);
-    expect(screen.getByText("Drag through a word")).toBeTruthy();
-  });
-
   it("calls onOpenWordList when Words is clicked", () => {
     const onOpenWordList = jest.fn();
     render(<WordSearchWordDock {...baseProps} onOpenWordList={onOpenWordList} />);
@@ -59,5 +49,41 @@ describe("WordSearchWordDock", () => {
     const { container } = render(<WordSearchWordDock {...baseProps} />);
     const html = container.innerHTML;
     expect(html).not.toMatch(/#fde74c|#eab308|#fde047|gold|yellow/i);
+  });
+
+  describe("idle state", () => {
+    it("shows the idle prompt and no obsolete label", () => {
+      const { container } = render(<WordSearchWordDock {...baseProps} selectedText="" />);
+      expect(screen.getByText("Drag or tap to select")).toBeTruthy();
+      expect(screen.queryByText("CURRENT SELECTION")).toBeNull();
+      expect(container.querySelector('[data-selection-active]')).toBeNull();
+    });
+
+    it("does not announce a current selection", () => {
+      render(<WordSearchWordDock {...baseProps} selectedText="" />);
+      const status = screen.getByRole("status");
+      expect(status.textContent).not.toContain("Current selection");
+    });
+  });
+
+  describe("active state", () => {
+    it("shows the selected letters and no idle prompt or obsolete label", () => {
+      render(<WordSearchWordDock {...baseProps} selectedText="CAT" />);
+      expect(screen.getByText("CAT")).toBeTruthy();
+      expect(screen.queryByText("Drag or tap to select")).toBeNull();
+      expect(screen.queryByText("CURRENT SELECTION")).toBeNull();
+    });
+
+    it("exposes the active-selection state attribute", () => {
+      const { container } = render(<WordSearchWordDock {...baseProps} selectedText="CAT" />);
+      expect(container.querySelector('[data-selection-active="true"]')).toBeTruthy();
+    });
+
+    it("announces the current selection accessibly, without adding it to the visible text", () => {
+      render(<WordSearchWordDock {...baseProps} selectedText="CAT" />);
+      expect(screen.getByText("CAT").getAttribute("aria-label")).toBe("Current selection: CAT");
+      const status = screen.getByRole("status");
+      expect(status.textContent).not.toContain("CURRENT SELECTION");
+    });
   });
 });

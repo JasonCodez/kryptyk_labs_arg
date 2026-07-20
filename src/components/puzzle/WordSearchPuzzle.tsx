@@ -168,6 +168,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   const completionRef = useRef(false);
   const completionRecordedRef = useRef(false);
   const catalogCompletionCommittedRef = useRef(false);
+  const catalogCompletionHandoffStartedRef = useRef(false);
   const completionHandoffPendingRef = useRef(false);
   const finalDefinitionPendingRef = useRef(false);
   const solvedHandoffRef = useRef(false);
@@ -431,6 +432,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
 
   const finishCompletionHandoff = useCallback(async () => {
     if (!onComplete || completionRef.current) return;
+    if (effectiveScope === "catalog") catalogCompletionHandoffStartedRef.current = true;
     completionRef.current = true;
     setStatus("completing");
     setError("");
@@ -687,6 +689,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   }, [foundWords, placements, words]);
 
   const canZoom = size > 18;
+  const isAppShellCatalog = displayMode === "app-shell" && effectiveScope === "catalog" && !warzMode;
   const selectedBackground = (() => {
     const key = skin._key;
     if (key === "lava" || key === "skin_lava") return <LavaBackground />;
@@ -708,7 +711,8 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
 
       <div className="word-search-game-surface">
         {displayMode === "standalone" && <header className="word-search-standalone-header"><div><h2>WORD TROVE</h2><p>{foundWords.length} / {words.length} found</p></div><button type="button" onClick={() => setShowHelp(true)}>Help</button></header>}
-        {status === "won" && <div className="word-search-success" role="status">🎉 All {words.length} words found!</div>}
+        {status === "won" && !warzMode && !isAppShellCatalog && <div className="word-search-success" role="status">🎉 All {words.length} words found!</div>}
+        {status === "won" && isAppShellCatalog && !catalogCompletionHandoffStartedRef.current && <div className="word-search-success" role="status">Word Trove completed</div>}
         {status === "completing" && <div className="word-search-message" role="status">Saving completion…</div>}
         {error && <div className="word-search-error" role="alert">
           {error}

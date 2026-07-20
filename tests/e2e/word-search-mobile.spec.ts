@@ -101,6 +101,7 @@ async function installRoutes(page: Page, size: number, short = false) {
     failNextDaily: () => { failDailyOnce = true; },
     setDailyDay: (day: number) => { dailyDayNumber = day; },
     seedLegacyRepair: () => { data.words.forEach((word) => found.add(word)); repairRequired = true; catalogSolved = false; },
+    seedAlreadySolved: () => { data.words.forEach((word) => found.add(word)); repairRequired = false; catalogSolved = true; },
   };
 }
 
@@ -203,6 +204,16 @@ test("15x15 board uses nearly the full 320px width with a small edge margin", as
 test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, and hint work", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await authenticate(page); const state = await installRoutes(page, 15); await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  // Pass 5: the idle dock shows only the simplified prompt, with the obsolete label gone, and
+  // stays within the viewport.
+  await expect(page.getByText("Drag or tap to select")).toBeVisible();
+  await expect(page.getByText("CURRENT SELECTION")).toHaveCount(0);
+  const dockBox = await page.locator(".word-search-progress-strip").boundingBox();
+  expect(dockBox).not.toBeNull();
+  expect(dockBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dockBox!.x + dockBox!.width).toBeLessThanOrEqual(390 + 1);
+
   // None of these finds is the puzzle's final word (12 total), so — per Pass 3 — none of them
   // opens a definition automatically; the player continues solving without a dismissal step.
   await dragWord(page, [0, 0], [0, 2]); await expect.poll(() => state.found.has("CAT")).toBe(true);
@@ -251,6 +262,28 @@ test("catalog uses server reward authority, keeps modal outside More, restores p
   // DOG is the final word — it opens automatically, and Continue stays gated until dismissal.
   await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.size).toBe(2); await expect.poll(state.attemptSuccess).toBe(0); await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible(); await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep Searching/ }).click(); await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // no queued CAT modal appears afterward
+
+  // Pass 5: the parent reward flow (the "Continue" step above) is the only fresh-completion
+  // presentation — no duplicate internal emoji success banner appears behind or after it.
+  await expect(page.locator(".word-search-success")).toHaveCount(0);
+  await expect(page.getByText(/All 2 words found/)).toHaveCount(0);
+});
+
+test("Pass 5: reopening an already-completed Catalog puzzle shows a clean completed state, not a fresh reward modal", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true);
+  state.seedAlreadySolved();
+  await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
+
+  // A clean, non-emoji completed state is visible — the app-shell is not left blank.
+  await expect(page.getByText("Word Trove completed")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(page.getByText(/All 2 words found/)).toHaveCount(0);
+
+  // No fresh reward modal launches from merely reopening an already-solved puzzle.
+  await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
+  expect(state.attemptSuccess()).toBe(0);
 });
 
 test("failed daily completion keeps the board and retry records completion once more", async ({ page }) => {
@@ -371,11 +404,13 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
   await expect(page.getByRole("grid")).toBeVisible();
   await expect(page.getByTestId("word-search-root")).toHaveAttribute("data-status", "playing");
 
-  // Final word (DOG) — the normal Warz result transition must occur, with no modal over it.
+  // Final word (DOG) — the normal Warz result transition must occur, with no modal over it, and
+  // no internal Word Search success banner behind that transition.
   await dragWord(page, [1, 0], [1, 2]);
   await expect(page.getByText("Posting your challenge…")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("heading", { name: "Challenge Posted!" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+  await expect(page.locator(".word-search-success")).toHaveCount(0);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(overflow).toBe(false);
@@ -571,6 +606,13 @@ test("two-tap cancellation: a repeated tap on the same cell cancels the anchor w
   const tap = (row: number, col: number) => page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`).click();
   const cell = (row: number, col: number) => page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`);
 
+  // ── Pass 5: the dock's idle prompt, captured before any selection starts, for later
+  // layout-stability comparison. ──
+  await expect(page.getByText("Drag or tap to select")).toBeVisible();
+  const dockStrip = page.locator(".word-search-progress-strip");
+  const idleDockBox = await dockStrip.boundingBox();
+  expect(idleDockBox).not.toBeNull();
+
   // ── First tap: a distinct, announced tap-anchor, not an ordinary one-cell drag selection. ──
   await tap(0, 0);
   await expect(page.locator("[data-selected]")).toHaveCount(1);
@@ -603,12 +645,31 @@ test("two-tap cancellation: a repeated tap on the same cell cancels the anchor w
   expect(anchorStyle.beforeWidth).toBeGreaterThan(0);
   expect(anchorStyle.beforeHeight).toBeGreaterThan(0);
 
+  // Pass 5: the dock now shows the selected letter in place of the idle prompt, with the
+  // active-selection state present and no layout shift disturbing cached board geometry. The
+  // "current selection" wording is exposed only via aria-label, never in the visible text.
+  await expect(page.locator(".word-search-selected-text")).toHaveText("C");
+  await expect(page.locator(".word-search-selected-text")).toHaveAttribute("aria-label", "Current selection: C");
+  await expect(page.getByText("Drag or tap to select")).toHaveCount(0);
+  await expect(page.getByText("CURRENT SELECTION")).toHaveCount(0);
+  await expect(dockStrip).toHaveAttribute("data-selection-active", "true");
+  const activeDockBox = await dockStrip.boundingBox();
+  expect(activeDockBox).not.toBeNull();
+  expect(Math.abs(activeDockBox!.height - idleDockBox!.height)).toBeLessThanOrEqual(1);
+
   // ── Same-cell cancellation ──
   await tap(0, 0); // second tap on the same anchor cell cancels it
   await expect(page.locator("[data-selected]")).toHaveCount(0);
   await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
   expect(state.found.has("CAT")).toBe(false);
   expect(state.submissions).toHaveLength(0); // no network submission from the cancellation itself
+
+  // The idle prompt returns, and the dock stays the same measured height.
+  await expect(page.getByText("Drag or tap to select")).toBeVisible();
+  await expect(dockStrip).not.toHaveAttribute("data-selection-active", "true");
+  const idleAgainDockBox = await dockStrip.boundingBox();
+  expect(idleAgainDockBox).not.toBeNull();
+  expect(Math.abs(idleAgainDockBox!.height - idleDockBox!.height)).toBeLessThanOrEqual(1);
 
   // ── Fresh anchor: a different cell afterward starts a brand-new anchor, and the cancelled
   // (0,0) anchor never returns — if it were still live, tapping (0,2) next would complete CAT's

@@ -107,10 +107,10 @@
 .word-search-trail polyline { fill: none; stroke: var(--ps-board-border, #818cf8); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
 
 .word-search-word-dock { grid-area: dock; display: flex; align-items: stretch; gap: 8px; min-width: 0; }
-.word-search-progress-strip { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; min-height: 46px; padding: 6px 10px; border: 1px solid var(--pw-border-default); border-radius: 11px; background: var(--pw-surface-2); font-size: .78rem; font-weight: 700; }
-.word-search-selection { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
-.word-search-selection-label { font-size: .62rem; font-weight: 700; letter-spacing: .08em; color: var(--pw-text-secondary); }
-.word-search-selected-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pw-text-primary); letter-spacing: .04em; }
+.word-search-progress-strip { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; min-height: 46px; padding: 6px 10px; border: 1px solid var(--pw-border-default); border-radius: 11px; background: var(--pw-surface-2); font-size: .78rem; }
+.word-search-selection { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; gap: 1px; }
+.word-search-selected-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pw-text-secondary); font-weight: 600; letter-spacing: normal; }
+.word-search-progress-strip[data-selection-active] .word-search-selected-text { color: var(--pw-text-primary); font-weight: 800; letter-spacing: .04em; }
 .word-search-found-count { flex-shrink: 0; white-space: nowrap; font-size: .68rem; font-weight: 600; color: var(--pw-text-secondary); }
 .word-search-zoom-controls button { min-height: 44px; min-width: 44px; border: 1px solid rgba(129,140,248,.55); border-radius: 11px; background: rgba(30,41,59,.94); color: #fff; font-weight: 800; }
 .word-search-list-button {
