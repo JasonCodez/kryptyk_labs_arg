@@ -73,6 +73,8 @@ describe("HomeClient", () => {
     await renderHome();
 
     const hero = document.querySelector('a[href="/daily"]')!;
-    expect(hero.textContent).toContain("Play Now");
+    // Pass 3: Daily hero CTA copy is now state-driven ("Start Daily Run" /
+    // "Continue Daily Run" / "View Results") rather than the old "Play Now".
+    expect(hero.textContent).toContain("Start Daily Run");
   });
 });

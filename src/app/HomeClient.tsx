@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
+import { Sparkles, CalendarDays, LayoutGrid, Swords } from "lucide-react";
 import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 import PressableCard from "@/components/ui/PressableCard";
 import PageContainer from "@/components/ui/PageContainer";
@@ -13,30 +14,39 @@ import DailyPuzzleHeroCard from "@/components/home/DailyPuzzleHeroCard";
 // catalog = primary (general play), Warz = accent (the one "featured" slot).
 const FEATURES = [
   {
-    icon: "🗓️",
-    title: "More Daily Puzzles",
+    Icon: CalendarDays,
     accent: "secondary" as const,
+    title: "More Daily Puzzles",
     body: "Sudoku, Crossword, Word Trove, and Jigsaw — a fresh set every day.",
     href: "/daily",
     cta: "View Daily Puzzles",
   },
   {
-    icon: "🧩",
-    title: "Full Catalog",
+    Icon: LayoutGrid,
     accent: "primary" as const,
+    title: "Full Catalog",
     body: "Crosswords, Word Troves, jigsaws, anagrams, detective cases, and more.",
     href: "/puzzles",
     cta: "Open Catalog",
   },
   {
-    icon: "⚔",
-    title: "Warz Battles",
+    Icon: Swords,
     accent: "accent" as const,
+    title: "Warz Battles",
     body: "Head-to-head puzzle battles. Same puzzle, ranked pressure.",
     href: "warz-cta",
     cta: "Enter Warz",
   },
 ];
+
+// Maps the existing semantic accent roles onto the brand token each one
+// already represents (see globals.css), so per-feature icon tiles reinforce
+// the same blue/gold/orange coding the card border + glow already use.
+const ACCENT_TOKEN: Record<(typeof FEATURES)[number]["accent"], string> = {
+  primary: "var(--pw-brand-primary)",
+  secondary: "var(--pw-brand-secondary)",
+  accent: "var(--pw-brand-accent)",
+};
 
 export default function HomeClient() {
   const { data: session } = useSession();
@@ -46,14 +56,33 @@ export default function HomeClient() {
   return (
     <main
       style={{
-        backgroundColor: "var(--pw-bg-base)",
+        // Restrained layered background: base surface plus one subtle blue glow
+        // (general play) near the top and one faint gold glow (Daily/reward
+        // territory) offset to the side — no raw hex, no animation.
+        background:
+          "radial-gradient(900px 520px at 18% -12%, color-mix(in srgb, var(--pw-brand-primary) 12%, transparent), transparent 60%), radial-gradient(680px 420px at 88% 10%, color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent), transparent 55%), var(--pw-bg-base)",
         minHeight: "100vh",
         paddingTop: "calc(56px + env(safe-area-inset-top, 0px))",
         fontFamily: "system-ui, -apple-system, sans-serif",
       }}
     >
-      {/* ── Hero: Continue Playing (if active) then Daily Puzzle ── */}
+      {/* ── Hero: Introduction, Continue Playing (if active), then Daily Puzzle ── */}
       <PageContainer as="section" size="reading" className="pt-6 pb-2" data-testid="home-hero-container">
+        <div data-testid="home-intro" className="mb-6">
+          <p
+            className="inline-flex items-center gap-1.5 text-xs font-bold tracking-widest mb-3"
+            style={{ color: "var(--pw-brand-primary)" }}
+          >
+            <Sparkles aria-hidden="true" size={14} strokeWidth={2.5} />
+            CLASSIC PUZZLES. MODERN COMPETITION.
+          </p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight mb-3" style={{ color: "var(--pw-text-primary)" }}>
+            Classic puzzles. Built to compete.
+          </h1>
+          <p className="text-base leading-relaxed max-w-[34rem]" style={{ color: "var(--pw-text-secondary)" }}>
+            Play the daily set, build your streak, explore the full catalog, and challenge other players in Warz.
+          </p>
+        </div>
         <div className="flex flex-col gap-4">
           <ContinuePlayingCard />
           <DailyPuzzleHeroCard />
@@ -62,7 +91,18 @@ export default function HomeClient() {
 
       {/* ── Feature strip ── */}
       <PageContainer as="section" size="content" className="py-10" data-testid="home-feature-container">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="mb-6">
+          <p className="text-xs font-bold tracking-widest mb-2" style={{ color: "var(--pw-text-muted)" }}>
+            CHOOSE YOUR NEXT MOVE
+          </p>
+          <h2 className="text-2xl font-extrabold mb-1.5" style={{ color: "var(--pw-text-primary)" }}>
+            More ways to play
+          </h2>
+          <p className="text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+            Keep the streak going, browse the classics, or raise the stakes.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="home-feature-grid">
           {FEATURES.map((feature, index) => (
             <motion.div
               key={feature.title}
@@ -72,7 +112,12 @@ export default function HomeClient() {
               transition={{ type: "spring", stiffness: 380, damping: 30, delay: reduceMotion ? 0 : index * 0.08 }}
             >
               <PressableCard href={feature.href === "warz-cta" ? competeHref : feature.href} accent={feature.accent} padding="md">
-                <span className="text-2xl block mb-2">{feature.icon}</span>
+                <div
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-xl mb-3"
+                  style={{ background: `color-mix(in srgb, ${ACCENT_TOKEN[feature.accent]} 16%, transparent)` }}
+                >
+                  <feature.Icon aria-hidden="true" size={20} strokeWidth={2.25} style={{ color: ACCENT_TOKEN[feature.accent] }} />
+                </div>
                 <h3 className="text-base font-extrabold mb-1.5" style={{ color: "var(--pw-text-primary)" }}>{feature.title}</h3>
                 <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--pw-text-secondary)" }}>{feature.body}</p>
                 <span className="text-sm font-bold" style={{ color: "var(--pw-text-primary)" }}>

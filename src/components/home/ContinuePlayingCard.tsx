@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
+import { Play, ArrowRight } from "lucide-react";
 import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 import PressableCard from "@/components/ui/PressableCard";
 
@@ -14,6 +15,8 @@ interface ActivePuzzle {
   completionPercentage: number;
   attempts: number;
 }
+
+const clampProgress = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
 /**
  * The primary home-screen hero when a signed-in player has a puzzle in progress.
@@ -43,53 +46,62 @@ export default function ContinuePlayingCard() {
   if (loading) {
     return (
       <div
-        className="rounded-[20px] animate-pulse"
-        style={{ height: 112, background: "var(--pw-surface-1)", border: "1px solid var(--pw-border-subtle)" }}
+        data-testid="home-continue-skeleton"
+        role="status"
+        aria-label="Checking for a puzzle in progress…"
+        className={`rounded-[20px]${reduceMotion ? "" : " animate-pulse"}`}
+        style={{ height: 136, background: "var(--pw-surface-1)", border: "1px solid var(--pw-border-subtle)" }}
       />
     );
   }
 
   if (!puzzle) return null;
 
+  const progress = clampProgress(puzzle.completionPercentage);
+
   return (
     <motion.div
       initial={reduceMotion ? undefined : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 32 }}
+      data-testid="home-continue-card"
     >
       <PressableCard href={`/puzzles/${puzzle.id}`} accent="primary" padding="md">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "var(--pw-brand-primary)" }}>
-              ▶ Continue Playing
-            </p>
-            <h3 className="text-lg font-extrabold truncate" style={{ color: "var(--pw-text-primary)" }}>
-              {puzzle.title}
-            </h3>
-            <p className="text-sm mt-0.5" style={{ color: "var(--pw-text-secondary)" }}>
-              {puzzle.category?.name ?? "Puzzle"} &middot; {puzzle.difficulty}
-            </p>
-          </div>
-          <div
-            className="shrink-0 px-4 py-2 rounded-xl text-sm font-bold shadow-skeu-pill"
-            style={{ background: "var(--pw-brand-primary)", color: "var(--pw-text-on-primary)" }}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide" style={{ color: "var(--pw-brand-primary)" }}>
+            <Play aria-hidden="true" size={14} strokeWidth={2.5} />
+            Continue Playing
+          </p>
+          <span
+            className="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold tabular-nums"
+            style={{ background: "color-mix(in srgb, var(--pw-brand-primary) 16%, transparent)", color: "var(--pw-brand-primary)" }}
           >
-            Resume
-          </div>
+            {progress}%
+          </span>
         </div>
+
+        <h3 className="text-lg font-extrabold leading-snug mb-1" style={{ color: "var(--pw-text-primary)" }}>
+          {puzzle.title}
+        </h3>
+        <p className="text-sm mb-3" style={{ color: "var(--pw-text-secondary)" }}>
+          {puzzle.category?.name ?? "Puzzle"} &middot; {puzzle.difficulty}
+        </p>
+
         <div
-          className="mt-4 h-1.5 w-full rounded-full overflow-hidden"
+          className="h-1.5 w-full rounded-full overflow-hidden"
           role="progressbar"
           aria-label="Puzzle progress"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={Math.min(100, Math.round(puzzle.completionPercentage))}
+          aria-valuenow={progress}
           style={{ background: "color-mix(in srgb, var(--pw-brand-primary) 14%, transparent)" }}
         >
-          <div
-            className="h-full rounded-full"
-            style={{ width: `${Math.min(100, Math.round(puzzle.completionPercentage))}%`, background: "var(--pw-brand-primary)" }}
-          />
+          <div className="h-full rounded-full" style={{ width: `${progress}%`, background: "var(--pw-brand-primary)" }} />
+        </div>
+
+        <div className="mt-3 flex items-center gap-1.5 text-sm font-bold" style={{ color: "var(--pw-text-primary)" }}>
+          Resume puzzle
+          <ArrowRight aria-hidden="true" size={15} strokeWidth={2.5} />
         </div>
       </PressableCard>
     </motion.div>
