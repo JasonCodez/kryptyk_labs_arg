@@ -273,7 +273,7 @@ test("Daily completion is recorded once after the celebration, and waits for Con
 
   // The completion footer appears once the celebration (frame + clean image + temporary
   // reward card) has finished — but the final parent handoff must NOT happen automatically.
-  const continueButton = page.getByRole("button", { name: "Continue" });
+  const continueButton = page.getByRole("button", { name: "Claim Rewards" });
   await expect(continueButton).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Puzzle complete" })).toBeVisible();
   await expect(page.getByText("Solved for today!")).toHaveCount(0);
@@ -294,7 +294,7 @@ test("failed Daily completion survives reload and retries only completion", asyn
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Retry Completion" }).click();
-  const continueButton = page.getByRole("button", { name: "Continue" });
+  const continueButton = page.getByRole("button", { name: "Claim Rewards" });
   await expect(continueButton).toBeVisible({ timeout: 10_000 });
   await continueButton.click();
   await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 10_000 });
@@ -311,7 +311,7 @@ test("Catalog sends attempt_success once and delays its result UI until Continue
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "playing");
   await dragEachTrayPieceToItsSlot(page, 2, 2);
 
-  const continueButton = page.getByRole("button", { name: "Continue" });
+  const continueButton = page.getByRole("button", { name: "Claim Rewards" });
   await expect(continueButton).toBeVisible({ timeout: 15_000 });
   expect(fixture.attempts()).toBe(1);
   // The rating/completion modal handoff has not happened yet — still waiting on Continue.
@@ -342,7 +342,7 @@ test("Completion reaches a stable framed layout with the clean image before the 
   await expect(board).toHaveAttribute("data-completed-image", "true", { timeout: 15_000 });
 
   // Footer appears in non-Warz mode, and the final handoff has not happened yet.
-  const continueButton = page.getByRole("button", { name: "Continue" });
+  const continueButton = page.getByRole("button", { name: "Claim Rewards" });
   await expect(continueButton).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Puzzle complete" })).toBeVisible();
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "completing");
@@ -367,7 +367,7 @@ test("Completion reaches a stable framed layout with the clean image before the 
 
   await continueButton.click();
   // Continue disables/relabels itself while the handoff is in flight.
-  await expect(page.getByRole("button", { name: "Continuing…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Claiming Rewards…" })).toBeVisible();
 
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-status", "won", { timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Puzzle Complete!" })).toBeVisible({ timeout: 10_000 });
@@ -390,7 +390,7 @@ test("Warz completes automatically with no completion footer and no wait for Con
 
   // Warz's own automatic "submitting result" UI appears without any Continue interaction.
   await expect(page.getByText(/Solved in .*! Submitting result/)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "Continue" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Claim Rewards" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Puzzle complete" })).toHaveCount(0);
 });
 
@@ -420,7 +420,7 @@ test("320px: no living-photo duplication in the framed completion state, and the
 
   // Jigsaw's own completion footer appears — by this point the living-photo reveal (and its
   // fade-out) has fully finished.
-  const jigsawContinue = page.getByRole("button", { name: "Continue" });
+  const jigsawContinue = page.getByRole("button", { name: "Claim Rewards" });
   await expect(jigsawContinue).toBeVisible({ timeout: 15_000 });
 
   const canvasBox = await board.boundingBox();

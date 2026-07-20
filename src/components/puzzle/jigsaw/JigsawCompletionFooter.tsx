@@ -29,7 +29,7 @@ export default function JigsawCompletionFooter({ continuing, onContinue }: Jigsa
         onClick={handleContinueClick}
         disabled={continuing}
       >
-        {continuing ? "Continuing…" : "Continue"}
+        {continuing ? "Claiming Rewards…" : "Claim Rewards"}
       </button>
     </section>
   );

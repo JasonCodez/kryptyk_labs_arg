@@ -17,27 +17,27 @@ describe("JigsawCompletionFooter", () => {
     expect(heading?.textContent).toBe("Puzzle complete");
   });
 
-  it("renders the Continue button", () => {
+  it("renders the Claim Rewards button", () => {
     render(<JigsawCompletionFooter continuing={false} onContinue={jest.fn()} />);
-    expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Claim Rewards" })).toBeTruthy();
   });
 
-  it("gives the Continue button the accessible name 'Continue'", () => {
+  it("gives the button the accessible name 'Claim Rewards'", () => {
     render(<JigsawCompletionFooter continuing={false} onContinue={jest.fn()} />);
-    const button = screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
-    expect(button.textContent).toBe("Continue");
+    const button = screen.getByRole("button", { name: "Claim Rewards" }) as HTMLButtonElement;
+    expect(button.textContent).toBe("Claim Rewards");
   });
 
   it("calls onContinue once when activated", () => {
     const onContinue = jest.fn();
     render(<JigsawCompletionFooter continuing={false} onContinue={onContinue} />);
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Claim Rewards" }));
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
 
   it("supports keyboard activation (a real, focusable, non-disabled button element)", () => {
     render(<JigsawCompletionFooter continuing={false} onContinue={jest.fn()} />);
-    const button = screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: "Claim Rewards" }) as HTMLButtonElement;
     button.focus();
     expect(document.activeElement).toBe(button);
     expect(button.tagName).toBe("BUTTON");
@@ -46,28 +46,28 @@ describe("JigsawCompletionFooter", () => {
     expect(button.disabled).toBe(false);
   });
 
-  it("shows 'Continuing…' when continuing is true", () => {
+  it("shows 'Claiming Rewards…' when continuing is true", () => {
     render(<JigsawCompletionFooter continuing onContinue={jest.fn()} />);
-    expect(screen.getByText("Continuing…")).toBeTruthy();
+    expect(screen.getByText("Claiming Rewards…")).toBeTruthy();
   });
 
   it("disables the button when continuing", () => {
     render(<JigsawCompletionFooter continuing onContinue={jest.fn()} />);
-    const button = screen.getByRole("button", { name: "Continuing…" }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: "Claiming Rewards…" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
   });
 
   it("does not call the callback while continuing", () => {
     const onContinue = jest.fn();
     render(<JigsawCompletionFooter continuing onContinue={onContinue} />);
-    fireEvent.click(screen.getByRole("button", { name: "Continuing…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Claiming Rewards…" }));
     expect(onContinue).not.toHaveBeenCalled();
   });
 
   it("prevents a rapid double activation from firing onContinue twice", () => {
     const onContinue = jest.fn();
     render(<JigsawCompletionFooter continuing={false} onContinue={onContinue} />);
-    const button = screen.getByRole("button", { name: "Continue" });
+    const button = screen.getByRole("button", { name: "Claim Rewards" });
     fireEvent.click(button);
     fireEvent.click(button);
     expect(onContinue).toHaveBeenCalledTimes(1);
