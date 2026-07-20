@@ -667,7 +667,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     if (event.key === "Escape") { event.preventDefault(); cancelSelection(); return; }
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault();
-      if (!keyboardSelectingRef.current) { keyboardSelectingRef.current = true; dragStartRef.current = activeCellRef.current; setSelection([activeCellRef.current]); }
+      if (!keyboardSelectingRef.current) { tapStartRef.current = null; setTapAnchor(null); keyboardSelectingRef.current = true; dragStartRef.current = activeCellRef.current; setSelection([activeCellRef.current]); }
       else { const cells = selectionRef.current; keyboardSelectingRef.current = false; dragStartRef.current = null; setSelection([]); void submitSelection(cells); }
       return;
     }
@@ -752,7 +752,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                       data-tap-anchor={isTapAnchor || undefined}
                       tabIndex={active ? 0 : -1}
                       aria-selected={selected}
-                      aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}, letter ${letter}${found ? ", found word" : isTapAnchor ? ", start selected; tap another letter to finish" : ""}`}
+                      aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}, letter ${letter}${found ? ", found word" : ""}${isTapAnchor ? ", start selected; tap another letter to finish" : ""}`}
                       className="word-search-cell"
                       onFocus={() => { activeCellRef.current = cell; setActiveCell(cell); }}
                       animate={reduceMotion ? undefined : { scale: poppingCells.has(key) ? [1, 1.25, 1] : selected ? 1.08 : 1 }}

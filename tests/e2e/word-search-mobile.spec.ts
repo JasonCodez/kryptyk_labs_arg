@@ -635,6 +635,72 @@ test("two-tap cancellation: a repeated tap on the same cell cancels the anchor w
   await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
 });
 
+test("keyboard selection clears a stale pointer tap-anchor: Space after a tap replaces it with keyboard selection", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  // A pointer tap leaves a live anchor at (0,0).
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click();
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(1);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"]')).toHaveAttribute("data-tap-anchor", "true");
+  await expect(page.locator("[data-selected]")).toHaveCount(1);
+
+  // Starting keyboard selection must supersede that stale anchor, not layer on top of it.
+  const board = page.getByRole("grid");
+  await board.focus();
+  await page.keyboard.press("Space");
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
+  await expect(page.locator("[data-selected]")).toHaveCount(1);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-selected]')).toHaveCount(1);
+
+  // Keyboard selection still extends normally, and no anchor marker resurfaces while doing so.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("[data-selected]")).toHaveCount(2);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
+  expect(state.submissions).toHaveLength(0);
+});
+
+test("found cell tap-anchor: a found cell can become a new anchor and its label announces both states", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1);
+  // CAT is non-final in this fixture — Pass 3 keeps non-final finds opt-in, no auto modal.
+  await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
+
+  const anchor = page.locator('[data-ws-row="0"][data-ws-col="0"]');
+  await expect(anchor).toHaveAttribute("data-found", "true");
+
+  await anchor.click();
+  await expect(anchor).toHaveAttribute("data-found", "true");
+  await expect(anchor).toHaveAttribute("data-tap-anchor", "true");
+  await expect(anchor).toHaveAttribute("data-selected", "true");
+  await expect(anchor).toHaveAttribute("aria-selected", "true");
+  const label = await anchor.getAttribute("aria-label");
+  expect(label).toContain("found word");
+  expect(label).toContain("start selected");
+  expect(label).toContain("tap another letter to finish");
+
+  const submissionsBeforeCancel = state.submissions.length;
+  await anchor.click(); // same-cell cancellation
+  await expect(anchor).not.toHaveAttribute("data-tap-anchor", "true");
+  await expect(anchor).not.toHaveAttribute("data-selected", "true");
+  await expect(anchor).toHaveAttribute("data-found", "true"); // found state survives the cancellation
+  expect(state.submissions).toHaveLength(submissionsBeforeCancel); // no network call from cancellation
+});
+
 test("legacy catalog mismatch repairs in place without generic attempt_success", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 850 });
   await authenticate(page);
