@@ -247,7 +247,28 @@ test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, 
 test("catalog uses server reward authority, keeps modal outside More, restores progress, and has desktop panel", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 }); await authenticate(page); const state = await installRoutes(page, 10, true); await page.goto(`/puzzles/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 }); await expect(page.locator(".word-search-desktop-list")).toBeVisible(); await expect(page.locator(".word-search-list-button")).toBeHidden();
+
+  // Pass 6: the board remains the primary visual surface — visibly wider than the desktop word
+  // panel, with a real depth treatment (not a flat, borderless rectangle).
+  const boardBoxDesktop = await page.locator(".word-search-board").boundingBox();
+  const listBoxDesktop = await page.locator(".word-search-desktop-list").boundingBox();
+  expect(boardBoxDesktop).not.toBeNull(); expect(listBoxDesktop).not.toBeNull();
+  expect(boardBoxDesktop!.width).toBeGreaterThan(listBoxDesktop!.width);
+  const boardShadowDesktop = await page.locator(".word-search-board").evaluate((element) => getComputedStyle(element).boxShadow);
+  expect(boardShadowDesktop).not.toBe("none");
+
   await page.getByRole("grid").focus(); await page.keyboard.press("w"); await expect(page.locator(".word-search-desktop-list")).toBeFocused(); await expect(page.getByRole("dialog", { name: "Words to find" })).toHaveCount(0); await page.keyboard.press("Escape"); await expect(page.locator('.word-search-cell[data-active="true"]')).toBeFocused();
+  // Focus-visible remains clear on the active cell (a solid, non-dashed outline).
+  const focusOutline = await page.locator('.word-search-cell[data-active="true"]').evaluate((element) => getComputedStyle(element).outlineStyle);
+  expect(focusOutline).toBe("solid");
+
+  // No layout shift while a selection is active — the board keeps the same position/size.
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click();
+  const boardBoxDuringSelection = await page.locator(".word-search-board").boundingBox();
+  expect(boardBoxDuringSelection).not.toBeNull();
+  expect(Math.abs(boardBoxDuringSelection!.width - boardBoxDesktop!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(boardBoxDuringSelection!.height - boardBoxDesktop!.height)).toBeLessThanOrEqual(1);
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click(); // cancel the anchor before continuing
   await page.getByRole("button", { name: "More puzzle actions" }).click(); await page.getByRole("menuitem", { name: "Report Bug" }).click(); await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeVisible(); await expect(page.getByRole("menu")).toHaveCount(0); await page.keyboard.press("Escape");
 
   // CAT is non-final (the fixture has 2 words) — it stays opt-in, not automatic.
@@ -388,6 +409,16 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.getByTestId("word-search-root")).toBeVisible();
   await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
+
+  // Pass 6: the polished board/tile treatment applies in Warz too, and everything still fits.
+  const boardBox = await page.locator(".word-search-board").boundingBox();
+  expect(boardBox).not.toBeNull();
+  const idleStyle = await page.locator('[data-ws-row="5"][data-ws-col="5"]').evaluate((element) => getComputedStyle(element).boxShadow);
+  expect(idleStyle).not.toBe("none");
+  {
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    expect(overflow).toBe(false);
+  }
 
   // Non-final word (CAT) — found via two-tap selection, proving the anchor affordance and Warz
   // timing/transitions both work through that pathway, not just drag.
@@ -754,12 +785,310 @@ test("found cell tap-anchor: a found cell can become a new anchor and its label 
   expect(label).toContain("start selected");
   expect(label).toContain("tap another letter to finish");
 
+  // Pass 6: the found color, the dashed anchor ring, and the corner diamond all remain
+  // simultaneously visible — the anchor state must not blank out the found styling.
+  const anchorStyle = await anchor.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    const before = getComputedStyle(element, "::before");
+    return {
+      background: computed.backgroundColor,
+      outlineStyle: computed.outlineStyle,
+      beforeContent: before.content,
+      beforeWidth: parseFloat(before.width),
+    };
+  });
+  expect(anchorStyle.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(anchorStyle.outlineStyle).toBe("dashed");
+  expect(anchorStyle.beforeContent).not.toBe("none");
+  expect(anchorStyle.beforeWidth).toBeGreaterThan(0);
+  await expect(anchor).toContainText("C"); // the letter stays unobscured
+
   const submissionsBeforeCancel = state.submissions.length;
   await anchor.click(); // same-cell cancellation
   await expect(anchor).not.toHaveAttribute("data-tap-anchor", "true");
   await expect(anchor).not.toHaveAttribute("data-selected", "true");
   await expect(anchor).toHaveAttribute("data-found", "true"); // found state survives the cancellation
   expect(state.submissions).toHaveLength(submissionsBeforeCancel); // no network call from cancellation
+
+  // The settled found appearance (background, no dashed anchor ring) is restored, not a blank
+  // tile. The cell remains the last-touched keyboard-active cell, so a solid focus outline is
+  // expected here — only the dashed anchor ring must be gone.
+  const settledStyle = await anchor.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { background: computed.backgroundColor, outlineStyle: computed.outlineStyle };
+  });
+  expect(settledStyle.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(settledStyle.outlineStyle).not.toBe("dashed");
+});
+
+// ── Pass 6: board-first mobile visual polish — CSS-only depth/hierarchy coverage ───────────
+
+test("Pass 6: board prominence — the board dominates the 390x844 viewport with a visible depth treatment", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const board = page.locator(".word-search-board");
+  const viewport = page.locator(".word-search-board-viewport");
+  const boardBox = await board.boundingBox();
+  const viewportBox = await viewport.boundingBox();
+  expect(boardBox).not.toBeNull();
+  expect(viewportBox).not.toBeNull();
+
+  // Horizontally centered within a reasonable tolerance, fully inside the viewport, and using
+  // most of the available safe width (approximately 6-12px of side breathing room).
+  const leftMargin = boardBox!.x - viewportBox!.x;
+  const rightMargin = (viewportBox!.x + viewportBox!.width) - (boardBox!.x + boardBox!.width);
+  expect(Math.abs(leftMargin - rightMargin)).toBeLessThanOrEqual(6);
+  expect(boardBox!.x).toBeGreaterThanOrEqual(0);
+  expect(boardBox!.x + boardBox!.width).toBeLessThanOrEqual(390 + 1);
+  expect(boardBox!.width).toBeGreaterThanOrEqual(280);
+
+  // The board reads as visually wider than the status strip's text region and the Hint button.
+  const selectedTextBox = await page.locator(".word-search-selected-text").boundingBox();
+  const hintBox = await page.locator(".word-search-hint-button").boundingBox();
+  expect(selectedTextBox).not.toBeNull();
+  expect(hintBox).not.toBeNull();
+  expect(boardBox!.width).toBeGreaterThan(selectedTextBox!.width);
+  expect(boardBox!.width).toBeGreaterThan(hintBox!.width);
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+  const dimensions = await page.evaluate(() => ({ height: innerHeight, docHeight: document.documentElement.scrollHeight }));
+  expect(dimensions.docHeight).toBeLessThanOrEqual(dimensions.height + 1);
+
+  // Non-transparent surface treatments and a visible, non-layout-affecting depth treatment.
+  const styles = await page.evaluate(() => {
+    const boardEl = document.querySelector(".word-search-board")!;
+    const viewportEl = document.querySelector(".word-search-board-viewport")!;
+    return {
+      boardBackground: getComputedStyle(boardEl).backgroundColor,
+      boardBoxShadow: getComputedStyle(boardEl).boxShadow,
+      viewportBoxShadow: getComputedStyle(viewportEl).boxShadow,
+    };
+  });
+  expect(styles.boardBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(styles.boardBoxShadow).not.toBe("none");
+  expect(styles.viewportBoxShadow).not.toBe("none");
+});
+
+test("Pass 6: idle tile depth — an unfound, unselected tile has visible background, border, and depth", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const tile = page.locator('[data-ws-row="8"][data-ws-col="8"]'); // far from every placed word
+  await expect(tile).toBeVisible();
+  await expect(tile).toHaveText("X");
+  const styles = await tile.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { background: computed.backgroundColor, borderStyle: computed.borderStyle, borderColor: computed.borderColor, boxShadow: computed.boxShadow };
+  });
+  expect(styles.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(styles.borderStyle).toBe("solid");
+  expect(styles.borderColor).not.toBe("rgba(0, 0, 0, 0)");
+  expect(styles.boxShadow).not.toBe("none");
+
+  // The dynamic cell-size contract is unchanged — the tile is still a positive-size square.
+  const box = await tile.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(0);
+  expect(Math.abs(box!.width - box!.height)).toBeLessThanOrEqual(1);
+});
+
+test("Pass 6: state hierarchy — idle, keyboard-active, pointer-selected, tap-anchor, found, and hinted styles are all distinct", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 10, true); // short fixture: CAT + DOG only, deterministic hint target
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const readState = (row: number, col: number) => page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`).evaluate((element) => {
+    const computed = getComputedStyle(element);
+    const before = getComputedStyle(element, "::before");
+    const after = getComputedStyle(element, "::after");
+    return { outlineStyle: computed.outlineStyle, background: computed.backgroundColor, beforeContent: before.content, afterContent: after.content };
+  });
+
+  // Idle tile: no outline.
+  const idle = await readState(8, 8);
+  expect(idle.outlineStyle).toBe("none");
+
+  // Keyboard-active cell: a solid focus ring, never dashed like the tap-anchor ring.
+  await page.getByRole("grid").focus();
+  const active = await readState(0, 0);
+  expect(active.outlineStyle).toBe("solid");
+
+  // Pointer-selected cell: a real in-progress drag, with no tap-anchor corner marker.
+  const start = await cellBox(page, 0, 0);
+  const mid = await cellBox(page, 0, 1);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(mid).x, cellCenter(mid).y, { steps: 4 });
+  await expect.poll(() => selectedCellCount(page)).toBeGreaterThan(0);
+  const selected = await readState(0, 0);
+  expect(selected.beforeContent).toBe("none");
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-tap-anchor]')).toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+
+  // Tap anchor: dashed outline and a visible corner-diamond marker.
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click();
+  const anchor = await readState(0, 0);
+  expect(anchor.outlineStyle).toBe("dashed");
+  expect(anchor.beforeContent).not.toBe("none");
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click(); // cancel
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
+
+  // Found CAT: differs from the active-drag selection background, letter stays visible.
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const found = await readState(0, 0);
+  expect(found.background).not.toBe(selected.background);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"]')).toContainText("C");
+
+  // Hinted DOG (the only remaining candidate — deterministic in this 2-word fixture): the
+  // internal dashed ::after marker stays visible without obscuring the letter.
+  await page.getByRole("button", { name: /Hint/ }).click();
+  await expect.poll(() => state.found.has("DOG")).toBe(true);
+  const hinted = await readState(1, 0);
+  expect(hinted.afterContent).not.toBe("none");
+  await expect(page.locator('[data-ws-row="1"][data-ws-col="0"]')).toContainText("G");
+});
+
+test("Pass 6: lower control cohesion at 390x844 — consistent radii, stable dock height, and an emphasized Hint", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await expect(page.getByText("Drag or tap to select")).toBeVisible();
+  const dock = page.locator(".word-search-progress-strip");
+  const idleDockBox = await dock.boundingBox();
+
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click();
+  await expect(page.locator(".word-search-selected-text")).toHaveText("C");
+  const activeDockBox = await dock.boundingBox();
+  expect(Math.abs(activeDockBox!.height - idleDockBox!.height)).toBeLessThanOrEqual(1);
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click(); // cancel, restore idle
+
+  const wordsBox = await page.locator(".word-search-list-button").boundingBox();
+  const hintBox = await page.locator(".word-search-hint-button").boundingBox();
+  expect(wordsBox!.height).toBeGreaterThanOrEqual(44);
+  expect(hintBox!.height).toBeGreaterThanOrEqual(44);
+
+  const radii = await page.evaluate(() => {
+    const parse = (selector: string) => getComputedStyle(document.querySelector(selector)!).borderRadius;
+    return { dock: parse(".word-search-progress-strip"), words: parse(".word-search-list-button"), hint: parse(".word-search-hint-button") };
+  });
+  expect(radii.dock).toBe(radii.words);
+  expect(radii.words).toBe(radii.hint);
+
+  // Hint is visually more emphasized than the idle dock (a stronger border), without a yellow
+  // filled background.
+  const [dockBorder, hintBorder, hintBackground] = await Promise.all([
+    dock.evaluate((element) => getComputedStyle(element).borderColor),
+    page.locator(".word-search-hint-button").evaluate((element) => getComputedStyle(element).borderColor),
+    page.locator(".word-search-hint-button").evaluate((element) => getComputedStyle(element).backgroundColor),
+  ]);
+  expect(hintBorder).not.toBe(dockBorder);
+  expect(hintBackground).not.toMatch(/rgb\(2\d\d, 2\d\d, \d{1,2}\)/); // not a yellow fill
+
+  // Nothing overlaps and everything stays within the viewport.
+  const boxes = await Promise.all([dock, page.locator(".word-search-list-button"), page.locator(".word-search-hint-button")].map((locator) => locator.boundingBox()));
+  for (const box of boxes) {
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390 + 1);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(844 + 1);
+  }
+});
+
+test("Pass 6: zoom controls form one grouped surface at 430x932", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await authenticate(page);
+  await installRoutes(page, 20);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const zoomOut = page.getByRole("button", { name: "Zoom out" });
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  const fit = page.getByRole("button", { name: "Reset zoom" });
+  await expect(zoomOut).toBeVisible();
+  await expect(zoomIn).toBeVisible();
+  await expect(fit).toBeVisible();
+  await expect(fit).toBeDisabled(); // already fitted
+
+  for (const button of [zoomOut, zoomIn, fit]) {
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+
+  // The three controls share one visually connected surface (a single group boundary), not
+  // three unrelated free-floating rectangles.
+  const groupBox = await page.locator(".word-search-zoom-controls").boundingBox();
+  const outBox = await zoomOut.boundingBox();
+  const inBox = await zoomIn.boundingBox();
+  const fitBox = await fit.boundingBox();
+  expect(groupBox).not.toBeNull();
+  expect(groupBox!.width).toBeGreaterThanOrEqual(outBox!.width + inBox!.width + fitBox!.width);
+  const groupShadow = await page.locator(".word-search-zoom-controls").evaluate((element) => getComputedStyle(element).boxShadow);
+  expect(groupShadow).not.toBe("none");
+
+  await zoomIn.click();
+  await expect(fit).toBeEnabled();
+
+  // Existing zoom/pan selection geometry still passes with the grouped surface in place.
+  const start = await cellBox(page, 15, 10);
+  const end = await cellBox(page, 15, 13);
+  await page.mouse.move(cellCenter(start).x, cellCenter(start).y);
+  await page.mouse.down();
+  await page.mouse.move(cellCenter(end).x, cellCenter(end).y, { steps: 8 });
+  await expect.poll(() => selectedCellCount(page)).toBe(4);
+  await page.mouse.up();
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("Pass 6: landscape at 844x390 keeps the board dominant, the list reachable, and controls usable", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const boardBox = await page.locator(".word-search-board").boundingBox();
+  const listBox = await page.locator(".word-search-desktop-list").boundingBox();
+  expect(boardBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect(boardBox!.x).toBeLessThan(listBox!.x); // board remains on the left, list on the right
+  expect(boardBox!.width).toBeGreaterThan(120); // board is not visually dwarfed by the list
+
+  // No overlap between the board and the list.
+  expect(boardBox!.x + boardBox!.width).toBeLessThanOrEqual(listBox!.x + 1);
+
+  // A valid drag still works, and the tap-anchor affordance remains visible.
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  await page.locator('[data-ws-row="1"][data-ws-col="0"]').click();
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(1);
+  await page.locator('[data-ws-row="1"][data-ws-col="0"]').click(); // cancel
+
+  await expect(page.locator(".word-search-hint-button")).toBeVisible();
+  const overflow = await page.evaluate(() => ({
+    x: document.documentElement.scrollWidth > window.innerWidth + 1,
+    y: document.documentElement.scrollHeight > window.innerHeight + 1,
+  }));
+  expect(overflow.x).toBe(false);
+  expect(overflow.y).toBe(false);
 });
 
 test("legacy catalog mismatch repairs in place without generic attempt_success", async ({ page }) => {

@@ -7,6 +7,10 @@
   overflow: hidden;
   border-radius: 16px;
   isolation: isolate;
+  --ws-control-radius: 11px;
+  --ws-control-shadow: inset 0 1px 0 rgba(255,255,255,.05), inset 0 -2px 4px rgba(0,0,0,.25), 0 1px 2px rgba(0,0,0,.25);
+  --ws-stage-shadow: inset 0 2px 12px rgba(0,0,0,.45), inset 0 -1px 0 rgba(255,255,255,.03);
+  --ws-selected-glow: 0 0 0 2px color-mix(in srgb, var(--ps-active, #6366f1) 65%, #fff 35%), 0 0 16px color-mix(in srgb, var(--ps-active, #6366f1) 55%, transparent);
 }
 
 .word-search-root > canvas,
@@ -43,6 +47,9 @@
   place-items: center;
   overflow: auto;
   overscroll-behavior: contain;
+  border-radius: 18px;
+  background: radial-gradient(120% 140% at 50% 0%, rgba(255,255,255,.05), rgba(0,0,0,0) 55%), color-mix(in srgb, var(--pw-surface-2, #1e293b) 70%, transparent);
+  box-shadow: var(--ws-stage-shadow);
 }
 .word-search-board {
   --word-search-cell: 30px;
@@ -55,13 +62,33 @@
   padding: 6px;
   border: 1px solid var(--ps-board-border, rgba(129,140,248,.55));
   border-radius: 12px;
-  background: rgba(0,0,0,.62);
-  box-shadow: 0 10px 35px rgba(0,0,0,.35);
+  background: var(--ps-board-bg, rgba(15,18,25,.72));
+  box-shadow:
+    0 12px 32px rgba(0,0,0,.45),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    inset 0 -10px 22px rgba(0,0,0,.35);
   touch-action: none;
   outline: none;
   user-select: none;
 }
-.word-search-board:focus-visible { box-shadow: 0 0 0 3px #fde74c, 0 10px 35px rgba(0,0,0,.35); }
+/* Isolated from the board's own box-shadow list above: a skin's boardShadow value may
+   legitimately be the single keyword "none", which is only valid as a lone box-shadow value —
+   mixing it into a comma-separated list would invalidate the whole declaration. */
+.word-search-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--ps-board-shadow, none);
+  pointer-events: none;
+}
+.word-search-board:focus-visible {
+  box-shadow:
+    0 0 0 3px var(--pw-info, #38bdf8),
+    0 12px 32px rgba(0,0,0,.45),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    inset 0 -10px 22px rgba(0,0,0,.35);
+}
 .word-search-board-viewport[data-zoomed] .word-search-board { touch-action: pan-x pan-y; }
 .word-search-row { display: flex; gap: var(--word-search-gap); }
 .word-search-cell {
@@ -73,17 +100,31 @@
   height: var(--word-search-cell);
   border: 1px solid var(--ps-tile-border, rgba(148,163,184,.42));
   border-radius: clamp(2px, .8vw, 5px);
-  background: var(--ps-tile-bg, #172033);
+  background-color: var(--ps-tile-bg, #172033);
+  background-image: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0) 45%, rgba(0,0,0,.1) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -2px 3px rgba(0,0,0,.32), 0 1px 1px rgba(0,0,0,.2);
   color: var(--ps-tile-text, #f8fafc);
+  text-shadow: 0 1px 1px rgba(0,0,0,.4);
   font-size: clamp(.7rem, calc(var(--word-search-cell) * .5), 1rem);
   line-height: 1;
   font-weight: 900;
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
-.word-search-cell[data-found] { background: var(--word-color-bg); border-color: var(--word-color-border); color: var(--word-color-text); }
+@media (hover: hover) and (pointer: fine) {
+  .word-search-cell:hover:not([data-selected]):not([data-tap-anchor]):not([data-found]):not([data-active]) {
+    border-color: color-mix(in srgb, var(--ps-tile-border, rgba(148,163,184,.42)) 55%, #fff 45%);
+  }
+}
+.word-search-cell[data-found] {
+  background-color: var(--word-color-bg);
+  background-image: none;
+  border-color: var(--word-color-border);
+  color: var(--word-color-text);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.35), inset 0 -1px 0 rgba(255,255,255,.06);
+}
 .word-search-cell[data-hinted]::after { content: ""; position: absolute; inset: 2px; border: 1px dashed #fde047; border-radius: inherit; }
-.word-search-cell[data-selected] { z-index: 3; border: 2px solid #fff; background: var(--ps-active, #6366f1); color: #fff; box-shadow: 0 0 0 2px #fde74c, 0 0 14px rgba(253,231,76,.7); }
-.word-search-cell[data-active]:not([data-selected]) { outline: 2px solid #fde74c; outline-offset: 1px; }
+.word-search-cell[data-selected] { z-index: 3; border: 2px solid #fff; background-color: var(--ps-active, #6366f1); background-image: none; color: #fff; box-shadow: var(--ws-selected-glow); }
+.word-search-cell[data-active]:not([data-selected]) { outline: 2px solid var(--pw-info, #38bdf8); outline-offset: 1px; }
 .word-search-cell[data-tap-anchor] {
   z-index: 4;
   outline: clamp(1px, calc(var(--word-search-cell) * .06), 3px) dashed #fde74c;
@@ -103,16 +144,42 @@
   pointer-events: none;
   z-index: 5;
 }
+.word-search-cell[data-found][data-tap-anchor] {
+  background-color: var(--word-color-bg);
+  background-image: none;
+  border-color: var(--word-color-border);
+  color: var(--word-color-text);
+}
 .word-search-trail { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .word-search-trail polyline { fill: none; stroke: var(--ps-board-border, #818cf8); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
 
 .word-search-word-dock { grid-area: dock; display: flex; align-items: stretch; gap: 8px; min-width: 0; }
-.word-search-progress-strip { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; min-height: 46px; padding: 6px 10px; border: 1px solid var(--pw-border-default); border-radius: 11px; background: var(--pw-surface-2); font-size: .78rem; }
+.word-search-progress-strip { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; min-height: 46px; padding: 6px 10px; border: 1px solid var(--pw-border-default); border-radius: var(--ws-control-radius); background: var(--pw-surface-2); box-shadow: var(--ws-control-shadow); font-size: .78rem; }
 .word-search-selection { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; gap: 1px; }
 .word-search-selected-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pw-text-secondary); font-weight: 600; letter-spacing: normal; }
 .word-search-progress-strip[data-selection-active] .word-search-selected-text { color: var(--pw-text-primary); font-weight: 800; letter-spacing: .04em; }
 .word-search-found-count { flex-shrink: 0; white-space: nowrap; font-size: .68rem; font-weight: 600; color: var(--pw-text-secondary); }
-.word-search-zoom-controls button { min-height: 44px; min-width: 44px; border: 1px solid rgba(129,140,248,.55); border-radius: 11px; background: rgba(30,41,59,.94); color: #fff; font-weight: 800; }
+.word-search-zoom-controls {
+  display: flex;
+  gap: 0;
+  padding: 3px;
+  border: 1px solid var(--pw-border-default);
+  border-radius: var(--ws-control-radius);
+  background: var(--pw-surface-2);
+  box-shadow: var(--ws-control-shadow);
+}
+.word-search-zoom-controls button {
+  min-height: 44px;
+  min-width: 44px;
+  border: none;
+  border-radius: calc(var(--ws-control-radius) - 3px);
+  background: transparent;
+  color: var(--pw-text-primary);
+  font-weight: 800;
+}
+.word-search-zoom-controls button:not(:last-child) { border-right: 1px solid var(--pw-border-default); }
+.word-search-zoom-controls button:disabled { color: var(--pw-text-secondary); opacity: .55; cursor: not-allowed; }
+.word-search-zoom-controls button:focus-visible { outline: 2px solid var(--pw-info); outline-offset: -2px; }
 .word-search-list-button {
   min-height: 44px;
   min-width: 44px;
@@ -122,15 +189,15 @@
   gap: 6px;
   padding: 0 14px;
   border: 1px solid var(--pw-info-border);
-  border-radius: 11px;
+  border-radius: var(--ws-control-radius);
   background: var(--pw-surface-2);
+  box-shadow: var(--ws-control-shadow);
   color: var(--pw-text-primary);
   font-weight: 700;
 }
 .word-search-list-button svg { color: var(--pw-info); flex-shrink: 0; }
 .word-search-list-button:focus-visible { outline: 2px solid var(--pw-info); outline-offset: 2px; }
 .word-search-controls { grid-area: controls; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.word-search-zoom-controls { display: flex; gap: 6px; }
 
 .word-search-hint-control { flex: 1; max-width: 360px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .word-search-hint-button {
@@ -142,13 +209,18 @@
   gap: 8px;
   padding: 0 14px;
   border: 1px solid var(--pw-border-default);
-  border-radius: 11px;
+  border-radius: var(--ws-control-radius);
   background: var(--pw-surface-2);
+  box-shadow: var(--ws-control-shadow);
   color: var(--pw-text-primary);
   font-weight: 700;
 }
-.word-search-hint-button:not(:disabled) { border-color: var(--pw-info-border); background: color-mix(in srgb, var(--pw-info) 10%, var(--pw-surface-2)); }
-.word-search-hint-button:disabled { opacity: 1; background: var(--pw-surface-disabled); color: var(--pw-text-secondary); cursor: not-allowed; }
+.word-search-hint-button:not(:disabled) {
+  border-color: var(--pw-info-border);
+  background: color-mix(in srgb, var(--pw-info) 10%, var(--pw-surface-2));
+  box-shadow: var(--ws-control-shadow), 0 0 0 1px color-mix(in srgb, var(--pw-info) 35%, transparent);
+}
+.word-search-hint-button:disabled { opacity: 1; background: var(--pw-surface-disabled); color: var(--pw-text-secondary); cursor: not-allowed; box-shadow: none; }
 .word-search-hint-button svg { color: var(--pw-info); flex-shrink: 0; }
 .word-search-hint-button:disabled svg { color: var(--pw-text-secondary); }
 .word-search-hint-copy { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
