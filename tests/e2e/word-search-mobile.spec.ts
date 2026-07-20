@@ -37,8 +37,8 @@ async function authenticate(page: Page) {
   await page.addInitScript(() => localStorage.setItem("wordTroveIntroSeen", "1"));
 }
 
-async function installRoutes(page: Page, size: number, short = false) {
-  const data = fixture(size, short);
+async function installRoutes(page: Page, size: number, short = false, customFixture?: { grid: string[][]; words: string[] }) {
+  const data = customFixture ?? fixture(size, short);
   const found = new Set<string>();
   const submissions: string[] = [];
   let dailySolved = false;
@@ -1528,6 +1528,22 @@ async function openCatDefinitionFromList(page: Page) {
   return page.getByRole("dialog", { name: "CAT definition" });
 }
 
+// A dedicated fixture spanning short-to-long words, used only by the letter-tile geometry
+// regression below — deliberately not the shared `fixture()` used elsewhere, so this can't
+// perturb any other test's word list or grid layout.
+function tileGeometryFixture() {
+  const size = 20;
+  const grid = Array.from({ length: size }, () => Array.from({ length: size }, () => "X"));
+  const placements: Array<[string, number, number]> = [
+    ["CAT", 0, 0],
+    ["ELEPHANT", 2, 0],
+    ["CONSTELLATION", 4, 0],
+    ["CHARACTERIZATION", 6, 0],
+  ];
+  for (const [word, row, col] of placements) word.split("").forEach((letter, index) => { grid[row][col + index] = letter; });
+  return { grid, words: placements.map(([word]) => word) };
+}
+
 test("Pass 8: mobile found definition modal at 390x844 is polished, contained, and dismissible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticate(page);
@@ -1821,6 +1837,116 @@ test("Pass 8: reduced motion definition modal opens without a transformed entran
     expect(Number(opacity)).toBe(1); // immediately in final position, no stagger-in
   }
   await expect(dialog.locator(".word-definition-skeleton")).toHaveCount(0); // found already, no loading skeleton
+
+  await dialog.getByRole("button", { name: /Keep searching/i }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Pass 9: letter-tile geometry stays single-row, non-overlapping, and contained across word lengths", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 20, false, tileGeometryFixture());
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  const words: Array<{ word: string; start: [number, number]; end: [number, number] }> = [
+    { word: "CAT", start: [0, 0], end: [0, 2] },
+    { word: "ELEPHANT", start: [2, 0], end: [2, 7] },
+    { word: "CONSTELLATION", start: [4, 0], end: [4, 12] },
+    { word: "CHARACTERIZATION", start: [6, 0], end: [6, 15] },
+  ];
+
+  for (const { word, start, end } of words) {
+    await dragWord(page, start, end);
+    await expect.poll(() => state.found.has(word)).toBe(true);
+
+    await page.getByRole("button", { name: "Words" }).click();
+    await page.getByRole("button", { name: `${word}, found; open definition` }).click();
+    const dialog = page.getByRole("dialog", { name: `${word} definition` });
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(400); // let the tile entrance stagger settle before measuring geometry
+
+    const tiles = dialog.locator(".word-definition-tile");
+    await expect(tiles).toHaveCount(word.length);
+    const boxes = await tiles.evaluateAll((nodes) => nodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    }));
+
+    // Every tile is finite, positive, and bounded by the sizing formula's cap.
+    for (const box of boxes) {
+      expect(Number.isFinite(box.width)).toBe(true);
+      expect(Number.isFinite(box.height)).toBe(true);
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.height).toBeGreaterThan(0);
+      expect(box.width).toBeLessThanOrEqual(35); // 34px cap + rounding
+      expect(box.height).toBeLessThanOrEqual(35);
+    }
+
+    // Single row: every tile shares the same y within a hairline tolerance.
+    const rowY = boxes[0].y;
+    for (const box of boxes) expect(Math.abs(box.y - rowY)).toBeLessThanOrEqual(1);
+
+    // No overlap: each tile's left edge is at or after the previous tile's right edge.
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i].x).toBeGreaterThanOrEqual(boxes[i - 1].x + boxes[i - 1].width - 1);
+    }
+
+    // The row stays within the dialog's own bounds.
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    for (const box of boxes) {
+      expect(box.x).toBeGreaterThanOrEqual(dialogBox!.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 1);
+    }
+
+    // No modal/page overflow at this viewport.
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    expect(overflow).toBe(false);
+
+    await dialog.getByRole("button", { name: /Keep searching/i }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+});
+
+test("Pass 9: no-audio, no-part-of-speech definition content all reaches visible without staying stuck hidden", async ({ page }) => {
+  // This is the exact regression scenario: a shared-variants/staggerChildren setup got
+  // permanently stuck at opacity 0 for whichever section followed a conditionally-omitted
+  // sibling. With both the pronunciation button and part-of-speech line omitted, the
+  // definition paragraph directly follows two skipped siblings — the worst case.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await authenticate(page);
+  const state = await installRoutes(page, 15);
+  // The route fixture's `?? "noun"` fallback only triggers on null/undefined, so an empty
+  // string is what actually clears partOfSpeech through to the component as falsy.
+  state.setDictionaryResponse({ partOfSpeech: "", audioUrl: null });
+  await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
+
+  await dragWord(page, [0, 0], [0, 2]);
+  await expect.poll(() => state.found.has("CAT")).toBe(true);
+  const dialog = await openCatDefinitionFromList(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("data-definition-status", "found");
+
+  await expect(dialog.getByRole("button", { name: /Hear pronunciation/ })).toHaveCount(0);
+  await expect(dialog.locator(".word-definition-part")).toHaveCount(0);
+
+  // Wait only as long as the real entrance animation takes: itemMotion caps its delay at 0.4s
+  // plus a 0.24s transition, so 700ms comfortably covers the last item settling.
+  await page.waitForTimeout(700);
+
+  const sections = [".word-definition-badge", ".word-definition-tiles", ".word-definition-copy", ".word-definition-source", ".word-definition-action"];
+  for (const selector of sections) {
+    const element = dialog.locator(selector);
+    await expect(element).toBeVisible();
+    const opacity = await element.evaluate((node) => Number(getComputedStyle(node).opacity));
+    expect(opacity).toBeGreaterThan(0.98);
+    const box = await element.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThan(0);
+  }
 
   await dialog.getByRole("button", { name: /Keep searching/i }).click();
   await expect(dialog).toHaveCount(0);
