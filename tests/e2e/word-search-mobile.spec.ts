@@ -210,7 +210,10 @@ test("drag, reverse, vertical, diagonal, keyboard, word list, definition, help, 
   await dragWord(page, [1, 0], [1, 2]); await expect.poll(() => state.found.has("DOG")).toBe(true);
   await dragWord(page, [0, 14], [3, 14]); await expect.poll(() => state.found.has("BIRD")).toBe(true);
   await dragWord(page, [0, 5], [3, 8]); await expect.poll(() => state.found.has("FISH")).toBe(true);
-  const board = page.getByRole("grid"); await board.focus(); for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft"); for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown"); await page.keyboard.press("Space"); for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight"); await page.keyboard.press("Enter");
+  const board = page.getByRole("grid"); await board.focus(); for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft"); for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown"); await page.keyboard.press("Space");
+  await expect(page.locator("[data-selected]")).toHaveCount(1); // Space starts a keyboard selection…
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // …but never shows the tap-anchor marker
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight"); await page.keyboard.press("Enter");
   await expect.poll(() => state.found.has("STAR")).toBe(true);
   await page.locator('[data-ws-row="4"][data-ws-col="0"]').click(); await page.locator('[data-ws-row="4"][data-ws-col="3"]').click(); await expect.poll(() => state.found.has("MOON")).toBe(true);
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0); // still no auto-opens after 6 non-final finds
@@ -282,6 +285,7 @@ test("zoom and pan: selection geometry tracks the pointer during the drag, not o
   for (const col of [10, 11, 12, 13]) {
     await expect(page.locator(`[data-ws-row="15"][data-ws-col="${col}"][data-selected]`)).toHaveCount(1);
   }
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // a real drag never shows the tap-anchor marker
 
   // Trail geometry stays finite and aligned (one point per selected cell) under the active
   // zoom/pan transform.
@@ -352,9 +356,14 @@ test("Warz: finding words never opens a definition modal, mid-match or on the fi
   await expect(page.getByTestId("word-search-root")).toBeVisible();
   await expect(page.locator(".word-search-progress-strip")).toContainText("0 / 2 found");
 
-  // Non-final word (CAT).
-  await dragWord(page, [0, 0], [0, 2]);
+  // Non-final word (CAT) — found via two-tap selection, proving the anchor affordance and Warz
+  // timing/transitions both work through that pathway, not just drag.
+  await page.locator('[data-ws-row="0"][data-ws-col="0"]').click();
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(1);
+  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"]')).toHaveAttribute("data-tap-anchor", "true");
+  await page.locator('[data-ws-row="0"][data-ws-col="2"]').click();
   await expect(page.locator(".word-search-progress-strip")).toContainText("1 / 2 found");
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // anchor clears after the two-tap submission
   await page.waitForTimeout(700); // past the normal (320ms) and final-word (520ms) reveal delay
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
 
@@ -451,6 +460,7 @@ test("pointer cancel: cancelling an in-flight drag clears the selection and the 
   const pointerId = await lastCapturedPointerId(page);
   await dispatchBoardPointerEvent(page, "pointercancel", pointerId, cellCenter(mid));
   await expect(page.locator("[data-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // pointercancel clears any tap-anchor too
 
   // A stray pointerup on the now-cancelled pointer must not resurrect or complete the selection.
   await dispatchBoardPointerEvent(page, "pointerup", pointerId, cellCenter(end));
@@ -482,6 +492,7 @@ test("second pointer: a new pointer mid-drag cancels the gesture and neither poi
   const secondPointerId = firstPointerId + 1000; // distinct on purpose; never assumed to be 1
   await dispatchBoardPointerEvent(page, "pointerdown", secondPointerId, cellCenter(mid), "touch");
   await expect(page.locator("[data-selected]")).toHaveCount(0); // the interruption cancels immediately
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // and clears any tap-anchor with it
 
   // Releasing the ORIGINAL pointer afterward must not resurrect or submit the cancelled selection.
   await page.mouse.up();
@@ -528,6 +539,7 @@ test("off-board release: releasing far outside the board does not submit a stale
   await expect.poll(() => selectedCellCount(page)).toBe(3); // still the stale, untouched CAT selection
   await page.mouse.up();
   await expect(page.locator("[data-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0); // off-board release clears any tap-anchor too
 
   // submitSelection (if wrongly invoked) is async — give the round-trip a moment to land before
   // asserting its absence; there's no positive DOM signal to poll for a negative outcome here.
@@ -557,28 +569,70 @@ test("two-tap cancellation: a repeated tap on the same cell cancels the anchor w
   await page.goto("/daily/word-search", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("word-search-root")).toBeVisible({ timeout: 15_000 });
   const tap = (row: number, col: number) => page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`).click();
+  const cell = (row: number, col: number) => page.locator(`[data-ws-row="${row}"][data-ws-col="${col}"]`);
 
+  // ── First tap: a distinct, announced tap-anchor, not an ordinary one-cell drag selection. ──
   await tap(0, 0);
   await expect(page.locator("[data-selected]")).toHaveCount(1);
-  await expect(page.locator('[data-ws-row="0"][data-ws-col="0"][data-selected]')).toHaveCount(1);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(1);
+  const anchor = cell(0, 0);
+  await expect(anchor).toHaveAttribute("data-selected", "true");
+  await expect(anchor).toHaveAttribute("data-tap-anchor", "true");
+  await expect(anchor).toHaveAttribute("aria-selected", "true");
+  const anchorLabel = await anchor.getAttribute("aria-label");
+  expect(anchorLabel).toContain("start selected");
+  expect(anchorLabel).toContain("tap another letter");
+  expect(state.submissions).toHaveLength(0); // no network request from a lone first tap
 
+  // The visual treatment is present: a dashed/distinct outer outline plus a non-empty, sized
+  // corner marker — not merely the generic selected-cell background.
+  const anchorStyle = await anchor.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    const before = getComputedStyle(element, "::before");
+    return {
+      outlineStyle: computed.outlineStyle,
+      outlineWidth: parseFloat(computed.outlineWidth),
+      beforeContent: before.content,
+      beforeWidth: parseFloat(before.width),
+      beforeHeight: parseFloat(before.height),
+    };
+  });
+  expect(anchorStyle.outlineStyle).toBe("dashed");
+  expect(anchorStyle.outlineWidth).toBeGreaterThan(0);
+  expect(anchorStyle.beforeContent).not.toBe("none");
+  expect(anchorStyle.beforeWidth).toBeGreaterThan(0);
+  expect(anchorStyle.beforeHeight).toBeGreaterThan(0);
+
+  // ── Same-cell cancellation ──
   await tap(0, 0); // second tap on the same anchor cell cancels it
   await expect(page.locator("[data-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
   expect(state.found.has("CAT")).toBe(false);
   expect(state.submissions).toHaveLength(0); // no network submission from the cancellation itself
 
-  // A different cell afterward must start a brand-new anchor — if the cancelled (0,0) anchor
-  // were still live, tapping (0,2) next would complete CAT's exact cells and submit it.
+  // ── Fresh anchor: a different cell afterward starts a brand-new anchor, and the cancelled
+  // (0,0) anchor never returns — if it were still live, tapping (0,2) next would complete CAT's
+  // exact cells and submit it. ──
   await tap(0, 4);
   await expect(page.locator("[data-selected]")).toHaveCount(1);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(1);
+  await expect(cell(0, 4)).toHaveAttribute("data-tap-anchor", "true");
+  await expect(cell(0, 0)).not.toHaveAttribute("data-tap-anchor", "true");
+
+  // Completing this as an invalid two-tap selection (0,4)→(0,2) is not a placed word) must clear
+  // the anchor without finding anything or leaving a stale marker.
   await tap(0, 2);
   expect(state.found.has("CAT")).toBe(false);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
 
-  // A fresh, correct two-tap CAT selection still submits exactly once.
+  // ── A fresh, correct two-tap CAT selection submits exactly once and leaves no stale anchor. ──
   await tap(0, 0);
   await tap(0, 2);
   await expect.poll(() => state.found.has("CAT")).toBe(true);
   expect(state.submissions.filter((word) => word === "CAT")).toHaveLength(1);
+  await expect(page.locator("[data-selected]")).toHaveCount(0);
+  await expect(page.locator("[data-tap-anchor]")).toHaveCount(0);
 });
 
 test("legacy catalog mismatch repairs in place without generic attempt_success", async ({ page }) => {

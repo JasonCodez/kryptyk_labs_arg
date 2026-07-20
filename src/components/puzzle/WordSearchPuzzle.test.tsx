@@ -116,7 +116,13 @@ test("keyboard arrows extend, Escape cancels, and Tab remains native", () => {
 
 test("imperative controls open help and the word sheet and restore focus", async () => {
   const ref = createRef<WordSearchPuzzleHandle>(); renderGame({ ref });
-  act(() => ref.current?.openInstructions()); expect(screen.getByRole("dialog", { name: "How to play Word Trove" })).toBeTruthy();
+  act(() => ref.current?.openInstructions());
+  const helpDialog = screen.getByRole("dialog", { name: "How to play Word Trove" });
+  expect(helpDialog).toBeTruthy();
+  // Documents both selection methods and same-cell cancellation (Pass 4).
+  expect(helpDialog.textContent).toContain("Drag from the first letter to the last");
+  expect(helpDialog.textContent).toContain("tap a start letter and then tap the end letter");
+  expect(helpDialog.textContent).toContain("tap it again to cancel");
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   act(() => ref.current?.openWordList()); expect(screen.getByRole("dialog", { name: "Words to find" })).toBeTruthy();
   fireEvent.keyDown(window, { key: "Escape" }); await waitFor(() => expect(screen.queryByRole("dialog", { name: "Words to find" })).toBeNull());

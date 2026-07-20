@@ -193,6 +193,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   const [foundWords, setFoundWords] = useState<string[]>(restore.found);
   const [hintedWords, setHintedWords] = useState<Set<string>>(new Set(restore.hinted));
   const [selection, setSelectionState] = useState<WordSearchCell[]>([]);
+  const [tapAnchor, setTapAnchor] = useState<WordSearchCell | null>(null);
   const [activeCell, setActiveCell] = useState<WordSearchCell>({ row: 0, col: 0 });
   const [status, setStatus] = useState<WordSearchStatus>(() => !size || !words.length ? "error" : "loading");
   const [error, setError] = useState("");
@@ -607,7 +608,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
   }, [grid, setSelection, size]);
 
   const cancelSelection = useCallback(() => {
-    draggingRef.current = false; dragStartRef.current = null; tapStartRef.current = null; directionRef.current = null; pointerRef.current = null; setSelection([]); keyboardSelectingRef.current = false;
+    draggingRef.current = false; dragStartRef.current = null; tapStartRef.current = null; directionRef.current = null; pointerRef.current = null; setSelection([]); setTapAnchor(null); keyboardSelectingRef.current = false;
   }, [setSelection]);
 
   const lineToTappedCell = useCallback((tapStart: WordSearchCell, tapped: WordSearchCell) => {
@@ -646,14 +647,16 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
     const cells = selectionRef.current; draggingRef.current = false; pointerRef.current = null; dragStartRef.current = null; directionRef.current = null; setSelection([]);
     if (cells.length === 1) {
       const tapped = cells[0];
-      if (!tapStartRef.current) { tapStartRef.current = tapped; setSelection([tapped]); return; }
-      if (sameCell(tapStartRef.current, tapped)) { tapStartRef.current = null; return; }
+      if (!tapStartRef.current) { tapStartRef.current = tapped; setSelection([tapped]); setTapAnchor(tapped); return; }
+      if (sameCell(tapStartRef.current, tapped)) { tapStartRef.current = null; setTapAnchor(null); return; }
       const tapCells = lineToTappedCell(tapStartRef.current, tapped);
       tapStartRef.current = null;
+      setTapAnchor(null);
       await submitSelection(tapCells);
       return;
     }
     tapStartRef.current = null;
+    setTapAnchor(null);
     await submitSelection(cells);
   };
 
@@ -699,7 +702,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
       {pageVisible && selectedBackground}
       <div className="word-search-scrim" aria-hidden style={{ background: skin.backdropScrim }} />
       {showIntro && <Dialog title="More than a word search" onClose={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}><p>Every word you find unlocks its real definition, turning each puzzle into a quick vocabulary discovery. Tap a found word in the word list any time to explore it.</p><p>Your final find opens its definition automatically, with pronunciation, part of speech, examples, and audio when available.</p><button type="button" onClick={() => { setShowIntro(false); try { localStorage.setItem("wordTroveIntroSeen", "1"); } catch {} }}>Start searching</button></Dialog>}
-      {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag across letters, or use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><p>Found words unlock their definitions — open the word list and tap any found word to read it.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
+      {showHelp && <Dialog title="How to play Word Trove" onClose={() => setShowHelp(false)}><p>Find every listed word in a straight line. Words may run horizontally, vertically, diagonally, forwards, or backwards.</p><p>Drag from the first letter to the last, or tap a start letter and then tap the end letter. A marked start letter is waiting for your second tap; tap it again to cancel. You can also use the arrow keys and Space or Enter. Press W for the word list and H for help.</p><p>Found words unlock their definitions — open the word list and tap any found word to read it.</p><button type="button" onClick={() => { setShowHelp(false); setShowIntro(true); }}>Why Word Trove?</button><button type="button" onClick={() => setShowHelp(false)}>Got it</button></Dialog>}
       {definition && <WordDefinitionModal word={definition.word} color={WORD_COLORS[definition.colorIdx]} status={definition.status} data={definition.data} onDismiss={dismissDefinition} />}
       <WordSearchWordList open={wordListOpen} words={words} foundWords={foundSet} onClose={() => setWordListOpen(false)} onOpenDefinition={openDefinition} />
 
@@ -736,7 +739,7 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                 <div role="row" className="word-search-row" key={rowIndex}>
                   {row.map((letter, colIndex) => {
                     const cell = { row: rowIndex, col: colIndex };
-                    const key = keyOf(cell); const colorIndex = cellColors.get(key); const found = colorIndex !== undefined; const selected = selectedSet.has(key); const active = sameCell(activeCell, cell); const hinted = [...hintedWords].some((word) => placements.get(word)?.some((item) => sameCell(item, cell)));
+                    const key = keyOf(cell); const colorIndex = cellColors.get(key); const found = colorIndex !== undefined; const selected = selectedSet.has(key); const active = sameCell(activeCell, cell); const hinted = [...hintedWords].some((word) => placements.get(word)?.some((item) => sameCell(item, cell))); const isTapAnchor = sameCell(tapAnchor, cell);
                     return <motion.div
                       role="gridcell"
                       key={key}
@@ -746,9 +749,10 @@ const WordSearchPuzzleInner = forwardRef<WordSearchPuzzleHandle, Props>(function
                       data-hinted={hinted || undefined}
                       data-selected={selected || undefined}
                       data-active={active || undefined}
+                      data-tap-anchor={isTapAnchor || undefined}
                       tabIndex={active ? 0 : -1}
                       aria-selected={selected}
-                      aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}, letter ${letter}${found ? ", found word" : ""}`}
+                      aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}, letter ${letter}${found ? ", found word" : isTapAnchor ? ", start selected; tap another letter to finish" : ""}`}
                       className="word-search-cell"
                       onFocus={() => { activeCellRef.current = cell; setActiveCell(cell); }}
                       animate={reduceMotion ? undefined : { scale: poppingCells.has(key) ? [1, 1.25, 1] : selected ? 1.08 : 1 }}
