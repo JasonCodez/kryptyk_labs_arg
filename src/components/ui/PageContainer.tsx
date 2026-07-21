@@ -5,7 +5,7 @@ import type { ComponentPropsWithoutRef, ElementType, ReactNode } from "react";
  * Class strings below intentionally match the homepage's existing ad hoc
  * widths exactly, so adopting this component changes no geometry.
  */
-export type PageContainerSize = "reading" | "content";
+export type PageContainerSize = "reading" | "content" | "catalog";
 
 /** Semantic elements the homepage needs; extend only when a real caller needs one. */
 export type PageContainerElement = "div" | "section" | "footer";
@@ -13,6 +13,9 @@ export type PageContainerElement = "div" | "section" | "footer";
 const SIZE_CLASSES: Record<PageContainerSize, string> = {
   reading: "px-4 lg:max-w-2xl lg:mx-auto",
   content: "px-4 lg:max-w-4xl lg:mx-auto",
+  // Matches the puzzle hub's existing desktop maximum width exactly, so
+  // adopting this component changes no geometry.
+  catalog: "px-4 lg:max-w-7xl lg:mx-auto",
 };
 
 type PageContainerOwnProps<E extends PageContainerElement> = {

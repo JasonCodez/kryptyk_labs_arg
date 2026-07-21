@@ -45,6 +45,18 @@ describe("PageContainer", () => {
     });
   });
 
+  describe("catalog tier", () => {
+    it("adds horizontal gutters, lg:max-w-7xl, and lg:mx-auto, and excludes lg:max-w-2xl and lg:max-w-4xl", () => {
+      const { container } = render(<PageContainer size="catalog">content</PageContainer>);
+      const el = container.firstElementChild!;
+      expect(el.className).toContain("px-4");
+      expect(el.className).toContain("lg:max-w-7xl");
+      expect(el.className).toContain("lg:mx-auto");
+      expect(el.className).not.toContain("lg:max-w-2xl");
+      expect(el.className).not.toContain("lg:max-w-4xl");
+    });
+  });
+
   describe("semantic elements", () => {
     it("renders as a section", () => {
       const { container } = render(<PageContainer as="section">content</PageContainer>);
