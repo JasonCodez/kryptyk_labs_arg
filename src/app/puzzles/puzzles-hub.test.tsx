@@ -48,11 +48,25 @@ async function renderHub() {
 
 const EMOJI_REGEX = /\p{Extended_Pictographic}/u;
 
+/** Flushes a requestAnimationFrame-scheduled callback (mocked below as a
+ * real setTimeout(0)) — a Promise microtask flush alone isn't enough since
+ * rAF callbacks run as a macrotask. */
+async function flushScheduledFocus() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 describe("Puzzle Library hub", () => {
   beforeEach(() => {
     mockUseSession.mockReturnValue({ status: "authenticated" });
     mockUseAppReducedMotion.mockReturnValue(false);
     mockPush.mockClear();
+    // jsdom has no real requestAnimationFrame — back it with a macrotask so
+    // scheduleSearchFocus's timing behaves the same as a real browser.
+    window.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+      setTimeout(() => cb(performance.now()), 0) as unknown as number) as typeof window.requestAnimationFrame;
+    window.cancelAnimationFrame = ((id: number) => clearTimeout(id)) as typeof window.cancelAnimationFrame;
   });
   afterEach(() => {
     cleanup();
@@ -222,14 +236,23 @@ describe("Puzzle Library hub", () => {
       expect(gridCard("/puzzles/type/riddle")).toBeNull();
     });
 
-    it("clears the search on Escape", async () => {
+    it("clears the search on Escape, keeps focus in the input, and does not reset the status filter", async () => {
       await renderThreeCampaigns();
+      // In Progress first, so Escape's "restore all campaigns allowed by the
+      // current status filter" is actually exercised (not just "all").
+      fireEvent.click(screen.getByRole("button", { name: "In Progress" }));
+
       const input = screen.getByLabelText("Search campaigns") as HTMLInputElement;
-      fireEvent.change(input, { target: { value: "jig" } });
-      expect(input.value).toBe("jig");
+      input.focus();
+      fireEvent.change(input, { target: { value: "sud" } });
+      expect(input.value).toBe("sud");
       fireEvent.keyDown(input, { key: "Escape" });
+
       expect(input.value).toBe("");
-      expect(document.querySelector('a[href="/puzzles/type/sudoku"]')).not.toBeNull();
+      expect(document.activeElement).toBe(input);
+      expect(screen.getByRole("button", { name: "In Progress" }).getAttribute("aria-pressed")).toBe("true");
+      expect(gridCard("/puzzles/type/sudoku")).not.toBeNull();
+      expect(gridCard("/puzzles/type/jigsaw")).toBeNull();
     });
 
     it("the In Progress filter shows only in-progress campaigns", async () => {
@@ -286,6 +309,63 @@ describe("Puzzle Library hub", () => {
       fireEvent.change(input, { target: { value: "nonexistent puzzle type" } });
       fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
       expect(input.value).toBe("");
+      expect(document.querySelector('a[href="/puzzles/type/jigsaw"]')).not.toBeNull();
+      expect(document.querySelector('a[href="/puzzles/type/sudoku"]')).not.toBeNull();
+      expect(document.querySelector('a[href="/puzzles/type/riddle"]')).not.toBeNull();
+    });
+
+    it("the clear-search control meets the 44x44 minimum touch target", async () => {
+      await renderThreeCampaigns();
+      const input = screen.getByLabelText("Search campaigns");
+      fireEvent.change(input, { target: { value: "jig" } });
+
+      const clearButton = screen.getByLabelText("Clear search") as HTMLElement;
+      // Explicit inline dimensions, not just an assumption the button exists.
+      expect(clearButton.style.width).toBe("44px");
+      expect(clearButton.style.height).toBe("44px");
+      expect(clearButton.className).toContain("min-w-[44px]");
+      expect(clearButton.className).toContain("min-h-[44px]");
+    });
+
+    it("Clear search restores focus to the search input after the button disappears", async () => {
+      await renderThreeCampaigns();
+      const input = screen.getByLabelText("Search campaigns") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "jig" } });
+
+      const clearButton = screen.getByLabelText("Clear search");
+      clearButton.focus();
+      fireEvent.click(clearButton);
+
+      // The button is removed the instant the query becomes empty.
+      expect(screen.queryByLabelText("Clear search")).toBeNull();
+      expect(input.value).toBe("");
+
+      await flushScheduledFocus();
+
+      expect(document.activeElement).toBe(input);
+      expect(document.querySelector('a[href="/puzzles/type/jigsaw"]')).not.toBeNull();
+      expect(document.querySelector('a[href="/puzzles/type/sudoku"]')).not.toBeNull();
+      expect(document.querySelector('a[href="/puzzles/type/riddle"]')).not.toBeNull();
+    });
+
+    it("Clear filters restores focus to the search input after the filtered-empty controls disappear", async () => {
+      await renderThreeCampaigns();
+      fireEvent.click(screen.getByRole("button", { name: "Completed" }));
+      const input = screen.getByLabelText("Search campaigns") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "sudoku" } });
+      expect(screen.getByText("No campaigns found")).toBeTruthy();
+
+      const clearFiltersButton = screen.getByRole("button", { name: "Clear filters" });
+      clearFiltersButton.focus();
+      fireEvent.click(clearFiltersButton);
+
+      expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+      expect(input.value).toBe("");
+      expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+
+      await flushScheduledFocus();
+
+      expect(document.activeElement).toBe(input);
       expect(document.querySelector('a[href="/puzzles/type/jigsaw"]')).not.toBeNull();
       expect(document.querySelector('a[href="/puzzles/type/sudoku"]')).not.toBeNull();
       expect(document.querySelector('a[href="/puzzles/type/riddle"]')).not.toBeNull();

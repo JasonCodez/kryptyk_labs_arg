@@ -322,6 +322,52 @@ test.describe("campaign hub search interaction @ 390x844", () => {
     await expect(gridCard(page, "/puzzles/type/riddle")).toBeVisible();
     await expect(gridCard(page, "/puzzles/type/jigsaw")).toBeVisible();
   });
+
+  test("Clear search meets the 44x44 touch target and returns focus to the search input", async ({ page }) => {
+    await authenticate(page);
+    await installCampaignFixture(page);
+    await page.goto("/puzzles", { waitUntil: "domcontentloaded" });
+
+    const search = page.getByLabel("Search campaigns");
+    await expect(gridCard(page, "/puzzles/type/jigsaw")).toBeVisible({ timeout: 10000 });
+
+    await search.fill("jig");
+    const clearSearch = page.getByLabel("Clear search");
+    const box = await clearSearch.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+
+    await clearSearch.click();
+
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("");
+    await expect(gridCard(page, "/puzzles/type/sudoku")).toBeVisible();
+    await expect(gridCard(page, "/puzzles/type/riddle")).toBeVisible();
+    await expect(gridCard(page, "/puzzles/type/jigsaw")).toBeVisible();
+  });
+
+  test("Clear filters returns focus to the search input and restores all campaigns", async ({ page }) => {
+    await authenticate(page);
+    await installCampaignFixture(page);
+    await page.goto("/puzzles", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByRole("button", { name: "Completed", exact: true })).toBeVisible({ timeout: 10000 });
+    await page.getByRole("button", { name: "Completed", exact: true }).click();
+    const search = page.getByLabel("Search campaigns");
+    await search.fill("sudoku");
+    await expect(page.getByText("No campaigns found")).toBeVisible();
+
+    await page.getByRole("button", { name: "Clear filters" }).click();
+
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("");
+    await expect(page.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(gridCard(page, "/puzzles/type/sudoku")).toBeVisible();
+    await expect(gridCard(page, "/puzzles/type/riddle")).toBeVisible();
+    await expect(gridCard(page, "/puzzles/type/jigsaw")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
 });
 
 test.describe("campaign hub status filtering @ 390x844", () => {

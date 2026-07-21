@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -375,6 +375,31 @@ export default function PuzzlesHub() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const focusFrameRef = useRef<number | null>(null);
+
+  // Schedules focus onto the search input one frame out, after React has
+  // committed the state update that removed/hid whatever control the user
+  // just activated (Clear search / Clear filters) — focusing synchronously
+  // during the click handler would target an element that's about to
+  // disappear from the DOM this same render. Cancels any previously
+  // scheduled request so rapid activations only ever focus once.
+  const scheduleSearchFocus = useCallback(() => {
+    if (focusFrameRef.current !== null) {
+      cancelAnimationFrame(focusFrameRef.current);
+    }
+    focusFrameRef.current = requestAnimationFrame(() => {
+      focusFrameRef.current = null;
+      searchInputRef.current?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (focusFrameRef.current !== null) {
+        cancelAnimationFrame(focusFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (sessionStatus === "unauthenticated") {
@@ -433,6 +458,7 @@ export default function PuzzlesHub() {
   const handleClearFilters = () => {
     setQuery("");
     setStatusFilter("all");
+    scheduleSearchFocus();
   };
 
   if (sessionStatus === "loading" || fetchStatus === "loading") {
@@ -533,7 +559,7 @@ export default function PuzzlesHub() {
                     }}
                     placeholder="Search campaigns"
                     aria-label="Search campaigns"
-                    className={`w-full h-11 rounded-xl pl-11 pr-11 text-sm ${FOCUS_VISIBLE}`}
+                    className={`w-full h-11 rounded-xl pl-11 pr-14 text-sm ${FOCUS_VISIBLE}`}
                     style={{
                       background: "var(--pw-surface-2)",
                       border: "1px solid var(--pw-border-default)",
@@ -544,10 +570,13 @@ export default function PuzzlesHub() {
                   {query && (
                     <button
                       type="button"
-                      onClick={() => setQuery("")}
+                      onClick={() => {
+                        setQuery("");
+                        scheduleSearchFocus();
+                      }}
                       aria-label="Clear search"
-                      className={`absolute inline-flex items-center justify-center rounded-lg ${FOCUS_VISIBLE}`}
-                      style={{ right: 4, top: "50%", transform: "translateY(-50%)", width: 40, height: 40, outlineColor: "var(--pw-focus-ring)" }}
+                      className={`absolute inline-flex items-center justify-center rounded-lg min-w-[44px] min-h-[44px] ${FOCUS_VISIBLE}`}
+                      style={{ right: 2, top: "50%", transform: "translateY(-50%)", width: 44, height: 44, outlineColor: "var(--pw-focus-ring)" }}
                     >
                       <X aria-hidden="true" size={16} style={{ color: "var(--pw-text-secondary)" }} />
                     </button>
