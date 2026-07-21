@@ -15,12 +15,6 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<{ source?: string | string[] }>;
-}) {
-  const { source } = await searchParams;
-  const launchCandidate = source === "pwa";
-  return <HomeClient launchCandidate={launchCandidate} />;
+export default function Home() {
+  return <HomeClient />;
 }

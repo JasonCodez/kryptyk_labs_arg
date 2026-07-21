@@ -63,6 +63,19 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
 }
 
+// Makes both sessionStorage and localStorage throw on every read/write, from
+// before any page script runs — simulates private-mode/quota-exceeded
+// storage failure for the "storage failure remains visible" test.
+async function breakStorage(page: Page) {
+  await page.addInitScript(() => {
+    const throwError = () => {
+      throw new Error("storage unavailable");
+    };
+    Object.defineProperty(window, "sessionStorage", { value: { getItem: throwError, setItem: throwError } });
+    Object.defineProperty(window, "localStorage", { value: { getItem: throwError, setItem: throwError } });
+  });
+}
+
 test.describe("App launch sequence — first standalone root launch", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -294,5 +307,94 @@ test.describe("App launch sequence — desktop standalone simulation", () => {
     // at every viewport width (Navbar.tsx's own pre-existing behavior) — the
     // homepage container geometry itself is the relevant "unchanged" check.
     await expect(page.locator(".pw-bottom-nav")).not.toBeVisible();
+  });
+});
+
+test.describe("App launch sequence — storage failure remains visible", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("compact mode is actually displayed (real visibility, not just DOM presence) when both storages throw", async ({
+    page,
+  }) => {
+    await mockDailySummary(page);
+    await mockStandalone(page, true);
+    await breakStorage(page);
+    await page.goto("/?source=pwa", { waitUntil: "domcontentloaded" });
+
+    // The pre-paint bootstrap must have failed OPEN to "pending", not "skip"
+    // — this is the exact defect being corrected: a bootstrap/hydrated
+    // disagreement previously left the overlay in the DOM but permanently
+    // display:none.
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.dataset.pwLaunch), { timeout: 1000 })
+      .toBe("pending");
+
+    const overlay = page.getByTestId("app-launch-sequence");
+    // A true visibility assertion (computed style, not just DOM count).
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toHaveAttribute("data-launch-mode", "compact");
+    await expect(page.getByTestId("app-launch-logo")).toBeVisible();
+    await expect(page.getByTestId("app-launch-tagline")).toBeVisible();
+
+    await expect(overlay).toHaveCount(0, { timeout: 2000 });
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+});
+
+test.describe("App launch sequence — static pre-hydration handoff", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("a visible static logo bridges the native-to-web gap even while hydration is delayed", async ({ page }) => {
+    await mockDailySummary(page);
+    await mockStandalone(page, true);
+    // Delay every Next.js JS chunk (but not CSS, which is render-blocking
+    // and must load normally so the navy background/tokens are correct) so
+    // React cannot hydrate/correct the server-rendered frame before this
+    // test's assertions run — this is what actually forces the assertions
+    // below onto the true pre-hydration frame, rather than depending on an
+    // arbitrary sleep that may or may not outrun hydration on a given
+    // machine.
+    await page.route("**/_next/static/chunks/**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await route.continue();
+    });
+
+    await page.goto("/?source=pwa", { waitUntil: "domcontentloaded" });
+
+    // Asserted immediately after domcontentloaded, while hydration is still
+    // blocked — this is the frame a real device would show between the
+    // native splash fading out and the JS bundle finishing execution.
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.dataset.pwLaunch), { timeout: 1000 })
+      .toBe("pending");
+
+    const overlay = page.getByTestId("app-launch-sequence");
+    await expect(overlay).toBeVisible();
+    const overlayBox = await overlay.boundingBox();
+    expect(overlayBox).not.toBeNull();
+    expect(overlayBox!.width).toBeGreaterThanOrEqual(390 - 1);
+    expect(overlayBox!.height).toBeGreaterThanOrEqual(844 - 1);
+
+    const prepaintLogo = page.getByTestId("app-launch-prepaint-logo");
+    await expect(prepaintLogo).toBeVisible();
+    const logoBox = await prepaintLogo.boundingBox();
+    expect(logoBox).not.toBeNull();
+    expect(logoBox!.width).toBeGreaterThan(0);
+    expect(logoBox!.height).toBeGreaterThan(0);
+
+    // Occlusion check (not just "attached to the DOM"): the overlay must be
+    // the actual topmost paintable element at the viewport's center, proving
+    // the homepage is not visible through it.
+    const overlayIsOnTop = await page.evaluate(() => {
+      const el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+      return el?.closest('[data-testid="app-launch-sequence"]') != null;
+    });
+    expect(overlayIsOnTop).toBe(true);
+
+    const backgroundColor = await overlay.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(backgroundColor).not.toBe("rgb(255, 255, 255)");
+    expect(backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+
+    await expectNoHorizontalOverflow(page);
   });
 });

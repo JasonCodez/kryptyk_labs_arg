@@ -49,14 +49,14 @@ const ACCENT_TOKEN: Record<(typeof FEATURES)[number]["accent"], string> = {
   accent: "var(--pw-brand-accent)",
 };
 
-export default function HomeClient({ launchCandidate = false }: { launchCandidate?: boolean }) {
+export default function HomeClient() {
   const { data: session } = useSession();
   const competeHref = session ? "/warz" : "/auth/register";
   const reduceMotion = useAppReducedMotion();
 
   return (
     <>
-      <AppSplashScreen launchCandidate={launchCandidate} />
+      <AppSplashScreen />
       <main
       style={{
         // Restrained layered background: base surface plus one subtle blue glow

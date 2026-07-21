@@ -15,10 +15,16 @@ import {
 
 /**
  * "The Puzzle Forge" — the branded launch sequence for a genuine root PWA
- * launch (?source=pwa in standalone display mode). Internal concept name
+ * launch (/?source=pwa in standalone display mode). Internal concept name
  * only; never shown to users.
  *
- * Timing is a deliberate one-time sequence (see PHASE_TIMING below), not a
+ * Scoped entirely to the homepage by virtue of only ever being rendered from
+ * HomeClient — there is no server-known "is this a launch" signal (the
+ * homepage route is static), so candidacy is decided entirely in the
+ * browser, both by the pre-paint bootstrap script below and by this
+ * component's own hydrated effect, using the exact same rules.
+ *
+ * Timing is a deliberate one-time sequence (see *_TIMING below), not a
  * loading indicator — it never waits on network/session/API state and always
  * exits via its own hard timeout.
  */
@@ -54,6 +60,19 @@ const REDUCED_TIMING = {
   hardTimeout: 650,
 };
 
+// A valid root PWA launch is exactly "/" with a literal ?source=pwa — deep
+// links like /daily?source=pwa are intentional app shortcuts and must never
+// be swept in. Shared verbatim between the pre-paint bootstrap script below
+// and the hydrated resolver so the two can never disagree about candidacy.
+function readLaunchCandidate(): boolean {
+  try {
+    if (window.location.pathname !== "/") return false;
+    return new URLSearchParams(window.location.search).get("source") === "pwa";
+  } catch {
+    return false;
+  }
+}
+
 function readStandalone(): boolean {
   try {
     const nav = window.navigator as Navigator & { standalone?: boolean };
@@ -63,14 +82,13 @@ function readStandalone(): boolean {
   }
 }
 
-function readSessionSeen(): boolean {
+function readSessionSeen(): { seen: boolean; available: boolean } {
   try {
-    return sessionStorage.getItem(APP_LAUNCH_SESSION_KEY) === "1";
+    return { seen: sessionStorage.getItem(APP_LAUNCH_SESSION_KEY) === "1", available: true };
   } catch {
     // Unreadable session storage must never be treated as "already seen" —
-    // that would silently and permanently suppress the sequence. Allow one
-    // fail-safe presentation instead (downgraded to compact below).
-    return false;
+    // that would silently and permanently suppress the sequence.
+    return { seen: false, available: false };
   }
 }
 
@@ -95,18 +113,37 @@ function persistLaunch() {
   }
 }
 
+function markLaunchSkipped() {
+  try {
+    document.documentElement.dataset.pwLaunch = "skip";
+  } catch {
+    // ignore
+  }
+}
+
 // Inline, synchronous pre-paint bootstrap: written into the initial HTML
 // stream so it executes (and blocks parsing) before the rest of the document
 // is parsed or painted. It only ever writes one narrowly-scoped attribute —
 // no fetch, no auth, no global styling — so a launch-eligible session shows
 // the overlay's static first frame immediately instead of the homepage
-// flashing through first. Storage failures resolve to "skip" rather than
-// throwing.
-const BOOTSTRAP_SCRIPT = `(function(){try{var h=document.documentElement;var standalone=false;try{standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}catch(e){}var seen=true;try{seen=sessionStorage.getItem(${JSON.stringify(
+// flashing through first.
+//
+// A session-storage read failure must fail OPEN (pending), matching the
+// hydrated resolver below — never fail closed to "skip", which would make an
+// otherwise-eligible compact/reduced launch invisible for its entire
+// lifetime (the overlay's real visibility is controlled purely by this
+// attribute; a mismatch here previously left the overlay in the DOM with
+// data-launch-mode="compact" while remaining permanently display:none).
+// Exported (test-only use) so its exact fail-open-on-storage-error behavior
+// can be unit-tested directly by evaluating the string, rather than only
+// trusting a description of what it's supposed to do — a mismatch here
+// previously shipped silently because nothing executed this string outside
+// a real browser.
+export const BOOTSTRAP_SCRIPT = `(function(){try{var h=document.documentElement;var candidate=false;try{candidate=window.location.pathname==='/'&&new URLSearchParams(window.location.search).get('source')==='pwa';}catch(e){}var standalone=false;try{standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}catch(e){}var seen=false;try{seen=sessionStorage.getItem(${JSON.stringify(
   APP_LAUNCH_SESSION_KEY
-)})==='1';}catch(e){}h.dataset.pwLaunch=(standalone&&!seen)?'pending':'skip';}catch(e){try{document.documentElement.dataset.pwLaunch='skip';}catch(e2){}}})();`;
+)})==='1';}catch(e){seen=false;}h.dataset.pwLaunch=(candidate&&standalone&&!seen)?'pending':'skip';}catch(e){try{document.documentElement.dataset.pwLaunch='skip';}catch(e2){}}})();`;
 
-export default function AppSplashScreen({ launchCandidate = false }: { launchCandidate?: boolean }) {
+export default function AppSplashScreen() {
   const reducedMotion = useAppReducedMotion();
   const [mode, setMode] = useState<AppLaunchMode | null>(null);
   const [phase, setPhase] = useState<Phase>("entering");
@@ -123,31 +160,27 @@ export default function AppSplashScreen({ launchCandidate = false }: { launchCan
   // after — keeps the static pre-paint frame and the JS-driven frame visually
   // continuous instead of flickering between them.
   useLayoutEffect(() => {
-    if (!launchCandidate) return;
-
+    const launchCandidate = readLaunchCandidate();
     const standalone = readStandalone();
-    const sessionSeen = readSessionSeen();
+    const { seen: sessionSeen, available: sessionStorageAvailable } = readSessionSeen();
     const { version: storedVersion, available: localStorageAvailable } = readStoredVersion();
     // Read the accessibility signal directly (rather than trusting the
     // closed-over hook value) — useAppReducedMotion's client value can lag
     // one passive-effect tick behind its SSR-safe server snapshot, and the
     // mode decision below must not race that correction.
     const reducedMotionNow = reducedMotion || prefersReducedMotion();
-    let resolved = resolveAppLaunchMode({
+    const resolved = resolveAppLaunchMode({
       launchCandidate,
       standalone,
       sessionSeen,
+      sessionStorageAvailable,
       storedVersion,
+      localStorageAvailable,
       reducedMotion: reducedMotionNow,
     });
 
-    // Unreadable localStorage must never be assumed to mean "first-time
-    // visitor" — fall back to the less conspicuous compact treatment.
-    if (!localStorageAvailable && resolved === "full") {
-      resolved = "compact";
-    }
-
     if (resolved === "none") {
+      markLaunchSkipped();
       setMode("none");
       return;
     }
@@ -158,7 +191,13 @@ export default function AppSplashScreen({ launchCandidate = false }: { launchCan
     const timing = resolved === "full" ? FULL_TIMING : resolved === "compact" ? COMPACT_TIMING : REDUCED_TIMING;
 
     const scheduleExit = () => setPhase("exiting");
-    const scheduleRemove = () => setMode("none");
+    // Only clears the HTML attribute once removal actually happens — the
+    // "pending" CSS override must keep the overlay displayed for the entire
+    // opacity/transform fade, not just up to when the fade begins.
+    const scheduleRemove = () => {
+      markLaunchSkipped();
+      setMode("none");
+    };
 
     if (resolved === "full" || resolved === "compact") {
       const holdDelay = resolved === "full" ? FULL_TIMING.taglineDelay : COMPACT_TIMING.taglineDelay;
@@ -170,9 +209,14 @@ export default function AppSplashScreen({ launchCandidate = false }: { launchCan
     // above never fires for any reason.
     timers.current.push(setTimeout(scheduleRemove, timing.hardTimeout));
 
-    return clearTimers;
+    return () => {
+      clearTimers();
+      // True-unmount cleanup (e.g. client-side navigation away mid-sequence)
+      // — never leave a stale "pending" attribute behind.
+      markLaunchSkipped();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [launchCandidate]);
+  }, []);
 
   // Scroll lock while any overlay content is actually visible.
   useLayoutEffect(() => {
@@ -197,22 +241,29 @@ export default function AppSplashScreen({ launchCandidate = false }: { launchCan
     };
   }, [mode]);
 
-  if (!launchCandidate) return null;
+  // Definitively ineligible (or already-seen/reduced-away-to-none) — remove
+  // the whole overlay, script included, from the DOM.
   if (mode === "none") return null;
 
-  // Falls back to the least conspicuous look while the real mode is still
-  // resolving post-hydration, so a compact/reduced launch never has to
-  // downgrade away from a flashier "full" frame it briefly guessed wrong.
+  const unresolved = mode === null;
   const resolvedMode: AppLaunchMode = mode ?? "compact";
   const showTiles = resolvedMode === "full";
   const showLightSweep = resolvedMode !== "reduced";
   const animateSegments = resolvedMode === "full";
   const exiting = phase === "exiting";
+  // Compact/reduced modes reveal the logo immediately (logoDelay: 0 / no
+  // delay at all) — since the static pre-paint mark already showed the logo
+  // at full opacity, the "real" logo for those two modes continues from
+  // there instead of re-entering from opacity 0. Full mode's tile-first,
+  // logo-revealed-later choreography is the pre-existing approved design and
+  // is left untouched.
+  const logoAlreadyVisible = resolvedMode !== "full";
 
   return (
     <>
-      {/* Pre-paint bootstrap: only ever emitted for a server-known launch
-          candidate route; decides "pending" vs "skip" before hydration. */}
+      {/* Pre-paint bootstrap: always emitted (this component only ever
+          mounts on the homepage) — decides "pending" vs "skip" itself,
+          entirely client-side, before hydration. */}
       <script id="pw-launch-bootstrap" dangerouslySetInnerHTML={{ __html: BOOTSTRAP_SCRIPT }} />
       <style>{`
         html[data-pw-launch="pending"] [data-pw-launch-root] { display: flex !important; }
@@ -259,140 +310,165 @@ export default function AppSplashScreen({ launchCandidate = false }: { launchCan
           }}
         />
 
-        {showTiles && (
-          <div
-            data-testid="app-launch-tiles"
-            style={{ position: "relative", display: "flex", gap: "clamp(10px, 2.5vw, 16px)" }}
-          >
-            {TILES.map(({ Icon, label }, index) => (
-              <motion.div
-                key={label}
-                initial={{ opacity: 0, scale: 0.4, y: index % 2 === 0 ? -16 : 16 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ type: "spring", stiffness: 340, damping: 18, delay: index * 0.07 }}
-                title={label}
-                style={{
-                  width: "clamp(42px, 11vw, 54px)",
-                  height: "clamp(42px, 11vw, 54px)",
-                  borderRadius: 14,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "var(--pw-surface-2)",
-                  border: "1px solid var(--pw-border-default)",
-                  boxShadow: "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)",
-                }}
-              >
-                <Icon
-                  aria-hidden="true"
-                  size={22}
-                  strokeWidth={2.25}
-                  style={{ color: index === 2 ? "var(--pw-brand-accent)" : "var(--pw-brand-primary)" }}
-                />
-              </motion.div>
-            ))}
-          </div>
-        )}
-
-        <motion.div
-          data-testid="app-launch-logo"
-          initial={resolvedMode === "reduced" ? { opacity: 1 } : { opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={
-            resolvedMode === "reduced"
-              ? { duration: 0 }
-              : { type: "spring", stiffness: 260, damping: 22, delay: (resolvedMode === "full" ? FULL_TIMING.logoDelay : COMPACT_TIMING.logoDelay) / 1000 }
-          }
-          style={{
-            position: "relative",
-            width: "clamp(96px, 22vw, 148px)",
-            aspectRatio: "1 / 1",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            filter: "drop-shadow(0 8px 24px color-mix(in srgb, var(--pw-brand-primary) 35%, transparent))",
-          }}
-        >
+        {unresolved ? (
+          // Static handoff mark: rendered identically on the server and on
+          // the very first client render (depends only on `mode === null`,
+          // never on window), so it is what's actually visible during the
+          // gap between the native splash and hydration completing — full
+          // opacity, explicit dimensions, no transform, no dependency on
+          // Framer Motion or any other JS chunk having executed yet.
           <img
+            data-testid="app-launch-prepaint-logo"
             src="/images/puzzle_warz_logo.png"
             alt="PuzzleWarz"
             width={148}
             height={148}
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            style={{
+              position: "relative",
+              width: "clamp(96px, 22vw, 148px)",
+              aspectRatio: "1 / 1",
+              objectFit: "contain",
+              filter: "drop-shadow(0 8px 24px color-mix(in srgb, var(--pw-brand-primary) 35%, transparent))",
+            }}
           />
-          {showLightSweep && (
-            <div
-              data-testid="app-launch-sweep"
-              aria-hidden="true"
+        ) : (
+          <>
+            {showTiles && (
+              <div
+                data-testid="app-launch-tiles"
+                style={{ position: "relative", display: "flex", gap: "clamp(10px, 2.5vw, 16px)" }}
+              >
+                {TILES.map(({ Icon, label }, index) => (
+                  <motion.div
+                    key={label}
+                    initial={{ opacity: 0, scale: 0.4, y: index % 2 === 0 ? -16 : 16 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 340, damping: 18, delay: index * 0.07 }}
+                    title={label}
+                    style={{
+                      width: "clamp(42px, 11vw, 54px)",
+                      height: "clamp(42px, 11vw, 54px)",
+                      borderRadius: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "var(--pw-surface-2)",
+                      border: "1px solid var(--pw-border-default)",
+                      boxShadow: "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)",
+                    }}
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      size={22}
+                      strokeWidth={2.25}
+                      style={{ color: index === 2 ? "var(--pw-brand-accent)" : "var(--pw-brand-primary)" }}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            )}
+
+            <motion.div
+              data-testid="app-launch-logo"
+              initial={logoAlreadyVisible ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={
+                logoAlreadyVisible
+                  ? { duration: 0 }
+                  : { type: "spring", stiffness: 260, damping: 22, delay: FULL_TIMING.logoDelay / 1000 }
+              }
               style={{
-                position: "absolute",
-                inset: 0,
-                overflow: "hidden",
-                borderRadius: 12,
-                pointerEvents: "none",
+                position: "relative",
+                width: "clamp(96px, 22vw, 148px)",
+                aspectRatio: "1 / 1",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                filter: "drop-shadow(0 8px 24px color-mix(in srgb, var(--pw-brand-primary) 35%, transparent))",
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  bottom: 0,
-                  width: "40%",
-                  background:
-                    "linear-gradient(75deg, transparent, color-mix(in srgb, white 55%, transparent), transparent)",
-                  animation: `pw-launch-sweep 0.9s ease-out ${((resolvedMode === "full" ? FULL_TIMING.logoDelay : COMPACT_TIMING.logoDelay) + 120) / 1000}s 1 both`,
-                }}
+              <img
+                src="/images/puzzle_warz_logo.png"
+                alt="PuzzleWarz"
+                width={148}
+                height={148}
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
               />
-            </div>
-          )}
-        </motion.div>
+              {showLightSweep && (
+                <div
+                  data-testid="app-launch-sweep"
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    overflow: "hidden",
+                    borderRadius: 12,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      width: "40%",
+                      background:
+                        "linear-gradient(75deg, transparent, color-mix(in srgb, white 55%, transparent), transparent)",
+                      animation: `pw-launch-sweep 0.9s ease-out ${((resolvedMode === "full" ? FULL_TIMING.logoDelay : COMPACT_TIMING.logoDelay) + 120) / 1000}s 1 both`,
+                    }}
+                  />
+                </div>
+              )}
+            </motion.div>
 
-        <motion.div
-          data-testid="app-launch-tagline"
-          initial={resolvedMode === "reduced" ? { opacity: 1 } : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={
-            resolvedMode === "reduced"
-              ? { duration: 0 }
-              : { duration: 0.5, delay: (resolvedMode === "full" ? FULL_TIMING.taglineDelay : COMPACT_TIMING.taglineDelay) / 1000 }
-          }
-          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}
-        >
-          <p
-            style={{
-              margin: 0,
-              textAlign: "center",
-              color: "var(--pw-text-secondary)",
-              fontSize: "clamp(11px, 3vw, 13px)",
-              fontWeight: 700,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-            }}
-          >
-            CLASSIC PUZZLES. MODERN COMPETITION.
-          </p>
-
-          <div data-testid="app-launch-segments" style={{ display: "flex", gap: 6 }}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <motion.div
-                key={i}
-                initial={animateSegments ? { opacity: 0.25 } : { opacity: 1 }}
-                animate={{ opacity: 1 }}
-                transition={
-                  animateSegments
-                    ? { duration: 0.25, delay: (FULL_TIMING.taglineDelay + 120 + i * 90) / 1000 }
-                    : { duration: 0 }
-                }
+            <motion.div
+              data-testid="app-launch-tagline"
+              initial={resolvedMode === "reduced" ? { opacity: 1 } : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={
+                resolvedMode === "reduced"
+                  ? { duration: 0 }
+                  : { duration: 0.5, delay: (resolvedMode === "full" ? FULL_TIMING.taglineDelay : COMPACT_TIMING.taglineDelay) / 1000 }
+              }
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}
+            >
+              <p
                 style={{
-                  width: 22,
-                  height: 4,
-                  borderRadius: 2,
-                  background: "var(--pw-brand-secondary)",
+                  margin: 0,
+                  textAlign: "center",
+                  color: "var(--pw-text-secondary)",
+                  fontSize: "clamp(11px, 3vw, 13px)",
+                  fontWeight: 700,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
                 }}
-              />
-            ))}
-          </div>
-        </motion.div>
+              >
+                CLASSIC PUZZLES. MODERN COMPETITION.
+              </p>
+
+              <div data-testid="app-launch-segments" style={{ display: "flex", gap: 6 }}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <motion.div
+                    key={i}
+                    initial={animateSegments ? { opacity: 0.25 } : { opacity: 1 }}
+                    animate={{ opacity: 1 }}
+                    transition={
+                      animateSegments
+                        ? { duration: 0.25, delay: (FULL_TIMING.taglineDelay + 120 + i * 90) / 1000 }
+                        : { duration: 0 }
+                    }
+                    style={{
+                      width: 22,
+                      height: 4,
+                      borderRadius: 2,
+                      background: "var(--pw-brand-secondary)",
+                    }}
+                  />
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
       </div>
     </>
   );

@@ -8,13 +8,13 @@ jest.mock("next-auth/react", () => ({
   useSession: () => mockUseSession(),
 }));
 
-// Narrow mock: HomeClient's own tests only need to know whether the launch
-// overlay is asked to render eligible — AppSplashScreen's own mode/timing/
-// persistence behavior is covered by AppSplashScreen.test.tsx.
+// Narrow mock: HomeClient's own tests only need to know that the launch
+// overlay is mounted — AppSplashScreen no longer takes any props (it decides
+// its own eligibility from the URL/standalone/storage state), and its
+// mode/timing/persistence behavior is covered by AppSplashScreen.test.tsx.
 jest.mock("@/components/AppSplashScreen", () => ({
   __esModule: true,
-  default: ({ launchCandidate }: { launchCandidate?: boolean }) =>
-    launchCandidate ? <div data-testid="mock-app-splash-eligible" /> : null,
+  default: () => <div data-testid="mock-app-splash" />,
 }));
 
 // jsdom has no IntersectionObserver; framer-motion's whileInView needs one.
@@ -40,8 +40,8 @@ function mockFetch() {
   }) as jest.Mock;
 }
 
-async function renderHome(launchCandidate?: boolean) {
-  render(<HomeClient launchCandidate={launchCandidate} />);
+async function renderHome() {
+  render(<HomeClient />);
   await act(async () => {
     await Promise.resolve();
   });
@@ -87,19 +87,11 @@ describe("HomeClient", () => {
     expect(hero.textContent).toContain("Start Daily Run");
   });
 
-  it("does not render a visible launch overlay when launchCandidate is false (the default)", async () => {
+  it("mounts the launch splash sequence above the homepage main content", async () => {
     mockUseSession.mockReturnValue({ data: null, status: "unauthenticated" });
     mockFetch();
     await renderHome();
 
-    expect(document.querySelector('[data-testid="mock-app-splash-eligible"]')).toBeNull();
-  });
-
-  it("passes launch eligibility through to the splash sequence when launchCandidate is true", async () => {
-    mockUseSession.mockReturnValue({ data: null, status: "unauthenticated" });
-    mockFetch();
-    await renderHome(true);
-
-    expect(document.querySelector('[data-testid="mock-app-splash-eligible"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="mock-app-splash"]')).not.toBeNull();
   });
 });
