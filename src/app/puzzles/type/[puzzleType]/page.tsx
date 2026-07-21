@@ -11,12 +11,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const label = getPuzzleTypeLabel(puzzleType);
 
   return {
-    title: `${label} Master`,
-    description: `Work through every ${label} puzzle in order, one unlock at a time.`,
+    title: `${label} Campaign`,
+    description: `Play the ${label} campaign, track your progress, and complete every challenge.`,
     alternates: { canonical: `https://puzzlewarz.com/puzzles/type/${puzzleType}` },
     openGraph: {
-      title: `${label} Master | Puzzle Warz`,
-      description: `Work through every ${label} puzzle in order, one unlock at a time.`,
+      title: `${label} Campaign | Puzzle Warz`,
+      description: `Play the ${label} campaign, track your progress, and complete every challenge.`,
       url: `https://puzzlewarz.com/puzzles/type/${puzzleType}`,
       type: "website",
     },

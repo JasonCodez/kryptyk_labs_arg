@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import FilterBar from "@/components/puzzle/FilterBar";
 import { detectWebGLSupport } from "@/lib/webglSupport";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -674,6 +673,58 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
     return <LoadingSpinner label="Loading puzzles…" size={180} />;
   }
 
+  const teamModal = showTeamModal ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black opacity-60" onClick={closeTeamModal}></div>
+      <div className="relative rounded-lg p-6 max-w-md mx-4 w-full max-h-[90vh] overflow-y-auto" style={{ background: 'var(--pw-bg-elevated)', border: '1px solid var(--pw-border-strong)' }}>
+        <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--pw-text-primary)' }}>{teamModalTitle}</h3>
+        <p style={{ color: 'var(--pw-text-secondary)' }} className="mb-4">{teamModalMessage}</p>
+        <div className="flex justify-end gap-2">
+          {teamModalCancelText && (
+            <button
+              onClick={closeTeamModal}
+              className="px-4 py-2 rounded bg-transparent font-semibold"
+              style={{ border: '1px solid var(--pw-border-strong)', color: 'var(--pw-text-primary)' }}
+            >
+              {teamModalCancelText}
+            </button>
+          )}
+          <GameButton onClick={onTeamModalConfirm} variant="primary" size="sm">{teamModalConfirmText}</GameButton>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  // Campaign branch — a completely separate render path from the frozen flat
+  // list below, so campaign-only presentation can never leak into it. The
+  // route already scopes `puzzles` to this exact puzzleType (see fetchData).
+  if (puzzleType) {
+    return (
+      <>
+        <div
+          style={{
+            background:
+              'radial-gradient(1300px 800px at 15% -10%, color-mix(in srgb, var(--pw-brand-primary) 12%, transparent), transparent 62%), radial-gradient(1100px 700px at 90% 0%, color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent), transparent 58%), var(--pw-bg-base)',
+            minHeight: '100vh',
+          }}
+        >
+          <CampaignPath
+            puzzleType={puzzleType}
+            puzzles={puzzles}
+            justCompletedId={justCompletedId}
+            onActivatePuzzle={(puzzleId) => {
+              const puzzle = puzzles.find((item) => item.id === puzzleId);
+              if (puzzle) {
+                void handlePuzzleClick(puzzle);
+              }
+            }}
+          />
+        </div>
+        {teamModal}
+      </>
+    );
+  }
+
   const visibleCategoryIds = new Set(puzzles.map((p) => p.category?.id).filter(Boolean));
   const visibleCategories = categories.filter((c) => visibleCategoryIds.has(c.id));
 
@@ -689,33 +740,19 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
       {/* Header */}
       <div className="pt-24 pb-8 md:pb-16 px-4">
         <div className="max-w-7xl mx-auto">
-          {puzzleType && (
-            <Link href="/puzzles" className="inline-block text-sm font-semibold mb-3 hover:underline" style={{ color: 'var(--pw-brand-primary)' }}>
-              ← All Campaigns
-            </Link>
-          )}
           <h1 className="text-3xl md:text-5xl font-bold mb-4" style={{ color: 'var(--pw-text-primary)' }}>
-            {puzzleType ? `${getPuzzleTypeLabel(puzzleType)} Master` : 'Puzzles'}
+            Puzzles
           </h1>
-          {!puzzleType && (
-            <p style={{ color: 'var(--pw-text-secondary)' }}>
-              Tackle challenges at your own pace. Win points solo or team up for collaborative solving
-            </p>
-          )}
+          <p style={{ color: 'var(--pw-text-secondary)' }}>
+            Tackle challenges at your own pace. Win points solo or team up for collaborative solving
+          </p>
         </div>
       </div>
 
       {/* Content */}
       <div className="px-4 py-6 md:py-12 max-w-7xl mx-auto overflow-x-hidden">
-        {puzzleType && <CampaignPath puzzles={puzzles} />}
-
-        {/* Filters — the campaign pages (puzzleType set) intentionally skip these: the trail
-            above already orders things, so a category/difficulty/status filter would just let
-            you scramble a campaign's own sequence. Only the legacy flat/category browsing view
-            still needs them. */}
         <div className="mb-6 md:mb-12">
-          {!puzzleType && (
-            <div>
+          <div>
               <FilterBar
                 onDifficultyChange={setSelectedDifficulty}
                 onStatusChange={setSelectedStatus}
@@ -727,11 +764,9 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                 currentStatus={selectedStatus}
                 currentSort={{ by: sortBy, order: sortOrder }}
               />
-            </div>
-          )}
+          </div>
 
-          {!puzzleType && (
-            <div className="mt-6 mb-8">
+          <div className="mt-6 mb-8">
               <h3 className="text-xs font-bold tracking-widest mb-3 uppercase" style={{ color: 'var(--pw-text-muted)' }}>Categories</h3>
               <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
                 <div className="flex gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-x-visible sm:pb-0 no-scrollbar">
@@ -773,7 +808,6 @@ export default function PuzzlesList({ initialCategory = "all", puzzleType }: { i
                 </div>
               </div>
             </div>
-          )}
 
           {/* View Mode Toggle and Results Count */}
           <div className="flex items-center justify-between mb-4">
