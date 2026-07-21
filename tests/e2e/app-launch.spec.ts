@@ -90,12 +90,14 @@ test.describe("App launch sequence — first root launch", () => {
     await expect(overlay).toHaveAttribute("data-launch-mode", "full");
     await expect(page.getByTestId("app-launch-tiles")).toBeVisible();
     await expect(page.getByTestId("app-launch-tagline")).toContainText("CLASSIC PUZZLES. MODERN COMPETITION.");
-    await expect(page.getByTestId("app-launch-segments")).toBeVisible();
+    await expect(page.getByTestId("app-launch-segments")).toHaveCount(0);
+    await expect(page.getByTestId("app-launch-spinner")).toBeVisible();
+    await expect(page.getByTestId("app-launch-message")).toBeVisible();
 
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     await expectNoHorizontalOverflow(page);
 
-    await expect(overlay).toHaveCount(0, { timeout: 5000 });
+    await expect(overlay).toHaveCount(0, { timeout: 6500 });
     await expect(page.getByRole("heading", { level: 1, name: "Classic puzzles. Built to compete." })).toBeVisible();
 
     const version = await page.evaluate(() => localStorage.getItem("pw_app_launch_version"));
@@ -137,8 +139,11 @@ test.describe("App launch sequence — compact mode", () => {
     await expect(overlay).toHaveAttribute("data-launch-mode", "compact");
     await expect(page.getByTestId("app-launch-tiles")).toHaveCount(0);
     await expect(page.getByTestId("app-launch-logo")).toBeVisible();
+    await expect(page.getByTestId("app-launch-segments")).toHaveCount(0);
+    await expect(page.getByTestId("app-launch-spinner")).toBeVisible();
+    await expect(page.getByTestId("app-launch-message")).toBeVisible();
 
-    await expect(overlay).toHaveCount(0, { timeout: 4000 });
+    await expect(overlay).toHaveCount(0, { timeout: 6500 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 });
@@ -158,6 +163,9 @@ test.describe("App launch sequence — reduced motion", () => {
     await expect(page.getByTestId("app-launch-tagline")).toBeVisible();
     await expect(page.getByTestId("app-launch-tiles")).toHaveCount(0);
     await expect(page.getByTestId("app-launch-sweep")).toHaveCount(0);
+    await expect(page.getByTestId("app-launch-segments")).toHaveCount(0);
+    await expect(page.getByTestId("app-launch-spinner")).toHaveCount(0);
+    await expect(page.getByTestId("app-launch-message")).toHaveCount(0);
 
     await expect(overlay).toHaveCount(0, { timeout: 3500 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -188,7 +196,7 @@ test.describe("App launch sequence — landscape phone", () => {
     const { scrollHeight: overlayScrollHeight } = await overlay.evaluate((el) => ({ scrollHeight: el.scrollHeight }));
     expect(overlayScrollHeight).toBeLessThanOrEqual(390 + 4);
 
-    await expect(overlay).toHaveCount(0, { timeout: 5000 });
+    await expect(overlay).toHaveCount(0, { timeout: 6500 });
     await expectNoHorizontalOverflow(page);
   });
 });
@@ -207,7 +215,7 @@ test.describe("App launch sequence — narrow phone", () => {
     expect(logoBox!.x + logoBox!.width).toBeLessThanOrEqual(320 + 1);
 
     await waitForStage(page, "playing");
-    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 5000 });
+    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 6500 });
   });
 });
 
@@ -228,7 +236,7 @@ test.describe("App launch sequence — desktop", () => {
     expect(logoBox).not.toBeNull();
     expect(logoBox!.width).toBeLessThanOrEqual(160);
 
-    await expect(overlay).toHaveCount(0, { timeout: 5000 });
+    await expect(overlay).toHaveCount(0, { timeout: 6500 });
     const heroBox = await page.locator('[data-testid="home-hero-container"]').boundingBox();
     expect(heroBox).not.toBeNull();
     expect(heroBox!.width).toBeGreaterThan(0);
@@ -249,7 +257,7 @@ test.describe("App launch sequence — local storage failure remains visible", (
     await expect(overlay).toHaveAttribute("data-launch-mode", "compact");
     await expect(page.getByTestId("app-launch-logo")).toBeVisible();
 
-    await expect(overlay).toHaveCount(0, { timeout: 4000 });
+    await expect(overlay).toHaveCount(0, { timeout: 6500 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 });
@@ -308,7 +316,7 @@ test.describe("App launch sequence — real-device regression: standalone-false 
     await waitForStage(page, "playing");
     await expect(overlay).not.toHaveAttribute("data-launch-mode", "none");
 
-    await expect(overlay).toHaveCount(0, { timeout: 5000 });
+    await expect(overlay).toHaveCount(0, { timeout: 6500 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 });
@@ -382,7 +390,7 @@ test.describe("App launch sequence — native splash occlusion simulation", () =
     await expect(page.getByTestId("app-launch-sweep")).toBeVisible();
     await expect(page.getByTestId("app-launch-tagline")).toBeVisible();
 
-    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 5000 });
+    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 6500 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 });
@@ -433,13 +441,13 @@ test.describe("App launch sequence — cold reload becomes compact", () => {
     await mockDailySummary(page);
     await page.goto("/?source=pwa", { waitUntil: "load" });
     await waitForStage(page, "playing");
-    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 5000 });
+    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 6500 });
 
     await page.reload({ waitUntil: "load" });
 
     await waitForStage(page, "playing");
     await expect(page.getByTestId("app-launch-sequence")).toHaveAttribute("data-launch-mode", "compact");
-    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 4000 });
+    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 6500 });
   });
 });
 
@@ -450,7 +458,7 @@ test.describe("App launch sequence — warm document replay prevention", () => {
     await mockDailySummary(page);
     await page.goto("/?source=pwa", { waitUntil: "load" });
     await page.waitForFunction(() => (window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__ === true, { timeout: 6000 });
-    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 5000 });
+    await expect(page.getByTestId("app-launch-sequence")).toHaveCount(0, { timeout: 6500 });
 
     // Client-side navigation (Next Link, no full reload) away and back —
     // the in-memory flag lives on `window`, so it must survive this.

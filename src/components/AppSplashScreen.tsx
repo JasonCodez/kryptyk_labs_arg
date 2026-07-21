@@ -34,6 +34,12 @@ import { APP_LAUNCH_VERSION, APP_LAUNCH_VERSION_KEY, resolveAppLaunchMode, type 
 
 type LaunchStage = "resolving" | "handoff" | "playing" | "exiting" | "finished";
 
+// Shared logo-box size expression — factors in viewport HEIGHT as well as
+// width so short/landscape viewports shrink the logo enough to leave room
+// for the tagline/spinner/message block below it, without changing sizing on
+// normal portrait/desktop viewports (where height was never the constraint).
+const LOGO_SIZE_EXPR = "clamp(96px, min(148px, 22vw, 28vh), 148px)";
+
 const TILES = [
   { Icon: Type, label: "Word play" },
   { Icon: Grid3X3, label: "Grid play" },
@@ -58,21 +64,30 @@ const MAX_HANDOFF_WAIT_MS = 5000;
 // component mount — the load wait and native-handoff buffer are excluded by
 // construction, matching the requirement that visible-playback timers must
 // never start counting during hydration or the native handoff.
+//
+// Every launch (full and compact alike) now holds on screen for ~4.3-4.5s of
+// visible content before exiting — long enough to actually read a couple of
+// the rotating status messages, per explicit product direction. Reduced
+// motion is a deliberate exception: it stays short, since forcing a user who
+// has asked for less motion through several extra seconds of a spinning
+// graphic would work against the accessibility signal they gave us.
 const FULL_PLAYING_TIMING = {
-  settleDelay: 350, // 300-450ms window: logo settle pulse + start of sweep
+  settleDelay: 350, // logo settle pulse + start of sweep
   sweepDelay: 420,
-  taglineDelay: 720, // 650-800ms window
-  exitDelay: 1850, // 1750-1950ms window
-  removeDelay: 2150, // 2050-2250ms window
-  hardTimeout: 2500,
+  taglineDelay: 700,
+  messagesStartDelay: 780,
+  exitDelay: 4300,
+  removeDelay: 4650,
+  hardTimeout: 5000,
 };
 
 const COMPACT_PLAYING_TIMING = {
   sweepDelay: 0,
-  taglineDelay: 120,
-  exitDelay: 880, // 800-950ms window
-  removeDelay: 1150, // 1050-1200ms window
-  hardTimeout: 1400,
+  taglineDelay: 150,
+  messagesStartDelay: 250,
+  exitDelay: 4300,
+  removeDelay: 4650,
+  hardTimeout: 5000,
 };
 
 const REDUCED_PLAYING_TIMING = {
@@ -80,6 +95,34 @@ const REDUCED_PLAYING_TIMING = {
   removeDelay: 800, // 700-900ms window
   hardTimeout: 1100,
 };
+
+// How long each rotating status message stays on screen. Purely decorative
+// flavor text ("for looks") — never a real progress/status indicator, so the
+// exact words and their order never need to reflect anything the app is
+// actually doing.
+const MESSAGE_INTERVAL_MS = 950;
+
+const LAUNCH_MESSAGES = [
+  "Setting up puzzles…",
+  "Putting the final pieces in place…",
+  "Creating something awesome…",
+  "Preparing the arena…",
+  "Sharpening pencils…",
+  "Shuffling the deck…",
+  "Warming up the puzzle engine…",
+  "Assembling today's challenges…",
+  "Polishing the pieces…",
+  "Calibrating the leaderboard…",
+];
+
+function shuffledLaunchMessages(): string[] {
+  const shuffled = [...LAUNCH_MESSAGES];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
 
 // A valid root PWA launch is exactly "/" with a literal ?source=pwa — deep
 // links like /daily?source=pwa are intentional app shortcuts and must never
@@ -176,8 +219,12 @@ export default function AppSplashScreen() {
   const reducedMotion = useAppReducedMotion();
   const [mode, setMode] = useState<AppLaunchMode | null>(null);
   const [stage, setStage] = useState<LaunchStage>("resolving");
+  const [messageIndex, setMessageIndex] = useState(0);
   const failsafeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollLockRef = useRef<{ overflow: string; overscrollBehavior: string } | null>(null);
+  // Re-shuffled once per mount so repeated launches don't always show the
+  // same opening message — never re-randomized mid-sequence.
+  const messagesRef = useRef<string[]>(shuffledLaunchMessages());
 
   const beginExit = (fadeMs: number) => {
     setStage("exiting");
@@ -320,10 +367,26 @@ export default function AppSplashScreen() {
       setStage("finished");
     }, timing.hardTimeout);
 
+    // Rotating status messages — reduced motion gets none (static content
+    // only); full/compact both start theirs once the tagline has settled in.
+    let messageInterval: ReturnType<typeof setInterval> | null = null;
+    let messageStartTimer: ReturnType<typeof setTimeout> | null = null;
+    if (mode !== "reduced") {
+      setMessageIndex(0);
+      const startDelay = mode === "full" ? FULL_PLAYING_TIMING.messagesStartDelay : COMPACT_PLAYING_TIMING.messagesStartDelay;
+      messageStartTimer = setTimeout(() => {
+        messageInterval = setInterval(() => {
+          setMessageIndex((i) => (i + 1) % messagesRef.current.length);
+        }, MESSAGE_INTERVAL_MS);
+      }, startDelay);
+    }
+
     return () => {
       clearTimeout(exitTimer);
       clearTimeout(removeTimer);
       clearTimeout(hardTimer);
+      if (messageStartTimer) clearTimeout(messageStartTimer);
+      if (messageInterval) clearInterval(messageInterval);
     };
   }, [stage, mode]);
 
@@ -360,7 +423,7 @@ export default function AppSplashScreen() {
   const showTagline = playing;
   const showSweep = playing && resolvedMode !== "reduced";
   const settled = playing && resolvedMode === "full";
-  const animateSegments = resolvedMode === "full";
+  const showSpinnerAndMessage = playing && resolvedMode !== "reduced";
   const exiting = stage === "exiting";
 
   const sweepDelayMs = resolvedMode === "full" ? FULL_PLAYING_TIMING.sweepDelay : resolvedMode === "compact" ? COMPACT_PLAYING_TIMING.sweepDelay : 0;
@@ -384,6 +447,15 @@ export default function AppSplashScreen() {
           0%   { transform: scale(1); }
           50%  { transform: scale(1.035); }
           100% { transform: scale(1); }
+        }
+        @keyframes pw-launch-spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pw-launch-message-fade {
+          0%   { opacity: 0; }
+          15%  { opacity: 1; }
+          85%  { opacity: 1; }
+          100% { opacity: 0; }
         }
       `}</style>
       <div
@@ -433,7 +505,7 @@ export default function AppSplashScreen() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: "clamp(96px, 22vw, 148px)",
+            width: LOGO_SIZE_EXPR,
             aspectRatio: "1 / 1",
             display: "flex",
             alignItems: "center",
@@ -536,7 +608,7 @@ export default function AppSplashScreen() {
           <div
             style={{
               position: "absolute",
-              top: "calc(50% + (clamp(96px, 22vw, 148px) / 2) + 28px)",
+              top: `calc(50% + (${LOGO_SIZE_EXPR} / 2) + min(28px, 4vh))`,
               left: "50%",
               transform: "translateX(-50%)",
               width: "min(340px, calc(100vw - 48px))",
@@ -547,7 +619,7 @@ export default function AppSplashScreen() {
               initial={resolvedMode === "reduced" ? { opacity: 1 } : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={resolvedMode === "reduced" ? { duration: 0 } : { duration: 0.5, delay: taglineDelayMs / 1000 }}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "min(14px, 2vh)" }}
             >
               <p
                 style={{
@@ -563,26 +635,38 @@ export default function AppSplashScreen() {
                 CLASSIC PUZZLES. MODERN COMPETITION.
               </p>
 
-              <div data-testid="app-launch-segments" style={{ display: "flex", gap: 6 }}>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <motion.div
-                    key={i}
-                    initial={animateSegments ? { opacity: 0.25 } : { opacity: 1 }}
-                    animate={{ opacity: 1 }}
-                    transition={
-                      animateSegments
-                        ? { duration: 0.25, delay: (taglineDelayMs + 120 + i * 90) / 1000 }
-                        : { duration: 0 }
-                    }
-                    style={{
-                      width: 22,
-                      height: 4,
-                      borderRadius: 2,
-                      background: "var(--pw-brand-secondary)",
-                    }}
-                  />
-                ))}
-              </div>
+              {showSpinnerAndMessage && (
+                <div
+                  data-testid="app-launch-spinner"
+                  aria-hidden="true"
+                  style={{
+                    width: 26,
+                    height: 26,
+                    marginTop: "min(4px, 1vh)",
+                    borderRadius: "50%",
+                    border: "3px solid color-mix(in srgb, var(--pw-text-secondary) 22%, transparent)",
+                    borderTopColor: "var(--pw-brand-primary)",
+                    animation: "pw-launch-spin 0.8s linear infinite",
+                  }}
+                />
+              )}
+
+              {showSpinnerAndMessage && (
+                <p
+                  key={messageIndex}
+                  data-testid="app-launch-message"
+                  style={{
+                    margin: 0,
+                    textAlign: "center",
+                    color: "var(--pw-text-muted)",
+                    fontSize: "clamp(12px, 3vw, 14px)",
+                    fontWeight: 500,
+                    animation: "pw-launch-message-fade 0.95s ease both",
+                  }}
+                >
+                  {messagesRef.current[messageIndex % messagesRef.current.length]}
+                </p>
+              )}
             </motion.div>
           </div>
         )}

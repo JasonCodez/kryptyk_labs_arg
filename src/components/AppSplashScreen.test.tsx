@@ -319,7 +319,7 @@ describe("AppSplashScreen — logo continuity", () => {
 });
 
 describe("AppSplashScreen — full sequence", () => {
-  it("plays tiles, sweep, tagline, segments, and exits within the full hard maximum", () => {
+  it("plays tiles, sweep, tagline, spinner, rotating message, and exits within the full hard maximum", () => {
     render(<AppSplashScreen />);
     completeHandoff();
 
@@ -327,17 +327,33 @@ describe("AppSplashScreen — full sequence", () => {
     expect(overlay.getAttribute("data-launch-mode")).toBe("full");
     expect(screen.getByTestId("app-launch-tiles")).toBeTruthy();
     expect(screen.getByTestId("app-launch-tagline").textContent).toContain("CLASSIC PUZZLES. MODERN COMPETITION.");
-    expect(screen.getByTestId("app-launch-segments")).toBeTruthy();
+    expect(screen.queryByTestId("app-launch-segments")).toBeNull();
+    expect(screen.getByTestId("app-launch-spinner")).toBeTruthy();
 
     act(() => {
-      jest.advanceTimersByTime(2500);
+      jest.advanceTimersByTime(800);
+    });
+    const firstMessage = screen.getByTestId("app-launch-message").textContent;
+    expect(firstMessage).toBeTruthy();
+
+    act(() => {
+      // MESSAGE_INTERVAL_MS in the component — kept as a literal here rather
+      // than importing an internal constant.
+      jest.advanceTimersByTime(950);
+    });
+    const secondMessage = screen.getByTestId("app-launch-message").textContent;
+    expect(secondMessage).toBeTruthy();
+    expect(secondMessage).not.toBe(firstMessage);
+
+    act(() => {
+      jest.advanceTimersByTime(5000);
     });
     expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
   });
 });
 
 describe("AppSplashScreen — compact sequence", () => {
-  it("skips tile assembly and exits within the compact hard maximum", () => {
+  it("skips tile assembly, still shows spinner + rotating message, and exits within the compact hard maximum", () => {
     setStoredVersion(APP_LAUNCH_VERSION);
     render(<AppSplashScreen />);
     completeHandoff();
@@ -346,16 +362,23 @@ describe("AppSplashScreen — compact sequence", () => {
     expect(overlay.getAttribute("data-launch-mode")).toBe("compact");
     expect(screen.queryByTestId("app-launch-tiles")).toBeNull();
     expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
+    expect(screen.queryByTestId("app-launch-segments")).toBeNull();
 
     act(() => {
-      jest.advanceTimersByTime(1400);
+      jest.advanceTimersByTime(400);
+    });
+    expect(screen.getByTestId("app-launch-spinner")).toBeTruthy();
+    expect(screen.getByTestId("app-launch-message")).toBeTruthy();
+
+    act(() => {
+      jest.advanceTimersByTime(5000);
     });
     expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
   });
 });
 
 describe("AppSplashScreen — reduced-motion sequence", () => {
-  it("static logo/tagline, no tiles, no sweep, exits within the reduced hard maximum", () => {
+  it("static logo/tagline, no tiles, no sweep, no spinner, no message, exits within the reduced hard maximum", () => {
     installMatchMedia({ reducedMotion: true });
     document.documentElement.setAttribute("data-reduce-animations", "true");
     render(<AppSplashScreen />);
@@ -365,6 +388,9 @@ describe("AppSplashScreen — reduced-motion sequence", () => {
     expect(overlay.getAttribute("data-launch-mode")).toBe("reduced");
     expect(screen.queryByTestId("app-launch-tiles")).toBeNull();
     expect(screen.queryByTestId("app-launch-sweep")).toBeNull();
+    expect(screen.queryByTestId("app-launch-segments")).toBeNull();
+    expect(screen.queryByTestId("app-launch-spinner")).toBeNull();
+    expect(screen.queryByTestId("app-launch-message")).toBeNull();
     expect(screen.getByTestId("app-launch-tagline")).toBeTruthy();
 
     act(() => {
@@ -396,7 +422,7 @@ describe("AppSplashScreen — HTML attribute cleanup", () => {
     completeHandoff();
 
     act(() => {
-      jest.advanceTimersByTime(1400);
+      jest.advanceTimersByTime(5000);
     });
     expect(document.documentElement.dataset.pwLaunch).toBe("skip");
   });
