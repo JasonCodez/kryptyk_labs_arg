@@ -2,7 +2,10 @@
 
 import { act, cleanup, render, screen } from "@testing-library/react";
 import AppSplashScreen, { BOOTSTRAP_SCRIPT } from "./AppSplashScreen";
-import { APP_LAUNCH_SESSION_KEY, APP_LAUNCH_VERSION, APP_LAUNCH_VERSION_KEY } from "@/lib/appLaunch";
+import { APP_LAUNCH_VERSION, APP_LAUNCH_VERSION_KEY } from "@/lib/appLaunch";
+
+const NATIVE_HANDOFF_BUFFER_MS = 700;
+const MAX_HANDOFF_WAIT_MS = 5000;
 
 type MediaQueryOverrides = { standalone?: boolean; reducedMotion?: boolean };
 
@@ -38,40 +41,58 @@ function setStoredVersion(version: string | null) {
   }
 }
 
-function setSessionSeen(seen: boolean) {
-  if (seen) {
-    window.sessionStorage.setItem(APP_LAUNCH_SESSION_KEY, "1");
-  } else {
-    window.sessionStorage.removeItem(APP_LAUNCH_SESSION_KEY);
-  }
+function setReadyState(state: DocumentReadyState) {
+  Object.defineProperty(document, "readyState", { value: state, configurable: true });
 }
 
-/**
- * A structural proxy for "the browser would actually paint this element": the
- * component's own <style> tag contains exactly one rule,
- * html[data-pw-launch="pending"] [data-pw-launch-root] { display: flex !important; },
- * and querySelector performs real CSS-selector matching (independent of
- * jsdom's very limited getComputedStyle/cascade support) — so if that
- * compound selector matches the live DOM, the override unquestionably
- * applies. This is the same authority the browser's own selector-matching
- * engine uses to decide which rules apply to an element.
- */
-function pendingSelectorCurrentlyMatches(): boolean {
-  return document.querySelector('html[data-pw-launch="pending"] [data-pw-launch-root]') !== null;
+function setVisibility(state: DocumentVisibilityState) {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
 }
 
-/** Executes the exact shipped bootstrap string in the jsdom global scope. */
+function dispatchLoad() {
+  act(() => {
+    window.dispatchEvent(new Event("load"));
+  });
+}
+
+function dispatchVisibilityChange() {
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
+
+/** Advances timers far enough to clear both mocked rAF hops plus the full native-handoff buffer. */
+function runHandoffBufferToCompletion() {
+  act(() => {
+    jest.advanceTimersByTime(NATIVE_HANDOFF_BUFFER_MS + 50);
+  });
+}
+
+/** Standard happy-path sequence: dispatch load (document already visible/complete) and run the buffer. */
+function completeHandoff() {
+  dispatchLoad();
+  runHandoffBufferToCompletion();
+}
+
 function runBootstrapScript() {
   new Function(BOOTSTRAP_SCRIPT)();
 }
 
 beforeEach(() => {
   jest.useFakeTimers();
+  window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    return setTimeout(() => cb(performance.now()), 0) as unknown as number;
+  }) as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((id: number) => clearTimeout(id)) as typeof window.cancelAnimationFrame;
   window.localStorage.clear();
   window.sessionStorage.clear();
   document.documentElement.removeAttribute("data-reduce-animations");
   document.documentElement.removeAttribute("data-pw-launch");
+  delete (window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__;
+  delete (window as unknown as { __PW_APP_LAUNCH_BOOTSTRAP_TIMEOUT__?: unknown }).__PW_APP_LAUNCH_BOOTSTRAP_TIMEOUT__;
   setUrl("/", "?source=pwa");
+  setReadyState("complete");
+  setVisibility("visible");
   installMatchMedia({});
 });
 
@@ -83,394 +104,325 @@ afterEach(() => {
   cleanup();
   document.documentElement.removeAttribute("data-reduce-animations");
   document.documentElement.removeAttribute("data-pw-launch");
+  delete (window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__;
   setUrl("/", "");
   jest.restoreAllMocks();
 });
 
-describe("AppSplashScreen — URL candidacy", () => {
-  it("/?source=pwa is eligible when standalone", () => {
+describe("AppSplashScreen — real-device regression: standalone is not a gate", () => {
+  it("/?source=pwa is eligible even when display-mode: standalone is false", () => {
     setUrl("/", "?source=pwa");
-    installMatchMedia({ standalone: true });
+    installMatchMedia({ standalone: false });
     render(<AppSplashScreen />);
-    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-mode")).toBe("full");
+
+    const overlay = screen.getByTestId("app-launch-sequence");
+    expect(overlay.getAttribute("data-launch-stage")).toBe("handoff");
+    expect(overlay.getAttribute("data-launch-mode")).not.toBe("none");
+
+    completeHandoff();
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("playing");
   });
 
-  it("/ with no query is not eligible", () => {
+  it("normal root URL has no overlay", () => {
     setUrl("/", "");
-    installMatchMedia({ standalone: true });
-    render(<AppSplashScreen />);
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-  });
-
-  it("/?source=other is not eligible", () => {
-    setUrl("/", "?source=other");
-    installMatchMedia({ standalone: true });
-    render(<AppSplashScreen />);
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-  });
-
-  it("a non-root path with ?source=pwa is not eligible (deep-link bypass)", () => {
-    setUrl("/daily", "?source=pwa");
-    installMatchMedia({ standalone: true });
+    installMatchMedia({ standalone: false });
     render(<AppSplashScreen />);
     expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
   });
 });
 
-describe("AppSplashScreen", () => {
-  it("first valid standalone launch: full mode with tiles, logo, tagline, segments, and persisted markers", () => {
-    installMatchMedia({ standalone: true });
+describe("AppSplashScreen — sessionStorage is fully retired", () => {
+  it("an old session marker has no suppressing effect, and sessionStorage is never read or written", () => {
+    window.sessionStorage.setItem("pw_app_launch_session", "1");
+    const beforeSnapshot = JSON.stringify(window.sessionStorage);
+
     render(<AppSplashScreen />);
+    completeHandoff();
+
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("playing");
+    // sessionStorage content is byte-for-byte unchanged — nothing in the
+    // component reads or writes it.
+    expect(JSON.stringify(window.sessionStorage)).toBe(beforeSnapshot);
+    expect(window.sessionStorage.getItem("pw_app_launch_session")).toBe("1");
+  });
+});
+
+describe("AppSplashScreen — version bump", () => {
+  it("stored version 1 resolves full mode under version 2", () => {
+    setStoredVersion("1");
+    render(<AppSplashScreen />);
+    completeHandoff();
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-mode")).toBe("full");
+    expect(APP_LAUNCH_VERSION).toBe("2");
+  });
+});
+
+describe("AppSplashScreen — playback does not start during hydration", () => {
+  it("stage stays handoff, static logo visible, nothing animated, nothing persisted before load", () => {
+    render(<AppSplashScreen />);
+
+    const overlay = screen.getByTestId("app-launch-sequence");
+    expect(overlay.getAttribute("data-launch-stage")).toBe("handoff");
+    expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
+    expect(screen.queryByTestId("app-launch-tiles")).toBeNull();
+    expect(screen.queryByTestId("app-launch-sweep")).toBeNull();
+    expect(screen.queryByTestId("app-launch-tagline")).toBeNull();
+
+    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBeNull();
+    expect((window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__).not.toBe(true);
+  });
+});
+
+describe("AppSplashScreen — load plus native-handoff buffer", () => {
+  it("stays in handoff before the buffer elapses, then plays after load + 2 rAF + buffer", () => {
+    render(<AppSplashScreen />);
+    dispatchLoad();
+
+    act(() => {
+      jest.advanceTimersByTime(NATIVE_HANDOFF_BUFFER_MS - 200);
+    });
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("handoff");
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    const overlay = screen.getByTestId("app-launch-sequence");
+    expect(overlay.getAttribute("data-launch-stage")).toBe("playing");
+    expect((window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__).toBe(true);
+    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBe(APP_LAUNCH_VERSION);
+    expect(screen.getByTestId("app-launch-tiles")).toBeTruthy();
+  });
+});
+
+describe("AppSplashScreen — document hidden", () => {
+  it("does not begin playback while hidden; resumes once visible", () => {
+    setVisibility("hidden");
+    render(<AppSplashScreen />);
+    dispatchLoad();
+    runHandoffBufferToCompletion();
+
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("handoff");
+
+    setVisibility("visible");
+    dispatchVisibilityChange();
+    runHandoffBufferToCompletion();
+
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("playing");
+  });
+});
+
+describe("AppSplashScreen — document already complete", () => {
+  it("still waits through two animation frames and the full handoff buffer", () => {
+    setReadyState("complete");
+    setVisibility("visible");
+    render(<AppSplashScreen />);
+
+    act(() => {
+      jest.advanceTimersByTime(NATIVE_HANDOFF_BUFFER_MS - 200);
+    });
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("handoff");
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("playing");
+  });
+});
+
+describe("AppSplashScreen — unmount before playback", () => {
+  it("clears listeners/timers, never marks played or persists version, restores body styles, sets skip", () => {
+    const originalOverflow = document.body.style.overflow;
+    const { unmount } = render(<AppSplashScreen />);
+    expect(document.body.style.overflow).toBe("hidden");
+    document.documentElement.dataset.pwLaunch = "pending";
+
+    unmount();
+
+    expect((window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__).not.toBe(true);
+    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBeNull();
+    expect(document.body.style.overflow).toBe(originalOverflow);
+    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
+
+    // Dispatching load after unmount must not throw or do anything further.
+    expect(() => dispatchLoad()).not.toThrow();
+  });
+});
+
+describe("AppSplashScreen — waiting-stage failsafe", () => {
+  it("releases the overlay after 5s if load never arrives, without marking played or persisting", () => {
+    // Never dispatch "load" — simulate a document that never finishes
+    // loading, so the handoff-wait effect is genuinely stuck waiting.
+    setReadyState("loading");
+    render(<AppSplashScreen />);
+
+    act(() => {
+      jest.advanceTimersByTime(MAX_HANDOFF_WAIT_MS + 400);
+    });
+
+    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
+    expect((window as unknown as { __PW_APP_LAUNCH_PLAYED__?: boolean }).__PW_APP_LAUNCH_PLAYED__).not.toBe(true);
+    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBeNull();
+  });
+});
+
+describe("AppSplashScreen — same-document replay prevention", () => {
+  it("a second mount in the same window after a completed launch resolves to none", () => {
+    const first = render(<AppSplashScreen />);
+    completeHandoff();
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("playing");
+    first.unmount();
+
+    render(<AppSplashScreen />);
+    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
+  });
+});
+
+describe("AppSplashScreen — bootstrap safety release", () => {
+  it("clears to skip after the no-hydration timeout if hydration never clears it", () => {
+    runBootstrapScript();
+    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
+
+    act(() => {
+      jest.advanceTimersByTime(8100);
+    });
+    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
+  });
+
+  it("hydration (component mount) clears the bootstrap safety timeout", () => {
+    runBootstrapScript();
+    render(<AppSplashScreen />);
+
+    act(() => {
+      jest.advanceTimersByTime(8100);
+    });
+    // Attribute may still legitimately be "pending" this whole time (still in
+    // handoff) — the point is the bootstrap's OWN forced-skip timer didn't
+    // fire and stomp over the component's own control of the attribute.
+    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
+  });
+});
+
+describe("AppSplashScreen — logo continuity", () => {
+  it("exactly one logo element exists across handoff and playing, with stable dimensions", () => {
+    render(<AppSplashScreen />);
+    const handoffLogo = screen.getByTestId("app-launch-logo");
+    const handoffRect = { width: handoffLogo.style.width, height: handoffLogo.style.height };
+
+    completeHandoff();
+
+    expect(screen.getAllByTestId("app-launch-logo")).toHaveLength(1);
+    const playingLogo = screen.getByTestId("app-launch-logo");
+    expect(playingLogo).toBe(handoffLogo);
+    expect({ width: playingLogo.style.width, height: playingLogo.style.height }).toEqual(handoffRect);
+  });
+});
+
+describe("AppSplashScreen — full sequence", () => {
+  it("plays tiles, sweep, tagline, segments, and exits within the full hard maximum", () => {
+    render(<AppSplashScreen />);
+    completeHandoff();
 
     const overlay = screen.getByTestId("app-launch-sequence");
     expect(overlay.getAttribute("data-launch-mode")).toBe("full");
     expect(screen.getByTestId("app-launch-tiles")).toBeTruthy();
-    expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
     expect(screen.getByTestId("app-launch-tagline").textContent).toContain("CLASSIC PUZZLES. MODERN COMPETITION.");
     expect(screen.getByTestId("app-launch-segments")).toBeTruthy();
 
-    expect(window.sessionStorage.getItem(APP_LAUNCH_SESSION_KEY)).toBe("1");
-    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBe(APP_LAUNCH_VERSION);
+    act(() => {
+      jest.advanceTimersByTime(2500);
+    });
+    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
   });
+});
 
-  it("returning cold launch: compact mode skips tile assembly and exits on the compact timeline", () => {
-    installMatchMedia({ standalone: true });
+describe("AppSplashScreen — compact sequence", () => {
+  it("skips tile assembly and exits within the compact hard maximum", () => {
     setStoredVersion(APP_LAUNCH_VERSION);
     render(<AppSplashScreen />);
+    completeHandoff();
 
     const overlay = screen.getByTestId("app-launch-sequence");
     expect(overlay.getAttribute("data-launch-mode")).toBe("compact");
     expect(screen.queryByTestId("app-launch-tiles")).toBeNull();
     expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
-    expect(screen.getByTestId("app-launch-tagline")).toBeTruthy();
 
     act(() => {
-      jest.advanceTimersByTime(950);
+      jest.advanceTimersByTime(1400);
     });
     expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
   });
+});
 
-  it("same-session launch: overlay never appears, no persistence changes", () => {
-    installMatchMedia({ standalone: true });
-    setSessionSeen(true);
-    setStoredVersion(APP_LAUNCH_VERSION);
-    render(<AppSplashScreen />);
-
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBe(APP_LAUNCH_VERSION);
-
-    act(() => {
-      jest.advanceTimersByTime(5000);
-    });
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-  });
-
-  it("normal browser: overlay never appears, no persistence changes", () => {
-    installMatchMedia({ standalone: false });
-    render(<AppSplashScreen />);
-
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-    expect(window.sessionStorage.getItem(APP_LAUNCH_SESSION_KEY)).toBeNull();
-    expect(window.localStorage.getItem(APP_LAUNCH_VERSION_KEY)).toBeNull();
-  });
-
-  it("reduced motion: static logo/tagline, no tile stage, no light sweep, exits on the reduced timeline", () => {
-    installMatchMedia({ standalone: true, reducedMotion: true });
+describe("AppSplashScreen — reduced-motion sequence", () => {
+  it("static logo/tagline, no tiles, no sweep, exits within the reduced hard maximum", () => {
+    installMatchMedia({ reducedMotion: true });
     document.documentElement.setAttribute("data-reduce-animations", "true");
     render(<AppSplashScreen />);
+    completeHandoff();
 
     const overlay = screen.getByTestId("app-launch-sequence");
     expect(overlay.getAttribute("data-launch-mode")).toBe("reduced");
     expect(screen.queryByTestId("app-launch-tiles")).toBeNull();
     expect(screen.queryByTestId("app-launch-sweep")).toBeNull();
-    expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
     expect(screen.getByTestId("app-launch-tagline")).toBeTruthy();
 
     act(() => {
-      jest.advanceTimersByTime(550);
-    });
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-  });
-
-  it("full timeout: overlay is gone once the full hard maximum has elapsed", () => {
-    installMatchMedia({ standalone: true });
-    render(<AppSplashScreen />);
-    expect(screen.getByTestId("app-launch-sequence")).toBeTruthy();
-
-    act(() => {
-      jest.advanceTimersByTime(2400);
-    });
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-  });
-
-  it("compact timeout: overlay is gone once the compact hard maximum has elapsed", () => {
-    installMatchMedia({ standalone: true });
-    setStoredVersion(APP_LAUNCH_VERSION);
-    render(<AppSplashScreen />);
-    expect(screen.getByTestId("app-launch-sequence")).toBeTruthy();
-
-    act(() => {
       jest.advanceTimersByTime(1100);
     });
     expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-  });
-
-  it("scroll lock: applies overflow hidden while visible and restores it on unmount", () => {
-    const originalOverflow = document.body.style.overflow;
-    installMatchMedia({ standalone: true });
-    const { unmount } = render(<AppSplashScreen />);
-
-    expect(document.body.style.overflow).toBe("hidden");
-
-    unmount();
-    expect(document.body.style.overflow).toBe(originalOverflow);
-  });
-
-  it("scroll lock: also restores if the component unmounts early, mid-sequence", () => {
-    installMatchMedia({ standalone: true });
-    const { unmount } = render(<AppSplashScreen />);
-    expect(document.body.style.overflow).toBe("hidden");
-
-    act(() => {
-      jest.advanceTimersByTime(300);
-    });
-    unmount();
-    expect(document.body.style.overflow).toBe("");
-  });
-
-  it("contains no focusable controls", () => {
-    installMatchMedia({ standalone: true });
-    render(<AppSplashScreen />);
-    const overlay = screen.getByTestId("app-launch-sequence");
-
-    for (const selector of ["a", "button", "input", "select", "textarea"]) {
-      expect(overlay.querySelectorAll(selector).length).toBe(0);
-    }
-    overlay.querySelectorAll("[tabindex]").forEach((el) => {
-      expect(Number(el.getAttribute("tabindex"))).toBeLessThanOrEqual(0);
-    });
-    expect(overlay.getAttribute("aria-hidden")).toBe("true");
-  });
-});
-
-describe("AppSplashScreen — pre-paint bootstrap script (evaluated directly)", () => {
-  // These exercise the literal shipped BOOTSTRAP_SCRIPT string in the jsdom
-  // global scope — the same code a real browser executes before hydration —
-  // rather than only asserting on a description of what it should do.
-  it("eligible standalone launch with no session marker -> pending", () => {
-    setUrl("/", "?source=pwa");
-    installMatchMedia({ standalone: true });
-    runBootstrapScript();
-    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
-  });
-
-  it("session marker present -> skip", () => {
-    setUrl("/", "?source=pwa");
-    installMatchMedia({ standalone: true });
-    setSessionSeen(true);
-    runBootstrapScript();
-    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
-  });
-
-  it("not standalone -> skip", () => {
-    setUrl("/", "?source=pwa");
-    installMatchMedia({ standalone: false });
-    runBootstrapScript();
-    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
-  });
-
-  it("not a root PWA candidate -> skip", () => {
-    setUrl("/daily", "?source=pwa");
-    installMatchMedia({ standalone: true });
-    runBootstrapScript();
-    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
-  });
-
-  it("sessionStorage.getItem throws -> fails OPEN to pending, not skip (the exact defect being fixed)", () => {
-    setUrl("/", "?source=pwa");
-    installMatchMedia({ standalone: true });
-    const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("session storage unavailable");
-    });
-
-    expect(() => runBootstrapScript()).not.toThrow();
-    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
-
-    getSpy.mockRestore();
-  });
-});
-
-describe("AppSplashScreen — session-storage failure", () => {
-  it("compact mode under normal motion, overlay actually displayed (selector-matched), no throw", () => {
-    setUrl("/", "?source=pwa");
-    installMatchMedia({ standalone: true });
-    const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) => {
-      if (key === APP_LAUNCH_SESSION_KEY) throw new Error("session storage unavailable");
-      return null;
-    });
-
-    // Run the real bootstrap script first, exactly as a real page load
-    // would, so the html attribute reflects its actual fail-open decision
-    // rather than a value asserted into existence by the test.
-    runBootstrapScript();
-    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
-
-    expect(() => render(<AppSplashScreen />)).not.toThrow();
-
-    const overlay = screen.queryByTestId("app-launch-sequence");
-    expect(overlay).not.toBeNull();
-    expect(overlay!.getAttribute("data-launch-mode")).toBe("compact");
-    // Bootstrap said "pending" and the hydrated resolver independently
-    // agrees (compact, not "none") — the CSS override that makes the
-    // overlay actually visible is proven by real selector matching, not by
-    // asserting DOM presence alone.
-    expect(pendingSelectorCurrentlyMatches()).toBe(true);
-
-    act(() => {
-      jest.advanceTimersByTime(1100);
-    });
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
-    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
-
-    getSpy.mockRestore();
-  });
-
-  it("reduced motion + session storage failure -> reduced mode", () => {
-    installMatchMedia({ standalone: true, reducedMotion: true });
-    document.documentElement.setAttribute("data-reduce-animations", "true");
-    const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) => {
-      if (key === APP_LAUNCH_SESSION_KEY) throw new Error("session storage unavailable");
-      return null;
-    });
-
-    render(<AppSplashScreen />);
-    const overlay = screen.getByTestId("app-launch-sequence");
-    expect(overlay.getAttribute("data-launch-mode")).toBe("reduced");
-
-    getSpy.mockRestore();
   });
 });
 
 describe("AppSplashScreen — local-storage failure", () => {
-  it("eligible normal-motion launch uses compact mode, never full", () => {
-    installMatchMedia({ standalone: true });
+  it("falls back to compact mode, never full, and never throws", () => {
     const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) => {
       if (key === APP_LAUNCH_VERSION_KEY) throw new Error("local storage unavailable");
       return null;
     });
 
-    render(<AppSplashScreen />);
-    const overlay = screen.getByTestId("app-launch-sequence");
-    expect(overlay.getAttribute("data-launch-mode")).toBe("compact");
-
-    getSpy.mockRestore();
-  });
-});
-
-describe("AppSplashScreen — both storage systems fail", () => {
-  it("normal motion -> compact", () => {
-    installMatchMedia({ standalone: true });
-    const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
-    const setSpy = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
-
     expect(() => render(<AppSplashScreen />)).not.toThrow();
-    const overlay = screen.getByTestId("app-launch-sequence");
-    expect(overlay.getAttribute("data-launch-mode")).toBe("compact");
-
-    act(() => {
-      jest.advanceTimersByTime(1100);
-    });
-    expect(screen.queryByTestId("app-launch-sequence")).toBeNull();
+    completeHandoff();
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-mode")).toBe("compact");
 
     getSpy.mockRestore();
-    setSpy.mockRestore();
-  });
-
-  it("reduced motion -> reduced", () => {
-    installMatchMedia({ standalone: true, reducedMotion: true });
-    document.documentElement.setAttribute("data-reduce-animations", "true");
-    const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
-    const setSpy = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("storage unavailable");
-    });
-
-    render(<AppSplashScreen />);
-    const overlay = screen.getByTestId("app-launch-sequence");
-    expect(overlay.getAttribute("data-launch-mode")).toBe("reduced");
-
-    getSpy.mockRestore();
-    setSpy.mockRestore();
-  });
-});
-
-describe("AppSplashScreen — pre-paint static handoff mark", () => {
-  it("is present at full opacity before mode resolution and removed once resolved", () => {
-    // Freeze the layout effect from running synchronously isn't possible via
-    // React Testing Library (useLayoutEffect always flushes inside the same
-    // act() as render()), so this asserts the *markup contract* instead:
-    // whenever mode is unresolved the component would render the prepaint
-    // mark with no opacity/transform styling and never alongside the real
-    // logo — verified structurally since the real effect resolves too fast
-    // in a synchronous test render to observe the intermediate frame
-    // directly.
-    installMatchMedia({ standalone: true });
-    render(<AppSplashScreen />);
-    // Once resolved (immediately, in this synchronous render), the prepaint
-    // mark must be gone and never coexist with the real logo.
-    expect(screen.queryByTestId("app-launch-prepaint-logo")).toBeNull();
-    expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
-  });
-
-  it("prepaint mark carries no zero-opacity or transform styling when it is the one being rendered", () => {
-    // Render a version of the tree the way it looks pre-resolution by
-    // directly inspecting the component's unresolved branch: since mode
-    // starts as null and useLayoutEffect resolves before this test can
-    // observe it, assert on the never-both-at-once contract via the
-    // full/compact/reduced-mode tests above (which prove the prepaint mark
-    // is exclusively rendered pre-resolution, see AppSplashScreen.tsx's
-    // `unresolved` branch), and directly verify here that the same
-    // <img> element used for the real logo never starts at opacity 0 for
-    // compact/reduced modes (the specific defect being fixed).
-    installMatchMedia({ standalone: true });
-    setStoredVersion(APP_LAUNCH_VERSION); // compact
-    render(<AppSplashScreen />);
-    const logoWrapper = screen.getByTestId("app-launch-logo");
-    // framer-motion applies its `initial` values as inline style on mount;
-    // for compact mode the logo must already be at full opacity.
-    expect(logoWrapper.style.opacity === "" || logoWrapper.style.opacity === "1").toBe(true);
   });
 });
 
 describe("AppSplashScreen — HTML attribute cleanup", () => {
-  it("becomes skip after normal removal", () => {
-    installMatchMedia({ standalone: true });
+  it("becomes skip after normal removal, never skip while pending playback", () => {
     setStoredVersion(APP_LAUNCH_VERSION);
     render(<AppSplashScreen />);
+    completeHandoff();
 
     act(() => {
-      jest.advanceTimersByTime(950);
+      jest.advanceTimersByTime(1400);
     });
     expect(document.documentElement.dataset.pwLaunch).toBe("skip");
   });
 
-  it("becomes skip when the resolver returns none", () => {
-    installMatchMedia({ standalone: false });
+  it("becomes skip immediately when the resolver returns none", () => {
+    setUrl("/", "");
     render(<AppSplashScreen />);
     expect(document.documentElement.dataset.pwLaunch).toBe("skip");
   });
+});
 
-  it("becomes skip on early unmount", () => {
-    installMatchMedia({ standalone: true });
+describe("AppSplashScreen — scroll lock and accessibility", () => {
+  it("locks scroll while visible and restores on unmount", () => {
+    const originalOverflow = document.body.style.overflow;
     const { unmount } = render(<AppSplashScreen />);
-    document.documentElement.dataset.pwLaunch = "pending";
-
+    expect(document.body.style.overflow).toBe("hidden");
     unmount();
-    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
+    expect(document.body.style.overflow).toBe(originalOverflow);
+  });
+
+  it("contains no focusable controls", () => {
+    render(<AppSplashScreen />);
+    const overlay = screen.getByTestId("app-launch-sequence");
+    for (const selector of ["a", "button", "input", "select", "textarea"]) {
+      expect(overlay.querySelectorAll(selector).length).toBe(0);
+    }
+    expect(overlay.getAttribute("aria-hidden")).toBe("true");
   });
 });

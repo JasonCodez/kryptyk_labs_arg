@@ -2,9 +2,7 @@ import { APP_LAUNCH_VERSION, resolveAppLaunchMode } from "./appLaunch";
 
 const BASE = {
   launchCandidate: true,
-  standalone: true,
-  sessionSeen: false,
-  sessionStorageAvailable: true,
+  alreadyPlayedInDocument: false,
   storedVersion: null as string | null,
   localStorageAvailable: true,
   reducedMotion: false,
@@ -15,16 +13,16 @@ describe("resolveAppLaunchMode", () => {
     expect(resolveAppLaunchMode({ ...BASE, launchCandidate: false })).toBe("none");
   });
 
-  it("non-standalone returns none", () => {
-    expect(resolveAppLaunchMode({ ...BASE, standalone: false })).toBe("none");
-  });
-
-  it("session already seen returns none", () => {
-    expect(resolveAppLaunchMode({ ...BASE, sessionSeen: true })).toBe("none");
+  it("already played in this document returns none", () => {
+    expect(resolveAppLaunchMode({ ...BASE, alreadyPlayedInDocument: true })).toBe("none");
   });
 
   it("reduced motion returns reduced", () => {
     expect(resolveAppLaunchMode({ ...BASE, reducedMotion: true })).toBe("reduced");
+  });
+
+  it("local storage unavailable returns compact", () => {
+    expect(resolveAppLaunchMode({ ...BASE, localStorageAvailable: false })).toBe("compact");
   });
 
   it("missing stored version returns full", () => {
@@ -32,71 +30,34 @@ describe("resolveAppLaunchMode", () => {
   });
 
   it("old stored version returns full", () => {
-    expect(resolveAppLaunchMode({ ...BASE, storedVersion: "0" })).toBe("full");
+    expect(resolveAppLaunchMode({ ...BASE, storedVersion: "1" })).toBe("full");
   });
 
-  it("matching stored version returns compact", () => {
+  it('stored version "2" returns compact', () => {
     expect(resolveAppLaunchMode({ ...BASE, storedVersion: APP_LAUNCH_VERSION })).toBe("compact");
+    expect(APP_LAUNCH_VERSION).toBe("2");
   });
 
-  it("reduced motion takes priority over version selection", () => {
+  it("reduced motion takes priority over local-storage failure", () => {
     expect(
-      resolveAppLaunchMode({ ...BASE, reducedMotion: true, storedVersion: APP_LAUNCH_VERSION })
+      resolveAppLaunchMode({ ...BASE, reducedMotion: true, localStorageAvailable: false })
     ).toBe("reduced");
   });
 
-  it("session-seen takes priority over reduced motion", () => {
-    expect(resolveAppLaunchMode({ ...BASE, sessionSeen: true, reducedMotion: true })).toBe("none");
-  });
-
-  it("requires both candidate and standalone to be true", () => {
-    expect(resolveAppLaunchMode({ ...BASE, launchCandidate: false, standalone: false })).toBe("none");
-    expect(resolveAppLaunchMode({ ...BASE, launchCandidate: true, standalone: false })).toBe("none");
-    expect(resolveAppLaunchMode({ ...BASE, launchCandidate: false, standalone: true })).toBe("none");
-  });
-
-  it("unreadable session storage never suppresses an otherwise-eligible launch, even when a marker would have existed", () => {
-    // sessionSeen is meaningless when sessionStorageAvailable is false — the
-    // resolver must not use it to silently return "none".
+  it("already-played takes priority over reduced motion", () => {
     expect(
-      resolveAppLaunchMode({ ...BASE, sessionSeen: true, sessionStorageAvailable: false })
-    ).not.toBe("none");
+      resolveAppLaunchMode({ ...BASE, alreadyPlayedInDocument: true, reducedMotion: true })
+    ).toBe("none");
   });
 
-  it("session storage unavailable + normal motion -> compact", () => {
-    expect(resolveAppLaunchMode({ ...BASE, sessionStorageAvailable: false })).toBe("compact");
+  it("standalone mode is no longer an accepted input", () => {
+    // @ts-expect-error — standalone must not exist on AppLaunchInputs anymore.
+    resolveAppLaunchMode({ ...BASE, standalone: true });
   });
 
-  it("session storage unavailable + reduced motion -> reduced", () => {
-    expect(
-      resolveAppLaunchMode({ ...BASE, sessionStorageAvailable: false, reducedMotion: true })
-    ).toBe("reduced");
-  });
-
-  it("local storage unavailable + normal motion -> compact", () => {
-    expect(resolveAppLaunchMode({ ...BASE, localStorageAvailable: false })).toBe("compact");
-  });
-
-  it("local storage unavailable + normal motion -> compact, never full, even with no stored version", () => {
-    expect(
-      resolveAppLaunchMode({ ...BASE, localStorageAvailable: false, storedVersion: null })
-    ).toBe("compact");
-  });
-
-  it("both storages unavailable + normal motion -> compact", () => {
-    expect(
-      resolveAppLaunchMode({ ...BASE, sessionStorageAvailable: false, localStorageAvailable: false })
-    ).toBe("compact");
-  });
-
-  it("both storages unavailable + reduced motion -> reduced", () => {
-    expect(
-      resolveAppLaunchMode({
-        ...BASE,
-        sessionStorageAvailable: false,
-        localStorageAvailable: false,
-        reducedMotion: true,
-      })
-    ).toBe("reduced");
+  it("session storage is no longer an accepted input", () => {
+    // @ts-expect-error — sessionSeen/sessionStorageAvailable must not exist
+    // on AppLaunchInputs anymore.
+    resolveAppLaunchMode({ ...BASE, sessionSeen: false, sessionStorageAvailable: true });
   });
 });
