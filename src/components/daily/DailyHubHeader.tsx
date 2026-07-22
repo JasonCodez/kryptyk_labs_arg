@@ -1,25 +1,19 @@
 "use client";
 
+import { Clock3 } from "lucide-react";
+
 export interface DailyHubHeaderProps {
   /** Formatted HH:MM:SS until the next daily reset, owned by the page. */
   countdown: string;
-}
-
-/** Decorative clock emblem for the reset timer. */
-function IconClock({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="8.5" stroke={color} strokeWidth="1.8" />
-      <path d="M12 7.5V12l3 2" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  /** Accessible-label equivalent of the countdown, e.g. "7 hours, 41 minutes, and 9 seconds". Owned by the page so both stay in sync. */
+  countdownLabel: string;
 }
 
 /**
- * Compact command-panel header for the Daily hub — replaces the old centered
- * hero title block. Presentational only; the countdown ticks in the page.
+ * Compact command-panel header for the Daily hub. Presentational only; the
+ * countdown value and its accessible label both tick in the page.
  */
-export default function DailyHubHeader({ countdown }: DailyHubHeaderProps) {
+export default function DailyHubHeader({ countdown, countdownLabel }: DailyHubHeaderProps) {
   return (
     <header
       className="pw-bevel w-full max-w-5xl mb-6 sm:mb-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left"
@@ -41,7 +35,7 @@ export default function DailyHubHeader({ countdown }: DailyHubHeaderProps) {
             margin: "0 0 4px",
           }}
         >
-          Daily Arena
+          DAILY ARENA
         </p>
         <h1
           className="text-[17px] leading-[1.25] sm:text-2xl"
@@ -54,7 +48,10 @@ export default function DailyHubHeader({ countdown }: DailyHubHeaderProps) {
         </p>
       </div>
 
-      {/* Reset timer — gold is reserved for the daily reset/reward role. */}
+      {/* Reset timer — gold is reserved for the daily reset/reward role. The
+          visible HH:MM:SS ticks every second, but that's a poor screen-reader
+          experience, so the live value stays out of any live region and an
+          accessible label describes it in words instead. */}
       <div
         className="flex items-center gap-2.5 self-start sm:self-center shrink-0"
         style={{
@@ -78,7 +75,7 @@ export default function DailyHubHeader({ countdown }: DailyHubHeaderProps) {
             border: "1px solid color-mix(in srgb, var(--pw-gold) 40%, transparent)",
           }}
         >
-          <IconClock color="var(--pw-gold)" />
+          <Clock3 aria-hidden="true" focusable="false" size={16} color="var(--pw-gold)" />
         </span>
         <span>
           <span
@@ -94,8 +91,10 @@ export default function DailyHubHeader({ countdown }: DailyHubHeaderProps) {
             Next Reset
           </span>
           <span
-            className="font-mono"
+            className="font-mono tabular-nums"
             style={{ display: "block", fontSize: 15, fontWeight: 800, color: "var(--pw-gold)" }}
+            aria-live="off"
+            aria-label={`Next daily reset in ${countdownLabel}`}
           >
             {countdown}
           </span>

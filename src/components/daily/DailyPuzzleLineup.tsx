@@ -1,7 +1,26 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
+import {
+  WholeWord,
+  Grid3X3,
+  SquarePen,
+  Search,
+  Puzzle as PuzzleIcon,
+  FileText,
+  Flame,
+  CircleCheck,
+  CircleDashed,
+  LayoutGrid,
+  LockKeyhole,
+  Clock3,
+  ChevronRight,
+  PartyPopper,
+  type LucideIcon,
+} from "lucide-react";
+import Card from "@/components/ui/Card";
+import PressableCard from "@/components/ui/PressableCard";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 
 export type DailySummaryEntry = {
   dayNumber: number;
@@ -19,89 +38,24 @@ export type DailySummary = {
 };
 
 export interface DailyPuzzleLineupProps {
-  summary: DailySummary | null;
+  summary: DailySummary;
   isAuthenticated: boolean;
   debriefCompleted: boolean;
 }
 
-/* ── inline SVG icons — no icon package, decorative only ─────────────── */
-function IconWord({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <path d="M4 6h16M4 12h16M4 18h16" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IconSudoku({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <rect x="3" y="3" width="18" height="18" stroke={color} strokeWidth="1.6" />
-      <path d="M9 3v18M15 3v18M3 9h18M3 15h18" stroke={color} strokeWidth="1.2" strokeOpacity="0.6" />
-    </svg>
-  );
-}
-function IconCrossword({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <rect x="3" y="3" width="18" height="18" rx="1" stroke={color} strokeWidth="1.6" />
-      <path d="M8 8h3v3H8zM13 8h3v3h-3zM8 13h3v3H8z" stroke={color} strokeWidth="1.2" strokeOpacity="0.6" />
-    </svg>
-  );
-}
-function IconWordSearch({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <circle cx="9" cy="9" r="4.5" stroke={color} strokeWidth="1.6" />
-      <path d="M13.5 14l4 4" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IconJigsaw({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <path
-        d="M4 4h7v7M13 4h7v7M4 13h7v7M13 13h7v7"
-        stroke={color}
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <circle cx="7.5" cy="7.5" r="1" fill={color} opacity="0.5" />
-    </svg>
-  );
-}
-function IconReport({ color }: { color: string }) {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <path d="M7 3h7l4 4v14a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke={color} strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M14 3v4h4M9 12h6M9 15h6M9 9h2" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IconChevron({ color }: { color: string }) {
-  return (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <path d="M9 5l7 7-7 7" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+type DailyCardState = "playable" | "completed" | "sign-in-required" | "not-ready";
 
 interface BasePuzzle {
   slug: string;
   title: string;
   description: string;
-  icon: (props: { color: string }) => ReactNode;
-  color: string;
+  icon: LucideIcon;
   signInRequired: boolean;
   isDebrief?: boolean;
 }
 
 interface StandardPuzzle extends BasePuzzle {
   key: keyof DailySummary;
-  type: "standard";
-}
-
-interface DebriefPuzzle extends BasePuzzle {
-  type: "debrief";
 }
 
 const PUZZLES: StandardPuzzle[] = [
@@ -110,227 +64,349 @@ const PUZZLES: StandardPuzzle[] = [
     slug: "word",
     title: "Hidden Word",
     description: "Find the hidden word in six guesses.",
-    icon: IconWord,
-    color: "var(--pw-brand-primary)",
+    icon: WholeWord,
     signInRequired: false,
-    type: "standard",
   },
   {
     key: "sudoku",
     slug: "sudoku",
     title: "Sudoku",
     description: "Complete today's number grid.",
-    icon: IconSudoku,
-    color: "var(--pw-brand-primary)",
+    icon: Grid3X3,
     signInRequired: true,
-    type: "standard",
   },
   {
     key: "crossword",
     slug: "crossword",
     title: "Crossword",
     description: "Solve today's clue set.",
-    icon: IconCrossword,
-    color: "var(--pw-brand-primary)",
+    icon: SquarePen,
     signInRequired: true,
-    type: "standard",
   },
   {
     key: "word_search",
     slug: "word-search",
     title: "Word Trove",
     description: "Find every hidden word.",
-    icon: IconWordSearch,
-    color: "var(--pw-brand-primary)",
+    icon: Search,
     signInRequired: true,
-    type: "standard",
   },
   {
     key: "jigsaw",
     slug: "jigsaw",
     title: "Jigsaw",
     description: "Rebuild today's image.",
-    icon: IconJigsaw,
-    color: "var(--pw-brand-primary)",
+    icon: PuzzleIcon,
     signInRequired: true,
-    type: "standard",
   },
 ];
 
-const DEBRIEF: DebriefPuzzle = {
+const DEBRIEF: BasePuzzle = {
   slug: "",
   title: "The Debrief",
   description: "Memorize the report and answer from memory.",
-  icon: IconReport,
-  color: "var(--pw-brand-accent)",
+  icon: FileText,
   signInRequired: true,
-  type: "debrief",
   isDebrief: true,
 };
 
-function PuzzleRow({
+function cardHref(puzzle: BasePuzzle): string {
+  return puzzle.slug === "" ? "/debrief" : `/daily/${puzzle.slug}`;
+}
+
+function getCardState(puzzle: BasePuzzle, entry: DailySummaryEntry | undefined, isAuthenticated: boolean, completed: boolean): DailyCardState {
+  const signedOut = puzzle.signInRequired && !isAuthenticated;
+  if (signedOut) return "sign-in-required";
+  if (puzzle.isDebrief) return completed ? "completed" : "playable";
+  if (entry && !entry.available) return "not-ready";
+  if (completed) return "completed";
+  return "playable";
+}
+
+const STATE_META: Record<DailyCardState, { label: string; accent: "primary" | "success" | "neutral" }> = {
+  playable: { label: "Ready", accent: "primary" },
+  completed: { label: "Completed", accent: "success" },
+  "sign-in-required": { label: "Sign In Required", accent: "neutral" },
+  "not-ready": { label: "Not Available", accent: "neutral" },
+};
+
+function getActionText(puzzle: BasePuzzle, state: DailyCardState): string {
+  if (state === "sign-in-required") return "Sign In to Play";
+  if (state === "not-ready") return "Check Back Soon";
+  if (puzzle.isDebrief) return state === "completed" ? "New Case Tomorrow" : "Open Case";
+  return state === "completed" ? "View Result" : "Play";
+}
+
+function pluralizeDayStreak(streak: number): string {
+  return `${streak} day streak`;
+}
+
+function DailyCard({
   puzzle,
   entry,
   isAuthenticated,
-  completedState,
+  completed,
 }: {
   puzzle: BasePuzzle;
   entry: DailySummaryEntry | undefined;
   isAuthenticated: boolean;
-  completedState: boolean;
+  completed: boolean;
 }) {
   const Icon = puzzle.icon;
-  const locked = puzzle.signInRequired && !isAuthenticated;
-  const notReady = !!entry && !entry.available;
-  const completed = completedState;
+  const state = getCardState(puzzle, entry, isAuthenticated, completed);
+  const meta = STATE_META[state];
+  const actionText = getActionText(puzzle, state);
   const streak = entry?.streak ?? 0;
 
-  let statusLabel = "";
-  if (locked) {
-    statusLabel = "Sign In to Play";
-  } else if (notReady) {
-    statusLabel = "Check Back Soon";
-  } else if (puzzle.isDebrief) {
-    statusLabel = completed ? "New Case Tomorrow" : "Open Case";
-  } else {
-    statusLabel = completed ? "View Result" : "Play";
-  }
-
   return (
-    <Link
-      href={puzzle.slug === "" ? "/debrief" : `/daily/${puzzle.slug}`}
-      className="pw-bevel pw-press flex flex-col min-[360px]:flex-row items-start min-[360px]:items-center gap-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
-      style={{
-        minHeight: 56,
-        padding: "12px 14px",
-        textDecoration: "none",
-        background: completed
-          ? "linear-gradient(160deg, var(--pw-surface-2), var(--pw-surface-1) 70%)"
-          : locked || notReady
-            ? "linear-gradient(160deg, var(--pw-surface-2), var(--pw-surface-1) 70%)"
-            : `radial-gradient(180px 100px at 100% 0%, color-mix(in srgb, ${puzzle.color} 12%, transparent), transparent 60%), linear-gradient(160deg, var(--pw-surface-2), var(--pw-surface-1) 70%)`,
-        border:
-          completed ? "1px solid var(--pw-success-border)"
-          : locked || notReady
-            ? "1px solid var(--pw-border-default)"
-            : `1px solid color-mix(in srgb, ${puzzle.color} 30%, transparent)`,
-        outlineColor: "var(--pw-brand-secondary)",
-      }}
-    >
-      {/* First row: icon + content */}
-      <span className="flex items-start gap-3 flex-1 min-w-0">
-        {/* Icon emblem */}
+    <PressableCard href={cardHref(puzzle)} accent={meta.accent} padding="md">
+      <div className="flex items-start gap-3">
         <span
           aria-hidden="true"
+          className="flex items-center justify-center shrink-0 rounded-lg"
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            flexShrink: 0,
-            background: `color-mix(in srgb, ${puzzle.color} 16%, transparent)`,
-            border: `1px solid color-mix(in srgb, ${puzzle.color} ${completed ? "30" : "35"}%, transparent)`,
+            width: 36,
+            height: 36,
+            background: "color-mix(in srgb, var(--pw-brand-primary) 16%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 30%, transparent)",
           }}
         >
-          <Icon color={completed ? "var(--pw-success)" : puzzle.color} />
+          <Icon aria-hidden="true" size={18} color="var(--pw-text-primary)" />
         </span>
-
-        {/* Content */}
-        <span className="min-w-0 flex-1">
-          <span style={{ display: "block", fontWeight: 700, fontSize: 14, color: "var(--pw-text-primary)" }}>
-            {puzzle.title}
-          </span>
-          <span style={{ display: "block", fontSize: 12, color: "var(--pw-text-muted)", marginTop: 2 }}>
-            {puzzle.description}
-          </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-sm" style={{ color: "var(--pw-text-primary)" }}>{puzzle.title}</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--pw-text-muted)" }}>{puzzle.description}</p>
           {entry?.dayNumber ? (
-            <span style={{ display: "block", fontSize: 11, color: "var(--pw-text-muted)", marginTop: 2 }}>
-              Daily #{entry.dayNumber}
-            </span>
+            <p className="text-[11px] mt-1" style={{ color: "var(--pw-text-muted)" }}>Daily #{entry.dayNumber}</p>
           ) : null}
-        </span>
-      </span>
+        </div>
+      </div>
 
-      {/* Second row (below 360px) / inline (360px+): Status and streak */}
-      <span className="flex items-center gap-2.5 shrink-0 pl-11 mt-2 min-[360px]:pl-0 min-[360px]:mt-0">
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        <span
+          className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg"
+          style={{
+            background: `color-mix(in srgb, var(--pw-${meta.accent === "success" ? "success" : meta.accent === "primary" ? "brand-primary" : "text-secondary"}) 16%, transparent)`,
+            color: meta.accent === "success" ? "var(--pw-success)" : meta.accent === "primary" ? "var(--pw-brand-primary-light)" : "var(--pw-text-secondary)",
+          }}
+        >
+          {state === "completed" && <CircleCheck aria-hidden="true" size={11} />}
+          {state === "sign-in-required" && <LockKeyhole aria-hidden="true" size={11} />}
+          {state === "not-ready" && <Clock3 aria-hidden="true" size={11} />}
+          {meta.label}
+        </span>
         {streak > 0 && (
           <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              padding: "4px 8px",
-              borderRadius: 6,
-              background: "color-mix(in srgb, var(--pw-gold) 14%, transparent)",
-              color: "var(--pw-gold)",
-              border: "1px solid color-mix(in srgb, var(--pw-gold) 35%, transparent)",
-            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg"
+            style={{ background: "color-mix(in srgb, var(--pw-gold) 14%, transparent)", color: "var(--pw-gold)" }}
           >
-            {streak} day streak
+            <Flame aria-hidden="true" size={11} />
+            {pluralizeDayStreak(streak)}
           </span>
         )}
-        <span style={{ fontSize: 12, color: completed ? "var(--pw-text-muted)" : puzzle.color, fontWeight: 600, whiteSpace: "nowrap" }}>
-          {statusLabel}
-        </span>
-        <span aria-hidden style={{ flexShrink: 0, display: "flex" }}>
-          <IconChevron color={completed ? "var(--pw-text-muted)" : puzzle.color} />
-        </span>
-      </span>
+      </div>
+
+      <div className="flex items-center justify-between mt-3">
+        <span className="text-xs font-bold" style={{ color: "var(--pw-text-secondary)" }}>{actionText}</span>
+        <ChevronRight aria-hidden="true" size={16} color="var(--pw-text-muted)" />
+      </div>
+    </PressableCard>
+  );
+}
+
+function RecommendedCTA({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="game-btn--primary shadow-skeu-raised min-h-14 px-6 rounded-2xl inline-flex items-center justify-center font-extrabold uppercase tracking-wide game-text-stroke game-text-pop focus-visible:outline-2 focus-visible:outline-offset-2"
+      style={{ textDecoration: "none" }}
+    >
+      {label}
     </Link>
   );
 }
 
-/**
- * Compact mobile-first Daily Puzzle Lineup replacing the six card grid. One row
- * per puzzle at 320px; two columns at 669px+, three at 981px+. Preserves all game
- * state, auth requirements, and day/streak tracking.
- */
-export default function DailyPuzzleLineup({
-  summary,
-  isAuthenticated,
-  debriefCompleted,
-}: DailyPuzzleLineupProps) {
-  if (!summary) return null;
+interface Recommendation {
+  puzzle: BasePuzzle;
+  entry: DailySummaryEntry | undefined;
+}
+
+function getRecommendation(
+  summary: DailySummary,
+  isAuthenticated: boolean,
+  debriefCompleted: boolean
+): Recommendation | null {
+  for (const puzzle of PUZZLES) {
+    const entry = summary[puzzle.key];
+    const accessible = !puzzle.signInRequired || isAuthenticated;
+    if (accessible && entry.available && !entry.completedToday) {
+      return { puzzle, entry };
+    }
+  }
+  if (isAuthenticated && !debriefCompleted) {
+    return { puzzle: DEBRIEF, entry: undefined };
+  }
+  return null;
+}
+
+export default function DailyPuzzleLineup({ summary, isAuthenticated, debriefCompleted }: DailyPuzzleLineupProps) {
+  const reduceMotion = useAppReducedMotion();
+
+  const completedCount = PUZZLES.filter((p) => summary[p.key].completedToday).length + (debriefCompleted ? 1 : 0);
+  const totalChallenges = 6;
+  const remainingCount = totalChallenges - completedCount;
+  const completionPercentage = Math.round((completedCount / totalChallenges) * 100);
+  const allComplete = completedCount === totalChallenges;
+  const recommendation = allComplete ? null : getRecommendation(summary, isAuthenticated, debriefCompleted);
+
+  const progressFillToken = allComplete ? "var(--pw-success)" : "var(--pw-brand-primary)";
+  const overviewAccent = allComplete ? "success" : completedCount > 0 ? "primary" : "neutral";
+
+  const guestBlocked = !isAuthenticated && !recommendation && !allComplete;
 
   return (
-    <section aria-labelledby="daily-lineup-heading" className="w-full max-w-5xl">
-      <h2
-        id="daily-lineup-heading"
-        style={{
-          fontSize: 12,
-          fontWeight: 800,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          color: "var(--pw-text-secondary)",
-          margin: "0 0 12px",
-        }}
-      >
+    <div className="w-full">
+      <Card accent={overviewAccent} padding="lg" className="mb-8 max-w-5xl mx-auto">
+        <div className="grid sm:grid-cols-2 gap-6">
+          <div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div
+                className="flex flex-col items-center justify-center gap-1 py-3 rounded-xl text-center"
+                style={{ background: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)" }}
+              >
+                <CircleCheck aria-hidden="true" size={16} style={{ color: "var(--pw-brand-primary)" }} />
+                <span className="text-base font-extrabold" style={{ color: "var(--pw-text-primary)" }}>{completedCount}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--pw-text-secondary)" }}>Complete</span>
+              </div>
+              <div
+                className="flex flex-col items-center justify-center gap-1 py-3 rounded-xl text-center"
+                style={{ background: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)" }}
+              >
+                <CircleDashed aria-hidden="true" size={16} style={{ color: "var(--pw-brand-primary)" }} />
+                <span className="text-base font-extrabold" style={{ color: "var(--pw-text-primary)" }}>{remainingCount}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--pw-text-secondary)" }}>Remaining</span>
+              </div>
+              <div
+                className="flex flex-col items-center justify-center gap-1 py-3 rounded-xl text-center"
+                style={{ background: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)" }}
+              >
+                <LayoutGrid aria-hidden="true" size={16} style={{ color: "var(--pw-brand-primary)" }} />
+                <span className="text-base font-extrabold" style={{ color: "var(--pw-text-primary)" }}>{totalChallenges}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--pw-text-secondary)" }}>Challenges</span>
+              </div>
+            </div>
+            <div
+              role="progressbar"
+              aria-label="Today’s Daily Puzzle progress"
+              aria-valuemin={0}
+              aria-valuemax={totalChallenges}
+              aria-valuenow={completedCount}
+              className="h-2 w-full rounded-full overflow-hidden"
+              style={{ background: "color-mix(in srgb, var(--pw-text-secondary) 18%, transparent)" }}
+            >
+              <div
+                className={reduceMotion ? "h-full rounded-full" : "h-full rounded-full transition-all duration-500"}
+                style={{ width: `${completionPercentage}%`, background: progressFillToken }}
+              />
+            </div>
+          </div>
+
+          <div>
+            {allComplete ? (
+              <div>
+                <p className="inline-flex items-center gap-1.5 text-sm font-extrabold mb-1.5" style={{ color: "var(--pw-success)" }}>
+                  <PartyPopper aria-hidden="true" size={16} />
+                  Today&rsquo;s lineup complete
+                </p>
+                <p className="text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+                  You cleared all six Daily challenges. A fresh lineup arrives at the next reset.
+                </p>
+              </div>
+            ) : recommendation ? (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-brand-primary)" }}>
+                  Play Next
+                </p>
+                <p className="text-lg font-extrabold mb-1" style={{ color: "var(--pw-text-primary)" }}>
+                  {recommendation.puzzle.title}
+                </p>
+                <p className="text-xs mb-2" style={{ color: "var(--pw-text-secondary)" }}>
+                  {recommendation.puzzle.description}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  {recommendation.entry?.dayNumber ? (
+                    <span className="text-xs font-semibold" style={{ color: "var(--pw-text-secondary)" }}>
+                      Daily #{recommendation.entry.dayNumber}
+                    </span>
+                  ) : null}
+                  {recommendation.entry && recommendation.entry.streak > 0 ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg"
+                      style={{ background: "color-mix(in srgb, var(--pw-gold) 14%, transparent)", color: "var(--pw-gold)" }}
+                    >
+                      <Flame aria-hidden="true" size={11} />
+                      {pluralizeDayStreak(recommendation.entry.streak)}
+                    </span>
+                  ) : null}
+                </div>
+                <RecommendedCTA
+                  href={cardHref(recommendation.puzzle)}
+                  label={recommendation.puzzle.isDebrief ? "Open case" : "Play now"}
+                />
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm font-bold mb-1.5" style={{ color: "var(--pw-text-primary)" }}>
+                  No challenge is ready to play
+                </p>
+                <p className="text-xs mb-2" style={{ color: "var(--pw-text-secondary)" }}>
+                  {guestBlocked
+                    ? "Sign in to access the rest of today’s lineup."
+                    : "Check back after the next Daily reset."}
+                </p>
+                {guestBlocked && (
+                  <Link
+                    href="/auth/signin"
+                    className="text-xs font-bold underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{ color: "var(--pw-brand-primary)" }}
+                  >
+                    Sign in
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <h2 className="text-xl font-extrabold mb-4 max-w-5xl mx-auto" style={{ color: "var(--pw-text-primary)" }}>
         Today&rsquo;s Challenges
       </h2>
 
-      <div className="grid gap-2.5 grid-cols-1 min-[669px]:grid-cols-2 min-[981px]:grid-cols-3">
+      <div
+        data-testid="daily-lineup-grid"
+        className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto"
+      >
         {PUZZLES.map((puzzle) => {
           const entry = summary[puzzle.key];
           return (
-            <PuzzleRow
+            <DailyCard
               key={puzzle.key}
               puzzle={puzzle}
               entry={entry}
               isAuthenticated={isAuthenticated}
-              completedState={entry?.completedToday ?? false}
+              completed={entry.completedToday}
             />
           );
         })}
-        {/* The Debrief — separate system (no dayNumber/streak), so rendered separately. */}
-        <PuzzleRow
+        <DailyCard
           key="debrief"
           puzzle={DEBRIEF}
           entry={undefined}
           isAuthenticated={isAuthenticated}
-          completedState={debriefCompleted}
+          completed={debriefCompleted}
         />
       </div>
-    </section>
+    </div>
   );
 }

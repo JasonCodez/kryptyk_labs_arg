@@ -48,6 +48,65 @@ async function authenticate(page: Page) {
   ]);
 }
 
+type DailyEntryFixture = { dayNumber: number; completedToday: boolean; streak: number; available: boolean };
+
+// Pass 6 standard fixture: Hidden Word incomplete/available/4-day streak,
+// Sudoku completed, Crossword incomplete/no streak, Word Trove unavailable,
+// Jigsaw incomplete/1-day streak — all Daily #12. Debrief incomplete.
+const DAILY_SUMMARY_FIXTURE: Record<string, DailyEntryFixture> = {
+  word: { dayNumber: 12, completedToday: false, streak: 4, available: true },
+  sudoku: { dayNumber: 12, completedToday: true, streak: 2, available: true },
+  crossword: { dayNumber: 12, completedToday: false, streak: 0, available: true },
+  word_search: { dayNumber: 12, completedToday: false, streak: 0, available: false },
+  jigsaw: { dayNumber: 12, completedToday: false, streak: 1, available: true },
+};
+
+const DAILY_ALL_COMPLETE_FIXTURE: Record<string, DailyEntryFixture> = {
+  word: { dayNumber: 12, completedToday: true, streak: 5, available: true },
+  sudoku: { dayNumber: 12, completedToday: true, streak: 3, available: true },
+  crossword: { dayNumber: 12, completedToday: true, streak: 1, available: true },
+  word_search: { dayNumber: 12, completedToday: true, streak: 2, available: true },
+  jigsaw: { dayNumber: 12, completedToday: true, streak: 1, available: true },
+};
+
+async function installDailyFixture(
+  page: Page,
+  options: { summary?: Record<string, DailyEntryFixture>; debriefCompleted?: boolean; authenticated?: boolean } = {}
+) {
+  const { summary = DAILY_SUMMARY_FIXTURE, debriefCompleted = false, authenticated = true } = options;
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace(/\/$/, "");
+    if (path === "/api/auth/session") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "cache-control": "no-store" },
+        body: authenticated
+          ? JSON.stringify({
+              user: { id: "e2e-user", name: "Discovery Tester", email: "discovery@example.test" },
+              expires: "2099-01-01T00:00:00.000Z",
+            })
+          : JSON.stringify({}),
+      });
+      return;
+    }
+    if (path === "/api/daily/summary") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summary) });
+      return;
+    }
+    if (path === "/api/debrief/today") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ completed: debriefCompleted }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+}
+
 async function installCampaignFixture(page: Page) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
@@ -110,12 +169,14 @@ for (const viewport of DISCOVERY_VIEWPORTS) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test("six cards render, fit, clear the bottom nav, and open a puzzle", async ({ page }) => {
+      await authenticate(page);
+      await installDailyFixture(page);
       await page.goto("/daily", { waitUntil: "domcontentloaded" });
-      await expect(page.getByText(/resets in/i)).toBeVisible();
+      await expect(page.getByText("Next Reset")).toBeVisible();
       // Wait for the card grid (loading state resolves even when signed out).
-      const wordCard = page.locator('a[href="/daily/word"]');
+      const wordCard = page.locator('[data-testid="daily-lineup-grid"] a[href="/daily/word"]');
       await expect(wordCard).toBeVisible({ timeout: 10000 });
-      await expect(page.locator('a[href="/debrief"]')).toBeAttached();
+      await expect(page.locator('[data-testid="daily-lineup-grid"] a[href="/debrief"]')).toBeAttached();
       await expectNoHorizontalOverflow(page);
 
       // Cards keep a comfortable tap size at this width.
@@ -123,13 +184,243 @@ for (const viewport of DISCOVERY_VIEWPORTS) {
       expect(cardBox!.width).toBeGreaterThanOrEqual(200);
       expect(cardBox!.height).toBeGreaterThanOrEqual(44);
 
-      await expectClearsBottomNav(page, 'a[href="/debrief"]');
+      await expectClearsBottomNav(page, '[data-testid="daily-lineup-grid"] a[href="/debrief"]');
 
       await wordCard.click();
       await page.waitForURL(/\/daily\/word/, { timeout: 20000, waitUntil: "commit" });
     });
   });
 }
+
+const DAILY_MOBILE_VIEWPORTS = [
+  { label: "320x710", width: 320, height: 710 },
+  { label: "390x844", width: 390, height: 844 },
+  { label: "430x932", width: 430, height: 932 },
+];
+
+for (const viewport of DAILY_MOBILE_VIEWPORTS) {
+  test.describe(`daily hub mobile @ ${viewport.label}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test("header, progress, recommendation, and six ordered cards", async ({ page }) => {
+      await authenticate(page);
+      await installDailyFixture(page);
+      await page.goto("/daily", { waitUntil: "domcontentloaded" });
+
+      await expect(page.getByRole("heading", { level: 1, name: "Today’s Puzzle Lineup" })).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText("Next Reset")).toBeVisible();
+      const countdown = page.locator("span.font-mono.tabular-nums");
+      await expect(countdown).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+
+      // 1 of 6 complete: only Sudoku is completedToday in this fixture.
+      const bar = page.getByRole("progressbar");
+      await expect(bar).toHaveAttribute("aria-valuenow", "1");
+      await expect(bar).toHaveAttribute("aria-valuemax", "6");
+
+      // Hidden Word is first in lineup order, incomplete, available, and
+      // needs no sign-in — it's the recommended next challenge.
+      await expect(page.getByText("Play Next")).toBeVisible();
+      await expect(page.getByRole("link", { name: "Play now" })).toHaveAttribute("href", "/daily/word");
+
+      const grid = page.getByTestId("daily-lineup-grid");
+      const links = grid.locator("a");
+      await expect(links).toHaveCount(6);
+      await expect(links.nth(0)).toHaveAttribute("href", "/daily/word");
+      await expect(links.nth(1)).toHaveAttribute("href", "/daily/sudoku");
+      await expect(links.nth(2)).toHaveAttribute("href", "/daily/crossword");
+      await expect(links.nth(3)).toHaveAttribute("href", "/daily/word-search");
+      await expect(links.nth(4)).toHaveAttribute("href", "/daily/jigsaw");
+      await expect(links.nth(5)).toHaveAttribute("href", "/debrief");
+
+      // One card per row at these widths.
+      const wordBox = await links.nth(0).boundingBox();
+      const sudokuBox = await links.nth(1).boundingBox();
+      expect(sudokuBox!.y).toBeGreaterThan(wordBox!.y + wordBox!.height - 4);
+
+      await expect(grid.locator('a[href="/daily/sudoku"]')).toContainText("Completed");
+      await expect(grid.locator('a[href="/daily/word-search"]')).toContainText("Check Back Soon");
+      await expect(grid.locator('a[href="/daily/word"]')).toContainText("4 day streak");
+
+      await expectNoHorizontalOverflow(page);
+
+      for (let i = 0; i < 6; i++) {
+        const box = await links.nth(i).boundingBox();
+        expect(box!.width).toBeGreaterThan(0);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+      }
+
+      await expectClearsBottomNav(page, '[data-testid="daily-lineup-grid"] a[href="/debrief"]');
+    });
+  });
+}
+
+test.describe("daily hub guest @ 390x844", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("only Hidden Word is playable; everything else requires sign-in", async ({ page }) => {
+    await installDailyFixture(page, { authenticated: false });
+    await page.goto("/daily", { waitUntil: "domcontentloaded" });
+
+    const grid = page.getByTestId("daily-lineup-grid");
+    await expect(grid.locator('a[href="/daily/word"]')).toBeVisible({ timeout: 10000 });
+
+    await expect(grid.locator('a[href="/daily/word"]')).toContainText("Play");
+    await expect(grid.locator('a[href="/daily/word"]')).not.toContainText("Sign In to Play");
+    for (const href of ["/daily/sudoku", "/daily/crossword", "/daily/word-search", "/daily/jigsaw", "/debrief"]) {
+      await expect(grid.locator(`a[href="${href}"]`)).toContainText("Sign In to Play");
+    }
+
+    await expect(page.getByText("Play Next")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Play now" })).toHaveAttribute("href", "/daily/word");
+
+    // Server-reported completion (Sudoku) still counts even though the
+    // guest can't play it — the hub never invents access it doesn't have.
+    const bar = page.getByRole("progressbar");
+    await expect(bar).toHaveAttribute("aria-valuenow", "1");
+
+    await expect(page).toHaveURL(/\/daily$/);
+  });
+});
+
+const DAILY_LARGE_VIEWPORTS = [
+  { label: "768x1024", width: 768, height: 1024 },
+  { label: "1024x768", width: 1024, height: 768 },
+  { label: "1440x900", width: 1440, height: 900 },
+];
+
+for (const viewport of DAILY_LARGE_VIEWPORTS) {
+  test.describe(`daily hub @ ${viewport.label}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test("multi-column grid, shared catalog container, no overflow", async ({ page }) => {
+      await authenticate(page);
+      await installDailyFixture(page);
+      await page.goto("/daily", { waitUntil: "domcontentloaded" });
+
+      const grid = page.getByTestId("daily-lineup-grid");
+      await expect(grid.locator('a[href="/daily/word"]')).toBeVisible({ timeout: 10000 });
+      await expectNoHorizontalOverflow(page);
+
+      const wordBox = await grid.locator('a[href="/daily/word"]').boundingBox();
+      const sudokuBox = await grid.locator('a[href="/daily/sudoku"]').boundingBox();
+      // 2+ columns: the second card sits beside, not below, the first.
+      expect(Math.abs(sudokuBox!.y - wordBox!.y)).toBeLessThanOrEqual(4);
+      expect(sudokuBox!.x).toBeGreaterThan(wordBox!.x);
+
+      await expect(page.getByText("Play Next")).toBeVisible();
+    });
+  });
+}
+
+test.describe("daily hub @ 844x390 landscape", () => {
+  test.use({ viewport: { width: 844, height: 390 } });
+
+  test("header not clipped, progress reachable, page scrolls vertically, no overflow", async ({ page }) => {
+    await authenticate(page);
+    await installDailyFixture(page);
+    await page.goto("/daily", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByRole("heading", { level: 1, name: "Today’s Puzzle Lineup" })).toBeVisible({ timeout: 10000 });
+    await expectNoHorizontalOverflow(page);
+
+    const bar = page.getByRole("progressbar");
+    await bar.scrollIntoViewIfNeeded();
+    await expect(bar).toBeVisible();
+
+    const { scrollHeight, innerHeight } = await page.evaluate(() => ({
+      scrollHeight: document.documentElement.scrollHeight,
+      innerHeight: window.innerHeight,
+    }));
+    expect(scrollHeight).toBeGreaterThan(innerHeight);
+
+    await page.getByTestId("daily-lineup-grid").locator('a[href="/debrief"]').scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("daily-lineup-grid").locator('a[href="/debrief"]')).toBeVisible();
+
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("daily hub error and retry @ 390x844", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("a failed summary request shows retry, and retry recovers without a full page reload", async ({ page }) => {
+    await authenticate(page);
+    let summaryCallCount = 0;
+    await page.route("**/api/**", async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.pathname.replace(/\/$/, "");
+      if (path === "/api/auth/session") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: { "cache-control": "no-store" },
+          body: JSON.stringify({
+            user: { id: "e2e-user", name: "Discovery Tester", email: "discovery@example.test" },
+            expires: "2099-01-01T00:00:00.000Z",
+          }),
+        });
+        return;
+      }
+      if (path === "/api/daily/summary") {
+        summaryCallCount += 1;
+        if (summaryCallCount === 1) {
+          await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "server error" }) });
+        } else {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(DAILY_SUMMARY_FIXTURE) });
+        }
+        return;
+      }
+      if (path === "/api/debrief/today") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ completed: false }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto("/daily", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByText("We couldn’t load today’s lineup")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Next Reset")).toBeVisible();
+    const retryButton = page.getByRole("button", { name: /Try again/ });
+    await expect(retryButton).toBeVisible();
+
+    // A real page reload would reset this in-page marker.
+    await page.evaluate(() => {
+      (window as unknown as { __notReloaded: boolean }).__notReloaded = true;
+    });
+
+    await retryButton.click();
+
+    const grid = page.getByTestId("daily-lineup-grid");
+    await expect(grid.locator("a")).toHaveCount(6, { timeout: 10000 });
+    await expect(page.getByText("We couldn’t load today’s lineup")).toHaveCount(0);
+
+    const notReloaded = await page.evaluate(() => (window as unknown as { __notReloaded?: boolean }).__notReloaded);
+    expect(notReloaded).toBe(true);
+  });
+});
+
+test.describe("daily hub all-complete @ 390x844", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("lineup-complete state, no recommended CTA, all six cards remain visible", async ({ page }) => {
+    await authenticate(page);
+    await installDailyFixture(page, { summary: DAILY_ALL_COMPLETE_FIXTURE, debriefCompleted: true });
+    await page.goto("/daily", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByText("Today’s lineup complete")).toBeVisible({ timeout: 10000 });
+    const bar = page.getByRole("progressbar");
+    await expect(bar).toHaveAttribute("aria-valuenow", "6");
+
+    await expect(page.getByRole("link", { name: "Play now" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open case" })).toHaveCount(0);
+
+    const grid = page.getByTestId("daily-lineup-grid");
+    await expect(grid.locator("a")).toHaveCount(6);
+    await expect(grid.locator('a[href="/daily/sudoku"]')).toContainText("Completed");
+    await expect(grid.locator('a[href="/debrief"]')).toContainText("New Case Tomorrow");
+  });
+});
 
 // Pass 4 catalog fixture: Sudoku is 1 of 2 solved (in progress), Riddle is 0
 // solved and carries a boss puzzle (not started), Jigsaw is fully solved
