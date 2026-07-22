@@ -314,10 +314,10 @@ export default function DailyPuzzleLineup({ summary, isAuthenticated, debriefCom
           <div>
             {allComplete ? (
               <div>
-                <p className="inline-flex items-center gap-1.5 text-sm font-extrabold mb-1.5" style={{ color: "var(--pw-success)" }}>
+                <h2 className="inline-flex items-center gap-1.5 text-sm font-extrabold mb-1.5" style={{ color: "var(--pw-success)" }}>
                   <PartyPopper aria-hidden="true" size={16} />
                   Today&rsquo;s lineup complete
-                </p>
+                </h2>
                 <p className="text-sm" style={{ color: "var(--pw-text-secondary)" }}>
                   You cleared all six Daily challenges. A fresh lineup arrives at the next reset.
                 </p>
@@ -327,9 +327,9 @@ export default function DailyPuzzleLineup({ summary, isAuthenticated, debriefCom
                 <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-brand-primary)" }}>
                   Play Next
                 </p>
-                <p className="text-lg font-extrabold mb-1" style={{ color: "var(--pw-text-primary)" }}>
+                <h2 className="text-lg font-extrabold mb-1" style={{ color: "var(--pw-text-primary)" }}>
                   {recommendation.puzzle.title}
-                </p>
+                </h2>
                 <p className="text-xs mb-2" style={{ color: "var(--pw-text-secondary)" }}>
                   {recommendation.puzzle.description}
                 </p>
@@ -356,9 +356,9 @@ export default function DailyPuzzleLineup({ summary, isAuthenticated, debriefCom
               </div>
             ) : (
               <div>
-                <p className="text-sm font-bold mb-1.5" style={{ color: "var(--pw-text-primary)" }}>
+                <h2 className="text-sm font-bold mb-1.5" style={{ color: "var(--pw-text-primary)" }}>
                   No challenge is ready to play
-                </p>
+                </h2>
                 <p className="text-xs mb-2" style={{ color: "var(--pw-text-secondary)" }}>
                   {guestBlocked
                     ? "Sign in to access the rest of today’s lineup."

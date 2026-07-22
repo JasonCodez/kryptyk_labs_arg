@@ -12,30 +12,33 @@ import GameButton from "@/components/game-ui/GameButton";
 
 type SummaryFetchStatus = "loading" | "ready" | "error";
 
-function getCountdownParts(): { hh: number; mm: number; ss: number } {
-  const now = new Date();
-  const next = new Date();
-  next.setUTCHours(24, 0, 0, 0);
-  const diff = Math.max(0, next.getTime() - now.getTime());
-  return {
-    hh: Math.floor(diff / 3_600_000),
-    mm: Math.floor((diff % 3_600_000) / 60_000),
-    ss: Math.floor((diff % 60_000) / 1_000),
-  };
+interface CountdownSnapshot {
+  value: string;
+  label: string;
 }
+
+const INITIAL_COUNTDOWN: CountdownSnapshot = {
+  value: "00:00:00",
+  label: "00 hours, 00 minutes, and 00 seconds",
+};
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-function getCountdown(): string {
-  const { hh, mm, ss } = getCountdownParts();
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
-}
-
-function getCountdownLabel(): string {
-  const { hh, mm, ss } = getCountdownParts();
-  return `${pad(hh)} hours, ${pad(mm)} minutes, and ${pad(ss)} seconds`;
+/** Derives the visible HH:MM:SS value and its accessible label from a single
+ * `now` snapshot, so the two can never drift a second apart. */
+function getCountdownSnapshot(now = new Date()): CountdownSnapshot {
+  const next = new Date(now);
+  next.setUTCHours(24, 0, 0, 0);
+  const diff = Math.max(0, next.getTime() - now.getTime());
+  const hh = pad(Math.floor(diff / 3_600_000));
+  const mm = pad(Math.floor((diff % 3_600_000) / 60_000));
+  const ss = pad(Math.floor((diff % 60_000) / 1_000));
+  return {
+    value: `${hh}:${mm}:${ss}`,
+    label: `${hh} hours, ${mm} minutes, and ${ss} seconds`,
+  };
 }
 
 export default function DailyHubPage() {
@@ -47,21 +50,18 @@ export default function DailyHubPage() {
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [summaryFetchStatus, setSummaryFetchStatus] = useState<SummaryFetchStatus>("loading");
   const [retryToken, setRetryToken] = useState(0);
-  const [countdown, setCountdown] = useState("00:00:00");
-  const [countdownLabel, setCountdownLabel] = useState("0 hours, 0 minutes, and 0 seconds");
+  const [countdown, setCountdown] = useState<CountdownSnapshot>(INITIAL_COUNTDOWN);
   // The Debrief lives on its own system (WitnessResult, not the shared dailyPuzzleRecord/streak
   // infra the other five cards use) so its completion status is fetched separately.
   const [debriefCompleted, setDebriefCompleted] = useState(false);
 
   useEffect(() => {
+    function syncCountdown() {
+      setCountdown(getCountdownSnapshot());
+    }
     // Sync-on-mount so the timer shows a real value before the first tick.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCountdown(getCountdown());
-    setCountdownLabel(getCountdownLabel());
-    const id = window.setInterval(() => {
-      setCountdown(getCountdown());
-      setCountdownLabel(getCountdownLabel());
-    }, 1_000);
+    syncCountdown();
+    const id = window.setInterval(syncCountdown, 1_000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -120,7 +120,7 @@ export default function DailyHubPage() {
       <main className="pt-[88px] sm:pt-24 pb-16 flex flex-col items-center">
         <PageContainer size="catalog" className="flex flex-col items-center">
           <div className="w-full max-w-5xl mx-auto flex flex-col items-center">
-            <DailyHubHeader countdown={countdown} countdownLabel={countdownLabel} />
+            <DailyHubHeader countdown={countdown.value} countdownLabel={countdown.label} />
 
             {isAuthenticated && onboardingUserId && <DailyIntroCard userId={onboardingUserId} />}
 
@@ -129,9 +129,9 @@ export default function DailyHubPage() {
             ) : summaryFetchStatus === "error" ? (
               <div className="w-full max-w-5xl mx-auto text-center py-12">
                 <AlertTriangle aria-hidden="true" size={36} style={{ color: "var(--pw-error-text)", margin: "0 auto 14px" }} />
-                <p className="text-lg font-bold mb-2" style={{ color: "var(--pw-text-primary)" }}>
+                <h2 className="text-lg font-bold mb-2" style={{ color: "var(--pw-text-primary)" }}>
                   We couldn&rsquo;t load today&rsquo;s lineup
-                </p>
+                </h2>
                 <p className="text-sm mb-6" style={{ color: "var(--pw-text-secondary)" }}>
                   Check your connection and try again.
                 </p>

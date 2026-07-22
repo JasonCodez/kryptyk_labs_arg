@@ -208,9 +208,17 @@ for (const viewport of DAILY_MOBILE_VIEWPORTS) {
       await page.goto("/daily", { waitUntil: "domcontentloaded" });
 
       await expect(page.getByRole("heading", { level: 1, name: "Today’s Puzzle Lineup" })).toBeVisible({ timeout: 10000 });
+      await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
       await expect(page.getByText("Next Reset")).toBeVisible();
       const countdown = page.locator("span.font-mono.tabular-nums");
       await expect(countdown).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+
+      // The visible HH:MM:SS and the accessible label must describe the same
+      // snapshot — parse both from one rendered DOM read, not two.
+      const [visible, label] = await countdown.evaluate((el) => [el.textContent || "", el.getAttribute("aria-label") || ""]);
+      const [, vh, vm, vs] = visible.match(/^(\d{2}):(\d{2}):(\d{2})$/) || [];
+      const [, lh, lm, ls] = label.match(/(\d{2}) hours, (\d{2}) minutes, and (\d{2}) seconds/) || [];
+      expect([lh, lm, ls]).toEqual([vh, vm, vs]);
 
       // 1 of 6 complete: only Sudoku is completedToday in this fixture.
       const bar = page.getByRole("progressbar");
@@ -220,6 +228,8 @@ for (const viewport of DAILY_MOBILE_VIEWPORTS) {
       // Hidden Word is first in lineup order, incomplete, available, and
       // needs no sign-in — it's the recommended next challenge.
       await expect(page.getByText("Play Next")).toBeVisible();
+      await expect(page.getByRole("heading", { level: 2, name: "Hidden Word" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 2, name: "Today’s Challenges" })).toBeVisible();
       await expect(page.getByRole("link", { name: "Play now" })).toHaveAttribute("href", "/daily/word");
 
       const grid = page.getByTestId("daily-lineup-grid");
@@ -379,7 +389,9 @@ test.describe("daily hub error and retry @ 390x844", () => {
 
     await page.goto("/daily", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByText("We couldn’t load today’s lineup")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { level: 2, name: "We couldn’t load today’s lineup" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 1, name: "Today’s Puzzle Lineup" })).toBeVisible();
     await expect(page.getByText("Next Reset")).toBeVisible();
     const retryButton = page.getByRole("button", { name: /Try again/ });
     await expect(retryButton).toBeVisible();
@@ -393,7 +405,7 @@ test.describe("daily hub error and retry @ 390x844", () => {
 
     const grid = page.getByTestId("daily-lineup-grid");
     await expect(grid.locator("a")).toHaveCount(6, { timeout: 10000 });
-    await expect(page.getByText("We couldn’t load today’s lineup")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 2, name: "We couldn’t load today’s lineup" })).toHaveCount(0);
 
     const notReloaded = await page.evaluate(() => (window as unknown as { __notReloaded?: boolean }).__notReloaded);
     expect(notReloaded).toBe(true);
@@ -408,7 +420,7 @@ test.describe("daily hub all-complete @ 390x844", () => {
     await installDailyFixture(page, { summary: DAILY_ALL_COMPLETE_FIXTURE, debriefCompleted: true });
     await page.goto("/daily", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByText("Today’s lineup complete")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { level: 2, name: "Today’s lineup complete" })).toBeVisible({ timeout: 10000 });
     const bar = page.getByRole("progressbar");
     await expect(bar).toHaveAttribute("aria-valuenow", "6");
 

@@ -132,16 +132,16 @@ describe("Daily hub", () => {
     expect(debrief.textContent).toContain("New Case Tomorrow");
   });
 
-  it("10. summary non-OK response shows the error state", async () => {
+  it("10. summary non-OK response shows the error state as an H2", async () => {
     mockFetch({ summaryOk: false });
     await renderHub();
-    expect(screen.getByText("We couldn’t load today’s lineup")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "We couldn’t load today’s lineup" })).toBeTruthy();
   });
 
-  it("11. summary rejection shows the error state", async () => {
+  it("11. summary rejection shows the error state as an H2", async () => {
     mockFetch({ summaryReject: true });
     await renderHub();
-    expect(screen.getByText("We couldn’t load today’s lineup")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "We couldn’t load today’s lineup" })).toBeTruthy();
   });
 
   it("12. retry performs another summary request", async () => {
@@ -213,11 +213,14 @@ describe("Daily hub", () => {
     expect(screen.queryByText("We couldn’t load today’s lineup")).toBeNull();
   });
 
-  it("16. header/reset timer remains present during an error", async () => {
+  it("16. header/reset timer remains present during an error, and exactly one H1 remains", async () => {
     mockFetch({ summaryOk: false });
     await renderHub();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today’s Puzzle Lineup");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("Next Reset")).toBeTruthy();
+    // The error heading is an H2, never a second H1.
+    expect(screen.getByRole("heading", { level: 2, name: "We couldn’t load today’s lineup" })).toBeTruthy();
   });
 
   it("17. DailyIntroCard is authenticated-only (no crash, guest renders without it)", async () => {
@@ -261,5 +264,85 @@ describe("Daily hub", () => {
     const body = document.body.textContent || "";
     expect(body).not.toMatch(/\bXP\b/);
     expect(body).not.toMatch(/\bpoints\b/i);
+  });
+});
+
+// Countdown synchronization: the visible HH:MM:SS and the accessible label
+// must always describe the exact same clock snapshot, including across a
+// one-second tick. Fake timers + a fixed system time make this deterministic
+// instead of depending on the real wall clock.
+describe("Daily hub countdown synchronization", () => {
+  beforeEach(() => {
+    mockUseSession.mockReturnValue({ status: "authenticated" });
+    jest.useFakeTimers();
+    // 2024-01-01T18:18:51Z -> next UTC midnight is 05:41:09 away.
+    jest.setSystemTime(new Date("2024-01-01T18:18:51.000Z"));
+  });
+
+  afterEach(() => {
+    cleanup();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  function countdownValueEl(): HTMLElement {
+    return screen.getByText(/^\d{2}:\d{2}:\d{2}$/);
+  }
+
+  function parseLabel(label: string): [string, string, string] | null {
+    const match = label.match(/(\d{2}) hours, (\d{2}) minutes, and (\d{2}) seconds/);
+    return match ? [match[1], match[2], match[3]] : null;
+  }
+
+  it("1. the visible timer and accessible label represent the same snapshot on mount", () => {
+    global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
+    render(<DailyHubPage />);
+    const el = countdownValueEl();
+    expect(el.textContent).toBe("05:41:09");
+    const label = el.getAttribute("aria-label") || "";
+    expect(label).toBe("Next daily reset in 05 hours, 41 minutes, and 09 seconds");
+    const parsed = parseLabel(label);
+    expect(parsed).toEqual(["05", "41", "09"]);
+  });
+
+  it("2. both values update together after one interval tick", () => {
+    global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
+    render(<DailyHubPage />);
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    const el = countdownValueEl();
+    expect(el.textContent).toBe("05:41:08");
+    expect(el.getAttribute("aria-label")).toBe("Next daily reset in 05 hours, 41 minutes, and 08 seconds");
+  });
+
+  it("3. both values remain zero-padded across a minute boundary", () => {
+    jest.setSystemTime(new Date("2024-01-01T23:58:59.500Z"));
+    global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
+    render(<DailyHubPage />);
+    // Mount snapshot: 60.5s remaining -> 00:01:00.
+    expect(countdownValueEl().textContent).toBe("00:01:00");
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    // One tick later: 59.5s remaining -> 00:00:59, still zero-padded.
+    const el = countdownValueEl();
+    expect(el.textContent).toBe("00:00:59");
+    expect(el.getAttribute("aria-label")).toBe("Next daily reset in 00 hours, 00 minutes, and 59 seconds");
+  });
+
+  it("4. the reset boundary remains UTC midnight, not local midnight", () => {
+    global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
+    render(<DailyHubPage />);
+    // 18:18:51 UTC -> 5h 41m 9s until 00:00:00 UTC the next day.
+    expect(countdownValueEl().textContent).toBe("05:41:09");
+  });
+
+  it("5. the interval is still cleared on unmount", () => {
+    global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
+    const clearSpy = jest.spyOn(window, "clearInterval");
+    const { unmount } = render(<DailyHubPage />);
+    unmount();
+    expect(clearSpy).toHaveBeenCalled();
   });
 });

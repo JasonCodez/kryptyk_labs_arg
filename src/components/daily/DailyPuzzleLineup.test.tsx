@@ -194,11 +194,10 @@ describe("DailyPuzzleLineup", () => {
     expect(bar.getAttribute("aria-valuenow")).toBe("1");
   });
 
-  it("22. first accessible incomplete available standard puzzle is recommended", () => {
+  it("22. first accessible incomplete available standard puzzle is recommended, and its title is an H2", () => {
     show({ summary: summary() });
     expect(screen.getByText("Play Next")).toBeTruthy();
-    const recommendedRegion = screen.getByText("Play Next").parentElement!;
-    expect(within(recommendedRegion).getByText("Hidden Word")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Hidden Word" })).toBeTruthy();
   });
 
   it("23. completed puzzle is skipped for recommendation", () => {
@@ -242,7 +241,7 @@ describe("DailyPuzzleLineup", () => {
       jigsaw: entry({ completedToday: true }),
     });
     show({ summary: allDone, debriefCompleted: true });
-    expect(screen.getByText("Today’s lineup complete")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Today’s lineup complete" })).toBeTruthy();
     expect(
       screen.getByText("You cleared all six Daily challenges. A fresh lineup arrives at the next reset."),
     ).toBeTruthy();
@@ -266,7 +265,7 @@ describe("DailyPuzzleLineup", () => {
       word: entry({ completedToday: true }),
     });
     show({ summary: guestBlocked, isAuthenticated: false });
-    expect(screen.getByText("No challenge is ready to play")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "No challenge is ready to play" })).toBeTruthy();
     expect(screen.getByText("Sign in to access the rest of today’s lineup.")).toBeTruthy();
   });
 
@@ -335,5 +334,25 @@ describe("DailyPuzzleLineup", () => {
     // null/loading/error branching before this component ever mounts.
     show({ summary: summary() });
     expect(screen.getAllByRole("link").length).toBeGreaterThan(0);
+  });
+
+  it("41. Today’s Challenges remains an H2 in every overview state", () => {
+    show({ summary: summary() });
+    expect(screen.getByRole("heading", { level: 2, name: "Today’s Challenges" })).toBeTruthy();
+  });
+
+  it("42. all-complete state has exactly two H2s (lineup-complete title, Today’s Challenges) and no fixed-order changes", () => {
+    const allDone = summary({
+      word: entry({ completedToday: true }),
+      sudoku: entry({ completedToday: true }),
+      crossword: entry({ completedToday: true }),
+      word_search: entry({ completedToday: true }),
+      jigsaw: entry({ completedToday: true }),
+    });
+    show({ summary: allDone, debriefCompleted: true });
+    const h2s = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(h2s).toEqual(["Today’s lineup complete", "Today’s Challenges"]);
+    const links = gridLinks().filter((l) => HREFS.includes(l.getAttribute("href") || ""));
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(HREFS);
   });
 });
