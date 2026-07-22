@@ -378,10 +378,48 @@ describe("CampaignPath", () => {
 
   it("39. empty campaign state links back to /puzzles", () => {
     renderPath([]);
-    expect(screen.getByText("No challenges available")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "No challenges available" })).toBeTruthy();
     expect(screen.getByText("This campaign does not have any playable challenges yet.")).toBeTruthy();
-    const link = screen.getByRole("link", { name: "Back to Puzzle Library" });
+    const link = screen.getByRole("link", { name: /Back to Puzzle Library/ });
     expect(link).toHaveProperty("href", expect.stringContaining("/puzzles"));
+  });
+
+  it("39a. empty campaign renders the PUZZLE CAMPAIGN eyebrow", () => {
+    renderPath([], { puzzleType: "crossword" });
+    expect(screen.getByText("PUZZLE CAMPAIGN")).toBeTruthy();
+  });
+
+  it("39b. empty campaign renders the campaign label as an H1", () => {
+    renderPath([], { puzzleType: "crossword" });
+    expect(screen.getByRole("heading", { level: 1, name: "Crossword" })).toBeTruthy();
+  });
+
+  it("39c. empty campaign contains exactly one H1", () => {
+    renderPath([], { puzzleType: "crossword" });
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("39d. empty campaign supporting copy remains visible", () => {
+    renderPath([]);
+    expect(
+      screen.getByText("Complete each challenge, track your progress, and work your way through the campaign.")
+    ).toBeTruthy();
+  });
+
+  it("39e. empty-state action contains an SVG/Lucide icon", () => {
+    renderPath([]);
+    const link = screen.getByRole("link", { name: /Back to Puzzle Library/ });
+    expect(link.querySelector("svg")).not.toBeNull();
+  });
+
+  it("39f. no Campaign Path heading appears when there are no challenges", () => {
+    renderPath([]);
+    expect(screen.queryByRole("heading", { name: "Campaign Path" })).toBeNull();
+  });
+
+  it("39g. populated campaigns still contain exactly one H1", () => {
+    renderPath(STANDARD_FIXTURE);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
   it("40. no horizontal-scroller class is present in the campaign path", () => {

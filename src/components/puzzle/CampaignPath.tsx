@@ -17,6 +17,7 @@ import {
   CircleX,
   Sparkles,
   Star,
+  Library,
 } from "lucide-react";
 import PageContainer from "@/components/ui/PageContainer";
 import Card from "@/components/ui/Card";
@@ -256,15 +257,16 @@ function EmptyChallenges() {
   return (
     <div className="text-center py-16">
       <PuzzleIcon aria-hidden="true" size={40} style={{ color: "var(--pw-text-muted)", margin: "0 auto 16px" }} />
-      <p className="text-lg font-bold mb-2" style={{ color: "var(--pw-text-primary)" }}>No challenges available</p>
+      <h2 className="text-lg font-bold mb-2" style={{ color: "var(--pw-text-primary)" }}>No challenges available</h2>
       <p className="text-sm mb-6" style={{ color: "var(--pw-text-secondary)" }}>
         This campaign does not have any playable challenges yet.
       </p>
       <Link
         href="/puzzles"
-        className={`inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl text-sm font-bold ${FOCUS_VISIBLE}`}
+        className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] px-5 rounded-xl text-sm font-bold ${FOCUS_VISIBLE}`}
         style={{ background: "var(--pw-brand-primary)", color: "var(--pw-text-on-primary)", outlineColor: "var(--pw-focus-ring)" }}
       >
+        <Library aria-hidden="true" size={16} />
         Back to Puzzle Library
       </Link>
     </div>
@@ -294,11 +296,27 @@ export default function CampaignPath({ puzzleType, puzzles, justCompletedId, onA
     </Link>
   );
 
+  const campaignHeader = (
+    <div className="mb-6">
+      <p className="inline-flex items-center gap-1.5 text-xs font-bold tracking-widest mb-3" style={{ color: "var(--pw-brand-primary)" }}>
+        <PuzzleIcon aria-hidden="true" size={14} strokeWidth={2.5} />
+        PUZZLE CAMPAIGN
+      </p>
+      <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight mb-3" style={{ color: "var(--pw-text-primary)" }}>
+        {label}
+      </h1>
+      <p className="text-base leading-relaxed max-w-[34rem]" style={{ color: "var(--pw-text-secondary)" }}>
+        Complete each challenge, track your progress, and work your way through the campaign.
+      </p>
+    </div>
+  );
+
   if (totalChallenges === 0) {
     return (
       <div style={{ paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
         <PageContainer as="section" size="catalog" className="pt-8 pb-16">
           {backLink}
+          {campaignHeader}
           <EmptyChallenges />
         </PageContainer>
       </div>
@@ -312,19 +330,7 @@ export default function CampaignPath({ puzzleType, puzzles, justCompletedId, onA
     <div style={{ paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
       <PageContainer as="section" size="catalog" className="pt-8 pb-16">
         {backLink}
-
-        <div className="mb-6">
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold tracking-widest mb-3" style={{ color: "var(--pw-brand-primary)" }}>
-            <PuzzleIcon aria-hidden="true" size={14} strokeWidth={2.5} />
-            PUZZLE CAMPAIGN
-          </p>
-          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight mb-3" style={{ color: "var(--pw-text-primary)" }}>
-            {label}
-          </h1>
-          <p className="text-base leading-relaxed max-w-[34rem]" style={{ color: "var(--pw-text-secondary)" }}>
-            Complete each challenge, track your progress, and work your way through the campaign.
-          </p>
-        </div>
+        {campaignHeader}
 
         <Card accent={overviewAccent} padding="lg" className="mb-8 max-w-5xl">
           <div className="grid sm:grid-cols-2 gap-6">

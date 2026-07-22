@@ -416,10 +416,22 @@ test.describe("campaign page empty-campaign fixture", () => {
   test("shows the empty state and links back to Puzzle Library", async ({ page }) => {
     await gotoCampaign(page, [], "crossword");
 
-    await expect(page.getByText("No challenges available")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("link", { name: "Back to Puzzle Library" })).toHaveAttribute("href", "/puzzles");
+    await expect(page.getByRole("heading", { level: 1, name: "Crossword" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { level: 2, name: "No challenges available" })).toBeVisible();
+    await expect(page.getByText("PUZZLE CAMPAIGN")).toBeVisible();
+    await expect(
+      page.getByText("Complete each challenge, track your progress, and work your way through the campaign.")
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+
+    const backToLibrary = page.getByRole("link", { name: /Back to Puzzle Library/ });
+    await expect(backToLibrary).toHaveAttribute("href", "/puzzles");
+    await expect(backToLibrary.locator("svg")).toHaveCount(1);
+
+    await expect(page.getByRole("heading", { name: "Campaign Path" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Grid", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "List", exact: true })).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
   });
 });
 
