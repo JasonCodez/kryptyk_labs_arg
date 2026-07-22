@@ -8,6 +8,7 @@ import { PuzzleHeaderActions } from "@/components/app-shell/PuzzleHeader";
 import SudokuPuzzle, { type SudokuPresentationState, type SudokuPuzzleHandle } from "@/components/puzzle/SudokuPuzzle";
 import { useDailyPuzzle } from "@/hooks/useDailyPuzzle";
 import DailyCompletionHandoff from "@/components/onboarding/DailyCompletionHandoff";
+import DailyPuzzleResult from "@/components/daily/DailyPuzzleResult";
 
 const formatElapsed = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
@@ -17,7 +18,8 @@ export default function DailySudokuPage() {
   const onboardingUserId = session?.user
     ? (session.user as { id?: string }).id || session.user.email || null
     : null;
-  const { loading, available, dayNumber, streak, completedToday, content, submitCompletion } = useDailyPuzzle("sudoku");
+  const { loading, available, dayNumber, streak, streakDay, nextReward, completedToday, content, submitCompletion } =
+    useDailyPuzzle("sudoku");
   const sudokuRef = useRef<SudokuPuzzleHandle>(null);
   const [presentation, setPresentation] = useState<SudokuPresentationState | null>(null);
   const [solved, setSolved] = useState(false);
@@ -44,10 +46,16 @@ export default function DailySudokuPage() {
       ) : !available || !grid || !solution ? (
         <div className="sudoku-status-card">Today&apos;s Sudoku isn&apos;t ready yet. Check back soon.</div>
       ) : isDone ? (
-        <>
-          <section className="sudoku-result-card"><span aria-hidden>✓</span><h2>Solved for today!</h2>{reward && <p>+{reward.points} pts · +{reward.xp} xp</p>}<p>Come back tomorrow for a new puzzle.</p></section>
+        <DailyPuzzleResult
+          puzzleName="Sudoku"
+          dayNumber={dayNumber}
+          streak={streak}
+          streakDay={streakDay}
+          reward={reward}
+          nextReward={nextReward}
+        >
           <DailyCompletionHandoff userId={onboardingUserId} completed />
-        </>
+        </DailyPuzzleResult>
       ) : (
         <SudokuPuzzle
           ref={sudokuRef}
