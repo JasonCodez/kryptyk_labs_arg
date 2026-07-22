@@ -157,7 +157,7 @@ export default function WarzPuzzlePickerDialog({
                 onClick={onClose}
                 aria-label="Close puzzle picker"
                 className="inline-flex shrink-0 items-center justify-center rounded-full"
-                style={{ width: 44, height: 44, color: "var(--pw-text-muted)" }}
+                style={{ width: 46, height: 46, color: "var(--pw-text-muted)" }}
               >
                 <X aria-hidden="true" size={20} />
               </button>
@@ -181,8 +181,9 @@ export default function WarzPuzzlePickerDialog({
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search eligible puzzles…"
-                  className="w-full rounded-lg py-2 pl-9 pr-3 text-sm outline-none"
+                  className="min-h-11 w-full rounded-lg py-2 pl-9 pr-3 text-sm outline-none"
                   style={{
+                    minHeight: 46,
                     background: "var(--pw-surface-2)",
                     border: "1px solid var(--pw-border-default)",
                     color: "var(--pw-text-primary)",
@@ -200,6 +201,7 @@ export default function WarzPuzzlePickerDialog({
                       onClick={() => setTypeFilter(filter.key)}
                       className="inline-flex min-h-11 items-center rounded-full px-3 text-xs font-bold"
                       style={{
+                        minHeight: 46,
                         background: active
                           ? "color-mix(in srgb, var(--pw-brand-secondary) 20%, transparent)"
                           : "var(--pw-surface-2)",
@@ -230,6 +232,7 @@ export default function WarzPuzzlePickerDialog({
                     onClick={onRetry}
                     className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-4 text-sm font-bold"
                     style={{
+                      minHeight: 46,
                       color: "var(--pw-brand-primary)",
                       background: "color-mix(in srgb, var(--pw-brand-primary) 15%, transparent)",
                       border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 35%, transparent)",

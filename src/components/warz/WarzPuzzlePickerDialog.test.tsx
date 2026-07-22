@@ -79,6 +79,11 @@ describe("WarzPuzzlePickerDialog", () => {
     expect(screen.getByLabelText("Search eligible puzzles")).toBeTruthy();
   });
 
+  it("search input has an explicit 44px minimum height", () => {
+    renderDialog();
+    expect(screen.getByLabelText("Search eligible puzzles").className).toContain("min-h-11");
+  });
+
   it("search input receives focus on open", async () => {
     renderDialog();
     await act(async () => {
@@ -129,8 +134,8 @@ describe("WarzPuzzlePickerDialog", () => {
   it("close control meets target size", () => {
     renderDialog();
     const close = screen.getByRole("button", { name: "Close puzzle picker" });
-    expect(close.style.width).toBe("44px");
-    expect(close.style.height).toBe("44px");
+    expect(parseFloat(close.style.width)).toBeGreaterThanOrEqual(44);
+    expect(parseFloat(close.style.height)).toBeGreaterThanOrEqual(44);
   });
 
   it("loading state is visible", () => {

@@ -142,6 +142,8 @@ interface FixtureOptions {
   challengesFailOnce?: boolean;
   eligibleStatus?: number;
   eligibleFailOnce?: boolean;
+  /** When true, /api/warz/eligible-puzzles requests are held open until releaseEligible() is called. */
+  holdEligible?: boolean;
 }
 
 async function installFixture(page: Page, options: FixtureOptions = {}) {
@@ -150,6 +152,9 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let cancelCalls = 0;
   let lastCancelBody: Record<string, unknown> | null = null;
   const challenges = challengeFixtures();
+  const heldEligibleRoutes: Array<{
+    fulfill: (body: unknown, status?: number) => Promise<void>;
+  }> = [];
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -177,6 +182,10 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
 
     if (path === "/api/warz/eligible-puzzles" && method === "GET") {
       eligibleCalls += 1;
+      if (options.holdEligible) {
+        heldEligibleRoutes.push({ fulfill });
+        return; // left pending until releaseEligible() is called
+      }
       if (options.eligibleFailOnce && eligibleCalls === 1) {
         return fulfill({ error: "failed" }, 500);
       }
@@ -197,6 +206,12 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     eligibleCallCount: () => eligibleCalls,
     cancelCallCount: () => cancelCalls,
     lastCancelBody: () => lastCancelBody,
+    releaseEligible: async (index: number, puzzles: typeof ELIGIBLE_PUZZLES = ELIGIBLE_PUZZLES, status = 200) => {
+      const held = heldEligibleRoutes[index];
+      if (!held) throw new Error(`No held eligible-puzzles request at index ${index}`);
+      await held.fulfill({ puzzles }, status);
+    },
+    heldEligibleCount: () => heldEligibleRoutes.length,
   };
 }
 
@@ -386,6 +401,133 @@ test.describe("Warz lobby — picker failure and retry", () => {
 
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
+  });
+});
+
+test.describe("Warz lobby — picker request lifecycle", () => {
+  test("closing and reopening while a request is pending does not start a second request", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { holdEligible: true });
+    await page.goto("/warz", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+    await expect.poll(fixture.eligibleCallCount).toBe(1);
+    await expect(pickerDialog(page).getByText(/loading eligible puzzles/i)).toBeVisible();
+
+    // Close with Escape while the request is still pending, then reopen immediately.
+    await page.keyboard.press("Escape");
+    await expect(pickerDialog(page)).toHaveCount(0);
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+
+    // Reopening must reuse the still-pending request, not start a new one.
+    expect(fixture.eligibleCallCount()).toBe(1);
+    await expect(pickerDialog(page).getByText(/loading eligible puzzles/i)).toBeVisible();
+
+    await fixture.releaseEligible(0);
+    await expect(pickerDialog(page).getByText("Elig Sudoku")).toBeVisible();
+
+    // Close and reopen again after a successful load — still no new request.
+    await page.keyboard.press("Escape");
+    await expect(pickerDialog(page)).toHaveCount(0);
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+    await expect(pickerDialog(page).getByText("Elig Sudoku")).toBeVisible();
+    expect(fixture.eligibleCallCount()).toBe(1);
+
+    // Searching and filtering must not cause another request either.
+    await page.getByLabel("Search eligible puzzles").fill("sudoku");
+    await page.getByRole("button", { name: "Jigsaw", exact: true }).click();
+    expect(fixture.eligibleCallCount()).toBe(1);
+  });
+
+  test("a newer successful result is not overwritten by an older response settling afterward", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { holdEligible: true });
+    await page.goto("/warz", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    // The production in-flight guard means only one real request can be
+    // outstanding within a single page instance, so the authoritative,
+    // deterministic reproduction of "an older response landing after a
+    // newer one already succeeded" lives in the Jest suite (page.test.tsx,
+    // "Warz picker request lifecycle" #11–12), which drives two independent
+    // component instances directly. Here we confirm the reachable part of
+    // that guarantee end-to-end: the still-pending request from before a
+    // full reload resolving late must not corrupt the freshly loaded page.
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+    await expect.poll(fixture.eligibleCallCount).toBe(1);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+    await expect.poll(fixture.eligibleCallCount).toBe(2);
+    await fixture.releaseEligible(1);
+    await expect(pickerDialog(page).getByText("Elig Sudoku")).toBeVisible();
+
+    // The pre-reload request finally settles — the current page must be unaffected.
+    await fixture.releaseEligible(0);
+    await expect(pickerDialog(page).getByText("Elig Sudoku")).toBeVisible();
+    await expect(pickerDialog(page).getByText(/couldn.t load eligible puzzles/i)).toHaveCount(0);
+  });
+});
+
+test.describe("Warz lobby — touch targets", () => {
+  test("interactive controls meet minimum size requirements at 390x844", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page);
+    await page.goto("/warz", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const issueBox = await page.getByRole("button", { name: /issue a challenge/i }).boundingBox();
+    expect(issueBox).not.toBeNull();
+    expect(issueBox!.height).toBeGreaterThanOrEqual(44);
+
+    for (const tabName of [/Open Challenges/, /My Battles/, /History/]) {
+      const box = await page.getByRole("tab", { name: tabName }).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+    const dialog = pickerDialog(page);
+    await expect(dialog).toBeVisible();
+
+    const searchBox = await page.getByLabel("Search eligible puzzles").boundingBox();
+    expect(searchBox).not.toBeNull();
+    expect(searchBox!.height).toBeGreaterThanOrEqual(44);
+
+    const closeBox = await dialog.getByRole("button", { name: "Close puzzle picker" }).boundingBox();
+    expect(closeBox).not.toBeNull();
+    expect(closeBox!.height).toBeGreaterThanOrEqual(44);
+
+    for (const filterName of ["All", "Sudoku", "Hidden Word", "Word Trove", "Jigsaw"]) {
+      const box = await dialog.getByRole("button", { name: filterName, exact: true }).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+
+    for (const puzzle of ELIGIBLE_PUZZLES) {
+      const box = await dialog.getByRole("button", { name: new RegExp(puzzle.title) }).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(48);
+    }
+  });
+
+  test("Try again button meets minimum size when the picker errors", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, { eligibleFailOnce: true });
+    await page.goto("/warz", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByRole("button", { name: /issue a challenge/i }).click();
+    const dialog = pickerDialog(page);
+    const retryBox = await dialog.getByRole("button", { name: /try again/i }).boundingBox();
+    expect(retryBox).not.toBeNull();
+    expect(retryBox!.height).toBeGreaterThanOrEqual(44);
   });
 });
 

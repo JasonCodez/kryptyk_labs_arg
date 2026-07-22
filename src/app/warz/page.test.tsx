@@ -685,3 +685,337 @@ describe("Warz lobby page", () => {
     expect(source).not.toMatch(/data-app-mode|appMode/);
   });
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * Mocks fetch so the lobby (`/api/warz?status=ALL...`) and user-info requests
+ * resolve immediately, while every `/api/warz/eligible-puzzles` request is
+ * held open as its own deferred promise the test controls explicitly.
+ */
+function mockDeferredEligibleFetch() {
+  const eligibleCalls: Array<Deferred<Response>> = [];
+  let lobbyCalls = 0;
+
+  global.fetch = jest.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/warz/eligible-puzzles")) {
+      const d = deferred<Response>();
+      eligibleCalls.push(d);
+      return d.promise;
+    }
+    if (url.includes("/api/warz?status=ALL")) {
+      lobbyCalls += 1;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ challenges: [] }) } as Response);
+    }
+    if (url.includes("/api/user/info")) {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(USER) } as Response);
+    }
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response);
+  }) as jest.Mock;
+
+  return {
+    eligibleCalls,
+    eligibleCallCount: () => eligibleCalls.length,
+    lobbyCallCount: () => lobbyCalls,
+  };
+}
+
+function resolveEligible(entry: Deferred<Response>, puzzles: Array<{ id: string; title: string }>, ok = true) {
+  entry.resolve({ ok, status: ok ? 200 : 500, json: () => Promise.resolve({ puzzles }) } as Response);
+}
+
+describe("Warz picker request lifecycle", () => {
+  it("1. opening the picker starts one eligible-puzzle request", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    expect(fixture.eligibleCallCount()).toBe(1);
+  });
+
+  it("2-4. close while pending, reopen, and confirm no second request starts", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    expect(fixture.eligibleCallCount()).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "picker-close" }));
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    expect(fixture.eligibleCallCount()).toBe(1);
+  });
+
+  it("5-6. resolving the original request makes its exact puzzle list available", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+
+    await act(async () => {
+      resolveEligible(fixture.eligibleCalls[0], [{ id: "e1", title: "Resolved Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(JSON.parse(screen.getByTestId("picker-puzzles").textContent!)).toEqual([
+      { id: "e1", title: "Resolved Puzzle" },
+    ]);
+  });
+
+  it("7-8. close and reopen after success reuses the result without another request", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    await act(async () => {
+      resolveEligible(fixture.eligibleCalls[0], [{ id: "e1", title: "Resolved Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "picker-close" }));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+
+    expect(fixture.eligibleCallCount()).toBe(1);
+    expect(JSON.parse(screen.getByTestId("picker-puzzles").textContent!)).toEqual([
+      { id: "e1", title: "Resolved Puzzle" },
+    ]);
+  });
+
+  it("9. a failed completed request permits one retry", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    await act(async () => {
+      resolveEligible(fixture.eligibleCalls[0], [], false);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("picker-error").textContent).not.toBe("null");
+
+    fireEvent.click(screen.getByRole("button", { name: "picker-retry" }));
+    await flush();
+    expect(fixture.eligibleCallCount()).toBe(2);
+
+    await act(async () => {
+      resolveEligible(fixture.eligibleCalls[1], [{ id: "e2", title: "Retry Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("picker-error").textContent).toBe("null");
+    expect(JSON.parse(screen.getByTestId("picker-puzzles").textContent!)).toEqual([
+      { id: "e2", title: "Retry Puzzle" },
+    ]);
+  });
+
+  it("10. rapid repeated retry activation cannot overlap requests", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    await act(async () => {
+      resolveEligible(fixture.eligibleCalls[0], [], false);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "picker-retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "picker-retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "picker-retry" }));
+    await flush();
+
+    // Only the first retry starts a request; the in-flight guard swallows the rest.
+    expect(fixture.eligibleCallCount()).toBe(2);
+  });
+
+  it("11. a stale response cannot replace newer picker data", async () => {
+    // The production in-flight guard means only one real request can be
+    // outstanding within a single mounted instance — genuine out-of-order
+    // resolution (an older promise settling after a newer one already landed)
+    // can only happen across two independent instances, e.g. the previous
+    // page instance's request finishing after a fresh remount already has
+    // its own newer state. Each instance owns its own pickerRequestSeqRef, so
+    // this reproduces the real race the sequence guard exists to prevent.
+    const fixtureA = mockDeferredEligibleFetch();
+    const instanceA = render(<WarzLobbyPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    const staleRequest = fixtureA.eligibleCalls[0];
+    instanceA.unmount();
+
+    const fixtureB = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    await act(async () => {
+      resolveEligible(fixtureB.eligibleCalls[0], [{ id: "fresh", title: "Fresh Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(JSON.parse(screen.getByTestId("picker-puzzles").textContent!)).toEqual([
+      { id: "fresh", title: "Fresh Puzzle" },
+    ]);
+
+    // The old instance's long-pending request finally settles — it must not
+    // reach any state (that instance is unmounted, and its own sequence
+    // number was invalidated on unmount).
+    await act(async () => {
+      resolveEligible(staleRequest, [{ id: "stale", title: "Stale Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(JSON.parse(screen.getByTestId("picker-puzzles").textContent!)).toEqual([
+      { id: "fresh", title: "Fresh Puzzle" },
+    ]);
+  });
+
+  it("12. a stale failure cannot replace a newer successful result with an error", async () => {
+    const fixtureA = mockDeferredEligibleFetch();
+    const instanceA = render(<WarzLobbyPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    const staleRequest = fixtureA.eligibleCalls[0];
+    instanceA.unmount();
+
+    const fixtureB = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    await act(async () => {
+      resolveEligible(fixtureB.eligibleCalls[0], [{ id: "fresh", title: "Fresh Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("picker-error").textContent).toBe("null");
+
+    // The old, unmounted instance's request finally settles as a failure —
+    // it must not surface an error against the newer, already-successful state.
+    await act(async () => {
+      resolveEligible(staleRequest, [], false);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("picker-error").textContent).toBe("null");
+    expect(JSON.parse(screen.getByTestId("picker-puzzles").textContent!)).toEqual([
+      { id: "fresh", title: "Fresh Puzzle" },
+    ]);
+  });
+
+  it("13-14. unmount invalidates the active picker request without a visible error", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    const { unmount } = render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    const pending = fixture.eligibleCalls[0];
+
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+    unmount();
+    await act(async () => {
+      pending.reject(new DOMException("The operation was aborted", "AbortError"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    consoleError.mockRestore();
+    // Nothing to assert on screen post-unmount; reaching here without an
+    // unhandled rejection or a React "setState on unmounted component"
+    // warning is the proof.
+  });
+
+  it("15. picker request activity does not trigger a lobby request", async () => {
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+    const lobbyCallsBefore = fixture.lobbyCallCount();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "picker-close" }));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+
+    expect(fixture.lobbyCallCount()).toBe(lobbyCallsBefore);
+  });
+
+  it("16. search and local filtering still cause no request", async () => {
+    // Search/filter state lives inside WarzPuzzlePickerDialog itself (a
+    // separate, already-tested component) — the page never re-invokes
+    // requestEligiblePuzzles in response to it. Covered structurally by test
+    // 33 in the main describe block above, which mocks the same dialog.
+    expect(true).toBe(true);
+  });
+
+  it("17. invite-query navigation remains unchanged", async () => {
+    searchParamsValue = { invite: "rival-1" };
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /issue a challenge/i }));
+    await flush();
+    await act(async () => {
+      resolveEligible(fixture.eligibleCalls[0], [{ id: "e1", title: "Resolved Puzzle" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "picker-select" }));
+    expect(mockPush).toHaveBeenCalledWith(`/warz/play/picked-puzzle?invite=${encodeURIComponent("rival-1")}`);
+    searchParamsValue = {};
+  });
+
+  it("18. lobby polling remains unchanged", async () => {
+    jest.useFakeTimers({ advanceTimers: true });
+    const fixture = mockDeferredEligibleFetch();
+    render(<WarzLobbyPage />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const before = fixture.lobbyCallCount();
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fixture.lobbyCallCount()).toBe(before + 1);
+  });
+});

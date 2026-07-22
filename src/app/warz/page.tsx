@@ -41,6 +41,9 @@ function WarzLobbyInner() {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const pickerFetchedRef = useRef(false);
+  const pickerRequestInFlightRef = useRef(false);
+  const pickerRequestSeqRef = useRef(0);
+  const pickerAbortRef = useRef<AbortController | null>(null);
 
   const [successVisible, setSuccessVisible] = useState(searchParams.get("created") === "1");
 
@@ -127,27 +130,54 @@ function WarzLobbyInner() {
   }, [successVisible]);
 
   const requestEligiblePuzzles = useCallback(async () => {
+    if (pickerRequestInFlightRef.current) return;
+
+    pickerRequestInFlightRef.current = true;
+    const requestSeq = ++pickerRequestSeqRef.current;
+    const controller = new AbortController();
+    pickerAbortRef.current = controller;
+
     setPickerLoading(true);
     setPickerError(null);
     try {
-      const res = await fetch("/api/warz/eligible-puzzles");
+      const res = await fetch("/api/warz/eligible-puzzles", { signal: controller.signal });
+
+      if (requestSeq !== pickerRequestSeqRef.current) return; // stale — a newer request superseded this one
+
       if (!res.ok) {
         setPickerError("failed");
         return;
       }
       const data = await res.json();
+      if (requestSeq !== pickerRequestSeqRef.current) return;
+
       setEligiblePuzzles(data.puzzles ?? []);
       pickerFetchedRef.current = true;
-    } catch {
-      setPickerError("failed");
+    } catch (error) {
+      if (requestSeq === pickerRequestSeqRef.current && !(error instanceof DOMException && error.name === "AbortError")) {
+        setPickerError("failed");
+      }
     } finally {
-      setPickerLoading(false);
+      if (requestSeq === pickerRequestSeqRef.current) {
+        pickerRequestInFlightRef.current = false;
+        pickerAbortRef.current = null;
+        setPickerLoading(false);
+      }
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      pickerRequestSeqRef.current += 1; // invalidates any still-in-flight picker response after unmount
+      pickerAbortRef.current?.abort();
+      pickerAbortRef.current = null;
+      pickerRequestInFlightRef.current = false;
+    };
   }, []);
 
   const handleOpenPicker = useCallback(() => {
     setShowPicker(true);
-    if (!pickerFetchedRef.current) requestEligiblePuzzles();
+    if (!pickerFetchedRef.current && !pickerRequestInFlightRef.current) requestEligiblePuzzles();
   }, [requestEligiblePuzzles]);
 
   const handleSelectPuzzle = useCallback(
