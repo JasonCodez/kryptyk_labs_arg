@@ -276,12 +276,22 @@ test("Daily completion is recorded once after the celebration, and waits for Con
   const continueButton = page.getByRole("button", { name: "Claim Rewards" });
   await expect(continueButton).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Puzzle complete" })).toBeVisible();
-  await expect(page.getByText("Solved for today!")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Daily Jigsaw #212" }),
+  ).toHaveCount(0);
   expect(fixture.requests()).toBe(1);
   expect(fixture.successfulRecords()).toBe(1);
 
   await continueButton.click();
-  await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 10_000 });
+
+  const resultHeading = page.getByRole("heading", { level: 2, name: "Daily Jigsaw #212" });
+  await expect(resultHeading).toBeVisible({ timeout: 10_000 });
+  await expect(resultHeading).toBeFocused();
+  await expect(page.getByText("Daily Challenge Complete", { exact: true })).toBeVisible();
+  await expect(page.getByText("Reward earned", { exact: true })).toBeVisible();
+  await expect(page.getByText("+40", { exact: true })).toBeVisible();
+  await expect(page.getByText("+20", { exact: true })).toBeVisible();
+
   expect(fixture.requests()).toBe(1); // Continue must not resubmit completion
 });
 
@@ -297,7 +307,13 @@ test("failed Daily completion survives reload and retries only completion", asyn
   const continueButton = page.getByRole("button", { name: "Claim Rewards" });
   await expect(continueButton).toBeVisible({ timeout: 10_000 });
   await continueButton.click();
-  await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 10_000 });
+
+  const resultHeading = page.getByRole("heading", { level: 2, name: "Daily Jigsaw #212" });
+  await expect(resultHeading).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Reward earned", { exact: true })).toBeVisible();
+  await expect(page.getByText("+40", { exact: true })).toBeVisible();
+  await expect(page.getByText("+20", { exact: true })).toBeVisible();
+
   expect(fixture.requests()).toBe(2);
   expect(fixture.successfulRecords()).toBe(1);
 });

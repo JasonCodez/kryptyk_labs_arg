@@ -453,8 +453,15 @@ test("failed daily completion keeps the board and retry records completion once 
   await expect(page.getByRole("dialog", { name: /definition/i })).toHaveCount(0);
   await dragWord(page, [1, 0], [1, 2]);
   await expect(page.getByRole("dialog", { name: "DOG definition" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await expect.poll(state.dailyCompletions).toBe(1); await expect(page.getByText("Solved for today!")).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep searching/i }).click(); await page.reload({ waitUntil: "domcontentloaded" }); await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 }); await page.getByRole("button", { name: "Retry Completion" }).click();
-  await expect.poll(state.dailyCompletions).toBe(2); await expect(page.getByText("Solved for today!")).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible(); await expect(page.getByRole("grid")).toBeVisible(); await expect.poll(state.dailyCompletions).toBe(1); await expect(page.getByRole("heading", { level: 2, name: "Daily Word Trove #142" })).toHaveCount(0); await page.getByRole("dialog", { name: "DOG definition" }).getByRole("button", { name: /Keep searching/i }).click(); await page.reload({ waitUntil: "domcontentloaded" }); await expect(page.getByRole("button", { name: "Retry Completion" })).toBeVisible({ timeout: 15_000 }); await page.getByRole("button", { name: "Retry Completion" }).click();
+  await expect.poll(state.dailyCompletions).toBe(2);
+  const resultHeading = page.getByRole("heading", { level: 2, name: "Daily Word Trove #142" });
+  await expect(resultHeading).toBeVisible({ timeout: 10_000 });
+  await expect(resultHeading).toBeFocused();
+  await expect(page.getByText("Daily Challenge Complete", { exact: true })).toBeVisible();
+  await expect(page.getByText("Reward earned", { exact: true })).toBeVisible();
+  await expect(page.getByText("+70", { exact: true })).toBeVisible();
+  await expect(page.getByText("+35", { exact: true })).toBeVisible();
 });
 
 test("zoom and pan: selection geometry tracks the pointer during the drag under 2x zoom, with endpoint halos still visible and restrained", async ({ page }) => {
