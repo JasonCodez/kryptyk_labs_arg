@@ -214,6 +214,32 @@ describe("Warz challenge setup page — initial loading", () => {
     await flush();
   });
 
+  it("4c. loading root is top-aligned, not vertically centered", async () => {
+    mockFetch();
+    const { container } = render(<WarzPlayPage />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\bitems-start\b/);
+    expect(root.className).not.toMatch(/\bitems-center\b/);
+    await flush();
+  });
+
+  it("4d. loading root has bottom padding so the last placeholder never touches the viewport edge", async () => {
+    mockFetch();
+    const { container } = render(<WarzPlayPage />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\bpb-8\b/);
+    await flush();
+  });
+
+  it("4e. loading root top padding includes Navbar clearance plus additional spacing", async () => {
+    mockFetch();
+    const { container } = render(<WarzPlayPage />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.paddingTop).toContain("56px");
+    expect(root.style.paddingTop).toContain("1rem");
+    await flush();
+  });
+
   it("4b. setup makes each initial request exactly once", async () => {
     const calls = mockFetch();
     render(<WarzPlayPage />);

@@ -23,6 +23,31 @@ describe("Warz setup route loading boundary", () => {
     expect(root.style.paddingTop).toContain("56px");
   });
 
+  it("aligns the loading root to the top of the viewport, not the center", () => {
+    const { container } = render(<WarzSetupLoading />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\bitems-start\b/);
+    expect(root.className).not.toMatch(/\bitems-center\b/);
+  });
+
+  it("has bottom padding so the last placeholder never touches the viewport edge", () => {
+    const { container } = render(<WarzSetupLoading />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toMatch(/\bpb-8\b/);
+  });
+
+  it("adds extra top clearance beyond the bare Navbar height", () => {
+    const { container } = render(<WarzSetupLoading />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.paddingTop).toContain("56px");
+    expect(root.style.paddingTop).toContain("1rem");
+  });
+
+  it("keeps the wrapper bounded (w-full min-w-0 max-w-xl)", () => {
+    const { container } = render(<WarzSetupLoading />);
+    expect(container.querySelector(".w-full.min-w-0.max-w-xl")).toBeTruthy();
+  });
+
   it("performs no request and renders no fake content", () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn();

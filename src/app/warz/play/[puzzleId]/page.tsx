@@ -77,7 +77,6 @@ export default function WarzPlayPage() {
 
   const loadRequestSeqRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
-  const loadInFlightRef = useRef(false);
 
   const inviteRequestSeqRef = useRef(0);
   const inviteAbortRef = useRef<AbortController | null>(null);
@@ -87,8 +86,13 @@ export default function WarzPlayPage() {
   const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadSetup = useCallback(async () => {
-    if (loadInFlightRef.current) return;
-    loadInFlightRef.current = true;
+    // Abort any previous attempt and start fresh — mirrors resolveInvite's
+    // pattern below. A boolean in-flight guard here previously left the page
+    // permanently stuck in "loading" when React StrictMode's double-invoke
+    // aborted the first mount's request: cleanup bumped the seq before the
+    // aborted request's finally block ran, so it never cleared the guard,
+    // silently no-opping the second mount's call forever.
+    loadAbortRef.current?.abort();
     const seq = ++loadRequestSeqRef.current;
     const controller = new AbortController();
     loadAbortRef.current = controller;
@@ -150,8 +154,6 @@ export default function WarzPlayPage() {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setLoadError("We couldn’t prepare this challenge.");
       setPhase("error");
-    } finally {
-      if (seq === loadRequestSeqRef.current) loadInFlightRef.current = false;
     }
   }, [puzzleId, router]);
 
@@ -327,8 +329,8 @@ export default function WarzPlayPage() {
   if (phase === "loading") {
     return (
       <div
-        className="flex min-h-screen items-center justify-center px-4"
-        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+        className="flex min-h-screen items-start justify-center px-4 pb-8"
+        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px) + 1rem)" }}
       >
         <div className="w-full min-w-0 max-w-xl">
           <WarzSetupLoadingState />

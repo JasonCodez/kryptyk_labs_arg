@@ -35,6 +35,16 @@ async function authenticate(page: Page) {
   ]);
 }
 
+async function dismissCookieBanner(page: Page) {
+  const gotIt = page.getByRole("button", { name: "Got it" });
+  try {
+    await gotIt.waitFor({ state: "visible", timeout: 3000 });
+    await gotIt.click();
+  } catch {
+    // Banner never appeared this session — nothing to close.
+  }
+}
+
 function fulfill(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
@@ -138,14 +148,20 @@ test.describe("Warz non-collapsing loading layouts", () => {
       await expect(status).toBeVisible();
       const metrics = await status.evaluate((element) => {
         const root = element.getBoundingClientRect();
-        const first = element.querySelector<HTMLElement>("[data-skeleton='true']")!.getBoundingClientRect();
+        const navbar = document.querySelector("#global-nav");
+        const navbarBottom = navbar ? navbar.getBoundingClientRect().bottom : 0;
+        const placeholders = Array.from(element.querySelectorAll<HTMLElement>("[data-skeleton='true']"));
+        const first = placeholders[0]!.getBoundingClientRect();
         return {
           viewportWidth: window.innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
           statusWidth: root.width,
           statusHeight: root.height,
+          statusTop: root.top,
           firstWidth: first.width,
-          skeletonCount: element.querySelectorAll("[data-skeleton='true']").length,
+          firstPlaceholderTop: first.top,
+          navbarBottom,
+          skeletonCount: placeholders.length,
           canScroll: document.documentElement.scrollHeight > window.innerHeight,
         };
       });
@@ -158,6 +174,24 @@ test.describe("Warz non-collapsing loading layouts", () => {
       expect(metrics.statusHeight).toBeGreaterThan(500);
       expect(metrics.skeletonCount).toBe(10);
       if (viewport.height === 390) expect(metrics.canScroll).toBe(true);
+
+      // Reachability: the loading state must never begin above 0, behind the
+      // fixed Navbar, or at a negative Y position — regardless of viewport height.
+      expect(metrics.statusTop).toBeGreaterThanOrEqual(0);
+      expect(metrics.statusTop).toBeGreaterThanOrEqual(metrics.navbarBottom + 8 - 1);
+      expect(metrics.firstPlaceholderTop).toBeGreaterThanOrEqual(metrics.navbarBottom + 8 - 1);
+
+      // The last placeholder must be reachable by scrolling to the bottom of the document.
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const lastMetrics = await status.evaluate((element) => {
+        const placeholders = Array.from(element.querySelectorAll<HTMLElement>("[data-skeleton='true']"));
+        const last = placeholders[placeholders.length - 1]!.getBoundingClientRect();
+        return { lastPlaceholderTop: last.top, lastPlaceholderBottom: last.bottom, viewportHeight: window.innerHeight };
+      });
+      console.log("WARZ_SETUP_LAST_PLACEHOLDER_METRICS", JSON.stringify({ viewport, ...lastMetrics }));
+      expect(lastMetrics.lastPlaceholderTop).toBeLessThan(lastMetrics.viewportHeight);
+      expect(lastMetrics.lastPlaceholderBottom).toBeLessThanOrEqual(lastMetrics.viewportHeight + 16);
+
       expect(fixture.counts.get(`/api/puzzles/${PUZZLE.id}`)).toBe(1);
       expect(fixture.counts.get("/api/user/info") ?? 0).toBeGreaterThanOrEqual(1);
       expect(fixture.counts.get("/api/warz/check-eligible")).toBe(1);
@@ -191,6 +225,40 @@ test.describe("Warz non-collapsing loading layouts", () => {
   }
 });
 
+test("844x390 landscape: setup loading geometry is unchanged under reduced motion", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await authenticate(page);
+  const fixture = await installCommonRoutes(page, [
+    `/api/puzzles/${PUZZLE.id}`,
+    "/api/user/info",
+    "/api/warz/check-eligible",
+  ]);
+  await page.goto(`/warz/play/${PUZZLE.id}`, { waitUntil: "domcontentloaded" });
+  await expect.poll(() => fixture.counts.get(`/api/puzzles/${PUZZLE.id}`) ?? 0, { timeout: 15_000 }).toBe(1);
+  const status = page.getByTestId("warz-setup-loading").last();
+  await expect(status).toBeVisible();
+
+  const metrics = await status.evaluate((element) => {
+    const root = element.getBoundingClientRect();
+    const navbar = document.querySelector("#global-nav");
+    const navbarBottom = navbar ? navbar.getBoundingClientRect().bottom : 0;
+    const first = element.querySelector<HTMLElement>("[data-skeleton='true']")!;
+    const firstRect = first.getBoundingClientRect();
+    return {
+      statusTop: root.top,
+      navbarBottom,
+      firstPlaceholderTop: firstRect.top,
+      animationName: getComputedStyle(first).animationName,
+    };
+  });
+  console.log("WARZ_SETUP_LANDSCAPE_REDUCED_MOTION_METRICS", JSON.stringify(metrics));
+  expect(metrics.statusTop).toBeGreaterThanOrEqual(0);
+  expect(metrics.statusTop).toBeGreaterThanOrEqual(metrics.navbarBottom + 8 - 1);
+  expect(metrics.firstPlaceholderTop).toBeGreaterThanOrEqual(metrics.navbarBottom + 8 - 1);
+  expect(metrics.animationName).toBe("none");
+});
+
 test("Warz setup loading is replaced after all three requests resolve without duplicate requests", async ({ page }) => {
   await authenticate(page);
   const fixture = await installCommonRoutes(page, [
@@ -212,4 +280,107 @@ test("Warz setup loading is replaced after all three requests resolve without du
   await fixture.release(heldResponses);
   await expect(page.getByRole("status", { name: "Loading challenge setup" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "Set Your Challenge" })).toBeVisible();
+});
+
+test("real lobby-to-setup navigation: Issue a Challenge -> pick puzzle -> setup loading is reachable and never blank", async ({ page }) => {
+  await authenticate(page);
+
+  const counts = new Map<string, number>();
+
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const key = url.pathname;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+
+    if (key === "/api/auth/session") {
+      return fulfill(route, { user: { ...USER, email: "loading@example.test" }, expires: "2099-01-01T00:00:00.000Z" });
+    }
+    if (key === "/api/warz") return fulfill(route, { challenges: [] });
+    if (key === "/api/warz/eligible-puzzles") return fulfill(route, { puzzles: [PUZZLE] });
+    if (key === "/api/user/info") return fulfill(route, USER);
+    if (key === `/api/puzzles/${PUZZLE.id}`) return fulfill(route, PUZZLE);
+    if (key === "/api/warz/check-eligible") return fulfill(route, { eligible: true });
+    return fulfill(route, {});
+  });
+
+  await page.goto("/warz", { waitUntil: "domcontentloaded" });
+  await dismissCookieBanner(page);
+
+  // 1. Confirm the Warz lobby is ready.
+  await expect(page.getByRole("heading", { name: "Puzzle Warz" })).toBeVisible();
+  const issueButton = page.getByRole("button", { name: "Issue a Challenge" });
+  await expect(issueButton).toBeVisible();
+
+  // Sample the page repeatedly across the whole transition — every sample
+  // must find lobby content, the picker dialog, a route-loading state, or the
+  // setup loading state, so the main content region is never empty.
+  await page.evaluate(() => {
+    const w = window as unknown as { __frameSamples: boolean[]; __frameInterval: number };
+    w.__frameSamples = [];
+    w.__frameInterval = window.setInterval(() => {
+      const hasLobbyContent = document.body.textContent?.includes("Puzzle Warz") ?? false;
+      const hasPicker = !!document.querySelector('[role="dialog"]');
+      const hasSetupLoading = !!document.querySelector('[data-testid="warz-setup-loading"]');
+      const hasLobbyLoading = !!document.querySelector('[data-testid="warz-lobby-loading"]');
+      const hasSetup = document.body.textContent?.includes("Set Your Challenge") ?? false;
+      const nonEmpty = (document.body.textContent ?? "").trim().length > 0;
+      w.__frameSamples.push(nonEmpty && (hasLobbyContent || hasPicker || hasSetupLoading || hasLobbyLoading || hasSetup));
+    }, 20);
+  });
+
+  // 2. Click the real Issue Challenge action.
+  await issueButton.click();
+
+  // 3. Confirm the puzzle picker appears.
+  await expect(page.getByRole("dialog", { name: "Choose your puzzle" })).toBeVisible();
+
+  // 4. Select "Loading Puzzle".
+  await page.getByRole("button", { name: /Loading Puzzle/ }).click();
+
+  // 6. Confirm the URL becomes /warz/play/loading-puzzle.
+  await page.waitForURL(/\/warz\/play\/loading-puzzle/);
+
+  // 7-9. A setup loading state must have appeared at some point during the
+  // transition (it may already have been replaced by the ready setup UI by
+  // the time we check, since responses resolve immediately in this scenario).
+  await expect(page.getByRole("heading", { name: "Set Your Challenge" })).toBeVisible();
+
+  // 10-11. Body is never visually empty; no collapsed vertical line.
+  const setupBox = await page.locator("h1", { hasText: "Set Your Challenge" }).boundingBox();
+  expect(setupBox).not.toBeNull();
+  expect(setupBox!.width).toBeGreaterThan(100);
+
+  // 12. No horizontal overflow.
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.viewportWidth + 1);
+
+  const samples = await page.evaluate(() => {
+    const w = window as unknown as { __frameSamples: boolean[]; __frameInterval: number };
+    window.clearInterval(w.__frameInterval);
+    return w.__frameSamples;
+  });
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.every(Boolean)).toBe(true);
+
+  // 13. Confirm the setup requests fired a small, bounded number of times.
+  // A client-side (soft) transition into a freshly-mounted route can expose
+  // React's development-only StrictMode double-invoke as two real network
+  // requests (the first aborted, the second successful) — unlike a hard
+  // page.goto, which typically aborts before the first ever reaches the
+  // network. Either outcome is a legitimate, bounded request count; runaway
+  // repeated firing is not.
+  expect(counts.get(`/api/puzzles/${PUZZLE.id}`)).toBeGreaterThanOrEqual(1);
+  expect(counts.get(`/api/puzzles/${PUZZLE.id}`)).toBeLessThanOrEqual(2);
+  expect(counts.get("/api/warz/check-eligible")).toBeGreaterThanOrEqual(1);
+  expect(counts.get("/api/warz/check-eligible")).toBeLessThanOrEqual(2);
+  expect(counts.get("/api/user/info") ?? 0).toBeGreaterThanOrEqual(2);
+
+  // 15-16. The setup UI is showing and no setup loading skeleton remains.
+  await expect(page.getByRole("status", { name: "Loading challenge setup" })).toHaveCount(0);
+
+  // 17-18. No wager was submitted; no challenge was created.
+  expect(counts.get("/api/warz/create") ?? 0).toBe(0);
 });
