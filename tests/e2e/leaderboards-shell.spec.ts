@@ -235,9 +235,13 @@ test.describe("Leaderboards shell — tab switching", () => {
     await page.getByRole("tab", { name: /Weekly/ }).click();
     expect(fixture.weeklyCallCount()).toBe(1);
     await expect(page.getByText("Your Weekly Rank")).toBeVisible();
-    await expect(page.getByText("Period points")).toBeVisible();
+    const weeklyRankSummary = page.getByRole("region", { name: "Your Weekly Rank" });
+    await expect(weeklyRankSummary.getByText("Period points", { exact: true })).toBeVisible();
     await expect(page.getByText("Time Remaining")).toBeVisible();
-    await expect(page.getByText("Rank #1")).toBeVisible();
+    // Reward tier rank 1 renders as "1st Place" under Pass 14's formatting.
+    // The single rank-1 Weekly entry is also a featured "1st Place" podium
+    // card, so scope to the reward ladder to keep this assertion unambiguous.
+    await expect(page.getByTestId("leaderboard-reward-tiers").getByText("1st Place")).toBeVisible();
 
     await page.getByRole("tab", { name: /Monthly/ }).click();
     expect(fixture.monthlyCallCount()).toBe(1);
@@ -462,7 +466,7 @@ test.describe("Leaderboards shell — empty states", () => {
     await page.getByRole("tab", { name: /Weekly/ }).click();
     await expect(page.getByText("No weekly activity yet")).toBeVisible();
     await expect(page.getByText("Time Remaining")).toBeVisible();
-    await expect(page.getByText("500 pts")).toBeVisible();
+    await expect(page.getByText("500 Points")).toBeVisible();
     await expect(page.getByRole("link", { name: /Browse Puzzles/i })).toHaveAttribute("href", "/puzzles");
   });
 

@@ -33,7 +33,7 @@ function ordinal(n: number): string {
   }
 }
 
-export function formatRewardRankLabel(rank: number | string): string {
+export function formatRewardRankLabel(rank: unknown): string {
   if (typeof rank === "number") {
     if (!Number.isFinite(rank) || rank < 1) return "Rank";
     if (rank === 1) return "1st Place";
@@ -41,6 +41,8 @@ export function formatRewardRankLabel(rank: number | string): string {
     if (rank === 3) return "3rd Place";
     return `Rank #${rank}`;
   }
+
+  if (typeof rank !== "string") return "Rank";
 
   const trimmed = rank.trim();
   if (!trimmed) return "Rank";
@@ -68,11 +70,11 @@ export default function LeaderboardRewardTiers({ tiers, periodLabel }: Leaderboa
       <p className="mt-1 text-xs" style={{ color: "var(--pw-text-muted)" }}>
         Final standings determine rewards after the period ends.
       </p>
-      <ul className="mt-3 flex min-w-0 gap-2.5 overflow-x-auto pb-1 no-scrollbar sm:flex-wrap sm:overflow-visible">
+      <ul className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {tiers.map((tier) => (
           <li
             key={String(tier.rank)}
-            className="min-w-[112px] max-w-[220px] shrink-0 rounded-lg border px-3.5 py-2.5"
+            className="min-w-0 w-full rounded-lg border px-3.5 py-2.5"
             style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-2)" }}
           >
             <p className="break-words text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--pw-text-secondary)" }}>

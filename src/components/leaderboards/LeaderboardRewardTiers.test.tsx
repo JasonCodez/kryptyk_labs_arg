@@ -26,6 +26,20 @@ describe("formatRewardRankLabel", () => {
     expect(() => formatRewardRankLabel(-1)).not.toThrow();
     expect(() => formatRewardRankLabel(Number.NaN)).not.toThrow();
   });
+
+  it("null becomes Rank", () => expect(formatRewardRankLabel(null)).toBe("Rank"));
+  it("undefined becomes Rank", () => expect(formatRewardRankLabel(undefined)).toBe("Rank"));
+  it("an object becomes Rank", () => expect(formatRewardRankLabel({})).toBe("Rank"));
+  it("an array becomes Rank", () => expect(formatRewardRankLabel([])).toBe("Rank"));
+  it("a boolean becomes Rank", () => expect(formatRewardRankLabel(true)).toBe("Rank"));
+
+  it("never throws for malformed runtime values", () => {
+    expect(() => formatRewardRankLabel(null)).not.toThrow();
+    expect(() => formatRewardRankLabel(undefined)).not.toThrow();
+    expect(() => formatRewardRankLabel({})).not.toThrow();
+    expect(() => formatRewardRankLabel([])).not.toThrow();
+    expect(() => formatRewardRankLabel(true)).not.toThrow();
+  });
 });
 
 describe("LeaderboardRewardTiers", () => {
@@ -171,6 +185,46 @@ describe("LeaderboardRewardTiers", () => {
   it("mobile layout is bounded (min-w-0)", () => {
     const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
     expect(container.firstElementChild?.className).toMatch(/min-w-0/);
+  });
+
+  it("reward list uses a responsive wrapping grid", () => {
+    const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
+    const list = container.querySelector("ul");
+    expect(list?.className).toMatch(/\bgrid\b/);
+    expect(list?.className).toMatch(/grid-cols-1/);
+  });
+
+  it("reward list contains no overflow-x-auto", () => {
+    const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
+    expect(container.querySelector("ul")?.className).not.toMatch(/overflow-x-auto/);
+  });
+
+  it("reward list contains no shrink-0", () => {
+    const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
+    expect(container.querySelector("ul")?.className).not.toMatch(/shrink-0/);
+    expect(container.querySelector("li")?.className).not.toMatch(/shrink-0/);
+  });
+
+  it("reward list contains no fixed minimum tier width", () => {
+    const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
+    expect(container.querySelector("li")?.className).not.toMatch(/min-w-\[112px\]/);
+  });
+
+  it("each tier item uses min-w-0", () => {
+    const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
+    expect(container.querySelector("li")?.className).toMatch(/min-w-0/);
+  });
+
+  it("each tier item uses full available width", () => {
+    const { container } = render(<LeaderboardRewardTiers tiers={[{ rank: 1, points: 500, xp: 100 }]} periodLabel="Week" />);
+    expect(container.querySelector("li")?.className).toMatch(/\bw-full\b/);
+  });
+
+  it("source contains no horizontal-scroll classes", () => {
+    expect(SOURCE.includes("overflow-x-auto")).toBe(false);
+    expect(SOURCE.includes("no-scrollbar")).toBe(false);
+    expect(SOURCE.includes("shrink-0")).toBe(false);
+    expect(SOURCE.includes("min-w-[112px]")).toBe(false);
   });
 
   it("performs no request", () => {

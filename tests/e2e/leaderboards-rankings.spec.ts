@@ -290,6 +290,52 @@ test.describe("Leaderboards rankings — Weekly rewards", () => {
   });
 });
 
+test.describe("Leaderboards rankings — Weekly reward geometry", () => {
+  for (const viewport of [
+    { width: 320, height: 710 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+  ]) {
+    test(`${viewport.width}x${viewport.height}: reward ladder does not horizontally scroll`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await authenticate(page);
+      await installFixture(page);
+      await page.goto("/leaderboards", { waitUntil: "domcontentloaded" });
+      await dismissCookieBanner(page);
+
+      await page.getByRole("tab", { name: /Weekly/ }).click();
+
+      const rewardTiers = page.getByTestId("leaderboard-reward-tiers");
+      await expect(rewardTiers).toBeVisible();
+
+      await expect(rewardTiers.getByText("1st Place")).toBeVisible();
+      await expect(rewardTiers.getByText("2nd–10th")).toBeVisible();
+      await expect(rewardTiers.getByText("11th–50th")).toBeVisible();
+      await expect(rewardTiers.getByText("500 Points")).toBeVisible();
+      await expect(rewardTiers.getByText("100 XP")).toBeVisible();
+      await expect(rewardTiers.getByText("200 Points")).toBeVisible();
+      await expect(rewardTiers.getByText("40 XP")).toBeVisible();
+      await expect(rewardTiers.getByText("100 Points")).toBeVisible();
+      await expect(rewardTiers.getByText("20 XP")).toBeVisible();
+
+      const dimensions = await rewardTiers.evaluate((element) => {
+        const list = element.querySelector("ul");
+        return {
+          componentClientWidth: element.clientWidth,
+          componentScrollWidth: element.scrollWidth,
+          listClientWidth: list?.clientWidth ?? 0,
+          listScrollWidth: list?.scrollWidth ?? 0,
+        };
+      });
+
+      expect(dimensions.componentScrollWidth).toBeLessThanOrEqual(dimensions.componentClientWidth + 1);
+      expect(dimensions.listScrollWidth).toBeLessThanOrEqual(dimensions.listClientWidth + 1);
+
+      await expectNoHorizontalOverflow(page);
+    });
+  }
+});
+
 test.describe("Leaderboards rankings — Monthly rewards", () => {
   test("monthly heading, exact tier values, exact API order, and existing countdown/rank summary remain", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
