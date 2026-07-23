@@ -12,18 +12,32 @@ const USER = { id: "e2e-opponent", username: "arena-opponent", name: "arena-oppo
 const CHALLENGER = { id: "e2e-challenger", name: "ArenaChallenger", username: "ArenaChallenger", image: null, level: 14 };
 const DIFFERENT_PLAYER = { id: "different-player", name: "DifferentPlayer", username: "DifferentPlayer" };
 
-// A puzzleType WarzPlayBoard's renderPuzzle() switch does not recognize —
-// it falls back to a stable "Unsupported puzzle type" message. This keeps
-// these briefing/acceptance-lifecycle checks fully decoupled from any real
-// puzzle renderer, matching the same fixture technique already used by
-// tests/e2e/warz-shell.spec.ts.
+// A fully playable, deterministic Word Search fixture — real puzzleType,
+// real renderer. This is required for this spec's payload-preservation
+// coverage: the whole point is proving that `puzzle.data` (only ever
+// supplied by the authenticated challenge-detail request, never by the
+// accept response) survives into the mounted WarzPlayBoard.
 const PUZZLE = {
   id: "warz-accept-puzzle",
-  title: "Midnight Sudoku",
+  title: "Midnight Word Trove",
   difficulty: "medium",
-  puzzleType: "e2e_acceptance_fixture",
-  data: {},
+  puzzleType: "word_search",
+  data: {
+    grid: [
+      ["C", "A", "T"],
+      ["X", "X", "X"],
+      ["X", "X", "X"],
+    ],
+    words: ["CAT"],
+  },
 };
+
+/** The exact shape the real `/api/warz/accept` response uses — metadata
+ * only, never the playable payload. Spreading the full original challenge
+ * here would mask the defect this spec exists to catch. */
+function acceptResponsePuzzle(puzzle: typeof PUZZLE) {
+  return { id: puzzle.id, title: puzzle.title, difficulty: puzzle.difficulty, puzzleType: puzzle.puzzleType };
+}
 
 async function authenticate(page: Page) {
   const secret = process.env.NEXTAUTH_SECRET;
@@ -86,6 +100,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let lastAcceptBody: Record<string, unknown> | null = null;
   let challengeRequestCount = 0;
   let userInfoRequestCount = 0;
+  let puzzleDetailRequestCount = 0;
   const heldAcceptRoutes: Array<{ fulfill: (body: unknown, status?: number) => Promise<void> }> = [];
 
   await page.route("**/api/**", async (route) => {
@@ -110,6 +125,11 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       return fulfill({ ...USER, totalPoints: options.balance ?? USER.totalPoints });
     }
 
+    if (path.startsWith("/api/puzzles/") && method === "GET") {
+      puzzleDetailRequestCount += 1;
+      return fulfill({});
+    }
+
     if (path === "/api/warz/accept" && method === "POST") {
       acceptCalls += 1;
       lastAcceptBody = request.postDataJSON();
@@ -124,7 +144,17 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
         return fulfill({ error: "This challenge is no longer available." }, 409);
       }
       return fulfill(
-        { challenge: { ...challenge, status: "IN_PROGRESS", opponent: { id: USER.id, username: USER.username } } },
+        {
+          challenge: {
+            id: challenge.id,
+            status: "IN_PROGRESS",
+            challengerWager: challenge.challengerWager,
+            expiresAt: challenge.expiresAt,
+            puzzle: acceptResponsePuzzle(challenge.puzzle),
+            challenger: challenge.challenger,
+            opponent: { id: USER.id, username: USER.username },
+          },
+        },
         options.acceptStatus ?? 200
       );
     }
@@ -141,6 +171,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     lastAcceptBody: () => lastAcceptBody,
     challengeRequestCount: () => challengeRequestCount,
     userInfoRequestCount: () => userInfoRequestCount,
+    puzzleDetailRequestCount: () => puzzleDetailRequestCount,
     releaseAccept: async (index: number, body: unknown, status = 200) => {
       const held = heldAcceptRoutes[index];
       if (!held) throw new Error(`No held accept request at index ${index}`);
@@ -189,8 +220,8 @@ test.describe("Warz challenge acceptance — briefing layout", () => {
       await expect(page.getByRole("heading", { level: 1 })).toHaveText("You’ve Been Challenged");
       await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
       await expect(page.getByText("@ArenaChallenger").first()).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Midnight Sudoku" })).toBeVisible();
-      await expect(page.getByText("Sudoku")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Midnight Word Trove" })).toBeVisible();
+      await expect(page.getByText("Word Trove", { exact: true })).toBeVisible();
       await expect(page.getByText("50 Points").first()).toBeVisible();
       await expect(page.getByText("100 Points")).toBeVisible();
       await expect(page.getByText("875 Points")).toBeVisible();
@@ -235,10 +266,11 @@ test.describe("Warz challenge acceptance — briefing layout", () => {
 });
 
 test.describe("Warz challenge acceptance — open challenge", () => {
-  test("accept flow: single request, pending state, entry transition, active play", async ({ page }) => {
+  test("accept flow: single request, pending state, entry transition, active play with the real puzzle renderer", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await authenticate(page);
-    const fixture = await installFixture(page, { challenge: baseChallenge({ id: "open-accept" }), holdAccept: true });
+    const challenge = baseChallenge({ id: "open-accept" });
+    const fixture = await installFixture(page, { challenge, holdAccept: true });
     await page.goto(challengeUrl("open-accept"), { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
 
@@ -257,12 +289,48 @@ test.describe("Warz challenge acceptance — open challenge", () => {
     await acceptButton.click({ force: true }).catch(() => {});
     expect(fixture.acceptCallCount()).toBe(1);
 
+    // 1-2. Exactly one accept request; release it with the production-shaped
+    // response — metadata-only puzzle, no `data`.
     await fixture.releaseAccept(0, {
-      challenge: { ...baseChallenge({ id: "open-accept" }), status: "IN_PROGRESS", opponent: { id: USER.id } },
+      challenge: {
+        id: challenge.id,
+        status: "IN_PROGRESS",
+        challengerWager: challenge.challengerWager,
+        expiresAt: challenge.expiresAt,
+        puzzle: acceptResponsePuzzle(challenge.puzzle),
+        challenger: challenge.challenger,
+        opponent: { id: USER.id, username: USER.username },
+      },
     });
 
+    // 2-3. Entry transition, then the active shell.
     await expect(page.locator('[data-testid="warz-active-play-shell"]')).toBeVisible();
-    await expect(page.locator('[data-testid="warz-play-board"], [data-testid="warz-active-play-shell"]')).toBeVisible();
+
+    // 4. The actual Word Trove renderer mounted (not the sudoku/jigsaw
+    // fallback, not an unsupported-type message) — proves `puzzle.data`
+    // (only ever supplied by the initial challenge-detail load) survived
+    // the accept response's metadata-only payload.
+    const wordSearchRoot = page.locator('[data-testid="word-search-root"]');
+    await expect(wordSearchRoot).toBeVisible();
+    await expect(page.getByText(/found/i).first()).toBeVisible();
+
+    // 5-6. No missing-payload or unsupported-type fallback text.
+    await expect(page.getByText("Sudoku data missing.")).toHaveCount(0);
+    await expect(page.getByText("Jigsaw image missing.")).toHaveCount(0);
+    await expect(page.getByText(/Unsupported puzzle type/i)).toHaveCount(0);
+
+    // 7. Board is interactive — the letter grid actually rendered cells.
+    await expect(page.getByRole("gridcell").first()).toBeVisible();
+
+    // 8-10. No challenge-detail refetch, no puzzle-detail request introduced.
+    // user-info may be polled independently by unrelated chrome (e.g. the
+    // navbar avatar), so only the challenge-detail/puzzle-detail counts —
+    // which are exclusively owned by this page — are asserted exactly.
+    expect(fixture.challengeRequestCount()).toBe(1);
+    expect(fixture.puzzleDetailRequestCount()).toBe(0);
+
+    // 11. Exactly one WarzPlayBoard/active-play-shell instance.
+    await expect(page.locator('[data-testid="warz-active-play-shell"]')).toHaveCount(1);
   });
 });
 

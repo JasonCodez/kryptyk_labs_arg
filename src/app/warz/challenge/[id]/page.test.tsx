@@ -67,7 +67,34 @@ const CHALLENGER = { id: "challenger-1", username: "ArenaChallenger", name: null
 const FUTURE = new Date(Date.now() + 3600_000).toISOString();
 const PAST = new Date(Date.now() - 3600_000).toISOString();
 
-function baseChallenge(overrides: Record<string, unknown> = {}) {
+interface ChallengeFixture {
+  id: string;
+  status: string;
+  challengerWager: number;
+  expiresAt: string;
+  puzzle: {
+    id: string;
+    title: string;
+    difficulty: string;
+    puzzleType: string;
+    data?: Record<string, unknown>;
+    sudoku?: { puzzleGrid: string; solutionGrid: string };
+    jigsaw?: {
+      imageUrl: string | null;
+      gridRows: number;
+      gridCols: number;
+      snapTolerance: number;
+      rotationEnabled: boolean;
+    };
+  };
+  challenger: { id: string; username?: string | null; name?: string | null };
+  opponent?: { id: string; username?: string | null; name?: string | null } | null;
+  invitedUser?: { id: string; username?: string | null; name?: string | null } | null;
+  challengerTime?: number | null;
+  winner?: { id: string; username?: string | null; name?: string | null } | null;
+}
+
+function baseChallenge(overrides: Partial<ChallengeFixture> = {}): ChallengeFixture {
   return {
     id: "challenge-1",
     status: "OPEN",
@@ -86,7 +113,7 @@ function baseChallenge(overrides: Record<string, unknown> = {}) {
 interface FetchOptions {
   challengeStatus?: number;
   userStatus?: number;
-  challenge?: Record<string, unknown>;
+  challenge?: ChallengeFixture;
 }
 
 function mockFetch(options: FetchOptions = {}) {
@@ -102,7 +129,31 @@ function mockFetch(options: FetchOptions = {}) {
       return Promise.resolve({ ok: userStatus === 200, status: userStatus, json: () => Promise.resolve(USER) } as Response);
     }
     if (url.includes("/api/warz/accept")) {
-      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ challenge: { ...challenge, status: "IN_PROGRESS", opponent: { id: "me" } } }) } as Response);
+      // Production-shaped: the real /api/warz/accept response only ever
+      // returns puzzle metadata (id/title/difficulty/puzzleType) — never
+      // data/sudoku/jigsaw. Spreading the full original `challenge` here
+      // would mask the exact defect this correction fixes.
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            challenge: {
+              id: challenge.id,
+              status: "IN_PROGRESS",
+              challengerWager: challenge.challengerWager,
+              expiresAt: challenge.expiresAt,
+              puzzle: {
+                id: challenge.puzzle.id,
+                title: challenge.puzzle.title,
+                difficulty: challenge.puzzle.difficulty,
+                puzzleType: challenge.puzzle.puzzleType,
+              },
+              challenger: challenge.challenger,
+              opponent: { id: "me", name: "arena-player" },
+            },
+          }),
+      } as Response);
     }
     if (url.includes("/api/warz/complete")) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ winnerId: "me", tie: false }) } as Response);
@@ -554,6 +605,304 @@ describe("Warz challenge page — acceptance", () => {
     // No assertion needed beyond "did not throw" — a React act()/state-update
     // warning would otherwise fail this test via the console spy pattern used
     // elsewhere in this file.
+  });
+});
+
+describe("Warz challenge page — accepted puzzle payload preservation", () => {
+  it("1-3. successful acceptance still passes the exact initial puzzle.data payload to WarzPlayBoard", async () => {
+    const dataChallenge = baseChallenge({
+      puzzle: { ...PUZZLE, puzzleType: "word_search", data: { grid: [["A", "B"], ["C", "D"]], words: ["AB", "CD"] } },
+    });
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: dataChallenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) {
+        // Production shape: metadata only, no `data`.
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              challenge: {
+                id: dataChallenge.id,
+                status: "IN_PROGRESS",
+                challengerWager: dataChallenge.challengerWager,
+                expiresAt: dataChallenge.expiresAt,
+                puzzle: { id: dataChallenge.puzzle.id, title: dataChallenge.puzzle.title, difficulty: dataChallenge.puzzle.difficulty, puzzleType: dataChallenge.puzzle.puzzleType },
+                challenger: dataChallenge.challenger,
+                opponent: { id: "me", name: "arena-player" },
+              },
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "accept" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+
+    const boardPuzzle = JSON.parse(screen.getByTestId("board-puzzle").textContent!);
+    expect(boardPuzzle.data).toEqual({ grid: [["A", "B"], ["C", "D"]], words: ["AB", "CD"] });
+  });
+
+  it("4-6. successful acceptance still passes the exact initial puzzle.sudoku payload to WarzPlayBoard", async () => {
+    const sudokuChallenge = baseChallenge({
+      puzzle: { ...PUZZLE, sudoku: { puzzleGrid: "1,2,3", solutionGrid: "1,2,3,4,5,6,7,8,9" } },
+    });
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: sudokuChallenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              challenge: {
+                id: sudokuChallenge.id,
+                status: "IN_PROGRESS",
+                challengerWager: sudokuChallenge.challengerWager,
+                expiresAt: sudokuChallenge.expiresAt,
+                puzzle: { id: sudokuChallenge.puzzle.id, title: sudokuChallenge.puzzle.title, difficulty: sudokuChallenge.puzzle.difficulty, puzzleType: sudokuChallenge.puzzle.puzzleType },
+                challenger: sudokuChallenge.challenger,
+                opponent: { id: "me", name: "arena-player" },
+              },
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "accept" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+
+    const boardPuzzle = JSON.parse(screen.getByTestId("board-puzzle").textContent!);
+    expect(boardPuzzle.sudoku).toEqual({ puzzleGrid: "1,2,3", solutionGrid: "1,2,3,4,5,6,7,8,9" });
+  });
+
+  it("7-9. successful acceptance still passes the exact initial puzzle.jigsaw payload to WarzPlayBoard", async () => {
+    const jigsawChallenge = baseChallenge({
+      puzzle: {
+        ...PUZZLE,
+        puzzleType: "jigsaw",
+        jigsaw: { imageUrl: "https://example.test/img.png", gridRows: 3, gridCols: 3, snapTolerance: 10, rotationEnabled: false },
+      },
+    });
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: jigsawChallenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              challenge: {
+                id: jigsawChallenge.id,
+                status: "IN_PROGRESS",
+                challengerWager: jigsawChallenge.challengerWager,
+                expiresAt: jigsawChallenge.expiresAt,
+                puzzle: { id: jigsawChallenge.puzzle.id, title: jigsawChallenge.puzzle.title, difficulty: jigsawChallenge.puzzle.difficulty, puzzleType: jigsawChallenge.puzzle.puzzleType },
+                challenger: jigsawChallenge.challenger,
+                opponent: { id: "me", name: "arena-player" },
+              },
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "accept" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+
+    const boardPuzzle = JSON.parse(screen.getByTestId("board-puzzle").textContent!);
+    expect(boardPuzzle.jigsaw).toEqual({ imageUrl: "https://example.test/img.png", gridRows: 3, gridCols: 3, snapTolerance: 10, rotationEnabled: false });
+  });
+
+  it("10-11. authoritative acceptance status and opponent identity are preserved", async () => {
+    const challenge = baseChallenge({ puzzle: { ...PUZZLE, data: { grid: [] } } });
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              challenge: {
+                id: challenge.id,
+                status: "IN_PROGRESS",
+                challengerWager: challenge.challengerWager,
+                expiresAt: challenge.expiresAt,
+                puzzle: { id: challenge.puzzle.id, title: challenge.puzzle.title, difficulty: challenge.puzzle.difficulty, puzzleType: challenge.puzzle.puzzleType },
+                challenger: challenge.challenger,
+                opponent: { id: "me", name: "arena-player" },
+              },
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "accept" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+
+    // Board mounted at all — proves the merged challenge carried the
+    // authoritative IN_PROGRESS status and "me" opponent past classification.
+    expect(screen.getByTestId("warz-play-board")).toBeTruthy();
+
+    // 14-15. no challenge-detail refetch, no puzzle-detail request introduced.
+    expect(calls.filter((c) => c.url.includes("/api/warz/challenge-1")).length).toBe(1);
+    expect(calls.some((c) => c.url.includes("/api/puzzles/"))).toBe(false);
+    // 16. no user-info refetch.
+    expect(calls.filter((c) => c.url.includes("/api/user/info")).length).toBe(1);
+    // 17. WarzPlayBoard mounts once.
+    expect(screen.getAllByTestId("warz-play-board").length).toBe(1);
+  });
+
+  it("12-13. response-provided puzzle title/difficulty override stale metadata, and a response-provided playable payload takes precedence", async () => {
+    const challenge = baseChallenge({
+      puzzle: { ...PUZZLE, title: "Stale Title", difficulty: "easy", data: { grid: ["stale"] } },
+    });
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              challenge: {
+                id: challenge.id,
+                status: "IN_PROGRESS",
+                challengerWager: challenge.challengerWager,
+                expiresAt: challenge.expiresAt,
+                puzzle: {
+                  id: challenge.puzzle.id,
+                  title: "Fresh Title",
+                  difficulty: "hard",
+                  puzzleType: challenge.puzzle.puzzleType,
+                  data: { grid: ["fresh"] },
+                },
+                challenger: challenge.challenger,
+                opponent: { id: "me", name: "arena-player" },
+              },
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "accept" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+
+    const boardPuzzle = JSON.parse(screen.getByTestId("board-puzzle").textContent!);
+    expect(boardPuzzle.title).toBe("Fresh Title");
+    expect(boardPuzzle.difficulty).toBe("hard");
+    expect(boardPuzzle.data).toEqual({ grid: ["fresh"] });
+  });
+
+  it("19. an invalid acceptance response still does not mount gameplay", async () => {
+    const challenge = baseChallenge({ puzzle: { ...PUZZLE, data: { grid: [] } } });
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "accept" }));
+    await flush();
+    expect(screen.queryByTestId("warz-play-board")).toBeNull();
+    expect(screen.getByTestId("briefing-accept-error").textContent).toBe("We couldn’t accept this challenge.");
+  });
+
+  it("18. resume still uses the existing loaded payload without any accept response merge", async () => {
+    const challenge = baseChallenge({
+      status: "IN_PROGRESS",
+      opponent: { id: "me" },
+      puzzle: { ...PUZZLE, puzzleType: "word_search", data: { grid: [["Z"]] } },
+    });
+    mockFetch({ challenge });
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+
+    const boardPuzzle = JSON.parse(screen.getByTestId("board-puzzle").textContent!);
+    expect(boardPuzzle.data).toEqual({ grid: [["Z"]] });
+  });
+
+  it("20. duplicate-accept protection remains intact alongside the merge", async () => {
+    let acceptCalls = 0;
+    const challenge = baseChallenge({ puzzle: { ...PUZZLE, data: { grid: [] } } });
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/accept")) {
+        acceptCalls += 1;
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              challenge: {
+                id: challenge.id,
+                status: "IN_PROGRESS",
+                challengerWager: challenge.challengerWager,
+                expiresAt: challenge.expiresAt,
+                puzzle: { id: challenge.puzzle.id, title: challenge.puzzle.title, difficulty: challenge.puzzle.difficulty, puzzleType: challenge.puzzle.puzzleType },
+                challenger: challenge.challenger,
+                opponent: { id: "me", name: "arena-player" },
+              },
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    const acceptButton = screen.getByRole("button", { name: "accept" });
+    fireEvent.click(acceptButton);
+    fireEvent.click(acceptButton);
+    fireEvent.click(acceptButton);
+    expect(acceptCalls).toBe(1);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    expect(screen.getAllByTestId("warz-play-board").length).toBe(1);
   });
 });
 

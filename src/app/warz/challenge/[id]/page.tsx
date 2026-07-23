@@ -54,6 +54,35 @@ function formatTime(sec: number) {
   return `${m}:${s}`;
 }
 
+/**
+ * `POST /api/warz/accept` returns only puzzle metadata (id/title/difficulty/
+ * puzzleType) — it never re-sends the playable payload. Blindly replacing
+ * `challenge` with that response would strip `puzzle.data`/`sudoku`/`jigsaw`
+ * before WarzPlayBoard mounts, even though the authenticated challenge-detail
+ * request already supplied it. This merges the authoritative fields the
+ * accept response DOES own (status, opponent, wager, etc.) onto the
+ * previously loaded challenge, while preserving the already-loaded playable
+ * puzzle payload unless the response explicitly supplies its own.
+ */
+function mergeAcceptedChallenge(
+  currentChallenge: WarzChallenge,
+  acceptedChallenge: WarzChallenge
+): WarzChallenge {
+  const acceptedPuzzle = acceptedChallenge.puzzle;
+
+  return {
+    ...currentChallenge,
+    ...acceptedChallenge,
+    puzzle: {
+      ...currentChallenge.puzzle,
+      ...(acceptedPuzzle ?? {}),
+      data: acceptedPuzzle?.data ?? currentChallenge.puzzle.data,
+      sudoku: acceptedPuzzle?.sudoku ?? currentChallenge.puzzle.sudoku,
+      jigsaw: acceptedPuzzle?.jigsaw ?? currentChallenge.puzzle.jigsaw,
+    },
+  };
+}
+
 function classifyChallenge(
   challenge: WarzChallenge,
   currentUser: CurrentUser
@@ -245,7 +274,7 @@ export default function WarzChallengePage() {
         return;
       }
 
-      setChallenge(acceptedChallenge);
+      setChallenge((current) => (current ? mergeAcceptedChallenge(current, acceptedChallenge) : acceptedChallenge));
       setAccepting(false);
       enterBattle("accepted");
       // acceptInFlightRef intentionally remains true — a successful
@@ -498,7 +527,7 @@ export default function WarzChallengePage() {
     return (
       <div
         className="min-h-screen px-4 py-8"
-        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + 24px + env(safe-area-inset-top, 0px))" }}
       >
         <WarzBattleEntryTransition mode={entryMode} />
       </div>
@@ -527,7 +556,7 @@ export default function WarzChallengePage() {
   return (
     <div
       className="min-h-screen px-4 py-8"
-      style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+      style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + 24px + env(safe-area-inset-top, 0px))" }}
     >
       <WarzBattleBriefing
         challenge={briefingChallenge}
