@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { TriangleAlert, RefreshCw } from "lucide-react";
 import WarzPlayBoard from "@/components/puzzle/WarzPlayBoard";
 import WarzChallengeLoadingState from "@/components/warz/WarzChallengeLoadingState";
 import WarzBattleBriefing, { type WarzBattleBriefingChallenge } from "@/components/warz/WarzBattleBriefing";
 import WarzBattleEntryTransition from "@/components/warz/WarzBattleEntryTransition";
+import WarzBattleResult from "@/components/warz/WarzBattleResult";
 import { type WarzChallengeStatusKind } from "@/components/warz/WarzChallengeStatus";
-import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
 import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
 
 interface WarzChallenge {
@@ -17,6 +16,11 @@ interface WarzChallenge {
   status: string;
   challengerWager: number;
   expiresAt: string;
+  challengerTime?: number | null;
+  opponentTime?: number | null;
+  winnerId?: string | null;
+  potPaid?: boolean;
+  completedAt?: string | null;
   puzzle: {
     id: string;
     title: string;
@@ -32,10 +36,21 @@ interface WarzChallenge {
       rotationEnabled: boolean;
     };
   };
-  challenger: { id: string; username?: string | null; name?: string | null };
-  opponent?: { id: string; username?: string | null; name?: string | null } | null;
+  challenger: {
+    id: string;
+    username?: string | null;
+    name?: string | null;
+    image?: string | null;
+    level?: number | null;
+  };
+  opponent?: {
+    id: string;
+    username?: string | null;
+    name?: string | null;
+    image?: string | null;
+    level?: number | null;
+  } | null;
   invitedUser?: { id: string; username?: string | null; name?: string | null } | null;
-  challengerTime?: number | null; // only visible after COMPLETED
   winner?: { id: string; username?: string | null; name?: string | null } | null;
 }
 
@@ -47,38 +62,30 @@ interface CurrentUser {
 
 type Phase = "loading" | "error" | "briefing" | "entering" | "playing" | "result";
 
-function formatTime(sec: number) {
-  if (sec >= 999999) return "DNF";
-  const m = Math.floor(sec / 60).toString().padStart(2, "0");
-  const s = (sec % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
+interface WarzTerminalSubmission {
+  completionSeconds: number;
+  forfeited: boolean;
 }
 
 /**
- * `POST /api/warz/accept` returns only puzzle metadata (id/title/difficulty/
- * puzzleType) — it never re-sends the playable payload. Blindly replacing
- * `challenge` with that response would strip `puzzle.data`/`sudoku`/`jigsaw`
- * before WarzPlayBoard mounts, even though the authenticated challenge-detail
- * request already supplied it. This merges the authoritative fields the
- * accept response DOES own (status, opponent, wager, etc.) onto the
- * previously loaded challenge, while preserving the already-loaded playable
- * puzzle payload unless the response explicitly supplies its own.
+ * Authoritative accept and completion responses may contain partial puzzle
+ * metadata. Preserve an already-loaded playable payload when merging them.
  */
-function mergeAcceptedChallenge(
+function mergeAuthoritativeChallenge(
   currentChallenge: WarzChallenge,
-  acceptedChallenge: WarzChallenge
+  authoritativeChallenge: WarzChallenge
 ): WarzChallenge {
-  const acceptedPuzzle = acceptedChallenge.puzzle;
+  const authoritativePuzzle = authoritativeChallenge.puzzle;
 
   return {
     ...currentChallenge,
-    ...acceptedChallenge,
+    ...authoritativeChallenge,
     puzzle: {
       ...currentChallenge.puzzle,
-      ...(acceptedPuzzle ?? {}),
-      data: acceptedPuzzle?.data ?? currentChallenge.puzzle.data,
-      sudoku: acceptedPuzzle?.sudoku ?? currentChallenge.puzzle.sudoku,
-      jigsaw: acceptedPuzzle?.jigsaw ?? currentChallenge.puzzle.jigsaw,
+      ...(authoritativePuzzle ?? {}),
+      data: authoritativePuzzle?.data ?? currentChallenge.puzzle.data,
+      sudoku: authoritativePuzzle?.sudoku ?? currentChallenge.puzzle.sudoku,
+      jigsaw: authoritativePuzzle?.jigsaw ?? currentChallenge.puzzle.jigsaw,
     },
   };
 }
@@ -124,10 +131,9 @@ export default function WarzChallengePage() {
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [entryMode, setEntryMode] = useState<"accepted" | "resume">("accepted");
 
-  // Result state (frozen behavior from prior passes)
-  const [result, setResult] = useState<{ won: boolean; myTime: number; challengerTime?: number | null; tie?: boolean } | null>(null);
   const [submittingResult, setSubmittingResult] = useState(false);
-  const [warzCopied, setWarzCopied] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const [lastTerminalSubmission, setLastTerminalSubmission] = useState<WarzTerminalSubmission | null>(null);
 
   const loadRequestSeqRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -135,6 +141,8 @@ export default function WarzChallengePage() {
 
   const acceptInFlightRef = useRef(false);
   const acceptRequestSeqRef = useRef(0);
+  const completionInFlightRef = useRef(false);
+  const completionRequestSeqRef = useRef(0);
   const mountedRef = useRef(true);
 
   const entryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -185,13 +193,14 @@ export default function WarzChallengePage() {
 
       if (seq !== loadRequestSeqRef.current) return;
 
-      setChallenge(chalData.challenge ?? chalData);
+      const loadedChallenge: WarzChallenge = chalData.challenge ?? chalData;
+      setChallenge(loadedChallenge);
       setCurrentUser({
         id: userData.id,
         username: userData.username ?? userData.name ?? "Player",
         totalPoints: userData.totalPoints ?? 0,
       });
-      setPhase("briefing");
+      setPhase(loadedChallenge.status === "COMPLETED" ? "result" : "briefing");
     } catch (err) {
       if (seq !== loadRequestSeqRef.current) return;
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -215,6 +224,7 @@ export default function WarzChallengePage() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      completionRequestSeqRef.current += 1;
     };
   }, []);
 
@@ -274,7 +284,9 @@ export default function WarzChallengePage() {
         return;
       }
 
-      setChallenge((current) => (current ? mergeAcceptedChallenge(current, acceptedChallenge) : acceptedChallenge));
+      setChallenge((current) =>
+        current ? mergeAuthoritativeChallenge(current, acceptedChallenge) : acceptedChallenge
+      );
       setAccepting(false);
       enterBattle("accepted");
       // acceptInFlightRef intentionally remains true — a successful
@@ -291,68 +303,79 @@ export default function WarzChallengePage() {
     enterBattle("resume");
   }, [enterBattle]);
 
-  const handlePuzzleDone = useCallback(
-    async (secs: number, forfeited?: boolean) => {
+  const submitCompletion = useCallback(
+    async (submission: WarzTerminalSubmission) => {
+      if (completionInFlightRef.current) return;
+      completionInFlightRef.current = true;
+      const seq = ++completionRequestSeqRef.current;
       setSubmittingResult(true);
-      try {
-        const body = forfeited ? { challengeId: id, forfeited: true } : { challengeId: id, completionSeconds: secs };
+      setCompletionError(null);
 
+      try {
+        const body = submission.forfeited
+          ? { challengeId: id, forfeited: true }
+          : { challengeId: id, completionSeconds: submission.completionSeconds };
         const res = await fetch("/api/warz/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
-        if (!res.ok) {
-          setResult({ won: false, myTime: forfeited ? 999999 : secs });
+        const data = await res.json().catch(() => ({}));
+        if (!mountedRef.current || seq !== completionRequestSeqRef.current) return;
+
+        const authoritativeChallenge = data.challenge as WarzChallenge | undefined;
+        const validCompletedChallenge =
+          res.ok &&
+          authoritativeChallenge?.id === id &&
+          authoritativeChallenge.status === "COMPLETED";
+
+        if (!validCompletedChallenge) {
+          setCompletionError(
+            res.ok
+              ? "We couldn’t record this battle result."
+              : data.error || "We couldn’t record this battle result."
+          );
+          setPhase("result");
           return;
         }
-        setResult({
-          won: data.winnerId === currentUser?.id,
-          myTime: forfeited ? 999999 : secs,
-          challengerTime: data.challenge?.challengerTime ?? null,
-          tie: data.tie ?? false,
-        });
+
+        setChallenge((current) =>
+          current
+            ? mergeAuthoritativeChallenge(current, authoritativeChallenge)
+            : authoritativeChallenge
+        );
+        setCompletionError(null);
+        setPhase("result");
       } catch {
-        setResult({ won: false, myTime: forfeited ? 999999 : secs });
+        if (!mountedRef.current || seq !== completionRequestSeqRef.current) return;
+        setCompletionError("Network error — we couldn’t record this battle result.");
+        setPhase("result");
       } finally {
-        setSubmittingResult(false);
+        completionInFlightRef.current = false;
+        if (mountedRef.current && seq === completionRequestSeqRef.current) {
+          setSubmittingResult(false);
+        }
       }
     },
-    [id, currentUser?.id]
+    [id]
   );
 
-  const shareWarz = useCallback(() => {
-    if (!result || !challenge) return;
-    const pot = challenge.challengerWager * 2;
-    const myFormatted = formatTime(result.myTime);
-    const theirFormatted = result.challengerTime != null ? formatTime(result.challengerTime) : "DNF";
-    const opponent = challenge.challenger.name ?? challenge.challenger.username;
-    const puzzleLabel = getPuzzleTypeLabel(challenge.puzzle.puzzleType);
+  const handlePuzzleDone = useCallback(
+    (seconds: number, forfeited?: boolean) => {
+      const submission: WarzTerminalSubmission = {
+        completionSeconds: forfeited ? 0 : seconds,
+        forfeited: Boolean(forfeited),
+      };
+      setLastTerminalSubmission(submission);
+      void submitCompletion(submission);
+    },
+    [submitCompletion]
+  );
 
-    let text: string;
-    if (result.tie) {
-      text = `⚔️ PuzzleWarz WARZ\n\n🤝 Tied with @${opponent} on "${challenge.puzzle.title}" (${puzzleLabel})\n⏱ My time: ${myFormatted}  |  Theirs: ${theirFormatted}\nWagers refunded. Rematch time? 😤\n\nhttps://puzzlewarz.com/warz`;
-    } else if (result.won) {
-      text = `⚔️ PuzzleWarz WARZ\n\n🏆 Just CRUSHED @${opponent} on "${challenge.puzzle.title}" (${puzzleLabel})!\n⏱ My time: ${myFormatted}  |  Theirs: ${theirFormatted}\n💰 Won ${pot} pts\n\nThink you can do better? 👇\nhttps://puzzlewarz.com/warz`;
-    } else {
-      text = `⚔️ PuzzleWarz WARZ\n\n💀 @${opponent} beat me on "${challenge.puzzle.title}" (${puzzleLabel})\n⏱ My time: ${myFormatted}  |  Theirs: ${theirFormatted}\nI'll be back. 🔥\nhttps://puzzlewarz.com/warz`;
-    }
-
-    if (typeof navigator !== "undefined" && navigator.share) {
-      navigator.share({ text }).catch(() => {
-        navigator.clipboard.writeText(text).then(() => {
-          setWarzCopied(true);
-          setTimeout(() => setWarzCopied(false), 2_000);
-        });
-      });
-    } else {
-      navigator.clipboard.writeText(text).then(() => {
-        setWarzCopied(true);
-        setTimeout(() => setWarzCopied(false), 2_000);
-      });
-    }
-  }, [result, challenge]);
+  const handleRetryCompletion = useCallback(() => {
+    if (!lastTerminalSubmission) return;
+    void submitCompletion(lastTerminalSubmission);
+  }, [lastTerminalSubmission, submitCompletion]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (phase === "loading") {
@@ -412,88 +435,31 @@ export default function WarzChallengePage() {
     );
   }
 
-  // ── Result screen (frozen legacy visual language) ───────────────────────
-  if (result) {
-    const pot = challenge.challengerWager * 2;
-    const isWinner = result.won;
-    const isTie = result.tie;
-
+  // ── Result ────────────────────────────────────────────────────────────────
+  if (phase === "result") {
+    const challengeUrl =
+      typeof window === "undefined"
+        ? `https://puzzlewarz.com/warz/challenge/${id}`
+        : `${window.location.origin}/warz/challenge/${id}`;
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: "#0A0800" }}>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md rounded-2xl border-2 p-8 text-center shadow-2xl"
-          style={{
-            backgroundColor: "rgba(10,8,0,0.99)",
-            borderColor: isTie ? "rgba(253,231,76,0.5)" : isWinner ? "#22c55e" : "#ef4444",
-          }}
-        >
-          {isTie ? (
-            <>
-              <div className="text-5xl mb-3">🤝</div>
-              <h2 className="text-3xl font-extrabold text-white mb-2">It&apos;s a Tie!</h2>
-              <p className="text-sm mb-6" style={{ color: "#AB9F9D" }}>
-                Both players tied — wagers refunded.
-              </p>
-            </>
-          ) : isWinner ? (
-            <>
-              <div className="text-5xl mb-3">🏆</div>
-              <h2 className="text-3xl font-extrabold mb-2" style={{ color: "#4ade80" }}>You Win!</h2>
-              <p className="text-sm mb-6" style={{ color: "#AB9F9D" }}>
-                You won the pot of{" "}
-                <span className="font-bold" style={{ color: "#FFB86B" }}>{pot} pts</span>!
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="text-5xl mb-3">💀</div>
-              <h2 className="text-3xl font-extrabold mb-2" style={{ color: "#f87171" }}>Defeated</h2>
-              <p className="text-sm mb-6" style={{ color: "#AB9F9D" }}>
-                Your opponent was faster. Your wager goes to them.
-              </p>
-            </>
-          )}
-
-          <div
-            className="rounded-xl p-4 mb-6 flex gap-4 justify-center"
-            style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}
-          >
-            <div className="text-center">
-              <div className="text-xs mb-1" style={{ color: "#6b7280" }}>Your time</div>
-              <div className="text-xl font-black tabular-nums" style={{ color: result.myTime >= 999999 ? "#f87171" : "#e5e7eb" }}>
-                {formatTime(result.myTime)}
-              </div>
-            </div>
-            <div className="w-px self-stretch" style={{ backgroundColor: "rgba(255,255,255,0.1)" }} />
-            <div className="text-center">
-              <div className="text-xs mb-1" style={{ color: "#6b7280" }}>
-                {challenge.challenger.name ?? challenge.challenger.username}&apos;s time
-              </div>
-              <div className="text-xl font-black tabular-nums" style={{ color: "#e5e7eb" }}>
-                {result.challengerTime != null ? formatTime(result.challengerTime) : "—"}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={shareWarz}
-              className="w-full py-3 rounded-xl font-extrabold"
-              style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
-            >
-              {warzCopied ? "Copied! ✓" : "Share Result ⚔️"}
-            </button>
-            <button
-              onClick={() => router.push("/warz")}
-              className="w-full py-3 rounded-xl font-bold text-sm"
-              style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}
-            >
-              Back to Warz Lobby
-            </button>
-          </div>
-        </motion.div>
+      <div
+        className="min-h-screen overflow-x-hidden px-3 py-6 sm:px-5"
+        style={{
+          background: "var(--pw-bg-base)",
+          paddingTop: "calc(56px + 20px + env(safe-area-inset-top, 0px))",
+          paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <WarzBattleResult
+          challenge={challenge}
+          currentUserId={currentUser.id}
+          challengeUrl={challengeUrl}
+          completionError={completionError}
+          retryingCompletion={submittingResult}
+          onRetryCompletion={lastTerminalSubmission ? handleRetryCompletion : undefined}
+          onReturnToWarz={() => router.push("/warz")}
+          onBrowsePuzzles={() => router.push("/puzzles")}
+        />
       </div>
     );
   }

@@ -5,10 +5,15 @@ import WarzChallengePage from "./page";
 
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
+const mockUseAppReducedMotion = jest.fn(() => false);
 
 jest.mock("next/navigation", () => ({
   useParams: () => ({ id: "challenge-1" }),
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
+}));
+
+jest.mock("@/hooks/useAppReducedMotion", () => ({
+  useAppReducedMotion: () => mockUseAppReducedMotion(),
 }));
 
 jest.mock("@/components/warz/WarzChallengeLoadingState", () => ({
@@ -45,6 +50,31 @@ jest.mock("@/components/warz/WarzBattleEntryTransition", () => ({
   default: (props: { mode: string }) => <div data-testid="entry-transition">{props.mode}</div>,
 }));
 
+jest.mock("@/components/warz/WarzBattleResult", () => ({
+  __esModule: true,
+  default: (props: {
+    challenge: ChallengeFixture;
+    currentUserId: string;
+    challengeUrl: string;
+    completionError?: string | null;
+    retryingCompletion?: boolean;
+    onRetryCompletion?: () => void;
+    onReturnToWarz: () => void;
+    onBrowsePuzzles: () => void;
+  }) => (
+    <div data-testid="warz-battle-result">
+      <div data-testid="result-challenge">{JSON.stringify(props.challenge)}</div>
+      <div data-testid="result-current-user">{props.currentUserId}</div>
+      <div data-testid="result-url">{props.challengeUrl}</div>
+      <div data-testid="result-error">{props.completionError ?? ""}</div>
+      <div data-testid="result-retrying">{String(props.retryingCompletion)}</div>
+      {props.onRetryCompletion && <button type="button" onClick={props.onRetryCompletion}>retry submission</button>}
+      <button type="button" onClick={props.onReturnToWarz}>return to warz</button>
+      <button type="button" onClick={props.onBrowsePuzzles}>browse puzzles</button>
+    </div>
+  ),
+}));
+
 jest.mock("@/components/puzzle/WarzPlayBoard", () => ({
   __esModule: true,
   default: (props: {
@@ -70,6 +100,7 @@ const USER = { id: "me", username: "arena-player", name: "arena-player", totalPo
 const CHALLENGER = { id: "challenger-1", username: "ArenaChallenger", name: null };
 const FUTURE = new Date(Date.now() + 3600_000).toISOString();
 const PAST = new Date(Date.now() - 3600_000).toISOString();
+const COMPLETED_AT = "2026-07-23T00:00:00.000Z";
 
 interface ChallengeFixture {
   id: string;
@@ -95,6 +126,10 @@ interface ChallengeFixture {
   opponent?: { id: string; username?: string | null; name?: string | null } | null;
   invitedUser?: { id: string; username?: string | null; name?: string | null } | null;
   challengerTime?: number | null;
+  opponentTime?: number | null;
+  winnerId?: string | null;
+  potPaid?: boolean;
+  completedAt?: string | null;
   winner?: { id: string; username?: string | null; name?: string | null } | null;
 }
 
@@ -109,9 +144,27 @@ function baseChallenge(overrides: Partial<ChallengeFixture> = {}): ChallengeFixt
     opponent: null,
     invitedUser: null,
     challengerTime: null,
+    opponentTime: null,
+    winnerId: null,
+    potPaid: false,
+    completedAt: null,
     winner: null,
     ...overrides,
   };
+}
+
+function completedChallenge(overrides: Partial<ChallengeFixture> = {}): ChallengeFixture {
+  return baseChallenge({
+    status: "COMPLETED",
+    opponent: { id: "me", username: "arena-player" },
+    challengerTime: 58,
+    opponentTime: 42,
+    winnerId: "me",
+    potPaid: true,
+    completedAt: COMPLETED_AT,
+    winner: { id: "me", username: "arena-player" },
+    ...overrides,
+  });
 }
 
 interface FetchOptions {
@@ -160,7 +213,11 @@ function mockFetch(options: FetchOptions = {}) {
       } as Response);
     }
     if (url.includes("/api/warz/complete")) {
-      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ winnerId: "me", tie: false }) } as Response);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ challenge: completedChallenge() }),
+      } as Response);
     }
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response);
   }) as jest.Mock;
@@ -178,6 +235,7 @@ async function flush() {
 beforeEach(() => {
   mockPush.mockClear();
   mockReplace.mockClear();
+  mockUseAppReducedMotion.mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -202,7 +260,7 @@ describe("Warz challenge page — initial loading", () => {
   });
 
   it("3. shows loading state before completion", () => {
-    mockFetch();
+    global.fetch = jest.fn(() => new Promise<Response>(() => {})) as jest.Mock;
     render(<WarzChallengePage />);
     expect(screen.getByTestId("challenge-loading")).toBeTruthy();
   });
@@ -340,11 +398,14 @@ describe("Warz challenge page — classification", () => {
     expect(screen.getByTestId("briefing-status-kind").textContent).toBe("cancelled");
   });
 
-  it("28. COMPLETED classifies as completed", async () => {
-    mockFetch({ challenge: baseChallenge({ status: "COMPLETED" }) });
+  it("28. COMPLETED loads directly into the authoritative result", async () => {
+    const challenge = completedChallenge();
+    mockFetch({ challenge });
     render(<WarzChallengePage />);
     await flush();
-    expect(screen.getByTestId("briefing-status-kind").textContent).toBe("completed");
+    expect(JSON.parse(screen.getByTestId("result-challenge").textContent!)).toEqual(challenge);
+    expect(screen.queryByTestId("warz-briefing")).toBeNull();
+    expect(screen.queryByTestId("warz-play-board")).toBeNull();
   });
 
   it("29. insufficient balance classifies correctly", async () => {
@@ -361,11 +422,12 @@ describe("Warz challenge page — classification", () => {
     expect(screen.getByTestId("briefing-status-kind").textContent).toBe("open");
   });
 
-  it("31. completed state wins priority over balance", async () => {
-    mockFetch({ challenge: baseChallenge({ status: "COMPLETED", challengerWager: 900 }) });
+  it("31. completed state goes directly to result regardless of balance", async () => {
+    mockFetch({ challenge: completedChallenge({ challengerWager: 900 }) });
     render(<WarzChallengePage />);
     await flush();
-    expect(screen.getByTestId("briefing-status-kind").textContent).toBe("completed");
+    expect(screen.getByTestId("warz-battle-result")).toBeTruthy();
+    expect(screen.queryByTestId("warz-briefing")).toBeNull();
   });
 
   it("32. own state wins priority over insufficient balance", async () => {
@@ -983,7 +1045,7 @@ describe("Warz challenge page — entry transition", () => {
   });
 
   it("62. reduced motion skips artificial delay (board mounts quickly)", async () => {
-    document.documentElement.setAttribute("data-reduce-animations", "true");
+    mockUseAppReducedMotion.mockReturnValue(true);
     mockFetch();
     render(<WarzChallengePage />);
     await flush();
@@ -992,7 +1054,6 @@ describe("Warz challenge page — entry transition", () => {
       await new Promise((r) => setTimeout(r, 50));
     });
     expect(screen.getByTestId("warz-play-board")).toBeTruthy();
-    document.documentElement.removeAttribute("data-reduce-animations");
   });
 
   it("65-66. active shell test ID and top-clearance class remain", async () => {
@@ -1017,7 +1078,7 @@ describe("Warz challenge page — frozen completion regression", () => {
       calls.push({ url, init });
       if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) }) } as Response);
       if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
-      if (url.includes("/api/warz/complete")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ winnerId: "me", tie: false }) } as Response);
+      if (url.includes("/api/warz/complete")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     }) as jest.Mock;
 
@@ -1045,7 +1106,19 @@ describe("Warz challenge page — frozen completion regression", () => {
       calls.push({ url, init });
       if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) }) } as Response);
       if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
-      if (url.includes("/api/warz/complete")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ winnerId: null, tie: false }) } as Response);
+      if (url.includes("/api/warz/complete")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            challenge: completedChallenge({
+              challengerTime: 42,
+              opponentTime: 999999,
+              winnerId: "challenger-1",
+              winner: CHALLENGER,
+            }),
+          }),
+        } as Response);
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     }) as jest.Mock;
 
@@ -1065,7 +1138,7 @@ describe("Warz challenge page — frozen completion regression", () => {
     expect(JSON.parse(completeCalls[0].init?.body as string)).toEqual({ challengeId: "challenge-1", forfeited: true });
   });
 
-  it("71-73. existing result state renders after completion; sharing remains reachable; no result redesign introduced", async () => {
+  it("71-73. renders the authoritative battle result after completion", async () => {
     mockFetch({ challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) });
     render(<WarzChallengePage />);
     await flush();
@@ -1078,8 +1151,174 @@ describe("Warz challenge page — frozen completion regression", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByText("You Win!")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Share Result/ })).toBeTruthy();
+    expect(screen.getByTestId("warz-battle-result")).toBeTruthy();
+    expect(JSON.parse(screen.getByTestId("result-challenge").textContent!)).toEqual(completedChallenge());
+    expect(screen.getByTestId("result-current-user").textContent).toBe("me");
+  });
+});
+
+describe("Warz challenge page — authoritative result restoration", () => {
+  it("does not replay, refetch, or complete an already-completed challenge", async () => {
+    const calls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/api/warz/challenge-1")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) } as Response);
+      }
+      if (url.includes("/api/user/info")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    expect(screen.getByTestId("warz-battle-result")).toBeTruthy();
+    expect(calls.filter((url) => url.includes("/api/warz/challenge-1"))).toHaveLength(1);
+    expect(calls.some((url) => url.includes("/api/warz/complete"))).toBe(false);
+    expect(screen.queryByTestId("warz-briefing")).toBeNull();
+    expect(screen.queryByTestId("warz-play-board")).toBeNull();
+  });
+
+  it.each([
+    ["missing challenge", { winnerId: "me" }],
+    ["wrong challenge id", { challenge: completedChallenge({ id: "another-challenge" }) }],
+    ["non-completed challenge", { challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) }],
+  ])("rejects a 200 response with %s as RESULT NOT RECORDED", async (_label, completionPayload) => {
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }),
+          }),
+        } as Response);
+      }
+      if (url.includes("/api/user/info")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      }
+      if (url.includes("/api/warz/complete")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(completionPayload) } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "solve" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("result-error").textContent).toBe("We couldn’t record this battle result.");
+    expect(screen.getByRole("button", { name: "retry submission" })).toBeTruthy();
+  });
+
+  it("shows a server error and retries the exact original terminal body", async () => {
+    const completeBodies: unknown[] = [];
+    let completionAttempt = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }),
+          }),
+        } as Response);
+      }
+      if (url.includes("/api/user/info")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      }
+      if (url.includes("/api/warz/complete")) {
+        completeBodies.push(JSON.parse(init?.body as string));
+        completionAttempt += 1;
+        return Promise.resolve(completionAttempt === 1
+          ? { ok: false, status: 409, json: () => Promise.resolve({ error: "Result is still pending." }) }
+          : { ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) }) as Promise<Response>;
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "forfeit" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("result-error").textContent).toBe("Result is still pending.");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "retry submission" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(completeBodies).toEqual([
+      { challengeId: "challenge-1", forfeited: true },
+      { challengeId: "challenge-1", forfeited: true },
+    ]);
+    expect(screen.getByTestId("result-error").textContent).toBe("");
+  });
+
+  it("uses a synchronous guard against duplicate terminal submissions", async () => {
+    let resolveComplete!: (value: Response) => void;
+    const calls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/api/warz/challenge-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }),
+          }),
+        } as Response);
+      }
+      if (url.includes("/api/user/info")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      }
+      if (url.includes("/api/warz/complete")) {
+        return new Promise<Response>((resolve) => { resolveComplete = resolve; });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    const solve = screen.getByRole("button", { name: "solve" });
+    fireEvent.click(solve);
+    fireEvent.click(solve);
+    expect(calls.filter((url) => url.includes("/api/warz/complete"))).toHaveLength(1);
+    await act(async () => {
+      resolveComplete({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) } as Response);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("routes actions to /warz and /puzzles and has no legacy tie flag", async () => {
+    mockFetch({ challenge: completedChallenge() });
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "return to warz" }));
+    fireEvent.click(screen.getByRole("button", { name: "browse puzzles" }));
+    expect(mockPush).toHaveBeenNthCalledWith(1, "/warz");
+    expect(mockPush).toHaveBeenNthCalledWith(2, "/puzzles");
+
+    const fs = jest.requireActual("fs");
+    const path = jest.requireActual("path");
+    const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).not.toMatch(/data\.tie/);
+    expect(source).not.toMatch(/winnerId\s*===\s*currentUser/);
   });
 });
 
@@ -1107,7 +1346,7 @@ describe("Warz challenge page — Pass 11 WarzPlayBoard submission integration",
     expect(screen.getByTestId("board-submission-pending-label").textContent).toBe("Submitting result…");
 
     await act(async () => {
-      resolveComplete({ ok: true, json: () => Promise.resolve({ winnerId: "me", tie: false }) });
+      resolveComplete({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) });
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1163,7 +1402,7 @@ describe("Warz challenge page — Pass 11 WarzPlayBoard submission integration",
     expect(screen.getAllByText("Submitting result…").length).toBe(1);
 
     await act(async () => {
-      resolveComplete({ ok: true, json: () => Promise.resolve({ winnerId: "me", tie: false }) });
+      resolveComplete({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) });
       await Promise.resolve();
       await Promise.resolve();
     });
