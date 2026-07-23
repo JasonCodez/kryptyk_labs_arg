@@ -48,6 +48,10 @@
 .jigsaw-control--reset svg { color:var(--pw-error-text,#FF7A7E); }
 .jigsaw-app-control-bar { flex:0 0 auto; display:flex; justify-content:center; padding:5px 10px; border-top:1px solid rgba(255,255,255,.1); background:#05070d; }
 .jigsaw-app-control-bar .jigsaw-controls { position:static; justify-content:center; max-width:none; padding:0; border:none; background:transparent; }
+.jigsaw-standalone-status-bar { flex:0 0 auto; display:flex; justify-content:flex-start; padding:6px 10px 0; }
+.jigsaw-standalone-status-bar .jigsaw-status-hud { position:static; max-width:none; pointer-events:auto; }
+.jigsaw-standalone-control-bar { flex:0 0 auto; display:flex; justify-content:center; padding:6px 10px; }
+.jigsaw-standalone-control-bar .jigsaw-controls { position:static; justify-content:center; max-width:none; }
 .jigsaw-status-hud { position:absolute; top:10px; left:10px; z-index:200; display:flex; flex-direction:column; gap:6px; max-width:calc(100% - 20px); box-sizing:border-box; padding:6px 10px; border-radius:12px; border:1px solid var(--pw-border-default,#2C3856); background:rgba(10,20,40,.72); pointer-events:none; }
 .jigsaw-status-items { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .jigsaw-status-item { display:flex; align-items:center; gap:6px; }
@@ -171,4 +175,22 @@ p.jigsaw-help-keys-copy { margin:0; font-size:.78rem; line-height:1.4; color:var
 @media (min-width:420px) { .jigsaw-system-message-completion-error-slot .jigsaw-system-message-action { width:auto; } }
 
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root:not([data-fullscreen="true"]) { flex-direction:row; } .jigsaw-board-area { flex:1 1 68%; align-items:center; padding-top:0; } .jigsaw-tray-wrap { flex:0 0 min(32vw,280px); height:100%; } .jigsaw-tray { height:100%!important; flex-direction:column; overflow-x:hidden; overflow-y:auto; border-top:0; border-left:1px solid rgba(255,255,255,.1); } }
+/* Standalone (Warz) landscape: the status/control bars are separate flex siblings of
+   .jigsaw-board-area (not nested inside it, unlike app-shell's own fullscreen bar), so the
+   generic row-split rule above would otherwise squeeze them in as stray columns next to the
+   board and tray. Grid-place all three board-column pieces into column 1 alongside the tray in
+   column 2, mirroring the app-shell grid below instead. */
+@media (orientation:landscape) and (max-height:520px) {
+  /* Unlike app-shell (always wrapped in a bounded-height ancestor chain via
+     .pw-jigsaw-shell-content, see above), Warz never gives .jigsaw-root a definite height —
+     without one, this grid's `minmax(0,1fr)` row has no real space to size against, and the
+     resize-observer loop that measures .jigsaw-board-area to size the canvas feeds back into
+     runaway growth. Pin the root to the actual viewport height so the grid row has something
+     concrete to shrink into. */
+  .jigsaw-root[data-display-mode="standalone"]:not([data-fullscreen="true"]) { display:grid; grid-template-columns:minmax(0,1fr) min(32vw,280px); grid-template-rows:auto minmax(0,1fr) auto; height:100dvh; }
+  .jigsaw-root[data-display-mode="standalone"]:not([data-fullscreen="true"]) .jigsaw-standalone-status-bar { grid-column:1; grid-row:1; padding-top:6px; }
+  .jigsaw-root[data-display-mode="standalone"]:not([data-fullscreen="true"]) .jigsaw-board-area { grid-column:1; grid-row:2; }
+  .jigsaw-root[data-display-mode="standalone"]:not([data-fullscreen="true"]) .jigsaw-standalone-control-bar { grid-column:1; grid-row:3; }
+  .jigsaw-root[data-display-mode="standalone"]:not([data-fullscreen="true"]) .jigsaw-tray-wrap { grid-column:2; grid-row:1 / span 3; height:100%; }
+}
 @media (orientation:landscape) and (max-height:520px) { .jigsaw-root[data-display-mode="app-shell"] { display:grid; grid-template-columns:minmax(0,1fr) min(32vw,280px); grid-template-rows:auto minmax(0,1fr); } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-board-area { grid-column:1; grid-row:1 / span 2; } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-app-control-bar { grid-column:2; grid-row:1; border-top:0; border-left:1px solid rgba(255,255,255,.1); } .jigsaw-root[data-display-mode="app-shell"] .jigsaw-tray-wrap { grid-column:2; grid-row:2; min-height:0; width:auto; height:auto; } }

@@ -3130,6 +3130,21 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
         ...containerStyle,
       }}
     >
+      {/* Standalone (Warz) status bar — rendered in normal flow above the board so it never
+          overlaps the canvas the way the catalog/daily "app-shell" mode's floating in-canvas
+          hud does; app-shell itself is unaffected (its own hud stays hidden here, see below). */}
+      {displayMode === "standalone" && !isSolved && (
+        <div className="jigsaw-standalone-status-bar">
+          <JigsawStatusHud
+            elapsedLabel={formatElapsed(elapsedSeconds)}
+            placedCount={pieces.filter(p => p.snapped).length}
+            totalCount={pieces.length}
+            groupCount={groupCount}
+            showTime={mode !== "warz"}
+          />
+        </div>
+      )}
+
       {/* ── Canvas area ──────────────────────────────── */}
       <div className="jigsaw-board-area" ref={boardAreaRef}>
         <canvas
@@ -3213,7 +3228,7 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           </button>
         )}
 
-        {displayMode !== "app-shell" && !isSolved && (
+        {displayMode !== "app-shell" && displayMode !== "standalone" && !isSolved && (
           <JigsawControls
             canInteract={imageOk === true && status !== "loading"}
             fullscreen={isFullscreen}
@@ -3277,8 +3292,9 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
 
         {/* Stats — hidden once solved: there's nothing left to track, and on a small mobile
             screen this corner is exactly where the post-completion modal (rating/XP, rendered
-            by the parent page above this component) needs the space instead. */}
-        {displayMode !== "app-shell" && !isSolved && (
+            by the parent page above this component) needs the space instead. Standalone (Warz)
+            renders its own copy above the board instead (see jigsaw-standalone-status-bar). */}
+        {displayMode !== "app-shell" && displayMode !== "standalone" && !isSolved && (
           <JigsawStatusHud
             elapsedLabel={formatElapsed(elapsedSeconds)}
             placedCount={pieces.filter(p => p.snapped).length}
@@ -3288,6 +3304,24 @@ const JigsawPuzzleCanvas = forwardRef<JigsawPuzzleHandle, JigsawPuzzleProps>(fun
           />
         )}
       </div>
+
+      {/* Standalone (Warz) control bar — same reasoning as the status bar above: rendered in
+          normal flow below the board instead of floating over the canvas. */}
+      {displayMode === "standalone" && !isSolved && (
+        <div className="jigsaw-standalone-control-bar">
+          <JigsawControls
+            canInteract={imageOk === true && status !== "loading"}
+            fullscreen={isFullscreen}
+            showUtilities
+            onPreview={() => setShowPreview(true)}
+            onFullscreen={() => setIsFullscreen(true)}
+            onExitFullscreen={() => setIsFullscreen(false)}
+            onHelp={() => setShowHelp(true)}
+            onReturn={sendLooseToTray}
+            onReset={() => setShowReset(true)}
+          />
+        </div>
+      )}
 
       {/* ── Tray strip ───────────────────────────────── */}
       {/* Fullscreen-only compact utility bar — Preview/Return/Reset/Fullscreen already live in
