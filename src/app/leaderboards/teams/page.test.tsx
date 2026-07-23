@@ -65,6 +65,13 @@ function mockFetch(entries: Array<Record<string, unknown>> = [ENTRY_1, ENTRY_2, 
   return { calls, inits, fetchMock };
 }
 
+// Unlike mockFetch, takes the exact response body with no default parameters
+// — passing a literal `undefined` for entries/userTeamRank here is preserved
+// exactly, rather than silently falling back to a default argument value.
+function mockFetchBody(body: { entries?: unknown; userTeamRank?: unknown }) {
+  global.fetch = jest.fn(() => jsonResponse(body)) as unknown as typeof fetch;
+}
+
 describe("Team Leaderboards page — authentication", () => {
   it("1. session loading shows page header and loading skeleton", () => {
     mockUseSession.mockReturnValue({ status: "loading", data: null });
@@ -643,5 +650,106 @@ describe("Team Leaderboards page — page states", () => {
   it("65. page contains no raw hex or RGBA colors", () => {
     expect(RAW_HEX.test(SOURCE)).toBe(false);
     expect(RAW_RGB.test(SOURCE)).toBe(false);
+  });
+});
+
+describe("Team Leaderboards page — malformed userTeamRank", () => {
+  const malformedCases: Array<[string, unknown]> = [
+    ["undefined", undefined],
+    ["a string", "invalid"],
+    ["zero", 0],
+    ["true", true],
+    ["an empty array", []],
+    ["an empty object", {}],
+    ["a partial object", { teamId: "partial" }],
+  ];
+
+  for (const [label, value] of malformedCases) {
+    it(`${label} userTeamRank renders Not ranked with no fake summary or broken link`, async () => {
+      authenticate();
+      mockFetchBody({ entries: [ENTRY_1], userTeamRank: value });
+      const { container } = render(<TeamLeaderboardsPage />);
+      await flush();
+
+      expect(screen.getByText("Not ranked")).toBeTruthy();
+      expect(screen.getByText("Alpha Squad")).toBeTruthy();
+      expect(container.innerHTML).not.toMatch(/\/teams\/undefined/);
+      expect(container.innerHTML).not.toMatch(/\/teams\/null/);
+      expect(screen.queryByText("We couldn’t load team rankings")).toBeNull();
+    });
+  }
+});
+
+describe("Team Leaderboards page — malformed entries", () => {
+  const malformedEntries: Array<[string, unknown]> = [
+    ["undefined", undefined],
+    ["null", null],
+    ["an object", {}],
+    ["a string", "invalid"],
+  ];
+
+  for (const [label, value] of malformedEntries) {
+    it(`entries as ${label} renders the empty state with no list or stats`, async () => {
+      authenticate();
+      mockFetchBody({ entries: value, userTeamRank: null });
+      render(<TeamLeaderboardsPage />);
+      await flush();
+
+      expect(screen.getByText("No ranked teams yet")).toBeTruthy();
+      expect(screen.queryByTestId("team-leaderboard-list")).toBeNull();
+      expect(screen.queryByTestId("team-leaderboard-stats")).toBeNull();
+      expect(screen.getByText("Your Team Rank")).toBeTruthy();
+    });
+  }
+});
+
+describe("Team Leaderboards page — mixed valid/invalid entries", () => {
+  it("keeps only valid entries, preserves their order, and renders each once", async () => {
+    authenticate();
+    mockFetch([ENTRY_1, null, "invalid", {}, ENTRY_4, []] as unknown as Array<Record<string, unknown>>, null);
+    const { container } = render(<TeamLeaderboardsPage />);
+    await flush();
+
+    expect(screen.getByText("Alpha Squad")).toBeTruthy();
+    expect(screen.getByText("My Team")).toBeTruthy();
+
+    const list = container.querySelector('[data-testid="team-leaderboard-list"]')!;
+    expect(list.querySelectorAll("li").length).toBe(2);
+
+    // Server rank is preserved — Alpha Squad (rank 1) stays featured, My Team
+    // (rank 4) stays standard; no reranking or fabricated placeholder occurs.
+    expect(screen.getByText("1st Place")).toBeTruthy();
+    expect(screen.getByText("#4")).toBeTruthy();
+
+    const stats = screen.getByTestId("team-leaderboard-stats");
+    expect(stats.textContent).toContain("2"); // Ranked Teams == 2 valid entries
+    const expectedPoints = (ENTRY_1.totalPoints + ENTRY_4.totalPoints).toLocaleString();
+    expect(stats.textContent).toContain(expectedPoints);
+  });
+
+  it("does not crash and shows no error panel for a mixed array", async () => {
+    authenticate();
+    mockFetch([ENTRY_1, null, "invalid", {}, ENTRY_4, []] as unknown as Array<Record<string, unknown>>, null);
+    render(<TeamLeaderboardsPage />);
+    await flush();
+    expect(screen.queryByText("We couldn’t load team rankings")).toBeNull();
+  });
+});
+
+describe("Team Leaderboards page — current-team matching with malformed userTeamRank", () => {
+  it("no entry receives Your team when userTeamRank is malformed", async () => {
+    authenticate();
+    mockFetch([ENTRY_1, ENTRY_2], { teamId: "partial" });
+    render(<TeamLeaderboardsPage />);
+    await flush();
+    expect(screen.queryByText("Your team")).toBeNull();
+  });
+
+  it("current-team matching remains unchanged when userTeamRank is valid", async () => {
+    authenticate();
+    mockFetch([ENTRY_1, ENTRY_4], ENTRY_4);
+    render(<TeamLeaderboardsPage />);
+    await flush();
+    expect(screen.getAllByText("Your team").length).toBeGreaterThan(0);
   });
 });

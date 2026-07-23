@@ -112,9 +112,32 @@ describe("TeamLeaderboardRankSummary — ranked state", () => {
     expect(screen.getByRole("link", { name: /Puzzle Masters/ }).getAttribute("href")).toBe("/teams/abc123");
   });
 
-  it("empty ID creates no broken link (renders a well-formed path, not undefined)", () => {
+  it("empty ID renders no team link", () => {
     render(<TeamLeaderboardRankSummary entry={makeEntry({ teamId: "" })} />);
-    expect(screen.getByRole("link", { name: /Puzzle Masters/ }).getAttribute("href")).toBe("/teams");
+    expect(screen.queryByRole("link", { name: /Puzzle Masters/ })).toBeNull();
+    expect(screen.getByText("Puzzle Masters")).toBeTruthy();
+  });
+
+  it("empty ID summary still shows Private/Public, rank, and metrics with no /teams/ route", () => {
+    const { container } = render(<TeamLeaderboardRankSummary entry={makeEntry({ teamId: "", isPublic: false, rank: 4, totalPoints: 4250 })} />);
+    expect(screen.getByText("Private")).toBeTruthy();
+    expect(screen.getByText("#4")).toBeTruthy();
+    expect(screen.getByText("4,250")).toBeTruthy();
+    expect(container.innerHTML).not.toMatch(/\/teams\//);
+  });
+
+  it("whitespace-only ID renders no team link", () => {
+    render(<TeamLeaderboardRankSummary entry={makeEntry({ teamId: "   " })} />);
+    expect(screen.queryByRole("link", { name: /Puzzle Masters/ })).toBeNull();
+    expect(screen.getByText("Puzzle Masters")).toBeTruthy();
+  });
+
+  it("whitespace-only ID summary still shows badge, rank, and metrics with no /teams/ route", () => {
+    const { container } = render(<TeamLeaderboardRankSummary entry={makeEntry({ teamId: "   ", isPublic: true, rank: 2, totalPoints: 900 })} />);
+    expect(screen.getByText("Public")).toBeTruthy();
+    expect(screen.getByText("#2")).toBeTruthy();
+    expect(screen.getByText("900")).toBeTruthy();
+    expect(container.innerHTML).not.toMatch(/\/teams\//);
   });
 
   it("link has at least a 44px target class", () => {

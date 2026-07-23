@@ -65,7 +65,7 @@ function fulfill(route: Route, body: unknown, status = 200) {
 }
 
 interface FixtureOptions {
-  entries?: typeof SIX_ENTRY_FIXTURE;
+  entries?: unknown[];
   userTeamRank?: unknown;
   status?: number;
   holdTeams?: boolean;
@@ -395,6 +395,77 @@ test.describe("Team Leaderboards — required viewports", () => {
 
     const canScroll = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight);
     expect(canScroll).toBe(true);
+
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Leaderboards — malformed payload safety", () => {
+  test("mixed valid/invalid entries and a partial userTeamRank render safely with no fake links", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, {
+      entries: [SIX_ENTRY_FIXTURE[0], null, "invalid", {}, SIX_ENTRY_FIXTURE[3]],
+      userTeamRank: { teamId: "partial" },
+    });
+    await page.goto("/leaderboards/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page.getByText("Alpha Squad")).toBeVisible();
+    await expect(page.getByText("My Squad")).toBeVisible();
+
+    const listItems = page.getByTestId("team-leaderboard-list").locator("li");
+    expect(await listItems.count()).toBe(2);
+
+    await expect(page.getByText("Not ranked")).toBeVisible();
+    await expect(rankingsSection(page).getByText("Your team")).toHaveCount(0);
+
+    const hrefs = await page.locator("a[href]").evaluateAll((links) => links.map((l) => l.getAttribute("href")));
+    for (const href of hrefs) {
+      expect(href).not.toMatch(/undefined/);
+      expect(href).not.toMatch(/\/null\b/);
+    }
+
+    const stats = page.getByTestId("team-leaderboard-stats");
+    const expectedPoints = (SIX_ENTRY_FIXTURE[0].totalPoints + SIX_ENTRY_FIXTURE[3].totalPoints).toLocaleString();
+    await expect(stats.getByText(expectedPoints)).toBeVisible();
+
+    await expect(page.getByText("We couldn’t load team rankings")).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("empty current-team ID keeps the summary visible with no /teams/ link", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, {
+      entries: [],
+      userTeamRank: {
+        teamId: "",
+        teamName: "Nameless Route Team",
+        isPublic: false,
+        bannerColor: "gold",
+        totalPoints: 500,
+        totalPuzzlesSolved: 12,
+        memberCount: 3,
+        rank: 1,
+      },
+    });
+    await page.goto("/leaderboards/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const rankSummary = page.getByTestId("team-rank-summary");
+    await expect(rankSummary).toBeVisible();
+    await expect(rankSummary.getByText("Nameless Route Team")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Nameless Route Team/ })).toHaveCount(0);
+    await expect(rankSummary.getByText("Private")).toBeVisible();
+    await expect(rankSummary.getByText("#1")).toBeVisible();
+    await expect(rankSummary.getByText("500")).toBeVisible();
+
+    const hrefs = await page.locator("a[href]").evaluateAll((links) => links.map((l) => l.getAttribute("href")));
+    expect(hrefs.some((href) => href?.startsWith("/teams/"))).toBe(false);
+
+    await expect(page.getByText("No ranked teams yet")).toBeVisible();
+    await expect(page.getByTestId("team-leaderboard-stats")).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
   });

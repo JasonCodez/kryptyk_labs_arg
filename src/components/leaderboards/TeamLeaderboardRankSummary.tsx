@@ -53,13 +53,22 @@ export default function TeamLeaderboardRankSummary({ entry }: TeamLeaderboardRan
             <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "var(--pw-text-secondary)" }}>
               Your Team
             </p>
-            <Link
-              href={`/teams/${entry.teamId}`}
-              className={`mt-1 inline-flex min-h-11 items-center rounded-lg break-words text-xl font-bold sm:text-2xl ${FOCUS_RING}`}
-              style={{ color: "var(--pw-text-primary)" }}
-            >
-              {getTeamDisplayName(entry.teamName)}
-            </Link>
+            {entry.teamId.trim().length > 0 ? (
+              <Link
+                href={`/teams/${entry.teamId}`}
+                className={`mt-1 inline-flex min-h-11 items-center rounded-lg break-words text-xl font-bold sm:text-2xl ${FOCUS_RING}`}
+                style={{ color: "var(--pw-text-primary)" }}
+              >
+                {getTeamDisplayName(entry.teamName)}
+              </Link>
+            ) : (
+              <span
+                className="mt-1 flex min-h-11 items-center break-words text-xl font-bold sm:text-2xl"
+                style={{ color: "var(--pw-text-primary)" }}
+              >
+                {getTeamDisplayName(entry.teamName)}
+              </span>
+            )}
             <span className="mt-1 flex items-center gap-1.5">
               {entry.isPublic ? (
                 <span

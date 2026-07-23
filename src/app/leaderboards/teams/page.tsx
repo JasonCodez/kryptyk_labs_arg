@@ -25,6 +25,30 @@ interface TeamLeaderboardEntry {
 
 type LoadStatus = "loading" | "ready" | "error";
 
+// Defends against a malformed or partial API payload before it ever reaches
+// state — rank/metric values may still be non-positive or negative (the
+// presentation layer already renders those defensively as "—"), but the
+// shape itself must be intact so a fake current-team summary, a broken
+// /teams/undefined link, or a normalization crash can never happen.
+function isTeamLeaderboardEntry(value: unknown): value is TeamLeaderboardEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.teamId === "string" &&
+    (typeof candidate.teamName === "string" || candidate.teamName === null) &&
+    typeof candidate.isPublic === "boolean" &&
+    (typeof candidate.bannerColor === "string" || candidate.bannerColor === null) &&
+    typeof candidate.totalPoints === "number" &&
+    Number.isFinite(candidate.totalPoints) &&
+    typeof candidate.totalPuzzlesSolved === "number" &&
+    Number.isFinite(candidate.totalPuzzlesSolved) &&
+    typeof candidate.memberCount === "number" &&
+    Number.isFinite(candidate.memberCount) &&
+    typeof candidate.rank === "number" &&
+    Number.isFinite(candidate.rank)
+  );
+}
+
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--pw-brand-primary)]";
 
@@ -185,8 +209,9 @@ export default function TeamLeaderboardsPage() {
       const data = await response.json();
       if (!shouldApply()) return;
 
-      setEntries(Array.isArray(data.entries) ? data.entries : []);
-      setUserTeamRank(data.userTeamRank ?? null);
+      const nextEntries = Array.isArray(data.entries) ? data.entries.filter(isTeamLeaderboardEntry) : [];
+      setEntries(nextEntries);
+      setUserTeamRank(isTeamLeaderboardEntry(data.userTeamRank) ? data.userTeamRank : null);
       setLoadStatus("ready");
     } catch (err) {
       if ((err as Error)?.name === "AbortError" || !shouldApply()) return;
