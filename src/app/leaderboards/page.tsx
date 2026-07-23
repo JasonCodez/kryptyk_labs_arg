@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import LeaderboardIntroCard from "@/components/onboarding/LeaderboardIntroCard";
+import LeaderboardHeader from "@/components/leaderboards/LeaderboardHeader";
+import LeaderboardTabs, { type LeaderboardTab } from "@/components/leaderboards/LeaderboardTabs";
+import LeaderboardRankSummary from "@/components/leaderboards/LeaderboardRankSummary";
+import LeaderboardLoadingState from "@/components/leaderboards/LeaderboardLoadingState";
 
 interface LeaderboardEntry {
   userId: string;
   userName: string | null;
   userImage: string | null;
-  email?: string;
   activeFlair: string;
   isPremium?: boolean;
   totalPoints: number;
@@ -36,10 +39,10 @@ interface RewardTier {
   xp: number;
 }
 
-type Tab = "global" | "following" | "weekly" | "monthly";
-
-function formatCountdown(endsAt: string): string {
-  const diff = new Date(endsAt).getTime() - Date.now();
+export function formatCountdown(endsAt: string, nowMs = Date.now()): string {
+  const end = new Date(endsAt).getTime();
+  if (!Number.isFinite(end)) return "Schedule unavailable";
+  const diff = end - nowMs;
   if (diff <= 0) return "Ended";
   const d = Math.floor(diff / 86_400_000);
   const h = Math.floor((diff % 86_400_000) / 3_600_000);
@@ -49,11 +52,13 @@ function formatCountdown(endsAt: string): string {
   return `${m}m remaining`;
 }
 
-function getCountdownUrgency(endsAt: string): { color: string; glow: string } {
-  const hoursLeft = (new Date(endsAt).getTime() - Date.now()) / 3_600_000;
-  if (hoursLeft <= 6) return { color: "#FF5A5A", glow: "rgba(255,90,90,0.5)" };
-  if (hoursLeft <= 48) return { color: "#FFC93C", glow: "rgba(255,201,60,0.5)" };
-  return { color: "#8B3DFF", glow: "rgba(139,61,255,0.4)" };
+type CountdownUrgency = "normal" | "warning" | "critical";
+function getCountdownUrgency(endsAt: string, nowMs = Date.now()): CountdownUrgency {
+  const hoursLeft = (new Date(endsAt).getTime() - nowMs) / 3_600_000;
+  if (!Number.isFinite(hoursLeft)) return "normal";
+  if (hoursLeft <= 6) return "critical";
+  if (hoursLeft <= 48) return "warning";
+  return "normal";
 }
 
 const RANK_STYLE: Record<number, { color: string; glow: string; ring: string }> = {
@@ -200,16 +205,21 @@ function RewardTiers({ tiers, periodLabel }: { tiers: RewardTier[]; periodLabel:
 export default function LeaderboardsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>("global");
+  const [activeTab, setActiveTab] = useState<LeaderboardTab>("global");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [periodUserRank, setPeriodUserRank] = useState<PeriodEntry | null>(null);
   const [periodEndsAt, setPeriodEndsAt] = useState<string | null>(null);
   const [periodRewardTiers, setPeriodRewardTiers] = useState<RewardTier[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [error, setError] = useState("");
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [followingCount, setFollowingCount] = useState(0);
+  const requestSeqRef = useRef(0);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -218,55 +228,73 @@ export default function LeaderboardsPage() {
     }
   }, [status, router]);
 
-  useEffect(() => {
-    if (session?.user?.email) {
-      fetchLeaderboard(activeTab);
-    }
-
-  }, [session?.user?.email, activeTab]);
-
-  const fetchLeaderboard = async (tab: Tab) => {
-    setLoading(true);
+  const fetchLeaderboard = useCallback(async (tab: LeaderboardTab, mode: "foreground" | "background" = "foreground") => {
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
+    const seq = ++requestSeqRef.current;
+    if (mode === "foreground") setLoadStatus("loading");
+    else setRefreshing(true);
     setError("");
     try {
       if (tab === "weekly" || tab === "monthly") {
-        const res = await fetch(`/api/leaderboards/period?type=${tab}`);
+        const res = await fetch(`/api/leaderboards/period?type=${tab}`, { signal: controller.signal });
         if (!res.ok) throw new Error("Failed to fetch period leaderboard");
         const data = await res.json();
-        setPeriodEntries(data.entries ?? []);
+        if (!mountedRef.current || seq !== requestSeqRef.current) return;
+        setPeriodEntries(Array.isArray(data.entries) ? data.entries : []);
         setPeriodUserRank(data.userRank ?? null);
         setPeriodEndsAt(data.endsAt ?? null);
         setPeriodRewardTiers(data.rewardTiers ?? []);
+        setLoadStatus("ready");
+        setRefreshFailed(false);
         return;
       }
       const url = tab === "following" ? "/api/leaderboards/following" : "/api/leaderboards/global";
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (!response.ok) throw new Error("Failed to fetch leaderboard");
       const data = await response.json();
-      setEntries(data.entries);
+      if (!mountedRef.current || seq !== requestSeqRef.current) return;
+      setEntries(Array.isArray(data.entries) ? data.entries : []);
       setUserRank(data.userRank);
       if (tab === "following") setFollowingCount(data.followingCount ?? 0);
+      setLoadStatus("ready");
+      setRefreshFailed(false);
     } catch (err) {
-      setError("Failed to load leaderboard");
-      console.error(err);
+      if ((err as Error)?.name === "AbortError" || seq !== requestSeqRef.current || !mountedRef.current) return;
+      if (mode === "background") setRefreshFailed(true);
+      else {
+        setError("Failed to load leaderboard");
+        setLoadStatus("error");
+      }
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current && mountedRef.current) setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (status === "authenticated") void fetchLeaderboard(activeTab);
+  }, [activeTab, fetchLeaderboard, status]);
 
   // Real-time updates: re-fetch when any player solves a puzzle
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handler = () => fetchLeaderboard(activeTab);
+    const handler = () => void fetchLeaderboard(activeTab, "background");
     window.addEventListener("puzzlewarz:puzzle-solved", handler);
     return () => window.removeEventListener("puzzlewarz:puzzle-solved", handler);
 
-  }, [activeTab]);
+  }, [activeTab, fetchLeaderboard]);
 
-  if (status === "loading" || loading) {
+  useEffect(() => () => {
+    mountedRef.current = false;
+    requestSeqRef.current += 1;
+    requestAbortRef.current?.abort();
+  }, []);
+
+  if (status === "loading" || loadStatus === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#170B26" }}>
-        <div style={{ color: "#FFC93C" }} className="text-lg">Loading leaderboard...</div>
+      <div className="min-h-screen bg-[var(--pw-bg-base)] px-4 pt-24">
+        <div className="mx-auto max-w-4xl"><LeaderboardLoadingState activeTab={activeTab} /></div>
       </div>
     );
   }
@@ -287,7 +315,9 @@ export default function LeaderboardsPage() {
     >
       <div className="px-3 sm:px-8 pt-24 sm:pt-28 pb-8">
         <div className="max-w-4xl mx-auto">
-          <div className="mb-6 sm:mb-8">
+          <LeaderboardHeader activeTab={activeTab} />
+          <div className="my-5"><LeaderboardTabs activeTab={activeTab} onChange={setActiveTab} loading={false} /></div>
+          <div className="hidden mb-6 sm:mb-8">
             <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 mb-4">
               <Link
                 href="/dashboard"
@@ -325,7 +355,7 @@ export default function LeaderboardsPage() {
                   { id: "weekly", label: "📅 Weekly" },
                   { id: "monthly", label: "🗓️ Monthly" },
                   { id: "following", label: "👥 Following" },
-                ] as { id: Tab; label: string }[]
+                ] as { id: LeaderboardTab; label: string }[]
               ).map(({ id, label }) => (
                 <button
                   key={id}
@@ -346,6 +376,17 @@ export default function LeaderboardsPage() {
 
           {isAuthenticated && onboardingUserId && <LeaderboardIntroCard userId={onboardingUserId} />}
 
+          <div className="mb-5">
+            <LeaderboardRankSummary
+              activeTab={activeTab}
+              rank={(activeTab === "weekly" || activeTab === "monthly" ? periodUserRank : userRank)?.rank ?? null}
+              points={activeTab === "weekly" || activeTab === "monthly" ? periodUserRank?.periodPoints ?? null : userRank?.totalPoints ?? null}
+              puzzlesSolved={(activeTab === "weekly" || activeTab === "monthly" ? periodUserRank : userRank)?.puzzlesSolved ?? null}
+              followingCount={followingCount}
+            />
+          </div>
+          {refreshFailed && <div role="status" className="mb-5 rounded-lg border border-[var(--pw-line)] bg-[var(--pw-surface)] p-3 text-sm text-[var(--pw-text-muted)]">Couldn’t refresh just now — showing the last known rankings.</div>}
+
           {error && (
             <div className="mb-6 p-4 rounded-lg text-white border" style={{ backgroundColor: "rgba(255,90,90,0.1)", borderColor: "rgba(255,90,90,0.4)" }}>
               {error}
@@ -353,7 +394,7 @@ export default function LeaderboardsPage() {
           )}
 
           {/* Following empty state */}
-          {activeTab === "following" && !loading && followingCount === 0 && (
+          {activeTab === "following" && loadStatus === "ready" && followingCount === 0 && (
             <div className="mb-6 pw-surface pw-bevel p-6 text-center">
               <p className="text-2xl mb-2">👥</p>
               <p className="text-white font-semibold mb-1">You&apos;re not following anyone yet</p>
@@ -376,9 +417,10 @@ export default function LeaderboardsPage() {
                 {periodEndsAt && (() => {
                   const urgency = getCountdownUrgency(periodEndsAt);
                   return (
-                    <div className="pw-surface pw-bevel p-4" style={{ borderColor: urgency.color + "55" }}>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: urgency.color }}>⏳ Time Remaining</p>
-                      <p className="text-xl font-bold text-white" style={{ textShadow: `0 0 16px ${urgency.glow}` }}>{formatCountdown(periodEndsAt)}</p>
+                    <div className="pw-surface pw-bevel p-4">
+                      <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${urgency === "critical" ? "text-[var(--pw-danger)]" : urgency === "warning" ? "text-[var(--pw-warning)]" : "text-[var(--pw-accent)]"}`}>Time Remaining</p>
+                      <p className="text-xl font-bold text-white">{formatCountdown(periodEndsAt)}</p>
+                      {urgency === "critical" && <p className="text-xs font-bold text-[var(--pw-danger)]">Closing soon</p>}
                       <p className="text-xs mt-1" style={{ color: "#5B6483" }}>
                         Ends {new Date(periodEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                       </p>
