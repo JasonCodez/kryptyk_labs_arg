@@ -360,6 +360,149 @@ describe("WarzOpponentSearch", () => {
     expect(screen.queryByText(/couldn.t search players/i)).toBeNull();
   });
 
+  it("query change immediately invalidates and clears the previous query's results, then only the latest query's response ever appears", async () => {
+    jest.useFakeTimers();
+    const deferreds: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+    global.fetch = jest.fn(() => {
+      let resolve!: (v: unknown) => void;
+      let reject!: (e: unknown) => void;
+      const p = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      deferreds.push({ resolve, reject });
+      return p;
+    }) as unknown as jest.Mock;
+
+    render(<WarzOpponentSearch selectedOpponent={null} onSelect={jest.fn()} onRemove={jest.fn()} />);
+
+    // 1-2. Search "ri" and let the first request start.
+    await typeQuery("ri");
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+    });
+    expect(deferreds.length).toBe(1);
+    expect(screen.getByText(/searching players/i)).toBeTruthy();
+
+    // 3-4. Change the query to "riv" — old results/loading state must clear
+    // immediately, synchronously with the input change, not after any delay.
+    await typeQuery("riv");
+    expect(screen.queryByText(/searching players/i)).toBeNull();
+    expect(screen.queryByRole("option")).toBeNull();
+
+    // 5. Resolve the old ("ri") request during the new query's debounce window.
+    await act(async () => {
+      deferreds[0].resolve({ ok: true, json: () => Promise.resolve({ users: [{ id: "stale", username: "StaleRi" }] }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // 6-7. Its results must not appear — the sequence guard invalidated it
+    // before it settled, independent of AbortController firing.
+    expect(screen.queryByText(/StaleRi/)).toBeNull();
+    expect(screen.queryByText(/searching players/i)).toBeNull();
+
+    // 8-9. Advance the remaining debounce so the new ("riv") request starts.
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+    });
+    expect(deferreds.length).toBe(2);
+
+    // 10-11. Resolve the new request — only its results appear.
+    await act(async () => {
+      deferreds[1].resolve({ ok: true, json: () => Promise.resolve({ users: [{ id: "fresh", username: "FreshRiv" }] }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/FreshRiv/)).toBeTruthy();
+    expect(screen.queryByText(/StaleRi/)).toBeNull();
+
+    // 15. A valid query change resets highlighted selection.
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getAllByRole("option")[0].getAttribute("aria-selected")).toBe("true");
+    await typeQuery("rivx");
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+      deferreds[2]?.resolve({ ok: true, json: () => Promise.resolve({ users: [{ id: "fresh2", username: "FreshRivx" }] }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryAllByRole("option").some((o) => o.getAttribute("aria-selected") === "true")).toBe(false);
+  });
+
+  it("stale finalizer cannot clear the newer request's loading state, and a late old failure shows no stale error", async () => {
+    jest.useFakeTimers();
+    const deferreds: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+    global.fetch = jest.fn(() => {
+      let resolve!: (v: unknown) => void;
+      let reject!: (e: unknown) => void;
+      const p = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      deferreds.push({ resolve, reject });
+      return p;
+    }) as unknown as jest.Mock;
+
+    render(<WarzOpponentSearch selectedOpponent={null} onSelect={jest.fn()} onRemove={jest.fn()} />);
+
+    await typeQuery("ri");
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+    });
+    await typeQuery("riv");
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+    });
+    expect(deferreds.length).toBe(2);
+
+    // 12-13. Resolve the new ("riv") request successfully first.
+    await act(async () => {
+      deferreds[1].resolve({ ok: true, json: () => Promise.resolve({ users: [{ id: "fresh", username: "FreshRiv" }] }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/FreshRiv/)).toBeTruthy();
+
+    // Then reject the stale ("ri") request afterward — no stale error should
+    // ever surface, and the new idle/success state must remain intact.
+    await act(async () => {
+      deferreds[0].reject(new Error("stale failure"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/couldn.t search players/i)).toBeNull();
+    // 14. The stale request's `finally` must not clobber the current state —
+    // the newer, already-resolved result stays visible.
+    expect(screen.getByText(/FreshRiv/)).toBeTruthy();
+  });
+
+  it("keyboard navigation still performs no request and retry remains single-flight after query invalidation", async () => {
+    jest.useFakeTimers();
+    let calls = 0;
+    global.fetch = jest.fn(() => {
+      calls += 1;
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ users: [{ id: "1", username: "RivalOne" }, { id: "2", username: "RivalTwo" }] }),
+      });
+    }) as unknown as jest.Mock;
+
+    render(<WarzOpponentSearch selectedOpponent={null} onSelect={jest.fn()} onRemove={jest.fn()} />);
+    await typeQuery("ri");
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+      await Promise.resolve();
+    });
+    expect(calls).toBe(1);
+
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(calls).toBe(1);
+  });
+
   it("unmount aborts active request", async () => {
     jest.useFakeTimers();
     let aborted = false;

@@ -447,7 +447,136 @@ describe("Warz challenge setup page — query-param invite", () => {
   });
 });
 
+describe("Warz challenge setup page — self-invite rejection", () => {
+  it("invite resolution waits until currentUser has loaded before requesting the profile", async () => {
+    searchParamsValue = { invite: "rival-one" };
+    let resolveUserInfo!: (v: unknown) => void;
+    const calls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return new Promise((resolve) => { resolveUserInfo = resolve; });
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/users/")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: "rival-one", name: "RivalOne", image: null }) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    expect(calls.some((c) => c.includes("/api/users/rival-one"))).toBe(false);
+
+    await act(async () => {
+      resolveUserInfo({ ok: true, json: () => Promise.resolve(USER) });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(calls.some((c) => c.includes("/api/users/rival-one"))).toBe(true);
+  });
+
+  it("a query-param profile matching the current user is rejected with exact copy, leaves opponent null, and disables Start Battle", async () => {
+    searchParamsValue = { invite: "me" };
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/users/")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: "me", name: "arena-player" }) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    expect(screen.getByTestId("setup-invite-error").textContent).toBe("You cannot challenge yourself.");
+    expect(screen.getByTestId("setup-opponent").textContent).toBe("null");
+    expect(screen.getByTestId("setup-start-disabled").textContent).toBe("true");
+  });
+
+  it("self-invite resolution does not loop or repeatedly request the same profile", async () => {
+    searchParamsValue = { invite: "me" };
+    const calls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/users/")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: "me", name: "arena-player" }) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    const selfInviteCalls = () => calls.filter((c) => c.includes("/api/users/me")).length;
+    expect(selfInviteCalls()).toBe(1);
+
+    // Unrelated state changes (wager edits) must not re-trigger the effect.
+    fireEvent.change(screen.getByTestId("wager-input-field"), { target: { value: "100" } });
+    await flush();
+    expect(selfInviteCalls()).toBe(1);
+  });
+
+  it("choosing another opponent after a self-invite rejection clears the error and allows a valid opponent to be selected", async () => {
+    searchParamsValue = { invite: "me" };
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/users/")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: "me", name: "arena-player" }) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    expect(screen.getByTestId("setup-invite-error").textContent).toBe("You cannot challenge yourself.");
+
+    fireEvent.click(screen.getByRole("button", { name: "remove-opponent" }));
+    expect(screen.getByTestId("setup-invite-error").textContent).toBe("null");
+    expect(screen.getByTestId("setup-start-disabled").textContent).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "select-opponent" }));
+    expect(JSON.parse(screen.getByTestId("setup-opponent").textContent!)).toEqual({ id: "rival-two", username: "RivalTwo" });
+  });
+});
+
 describe("Warz challenge setup page — starting", () => {
+  it("unmount during the setup-to-play transition clears the pending timer and never updates state afterward", async () => {
+    mockFetch();
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const { unmount } = render(<WarzPlayPage />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "start-battle" }));
+    unmount();
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it("rapid repeated Start Battle activations still mount exactly one play board", async () => {
+    mockFetch();
+    render(<WarzPlayPage />);
+    await flush();
+    const startButton = screen.getByRole("button", { name: "start-battle" });
+    fireEvent.click(startButton);
+    fireEvent.click(startButton);
+    fireEvent.click(startButton);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    expect(screen.getAllByTestId("warz-play-board").length).toBe(1);
+  });
+
+
   it("43-46. Start Battle does not create a challenge or re-request user/eligibility, and renders WarzPlayBoard", async () => {
     const calls = mockFetch();
     render(<WarzPlayPage />);

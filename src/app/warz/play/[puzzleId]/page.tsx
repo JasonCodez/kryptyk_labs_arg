@@ -64,7 +64,10 @@ export default function WarzPlayPage() {
   const [selectedOpponent, setSelectedOpponent] = useState<WarzSetupOpponent | null>(null);
   const [resolvingInvite, setResolvingInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviteResolvedForId, setInviteResolvedForId] = useState<string | null>(null);
+  // Tracks the invite id that the most recent resolution attempt (success,
+  // "unavailable", or self-challenge rejection) settled for, so the
+  // query-param effect below never re-fetches the same id on its own.
+  const [inviteAttemptedForId, setInviteAttemptedForId] = useState<string | null>(null);
   const [manualOpponentChosen, setManualOpponentChosen] = useState(false);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -81,6 +84,7 @@ export default function WarzPlayPage() {
 
   const submissionInFlightRef = useRef(false);
   const startingRef = useRef(false);
+  const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadSetup = useCallback(async () => {
     if (loadInFlightRef.current) return;
@@ -161,7 +165,7 @@ export default function WarzPlayPage() {
   }, []);
 
   const resolveInvite = useCallback(
-    (inviteId: string) => {
+    (inviteId: string, currentUserId: string) => {
       inviteAbortRef.current?.abort();
       const seq = ++inviteRequestSeqRef.current;
       const controller = new AbortController();
@@ -175,12 +179,19 @@ export default function WarzPlayPage() {
           if (seq !== inviteRequestSeqRef.current) return;
           if (!res.ok) {
             setInviteError("That player is unavailable.");
+            setInviteAttemptedForId(inviteId);
             return;
           }
           const data = await res.json();
           if (seq !== inviteRequestSeqRef.current) return;
           if (!data?.id) {
             setInviteError("That player is unavailable.");
+            setInviteAttemptedForId(inviteId);
+            return;
+          }
+          if (data.id === currentUserId) {
+            setInviteError("You cannot challenge yourself.");
+            setInviteAttemptedForId(inviteId);
             return;
           }
           setSelectedOpponent({
@@ -188,12 +199,13 @@ export default function WarzPlayPage() {
             username: data.name ?? data.username ?? "Player",
             avatarUrl: data.image ?? null,
           });
-          setInviteResolvedForId(inviteId);
+          setInviteAttemptedForId(inviteId);
         })
         .catch((err) => {
           if (seq !== inviteRequestSeqRef.current) return;
           if (err instanceof DOMException && err.name === "AbortError") return;
           setInviteError("That player is unavailable.");
+          setInviteAttemptedForId(inviteId);
         })
         .finally(() => {
           if (seq === inviteRequestSeqRef.current) setResolvingInvite(false);
@@ -204,10 +216,10 @@ export default function WarzPlayPage() {
 
   useEffect(() => {
     const inviteId = searchParams.get("invite");
-    if (!inviteId || manualOpponentChosen || inviteResolvedForId === inviteId) return;
-    resolveInvite(inviteId);
+    if (!inviteId || !currentUser || manualOpponentChosen || inviteAttemptedForId === inviteId) return;
+    resolveInvite(inviteId, currentUser.id);
 
-  }, [searchParams, manualOpponentChosen, inviteResolvedForId]);
+  }, [searchParams, currentUser, manualOpponentChosen, inviteAttemptedForId]);
 
   useEffect(() => {
     return () => {
@@ -241,7 +253,7 @@ export default function WarzPlayPage() {
 
   const handleRetryInvite = () => {
     const inviteId = searchParams.get("invite");
-    if (inviteId) resolveInvite(inviteId);
+    if (inviteId && currentUser) resolveInvite(inviteId, currentUser.id);
   };
 
   const startDisabled =
@@ -252,10 +264,20 @@ export default function WarzPlayPage() {
     startingRef.current = true;
     setPhase("starting");
     const delay = reduceMotion ? 0 : 200;
-    window.setTimeout(() => {
+    startTimerRef.current = setTimeout(() => {
+      startTimerRef.current = null;
       setPhase("playing");
     }, delay);
   };
+
+  useEffect(() => {
+    return () => {
+      if (startTimerRef.current) {
+        clearTimeout(startTimerRef.current);
+        startTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handlePuzzleDone = useCallback(
     async (secs: number, forfeited?: boolean) => {

@@ -34,6 +34,8 @@ interface FixtureOptions {
   createFailOnce?: boolean;
   searchResultsFor?: (q: string) => Array<typeof RIVAL_ONE>;
   holdInvite?: boolean;
+  holdSearch?: boolean;
+  selfInviteId?: string;
 }
 
 async function installFixture(page: Page, options: FixtureOptions = {}) {
@@ -42,6 +44,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let inviteCalls = 0;
   let lastCreateBody: Record<string, unknown> | null = null;
   const heldInviteRoutes: Array<{ fulfill: (body: unknown, status?: number) => Promise<void> }> = [];
+  const heldSearchRoutes: Array<{ query: string; fulfill: (body: unknown, status?: number) => Promise<void> }> = [];
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -73,6 +76,10 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     if (path === "/api/users/search" && method === "GET") {
       searchCalls += 1;
       const q = url.searchParams.get("q") ?? "";
+      if (options.holdSearch) {
+        heldSearchRoutes.push({ query: q, fulfill });
+        return;
+      }
       const users = options.searchResultsFor ? options.searchResultsFor(q) : [RIVAL_ONE, RIVAL_TWO].filter((u) => u.username.toLowerCase().includes(q.toLowerCase()));
       return fulfill({ users });
     }
@@ -84,6 +91,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
         heldInviteRoutes.push({ fulfill });
         return;
       }
+      if (id === options.selfInviteId) return fulfill({ id: USER.id, name: USER.name });
       if (id === RIVAL_ONE.id) return fulfill(RIVAL_ONE);
       return fulfill({ error: "not found" }, 404);
     }
@@ -109,6 +117,12 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       const held = heldInviteRoutes[index];
       if (!held) throw new Error(`No held invite request at index ${index}`);
       await held.fulfill(body, status);
+    },
+    heldSearchCount: () => heldSearchRoutes.length,
+    releaseSearch: async (index: number, users: Array<typeof RIVAL_ONE>) => {
+      const held = heldSearchRoutes[index];
+      if (!held) throw new Error(`No held search request at index ${index}`);
+      await held.fulfill({ users });
     },
   };
 }
@@ -241,6 +255,37 @@ test.describe("Warz challenge setup — opponent search", () => {
     await expect(page.getByText("Any eligible player can accept this challenge.")).toBeVisible();
   });
 
+  test("a stale search response arriving after a query change never overwrites the latest results", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { holdSearch: true });
+    await page.goto(setupUrl(), { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const searchInput = page.getByLabel("Invite a specific player");
+
+    // 1-3. Enter "ri", wait for the first request, keep it pending.
+    await searchInput.fill("ri");
+    await expect.poll(fixture.heldSearchCount).toBe(1);
+
+    // 4-5. Change the query to "riv" — old options must disappear immediately.
+    await searchInput.fill("riv");
+    await expect(page.getByRole("option", { name: /RivalOne/ })).toHaveCount(0);
+
+    // 6-7. Resolve the first ("ri") request during the second query's
+    // debounce window — its results must never appear.
+    await fixture.releaseSearch(0, [RIVAL_ONE]);
+    await page.waitForTimeout(100);
+    await expect(page.getByRole("option", { name: /RivalOne/ })).toHaveCount(0);
+
+    // 8-9. Allow the second ("riv") request to begin and resolve it with
+    // different users — only the second query's results may appear.
+    await expect.poll(fixture.heldSearchCount).toBe(2);
+    await fixture.releaseSearch(1, [RIVAL_TWO]);
+    await expect(page.getByRole("option", { name: /RivalTwo/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /RivalOne/ })).toHaveCount(0);
+  });
+
   test("search failure shows retry and recovers", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await authenticate(page);
@@ -290,6 +335,29 @@ test.describe("Warz challenge setup — targeted invite via query param", () => 
     const callsBefore = fixture.inviteCallCount();
     await page.getByRole("button", { name: "Try again" }).click();
     await expect.poll(fixture.inviteCallCount).toBe(callsBefore + 1);
+  });
+
+  test("a query-param invite matching the authenticated player is rejected as a self-challenge", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { selfInviteId: USER.id });
+    await page.goto(setupUrl(USER.id), { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page.getByText("You cannot challenge yourself.")).toBeVisible();
+    await expect(page.getByText(USER.id)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Start Battle" })).toBeDisabled();
+    expect(fixture.createCallCount()).toBe(0);
+
+    await page.getByRole("button", { name: "Choose another opponent" }).click();
+    await expect(page.getByLabel("Invite a specific player")).toBeVisible();
+
+    const searchInput = page.getByLabel("Invite a specific player");
+    await searchInput.fill("Rival");
+    await expect.poll(fixture.searchCallCount, { timeout: 2000 }).toBeGreaterThan(0);
+    await page.getByRole("button", { name: /RivalOne/ }).click();
+    await expect(page.getByText("@RivalOne").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start Battle" })).toBeEnabled();
   });
 });
 

@@ -45,13 +45,23 @@ export default function WarzOpponentSearch({
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors `query` synchronously so the debounced callback can confirm, at
+  // the moment it actually fires, that the query it captured is still the
+  // latest one — extra defense on top of the sequence-number guard below.
+  const queryRef = useRef("");
 
   const runSearch = (trimmed: string) => {
     if (trimmed.length < MIN_QUERY_LENGTH) return;
+
+    abortRef.current?.abort();
+
     const seq = ++requestSeqRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
+
     setStatus("loading");
+    setResults([]);
+    setHighlightedIndex(-1);
 
     fetch(`/api/users/search?q=${encodeURIComponent(trimmed)}&limit=6`, { signal: controller.signal })
       .then(async (res) => {
@@ -64,12 +74,16 @@ export default function WarzOpponentSearch({
         if (seq !== requestSeqRef.current) return;
         setResults(data.users ?? []);
         setStatus("idle");
-        setHighlightedIndex(-1);
       })
       .catch((err) => {
         if (seq !== requestSeqRef.current) return;
         if (err instanceof DOMException && err.name === "AbortError") return;
         setStatus("error");
+      })
+      .finally(() => {
+        if (seq === requestSeqRef.current && abortRef.current === controller) {
+          abortRef.current = null;
+        }
       });
   };
 
@@ -81,7 +95,14 @@ export default function WarzOpponentSearch({
     const trimmed = query.trim();
     if (trimmed.length < MIN_QUERY_LENGTH) return;
 
-    debounceRef.current = setTimeout(() => runSearch(trimmed), DEBOUNCE_MS);
+    debounceRef.current = setTimeout(() => {
+      // The query may have changed again since this timer was scheduled —
+      // handleQueryChange invalidates the sequence immediately on every
+      // change, but this extra check guards against the timer itself ever
+      // reaching runSearch for a query that is no longer current.
+      if (queryRef.current.trim() !== trimmed) return;
+      runSearch(trimmed);
+    }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -99,14 +120,26 @@ export default function WarzOpponentSearch({
   const showResults = open && trimmedQuery.length >= MIN_QUERY_LENGTH;
 
   const handleQueryChange = (value: string) => {
-    setQuery(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
     abortRef.current?.abort();
+    abortRef.current = null;
+
+    // Invalidate any in-flight or about-to-settle request for the previous
+    // query immediately, so a stale success/failure/finally can never touch
+    // state belonging to this new query.
+    requestSeqRef.current += 1;
+
+    queryRef.current = value;
+    setQuery(value);
+    setResults([]);
+    setHighlightedIndex(-1);
+    setStatus("idle");
 
     if (value.trim().length < MIN_QUERY_LENGTH) {
-      requestSeqRef.current += 1;
-      setResults([]);
-      setStatus("idle");
       setOpen(false);
       return;
     }
@@ -120,7 +153,9 @@ export default function WarzOpponentSearch({
 
   const selectResult = (user: WarzOpponentSearchResult) => {
     abortRef.current?.abort();
+    abortRef.current = null;
     requestSeqRef.current += 1;
+    queryRef.current = "";
     setQuery("");
     setResults([]);
     setStatus("idle");
