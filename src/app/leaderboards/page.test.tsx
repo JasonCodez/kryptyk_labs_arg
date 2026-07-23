@@ -1,4 +1,5 @@
 /** @jest-environment jsdom */
+import { StrictMode } from "react";
 import { act, render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import LeaderboardsPage, { formatCountdown, getCountdownUrgency } from "./page";
 
@@ -39,6 +40,13 @@ const PERIOD_ENTRY = {
 const PERIOD_RANK = {
   userId: "me", userName: "Me", userImage: null, activeFlair: "none",
   isPremium: false, periodPoints: 40, puzzlesSolved: 2, rank: 30,
+};
+// The real Following API always includes the current user in `entries`, even
+// when followingCount is 0 — a bare `entries: []` fixture would hide the bug
+// where the page renders that row/footer stats beneath its own empty panel.
+const FOLLOWING_SELF_ENTRY = {
+  userId: "me", userName: "Me", userImage: null, activeFlair: "none",
+  isPremium: false, totalPoints: 200, puzzlesSolved: 4, rank: 1, isCurrentUser: true,
 };
 
 function jsonResponse(body: unknown, ok = true) {
@@ -412,7 +420,9 @@ describe("Leaderboards page — background refresh", () => {
 describe("Leaderboards page — empty states", () => {
   it("shows the Following empty state when followingCount is 0", async () => {
     authenticate();
-    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, followingCount: 0 })) as unknown as typeof fetch;
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
     render(<LeaderboardsPage />);
     await flush();
     fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
@@ -423,7 +433,9 @@ describe("Leaderboards page — empty states", () => {
   it("the Following empty-state action switches to Global and fires one Global request", async () => {
     authenticate();
     const fetchMock = jest.fn((url: string) => {
-      if (url === "/api/leaderboards/following") return jsonResponse({ entries: [], userRank: null, followingCount: 0 });
+      if (url === "/api/leaderboards/following") return jsonResponse({
+        entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+      });
       return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -486,6 +498,488 @@ describe("Leaderboards page — existing behavior preserved", () => {
     render(<LeaderboardsPage />);
     await flush();
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/user/info"))).toBe(false);
+  });
+});
+
+describe("Leaderboards page — React Strict Mode and unmount lifecycle", () => {
+  it("still applies a successful Global response after a Strict Mode setup/cleanup/setup replay", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: GLOBAL_RANK })) as unknown as typeof fetch;
+    render(
+      <StrictMode>
+        <LeaderboardsPage />
+      </StrictMode>
+    );
+    await flush();
+    // A cleanup-only mounted-state bug would leave mountedRef permanently
+    // false after Strict Mode's synchronous mount→cleanup→mount replay,
+    // silently discarding this (entirely valid) response forever.
+    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(screen.queryByText("Loading leaderboard")).toBeNull();
+  });
+
+  it("aborts the in-flight foreground request on genuine unmount", async () => {
+    authenticate();
+    let capturedSignal: AbortSignal | undefined;
+    global.fetch = jest.fn((_url: string, opts?: { signal?: AbortSignal }) => {
+      capturedSignal = opts?.signal;
+      return new Promise(() => {});
+    }) as unknown as typeof fetch;
+    const { unmount } = render(<LeaderboardsPage />);
+    await flush();
+    expect(capturedSignal?.aborted).toBe(false);
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("aborts an in-flight background request on genuine unmount", async () => {
+    authenticate();
+    let backgroundSignal: AbortSignal | undefined;
+    let call = 0;
+    global.fetch = jest.fn((_url: string, opts?: { signal?: AbortSignal }) => {
+      call += 1;
+      if (call === 1) return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+      backgroundSignal = opts?.signal;
+      return new Promise(() => {});
+    }) as unknown as typeof fetch;
+    const { unmount } = render(<LeaderboardsPage />);
+    await flush();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+    expect(backgroundSignal?.aborted).toBe(false);
+    unmount();
+    expect(backgroundSignal?.aborted).toBe(true);
+  });
+});
+
+describe("Leaderboards page — foreground/background isolation", () => {
+  it("a puzzle-solved event during initial loading creates no second request", async () => {
+    authenticate();
+    const fetchMock = jest.fn((_url: string) => new Promise(() => {}));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    const before = fetchMock.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+    expect(fetchMock.mock.calls.length).toBe(before);
+  });
+
+  it("a puzzle-solved event during tab foreground loading creates no background request", async () => {
+    authenticate();
+    let weeklyCalls = 0;
+    const fetchMock = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+      weeklyCalls += 1;
+      return new Promise(() => {});
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(weeklyCalls).toBe(1);
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+    // Still exactly one Weekly request — the event must not have added a
+    // background refresh while the Weekly foreground load is in flight.
+    expect(weeklyCalls).toBe(1);
+  });
+
+  it("switching tabs while a background refresh is held still reaches the new tab (background never blocks or aborts foreground)", async () => {
+    authenticate();
+    let globalCalls = 0;
+    let weeklyCalls = 0;
+    let releaseBackgroundGlobal: (() => void) | null = null;
+    const fetchMock = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") {
+        globalCalls += 1;
+        if (globalCalls === 1) return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+        return new Promise((resolve) => {
+          releaseBackgroundGlobal = () => resolve({ ok: true, json: () => Promise.resolve({ entries: [GLOBAL_ENTRY], userRank: null }) });
+        });
+      }
+      weeklyCalls += 1;
+      return jsonResponse({ entries: [PERIOD_ENTRY], userRank: PERIOD_RANK, endsAt: null, rewardTiers: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+    expect(globalCalls).toBe(2); // held, in flight
+
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(weeklyCalls).toBe(1);
+    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(screen.queryByText("Loading leaderboard")).toBeNull();
+
+    if (releaseBackgroundGlobal) act(() => releaseBackgroundGlobal!());
+  });
+
+  it("a background failure during ready state preserves content and never reverts to loading", async () => {
+    authenticate();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+      return jsonResponse({}, false);
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(screen.queryByText("Loading leaderboard")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/Couldn.t refresh just now/)).toBeTruthy();
+  });
+
+  it("duplicate puzzle-solved events while a background refresh is in flight create exactly one request", async () => {
+    authenticate();
+    let call = 0;
+    const fetchMock = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+      return new Promise(() => {});
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+
+    expect(fetchMock.mock.calls.length).toBe(2); // one initial load + exactly one background refresh
+  });
+});
+
+describe("Leaderboards page — retry guard", () => {
+  it("rapid retry activation creates exactly one retry request", async () => {
+    authenticate();
+    let call = 0;
+    let releaseRetry: (() => void) | null = null;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({}, false);
+      return new Promise((resolve) => {
+        releaseRetry = () => resolve({ ok: true, json: () => Promise.resolve({ entries: [GLOBAL_ENTRY], userRank: null }) });
+      });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByRole("alert")).toBeTruthy();
+
+    const retryButton = screen.getByRole("button", { name: /Try Again/i });
+    fireEvent.click(retryButton);
+    fireEvent.click(retryButton);
+    fireEvent.click(retryButton);
+    await flush();
+
+    expect(call).toBe(2); // initial failure + exactly one retry
+
+    await act(async () => {
+      releaseRetry?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("shows 'Trying…' on the retry button while a retry is pending", async () => {
+    authenticate();
+    let call = 0;
+    let releaseRetry: (() => void) | null = null;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({}, false);
+      return new Promise((resolve) => {
+        releaseRetry = () => resolve({ ok: true, json: () => Promise.resolve({ entries: [GLOBAL_ENTRY], userRank: null }) });
+      });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /Try Again/i }));
+    await flush();
+    expect(screen.getByRole("button", { name: /Trying…/i })).toBeTruthy();
+
+    await act(async () => {
+      releaseRetry?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("the retry guard resets after a failed retry, allowing another attempt", async () => {
+    authenticate();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call <= 2) return jsonResponse({}, false);
+      return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByRole("alert")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Try Again/i }));
+    await flush();
+    expect(screen.getByRole("alert")).toBeTruthy(); // still failing
+
+    fireEvent.click(screen.getByRole("button", { name: /Try Again/i }));
+    await flush();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(call).toBe(3);
+  });
+
+  it("a successful retry renders real content", async () => {
+    authenticate();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({}, false);
+      return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /Try Again/i }));
+    await flush();
+    expect(screen.getByText("Alice")).toBeTruthy();
+  });
+});
+
+describe("Leaderboards page — countdown minute updates", () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ doNotFake: ["queueMicrotask"] });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("updates the countdown text after a 60-second fake-timer advance", async () => {
+    authenticate();
+    const endsAt = new Date(Date.now() + 2 * 3600_000 + 500).toISOString();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, endsAt, rewardTiers: [] })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const before = formatCountdown(endsAt);
+    expect(screen.getByText(before)).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.queryByText(before)).toBeNull();
+  });
+
+  it("does not update the countdown every second", async () => {
+    authenticate();
+    const endsAt = new Date(Date.now() + 2 * 3600_000).toISOString();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, endsAt, rewardTiers: [] })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const before = formatCountdown(endsAt);
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    expect(screen.getByText(before)).toBeTruthy();
+  });
+
+  it("clears the countdown interval when the active tab changes away", async () => {
+    authenticate();
+    const endsAt = new Date(Date.now() + 2 * 3600_000).toISOString();
+    const clearSpy = jest.spyOn(window, "clearInterval");
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, endsAt, rewardTiers: [] })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    clearSpy.mockClear();
+    fireEvent.click(screen.getByRole("tab", { name: /Global/ }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(clearSpy).toHaveBeenCalled();
+  });
+
+  it("clears the countdown interval on unmount", async () => {
+    authenticate();
+    const endsAt = new Date(Date.now() + 2 * 3600_000).toISOString();
+    const clearSpy = jest.spyOn(window, "clearInterval");
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, endsAt, rewardTiers: [] })) as unknown as typeof fetch;
+    const { unmount } = render(<LeaderboardsPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    clearSpy.mockClear();
+    unmount();
+    expect(clearSpy).toHaveBeenCalled();
+  });
+
+  it("Global creates no countdown interval", async () => {
+    authenticate();
+    const setSpy = jest.spyOn(window, "setInterval");
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Leaderboards page — invalid period schedule", () => {
+  it("shows 'Schedule unavailable' for an invalid endsAt", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, endsAt: "not-a-date", rewardTiers: [] })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(screen.getByText("Schedule unavailable")).toBeTruthy();
+  });
+
+  it("never shows 'Invalid Date' for an invalid endsAt", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null, endsAt: "not-a-date", rewardTiers: [] })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+  });
+});
+
+describe("Leaderboards page — production-shaped Following empty state", () => {
+  it("shows the empty panel even though the API returns a current-user entry", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Build your comparison group")).toBeTruthy();
+  });
+
+  it("suppresses the current-user-only leaderboard row", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.queryByRole("link", { name: "Me" })).toBeNull();
+  });
+
+  it("suppresses footer statistics", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.queryByText("Top Players")).toBeNull();
+    expect(screen.queryByText("Total Points")).toBeNull();
+  });
+
+  it("the rank summary may still show the current user's API-provided rank", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Your Following Rank")).toBeTruthy();
+    expect(screen.getByText("#1")).toBeTruthy();
+  });
+
+  it("renders Following entries normally once followingCount is greater than 0", async () => {
+    authenticate();
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.queryByText("Build your comparison group")).toBeNull();
+    expect(screen.getByText("Zed")).toBeTruthy();
+    expect(screen.getByText("Top Players")).toBeTruthy();
+  });
+});
+
+describe("Leaderboards page — background aria-busy", () => {
+  it("marks the tabpanel aria-busy=true during a background refresh", async () => {
+    authenticate();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+      return new Promise(() => {});
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("tabpanel").getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("keeps ready content mounted while a background refresh is in flight", async () => {
+    authenticate();
+    let call = 0;
+    global.fetch = jest.fn(() => {
+      call += 1;
+      if (call === 1) return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+      return new Promise(() => {});
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(screen.queryByText("Loading leaderboard")).toBeNull();
   });
 });
 

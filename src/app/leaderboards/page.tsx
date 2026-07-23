@@ -220,7 +220,7 @@ function RewardTiers({ tiers, periodLabel }: { tiers: RewardTier[]; periodLabel:
 const ACTION_FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--pw-brand-primary)]";
 
-function ErrorPanel({ onRetry }: { onRetry: () => void }) {
+function ErrorPanel({ onRetry, pending }: { onRetry: () => void; pending: boolean }) {
   return (
     <div
       role="alert"
@@ -239,11 +239,12 @@ function ErrorPanel({ onRetry }: { onRetry: () => void }) {
       <button
         type="button"
         onClick={onRetry}
-        className={`mt-4 inline-flex min-h-12 items-center gap-2 rounded-lg px-5 text-sm font-bold ${ACTION_FOCUS}`}
+        disabled={pending}
+        className={`mt-4 inline-flex min-h-12 items-center gap-2 rounded-lg px-5 text-sm font-bold disabled:opacity-70 ${ACTION_FOCUS}`}
         style={{ minHeight: 48, background: "var(--pw-error-text)", color: "var(--pw-bg-base)" }}
       >
         <RefreshCw aria-hidden="true" size={16} />
-        <span>Try Again</span>
+        <span>{pending ? "Trying…" : "Try Again"}</span>
       </button>
     </div>
   );
@@ -321,10 +322,32 @@ export default function LeaderboardsPage() {
   const [loadStatus, setLoadStatus] = useState<LeaderboardLoadStatus>("loading");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
 
-  const requestSeqRef = useRef(0);
-  const requestAbortRef = useRef<AbortController | null>(null);
+  // Foreground (initial load / tab switch / retry) and background (puzzle-solved
+  // refresh) requests are tracked independently — a background refresh must never
+  // be able to abort, or be mistaken for, the foreground request driving the
+  // visible loading state, and vice versa.
+  const foregroundSeqRef = useRef(0);
+  const foregroundAbortRef = useRef<AbortController | null>(null);
+  const foregroundInFlightRef = useRef(false);
+
+  const backgroundSeqRef = useRef(0);
+  const backgroundAbortRef = useRef<AbortController | null>(null);
+  const backgroundInFlightRef = useRef(false);
+
+  const retryInFlightRef = useRef(false);
   const mountedRef = useRef(true);
+
+  // Mirrors `loadStatus` synchronously so the puzzle-solved event handler (a
+  // closure that can fire between renders) always reads the current status
+  // rather than one captured at listener-registration time.
+  const loadStatusRef = useRef<LeaderboardLoadStatus>("loading");
+  const setLoadStatusSynced = useCallback((next: LeaderboardLoadStatus) => {
+    loadStatusRef.current = next;
+    setLoadStatus(next);
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -333,20 +356,41 @@ export default function LeaderboardsPage() {
   }, [status, router]);
 
   const fetchLeaderboard = useCallback(async (tab: LeaderboardTab, mode: FetchMode = "foreground") => {
-    requestAbortRef.current?.abort();
-    const controller = new AbortController();
-    requestAbortRef.current = controller;
-    const seq = ++requestSeqRef.current;
+    const isForeground = mode === "foreground";
+    let seq: number;
+    let controller: AbortController;
 
-    if (mode === "foreground") setLoadStatus("loading");
-    else setRefreshing(true);
+    if (isForeground) {
+      foregroundAbortRef.current?.abort();
+      // A new foreground request (tab switch or retry) supersedes any in-flight
+      // background refresh — its own result is about to become stale anyway.
+      backgroundAbortRef.current?.abort();
+      backgroundSeqRef.current += 1;
+      backgroundInFlightRef.current = false;
+      setRefreshing(false);
+
+      controller = new AbortController();
+      foregroundAbortRef.current = controller;
+      seq = ++foregroundSeqRef.current;
+      foregroundInFlightRef.current = true;
+      setLoadStatusSynced("loading");
+    } else {
+      controller = new AbortController();
+      backgroundAbortRef.current = controller;
+      seq = ++backgroundSeqRef.current;
+      backgroundInFlightRef.current = true;
+      setRefreshing(true);
+    }
+
+    const isCurrentSeq = () => seq === (isForeground ? foregroundSeqRef.current : backgroundSeqRef.current);
+    const shouldApply = () => mountedRef.current && isCurrentSeq();
 
     try {
       if (tab === "weekly" || tab === "monthly") {
         const response = await fetch(`/api/leaderboards/period?type=${tab}`, { signal: controller.signal });
         if (!response.ok) throw new Error("request-failed");
         const data = await response.json();
-        if (!mountedRef.current || seq !== requestSeqRef.current) return;
+        if (!shouldApply()) return;
         setPeriodEntries(Array.isArray(data.entries) ? data.entries : []);
         setPeriodUserRank(data.userRank ?? null);
         setPeriodEndsAt(typeof data.endsAt === "string" ? data.endsAt : null);
@@ -356,39 +400,82 @@ export default function LeaderboardsPage() {
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) throw new Error("request-failed");
         const data = await response.json();
-        if (!mountedRef.current || seq !== requestSeqRef.current) return;
+        if (!shouldApply()) return;
         setEntries(Array.isArray(data.entries) ? data.entries : []);
         setUserRank(data.userRank ?? null);
         if (tab === "following") setFollowingCount(typeof data.followingCount === "number" ? data.followingCount : 0);
       }
-      if (!mountedRef.current || seq !== requestSeqRef.current) return;
-      setLoadStatus("ready");
+      if (!shouldApply()) return;
+      setLoadStatusSynced("ready");
       setRefreshFailed(false);
     } catch (err) {
-      if ((err as Error)?.name === "AbortError" || seq !== requestSeqRef.current || !mountedRef.current) return;
-      if (mode === "background") setRefreshFailed(true);
-      else setLoadStatus("error");
+      if ((err as Error)?.name === "AbortError" || !shouldApply()) return;
+      if (isForeground) setLoadStatusSynced("error");
+      else setRefreshFailed(true);
     } finally {
-      if (seq === requestSeqRef.current && mountedRef.current) setRefreshing(false);
+      // Clear this request's own in-flight flag regardless of mount state — but
+      // only if a newer request of the SAME mode hasn't already superseded it
+      // (that newer request already owns the flag).
+      if (isCurrentSeq()) {
+        if (isForeground) foregroundInFlightRef.current = false;
+        else {
+          backgroundInFlightRef.current = false;
+          if (mountedRef.current) setRefreshing(false);
+        }
+      }
     }
-  }, []);
+  }, [setLoadStatusSynced]);
 
   useEffect(() => {
-    if (status === "authenticated") void fetchLeaderboard(activeTab);
+    if (status === "authenticated") void fetchLeaderboard(activeTab, "foreground");
   }, [activeTab, fetchLeaderboard, status]);
 
-  // Real-time updates: refresh the active tab in the background when any player solves a puzzle.
+  // Real-time updates: refresh the active tab in the background when any player
+  // solves a puzzle — but never while the page isn't in a settled "ready" state,
+  // and never if a foreground or background request is already in flight.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handler = () => void fetchLeaderboard(activeTab, "background");
+    const handler = () => {
+      if (
+        !mountedRef.current ||
+        loadStatusRef.current !== "ready" ||
+        foregroundInFlightRef.current ||
+        backgroundInFlightRef.current
+      ) {
+        return;
+      }
+      void fetchLeaderboard(activeTab, "background");
+    };
     window.addEventListener("puzzlewarz:puzzle-solved", handler);
     return () => window.removeEventListener("puzzlewarz:puzzle-solved", handler);
   }, [activeTab, fetchLeaderboard]);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    requestSeqRef.current += 1;
-    requestAbortRef.current?.abort();
+  const retryActiveTab = useCallback(async () => {
+    if (retryInFlightRef.current) return;
+    retryInFlightRef.current = true;
+    setRetrying(true);
+    try {
+      await fetchLeaderboard(activeTab, "foreground");
+    } finally {
+      retryInFlightRef.current = false;
+      if (mountedRef.current) setRetrying(false);
+    }
+  }, [activeTab, fetchLeaderboard]);
+
+  // Setup-and-cleanup (not cleanup-only) so a React Strict Mode dev-mode
+  // setup→cleanup→setup replay restores mountedRef to true instead of leaving
+  // it permanently false after the first (intentionally discarded) cleanup —
+  // which would otherwise cause every subsequent response to be silently
+  // treated as though the component had genuinely unmounted.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      foregroundSeqRef.current += 1;
+      backgroundSeqRef.current += 1;
+      foregroundAbortRef.current?.abort();
+      backgroundAbortRef.current?.abort();
+    };
   }, []);
 
   const currentUserId = (session?.user as { id?: string } | undefined)?.id;
@@ -399,12 +486,23 @@ export default function LeaderboardsPage() {
 
   const isPeriodTab = activeTab === "weekly" || activeTab === "monthly";
   const isBootLoading = status !== "authenticated" || loadStatus === "loading";
+  const isFollowingGroupEmpty = activeTab === "following" && followingCount === 0;
 
   const activeRank = isPeriodTab ? periodUserRank?.rank ?? null : userRank?.rank ?? null;
   const activePoints = isPeriodTab ? periodUserRank?.periodPoints ?? null : userRank?.totalPoints ?? null;
   const activePuzzlesSolved = isPeriodTab ? periodUserRank?.puzzlesSolved ?? null : userRank?.puzzlesSolved ?? null;
 
-  void refreshing;
+  const periodEndMs = periodEndsAt == null ? Number.NaN : new Date(periodEndsAt).getTime();
+  const hasValidPeriodEnd = Number.isFinite(periodEndMs);
+
+  // Updates roughly once a minute rather than every second, and never
+  // refetches the leaderboard — only the displayed countdown text changes.
+  useEffect(() => {
+    if (!isPeriodTab || !hasValidPeriodEnd) return;
+    setCountdownNow(Date.now());
+    const interval = window.setInterval(() => setCountdownNow(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, [isPeriodTab, hasValidPeriodEnd, periodEndsAt]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
@@ -419,31 +517,38 @@ export default function LeaderboardsPage() {
             role="tabpanel"
             id={`leaderboard-panel-${activeTab}`}
             aria-labelledby={`leaderboard-tab-${activeTab}`}
-            aria-busy={isBootLoading}
+            aria-busy={isBootLoading || refreshing || retrying}
             className="flex flex-col gap-6"
           >
-            {isBootLoading ? (
+            {retrying ? (
+              // A retry is itself a foreground request, which flips loadStatus to
+              // "loading" — but the retry button (with its pending "Trying…" state)
+              // must stay visible rather than being replaced by the full skeleton.
+              <ErrorPanel onRetry={() => void retryActiveTab()} pending />
+            ) : isBootLoading ? (
               <LeaderboardLoadingState activeTab={activeTab} />
             ) : loadStatus === "error" ? (
-              <ErrorPanel onRetry={() => void fetchLeaderboard(activeTab)} />
+              <ErrorPanel onRetry={() => void retryActiveTab()} pending={false} />
             ) : (
               <>
                 {isPeriodTab && (
                   <div className="grid gap-3 sm:grid-cols-[220px_1fr] sm:gap-4">
                     {periodEndsAt && (() => {
-                      const urgency = getCountdownUrgency(periodEndsAt);
+                      const urgency = getCountdownUrgency(periodEndsAt, countdownNow);
                       return (
                         <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
                           <p className="text-xs font-bold uppercase tracking-wide" style={{ color: URGENCY_COLOR[urgency] }}>
                             Time Remaining
                           </p>
-                          <p className="text-xl font-bold" style={{ color: "var(--pw-text-primary)" }}>{formatCountdown(periodEndsAt)}</p>
+                          <p className="text-xl font-bold" style={{ color: "var(--pw-text-primary)" }}>{formatCountdown(periodEndsAt, countdownNow)}</p>
                           {urgency === "critical" && (
                             <p className="text-xs font-bold" style={{ color: "var(--pw-error-text)" }}>Closing soon</p>
                           )}
-                          <p className="mt-1 text-xs" style={{ color: "var(--pw-text-muted)" }}>
-                            Ends {new Date(periodEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                          </p>
+                          {hasValidPeriodEnd && (
+                            <p className="mt-1 text-xs" style={{ color: "var(--pw-text-muted)" }}>
+                              Ends {new Date(periodEndMs).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                          )}
                         </div>
                       );
                     })()}
@@ -461,7 +566,7 @@ export default function LeaderboardsPage() {
 
                 {refreshFailed && <RefreshWarning />}
 
-                {activeTab === "following" && followingCount === 0 && (
+                {isFollowingGroupEmpty && (
                   <EmptyStatePanel
                     heading="Build your comparison group"
                     copy="Follow players from the Global leaderboard or their profile pages to compare your progress here."
@@ -508,7 +613,7 @@ export default function LeaderboardsPage() {
                       ))}
                     </div>
                   )
-                ) : activeTab === "global" && entries.length === 0 ? (
+                ) : isFollowingGroupEmpty ? null : activeTab === "global" && entries.length === 0 ? (
                   <EmptyStatePanel
                     heading="No ranked players yet"
                     copy="Solve a puzzle to claim a place on the leaderboard."

@@ -77,11 +77,16 @@ interface FixtureOptions {
   globalEntries?: typeof GLOBAL_ENTRIES;
   globalUserRank?: typeof GLOBAL_USER_RANK | null;
   weeklyEntries?: typeof WEEKLY_ENTRIES;
+  weeklyEndsAt?: string;
   monthlyEntries?: typeof MONTHLY_ENTRIES;
   globalStatusOnce?: number;
   holdGlobal?: boolean;
   holdWeekly?: boolean;
   holdMonthly?: boolean;
+  /** Every /global request AFTER the first (i.e. the initial foreground load
+   * succeeds normally) is held rather than resolved — for background-refresh
+   * and rapid-retry collision coverage. */
+  holdGlobalAfterFirst?: boolean;
 }
 
 async function installFixture(page: Page, options: FixtureOptions = {}) {
@@ -107,6 +112,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     if (bare === "/api/leaderboards/global") {
       globalCalls += 1;
       if (options.holdGlobal) { held.global.push(fulfill); return; }
+      if (options.holdGlobalAfterFirst && globalCalls > 1) { held.global.push(fulfill); return; }
       if (options.globalStatusOnce && !globalFailedOnce) {
         globalFailedOnce = true;
         return fulfill({ error: "failed" }, options.globalStatusOnce);
@@ -129,7 +135,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       return fulfill({
         entries: options.weeklyEntries ?? WEEKLY_ENTRIES,
         userRank: WEEKLY_USER_RANK,
-        endsAt: futureIso(52),
+        endsAt: options.weeklyEndsAt ?? futureIso(52),
         periodId: "week-42",
         rewardTiers: WEEKLY_REWARD_TIERS,
       });
@@ -155,11 +161,16 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     weeklyCallCount: () => weeklyCalls,
     monthlyCallCount: () => monthlyCalls,
     followingCallCount: () => followingCalls,
+    heldGlobalCount: () => held.global.length,
     releaseGlobal: async (body: unknown, status = 200) => { await held.global.shift()?.(body, status); },
     releaseWeekly: async (body: unknown, status = 200) => { await held.weekly.shift()?.(body, status); },
     releaseMonthly: async (body: unknown, status = 200) => { await held.monthly.shift()?.(body, status); },
   };
 }
+
+/** Production-shaped Following self-entry — the real API always includes the
+ * current user in `entries` even when followingCount is 0. */
+const FOLLOWING_SELF_ENTRY = { userId: USER.id, userName: USER.name, userImage: null, activeFlair: "none", totalPoints: 1234, puzzlesSolved: 22, rank: 1 };
 
 const MOBILE_VIEWPORTS = [
   { width: 320, height: 710 },
@@ -327,16 +338,106 @@ test.describe("Leaderboards shell — background refresh", () => {
   });
 });
 
+test.describe("Leaderboards shell — foreground/background collision", () => {
+  test("a puzzle-solved event during a held Weekly foreground load adds no background request", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { holdWeekly: true });
+    await page.goto("/leaderboards", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByRole("tab", { name: /Weekly/ }).click();
+    expect(fixture.weeklyCallCount()).toBe(1);
+
+    await page.evaluate(() => window.dispatchEvent(new Event("puzzlewarz:puzzle-solved")));
+    // Still exactly one Weekly request — the event must not have queued a
+    // background refresh while the Weekly foreground load is in flight.
+    expect(fixture.weeklyCallCount()).toBe(1);
+
+    await fixture.releaseWeekly({ entries: WEEKLY_ENTRIES, userRank: WEEKLY_USER_RANK, endsAt: futureIso(52), rewardTiers: WEEKLY_REWARD_TIERS });
+    await expect(page.getByText("Your Weekly Rank")).toBeVisible();
+    await expect(page.getByText("Loading leaderboard")).toHaveCount(0);
+  });
+
+  test("duplicate puzzle-solved events while a background refresh is held create exactly one background request", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { holdGlobalAfterFirst: true });
+    await page.goto("/leaderboards", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await expect(page.getByText("Aurora Nightingale-Whitcombe-Fairweather")).toBeVisible();
+    expect(fixture.globalCallCount()).toBe(1);
+
+    await page.evaluate(() => window.dispatchEvent(new Event("puzzlewarz:puzzle-solved")));
+    await page.evaluate(() => window.dispatchEvent(new Event("puzzlewarz:puzzle-solved")));
+    await page.evaluate(() => window.dispatchEvent(new Event("puzzlewarz:puzzle-solved")));
+
+    // Only the first event's background request should have gone out —
+    // it's the one now being held.
+    await expect.poll(() => fixture.globalCallCount()).toBe(2);
+    expect(fixture.heldGlobalCount()).toBe(1);
+
+    await fixture.releaseGlobal({ entries: [{ ...GLOBAL_ENTRIES[0], totalPoints: 11000 }, GLOBAL_ENTRIES[1]], userRank: GLOBAL_USER_RANK });
+    await expect(page.getByText("11,000")).toBeVisible();
+  });
+});
+
+test.describe("Leaderboards shell — rapid retry", () => {
+  test("rapidly activating Try Again produces exactly one retry request and shows a pending state", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { globalStatusOnce: 500, holdGlobalAfterFirst: true });
+    await page.goto("/leaderboards", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(errorPanel(page)).toBeVisible();
+    const retryButton = page.getByRole("button", { name: /Try Again/i });
+    await retryButton.click({ force: true });
+    await retryButton.click({ force: true }).catch(() => {});
+    await retryButton.click({ force: true }).catch(() => {});
+
+    await expect.poll(() => fixture.globalCallCount()).toBe(2);
+    expect(fixture.heldGlobalCount()).toBe(1);
+    await expect(page.getByRole("button", { name: /Trying…/i })).toBeVisible();
+
+    await fixture.releaseGlobal({ entries: GLOBAL_ENTRIES, userRank: GLOBAL_USER_RANK });
+    await expect(page.getByText("Aurora Nightingale-Whitcombe-Fairweather")).toBeVisible();
+    await expect(errorPanel(page)).toHaveCount(0);
+  });
+});
+
+test.describe("Leaderboards shell — invalid period schedule", () => {
+  test("an invalid endsAt shows 'Schedule unavailable' and never 'Invalid Date'", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, { weeklyEndsAt: "not-a-date" });
+    await page.goto("/leaderboards", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByRole("tab", { name: /Weekly/ }).click();
+    await expect(page.getByText("Schedule unavailable")).toBeVisible();
+    await expect(page.getByText(/Invalid Date/)).toHaveCount(0);
+  });
+});
+
 test.describe("Leaderboards shell — empty states", () => {
   test("Following empty state browses to Global with exactly one Global request", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await authenticate(page);
-    const fixture = await installFixture(page, { followingCount: 0 });
+    const fixture = await installFixture(page, {
+      followingCount: 0,
+      followingEntries: [FOLLOWING_SELF_ENTRY],
+      followingUserRank: FOLLOWING_SELF_ENTRY,
+    });
     await page.goto("/leaderboards", { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
 
     await page.getByRole("tab", { name: /Following/ }).click();
     await expect(page.getByRole("heading", { name: "Build your comparison group" })).toBeVisible();
+    // The API returns the current user's own row even at followingCount: 0 —
+    // it must not render as a leaderboard row or footer stats beneath the panel.
+    await expect(page.getByRole("link", { name: USER.name })).toHaveCount(0);
+    await expect(page.getByText("Top Players")).toHaveCount(0);
     const action = page.getByRole("button", { name: /Browse Global Leaderboard/i });
     const box = await action.boundingBox();
     expect(box).not.toBeNull();
