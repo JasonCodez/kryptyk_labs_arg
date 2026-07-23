@@ -188,10 +188,13 @@ async function installOpponentFixture(page: Page, options: { failGuessesUntilLos
     status: "IN_PROGRESS",
     challengerWager: 50,
     expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+    challengerTime: 60,
+    opponentTime: null,
     puzzle: HIDDEN_WORD_PUZZLE,
     challenger: CHALLENGER,
     opponent: { id: USER.id, username: USER.username },
     invitedUser: null,
+    winner: null,
   };
 
   await page.route("**/api/**", async (route) => {
@@ -224,7 +227,26 @@ async function installOpponentFixture(page: Page, options: { failGuessesUntilLos
       // See the matching comment in installChallengerFixture — a brief
       // deterministic delay keeps the intermediate pending state observable.
       await new Promise((resolve) => setTimeout(resolve, 400));
-      return fulfill({ winnerId: USER.id, tie: false });
+      const forfeited = lastCompleteBody?.forfeited === true;
+      const opponentTime = forfeited
+        ? 999999
+        : Number(lastCompleteBody?.completionSeconds ?? 42);
+      const winnerId = forfeited ? CHALLENGER.id : USER.id;
+      const winner = forfeited ? CHALLENGER : { id: USER.id, username: USER.username, name: USER.name };
+      return fulfill({
+        challenge: {
+          ...challenge,
+          status: "COMPLETED",
+          opponentTime,
+          winnerId,
+          potPaid: true,
+          completedAt: "2026-07-23T00:00:00.000Z",
+          winner,
+        },
+        outcome: forfeited ? "challenger" : "opponent",
+        pot: challenge.challengerWager * 2,
+        winnerId,
+      });
     }
     return fulfill({});
   });
@@ -252,10 +274,13 @@ async function installOpponentFixtureForPuzzle(
     status: "IN_PROGRESS",
     challengerWager: 50,
     expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+    challengerTime: 60,
+    opponentTime: null,
     puzzle,
     challenger: CHALLENGER,
     opponent: { id: USER.id, username: USER.username },
     invitedUser: null,
+    winner: null,
   };
 
   if (puzzle.puzzleType === "jigsaw") {
@@ -283,7 +308,25 @@ async function installOpponentFixtureForPuzzle(
     }
     if (path === "/api/warz/complete" && method === "POST") {
       completeCalls += 1;
-      return fulfill({ winnerId: USER.id, tie: false });
+      const body = request.postDataJSON() as Record<string, unknown>;
+      const forfeited = body.forfeited === true;
+      const opponentTime = forfeited ? 999999 : Number(body.completionSeconds ?? 42);
+      const winnerId = forfeited ? CHALLENGER.id : USER.id;
+      const winner = forfeited ? CHALLENGER : { id: USER.id, username: USER.username, name: USER.name };
+      return fulfill({
+        challenge: {
+          ...challenge,
+          status: "COMPLETED",
+          opponentTime,
+          winnerId,
+          potPaid: true,
+          completedAt: "2026-07-23T00:00:00.000Z",
+          winner,
+        },
+        outcome: forfeited ? "challenger" : "opponent",
+        pot: challenge.challengerWager * 2,
+        winnerId,
+      });
     }
     return fulfill({});
   });
@@ -554,7 +597,7 @@ test.describe("Warz active battle — submission (opponent)", () => {
     await expect(page.getByText(/Solved in \d{2}:\d{2}/)).toBeVisible();
 
     await expect.poll(fixture.completeCallCount).toBe(1);
-    await expect(page.getByText("You Win!")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Victory", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /Share Result/ })).toBeVisible();
   });
 });

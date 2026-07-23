@@ -64,6 +64,22 @@ function completedChallenge(overrides: Partial<ResultChallenge> = {}): ResultCha
   };
 }
 
+function completionResponse(authoritative = completedChallenge()) {
+  const winnerId = authoritative.winnerId;
+  const outcome =
+    winnerId === authoritative.challenger.id
+      ? "challenger"
+      : winnerId === authoritative.opponent?.id
+        ? "opponent"
+        : "split";
+  return {
+    challenge: authoritative,
+    outcome,
+    pot: authoritative.challengerWager * 2,
+    winnerId,
+  };
+}
+
 async function authenticate(page: Page, userId = USER.id) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
@@ -147,7 +163,7 @@ async function installRoutes(page: Page, options: RouteOptions) {
       completeCalls += 1;
       const body = request.postDataJSON() as Record<string, unknown>;
       completionBodies.push(body);
-      const response = options.complete?.(body, completeCalls) ?? { body: { challenge: completedChallenge() } };
+      const response = options.complete?.(body, completeCalls) ?? { body: completionResponse() };
       return fulfill(response.body, response.status ?? 200);
     }
     return fulfill({});
@@ -163,9 +179,9 @@ async function installRoutes(page: Page, options: RouteOptions) {
   };
 }
 
-async function openResult(page: Page, challenge: ResultChallenge) {
-  await authenticate(page);
-  const traffic = await installRoutes(page, { challenge });
+async function openResult(page: Page, challenge: ResultChallenge, currentUserId = USER.id) {
+  await authenticate(page, currentUserId);
+  const traffic = await installRoutes(page, { challenge, currentUserId });
   await page.goto(`/warz/challenge/${challenge.id}`, { waitUntil: "domcontentloaded" });
   await dismissCookieBanner(page);
   await expect(page.getByTestId("warz-battle-result")).toBeVisible();
@@ -327,7 +343,7 @@ test.describe("Warz battle result — immediate completion", () => {
     const traffic = await installRoutes(page, {
       challenge: initial,
       currentUserId: OPPONENT.id,
-      complete: () => ({ body: { challenge: completed } }),
+      complete: () => ({ body: completionResponse(completed) }),
     });
     await page.goto(`/warz/challenge/${initial.id}`, { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
@@ -366,7 +382,7 @@ test.describe("Warz battle result — immediate completion", () => {
     const traffic = await installRoutes(page, {
       challenge: initial,
       currentUserId: OPPONENT.id,
-      complete: () => ({ body: { challenge: forfeited } }),
+      complete: () => ({ body: completionResponse(forfeited) }),
     });
     await page.goto(`/warz/challenge/${initial.id}`, { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
@@ -402,7 +418,7 @@ test.describe("Warz battle result — immediate completion", () => {
       complete: (_body, call) =>
         call === 1
           ? { status: 500, body: { error: "Unable to finalize this battle" } }
-          : { body: { challenge: completed } },
+          : { body: completionResponse(completed) },
     });
     await page.goto(`/warz/challenge/${initial.id}`, { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
@@ -443,13 +459,61 @@ test.describe("Warz battle result — sharing", () => {
       share?.click();
     });
     await expect(page.getByRole("button", { name: "Shared" })).toBeVisible();
+    await expect(page.getByText("Result shared.", { exact: true })).toBeVisible();
     const calls = await page.evaluate(() => (window as typeof window & { __shareCalls: ShareData[] }).__shareCalls);
     expect(calls).toHaveLength(1);
     expect(calls[0].title).toBe("Puzzle Warz Battle Result");
     expect(calls[0].text).toContain("42s vs 58s");
     expect(calls[0].url).toBe("http://localhost:3000/warz/challenge/result-challenge");
     await expect(page.getByRole("button", { name: "Share Result" })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText("Result shared.", { exact: true })).toHaveCount(0);
   });
+
+  for (const scenario of [
+    {
+      name: "opponent victory",
+      challenge: completedChallenge({
+        challengerTime: 66,
+        opponentTime: 42,
+        winnerId: OPPONENT.id,
+        winner: OPPONENT,
+      }),
+      expected: "42s vs 1m 6s",
+      reversed: "1m 6s vs 42s",
+    },
+    {
+      name: "opponent defeat",
+      challenge: completedChallenge({
+        challengerTime: 42,
+        opponentTime: 66,
+        winnerId: CHALLENGER.id,
+        winner: CHALLENGER,
+      }),
+      expected: "1m 6s vs 42s",
+      reversed: "42s vs 1m 6s",
+    },
+  ] as const) {
+    test(`${scenario.name} native share is viewer-relative`, async ({ page }) => {
+      await page.addInitScript(() => {
+        const calls: ShareData[] = [];
+        Object.defineProperty(window, "__shareCalls", { configurable: true, value: calls });
+        Object.defineProperty(navigator, "share", {
+          configurable: true,
+          value: (data: ShareData) => {
+            calls.push(data);
+            return Promise.resolve();
+          },
+        });
+      });
+      await openResult(page, scenario.challenge, OPPONENT.id);
+      await page.getByRole("button", { name: "Share Result" }).click();
+      await expect(page.getByText("Result shared.", { exact: true })).toBeVisible();
+      const calls = await page.evaluate(() => (window as typeof window & { __shareCalls: ShareData[] }).__shareCalls);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toContain(scenario.expected);
+      expect(calls[0].text).not.toContain(scenario.reversed);
+    });
+  }
 
   test("AbortError does not invoke clipboard fallback", async ({ page }) => {
     await page.addInitScript(() => {
@@ -486,6 +550,7 @@ test.describe("Warz battle result — sharing", () => {
     await openResult(page, completedChallenge());
     await page.getByRole("button", { name: "Share Result" }).click();
     await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+    await expect(page.getByText("Result copied to clipboard.", { exact: true })).toBeVisible();
     const calls = await page.evaluate(() => (window as typeof window & { __clipboardCalls: string[] }).__clipboardCalls);
     expect(calls).toHaveLength(1);
     expect(calls[0].match(/http:\/\/localhost:3000\/warz\/challenge\/result-challenge/g)).toHaveLength(1);

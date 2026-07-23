@@ -13,6 +13,10 @@ function setNavigatorMethod(name: "share" | "clipboard", value: unknown) {
   Object.defineProperty(navigator, name, { configurable: true, value });
 }
 
+function liveRegion() {
+  return document.querySelector('[aria-live="polite"]') as HTMLElement;
+}
+
 beforeEach(() => {
   jest.useFakeTimers();
   setNavigatorMethod("share", undefined);
@@ -32,6 +36,11 @@ describe("WarzResultShare", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Share Result" })));
     expect(share).toHaveBeenCalledWith(props);
     expect(screen.getByRole("button", { name: "Shared" })).toBeTruthy();
+    expect(liveRegion().textContent).toBe("Result shared.");
+
+    act(() => jest.advanceTimersByTime(2_000));
+    expect(screen.getByRole("button", { name: "Share Result" })).toBeTruthy();
+    expect(liveRegion().textContent).toBe("");
   });
 
   it("does not copy after the user cancels native share", async () => {
@@ -44,6 +53,7 @@ describe("WarzResultShare", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Share Result" })));
     expect(writeText).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Share Result" })).toBeTruthy();
+    expect(liveRegion().textContent).toBe("");
   });
 
   it("falls back to the clipboard when native sharing fails or is unavailable", async () => {
@@ -55,9 +65,11 @@ describe("WarzResultShare", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Share Result" })));
     expect(writeText).toHaveBeenCalledWith(`${props.text}\n${props.url}`);
     expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+    expect(liveRegion().textContent).toBe("Result copied to clipboard.");
 
     act(() => jest.advanceTimersByTime(2_000));
     expect(screen.getByRole("button", { name: "Share Result" })).toBeTruthy();
+    expect(liveRegion().textContent).toBe("");
   });
 
   it("reports clipboard failure in its polite live region", async () => {
@@ -65,7 +77,8 @@ describe("WarzResultShare", () => {
     render(<WarzResultShare {...props} />);
 
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Share Result" })));
-    expect(screen.getByText(/couldn.t share this result/i).getAttribute("aria-live")).toBe("polite");
+    expect(liveRegion().getAttribute("aria-live")).toBe("polite");
+    expect(liveRegion().textContent).toBe("We couldn’t share this result.");
   });
 
   it("synchronously guards rapid clicks while sharing", async () => {
@@ -83,7 +96,7 @@ describe("WarzResultShare", () => {
     await act(async () => resolveShare());
   });
 
-  it("is disabled when sharing is unavailable and clears timers on unmount", async () => {
+  it("is disabled when sharing is unavailable", () => {
     const { unmount } = render(<WarzResultShare {...props} disabled />);
     const disabled = screen.getByRole("button", { name: "Share Result" });
     expect((disabled as HTMLButtonElement).disabled).toBe(true);
@@ -91,5 +104,16 @@ describe("WarzResultShare", () => {
     fireEvent.click(disabled);
     unmount();
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it("clears a success feedback timer on unmount", async () => {
+    setNavigatorMethod("share", jest.fn().mockResolvedValue(undefined));
+    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
+    const { unmount } = render(<WarzResultShare {...props} />);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Share Result" })));
+    expect(jest.getTimerCount()).toBeGreaterThan(0);
+    unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
   });
 });

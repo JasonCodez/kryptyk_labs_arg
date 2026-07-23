@@ -137,6 +137,12 @@ interface ChallengeFixture {
   challenger: typeof CHALLENGER;
   opponent?: { id: string; username?: string; name?: string } | null;
   invitedUser?: { id: string; username?: string; name?: string } | null;
+  challengerTime?: number | null;
+  opponentTime?: number | null;
+  winnerId?: string | null;
+  potPaid?: boolean;
+  completedAt?: string | null;
+  winner?: { id: string; username?: string; name?: string } | null;
 }
 
 function baseChallenge(overrides: Partial<ChallengeFixture> = {}): ChallengeFixture {
@@ -169,6 +175,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let challengeRequestCount = 0;
   let userInfoRequestCount = 0;
   let puzzleDetailRequestCount = 0;
+  let completionRequestCount = 0;
   const heldAcceptRoutes: Array<{ fulfill: (body: unknown, status?: number) => Promise<void> }> = [];
 
   await page.route("**/e2e-warz-jigsaw.svg*", (route) =>
@@ -232,7 +239,31 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     }
 
     if (path === "/api/warz/complete" && method === "POST") {
-      return fulfill({ winnerId: USER.id, tie: false, challenge: { challengerTime: 60 } });
+      completionRequestCount += 1;
+      const body = request.postDataJSON() as Record<string, unknown>;
+      const forfeited = body.forfeited === true;
+      const opponentTime = forfeited ? 999999 : Number(body.completionSeconds ?? 42);
+      const winnerId = forfeited ? challenge.challenger.id : USER.id;
+      const winner = forfeited
+        ? challenge.challenger
+        : { id: USER.id, username: USER.username, name: USER.name };
+      return fulfill({
+        challenge: {
+          ...challenge,
+          status: "COMPLETED",
+          challengerTime: 60,
+          opponentTime,
+          winnerId,
+          potPaid: true,
+          completedAt: "2026-07-23T00:00:00.000Z",
+          puzzle: acceptResponsePuzzle(challenge.puzzle),
+          opponent: { id: USER.id, username: USER.username, name: USER.name },
+          winner,
+        },
+        outcome: forfeited ? "challenger" : "opponent",
+        pot: challenge.challengerWager * 2,
+        winnerId,
+      });
     }
 
     return fulfill({});
@@ -244,6 +275,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     challengeRequestCount: () => challengeRequestCount,
     userInfoRequestCount: () => userInfoRequestCount,
     puzzleDetailRequestCount: () => puzzleDetailRequestCount,
+    completionRequestCount: () => completionRequestCount,
     releaseAccept: async (index: number, body: unknown, status = 200) => {
       const held = heldAcceptRoutes[index];
       if (!held) throw new Error(`No held accept request at index ${index}`);
@@ -548,7 +580,21 @@ test.describe("Warz challenge acceptance — status matrix", () => {
     { name: "in progress with someone else", challenge: { id: "in-progress-other", status: "IN_PROGRESS", opponent: { id: "another-user" } }, expectedText: "This battle is already in progress." },
     { name: "expired", challenge: { id: "expired-status", status: "EXPIRED" }, expectedText: "This challenge has expired." },
     { name: "cancelled", challenge: { id: "cancelled-status", status: "CANCELLED" }, expectedText: "This challenge was cancelled." },
-    { name: "completed", challenge: { id: "completed-status", status: "COMPLETED" }, expectedText: "This battle has already finished." },
+    {
+      name: "completed",
+      challenge: {
+        id: "completed-status",
+        status: "COMPLETED",
+        challengerTime: 60,
+        opponentTime: 42,
+        winnerId: USER.id,
+        potPaid: true,
+        completedAt: "2026-07-23T00:00:00.000Z",
+        opponent: { id: USER.id, username: USER.username, name: USER.name },
+        winner: { id: USER.id, username: USER.username, name: USER.name },
+      },
+      expectedText: "Victory",
+    },
   ];
 
   for (const testCase of cases) {
@@ -561,6 +607,12 @@ test.describe("Warz challenge acceptance — status matrix", () => {
       await dismissCookieBanner(page);
 
       await expect(page.getByText(testCase.expectedText, { exact: false }).first()).toBeVisible();
+      if (testCase.name === "completed") {
+        await expect(page.getByTestId("warz-battle-result")).toBeVisible();
+        await expect(page.getByTestId("warz-active-play-shell")).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /play battle/i })).toHaveCount(0);
+        expect(fixture.completionRequestCount()).toBe(0);
+      }
       if (testCase.name !== "in progress with current user") {
         await expect(page.getByRole("button", { name: /^accept/i })).toHaveCount(0);
       }

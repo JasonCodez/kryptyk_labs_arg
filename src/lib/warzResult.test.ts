@@ -211,25 +211,65 @@ describe("warzResult", () => {
     expect(model.economySupport).not.toMatch(/paid to you/i);
   });
 
-  test("builds truthful safe share copy for all valid viewer outcomes", () => {
-    const victory = createWarzResultViewModel(challenge(), "challenger-id");
-    const defeat = createWarzResultViewModel(challenge(), "opponent-id");
+  test("builds viewer-relative timed share copy and preserves neutral ordering", () => {
+    const challengerVictory = createWarzResultViewModel(challenge(), "challenger-id");
+    const opponentVictory = createWarzResultViewModel(
+      challenge({
+        challengerTime: 66,
+        opponentTime: 42,
+        winnerId: "opponent-id",
+        winner: { id: "opponent-id", name: "Rival" },
+      }),
+      "opponent-id"
+    );
+    const challengerDefeat = createWarzResultViewModel(
+      challenge({
+        challengerTime: 66,
+        opponentTime: 42,
+        winnerId: "opponent-id",
+        winner: { id: "opponent-id", name: "Rival" },
+      }),
+      "challenger-id"
+    );
+    const opponentDefeat = createWarzResultViewModel(challenge(), "opponent-id");
     const draw = createWarzResultViewModel(
       challenge({ winnerId: null, winner: null, challengerTime: 42, opponentTime: 42 }),
       "challenger-id"
     );
     const neutral = createWarzResultViewModel(challenge(), "viewer-id");
-    const forfeit = createWarzResultViewModel(
+    const victoryByForfeit = createWarzResultViewModel(
       challenge({ opponentTime: WARZ_DNF_SENTINEL }),
       "challenger-id"
     );
+    const defeatByForfeit = createWarzResultViewModel(
+      challenge({ opponentTime: WARZ_DNF_SENTINEL }),
+      "opponent-id"
+    );
 
-    expect(victory.shareText).toContain("I won a Puzzle Warz battle");
-    expect(defeat.shareText).toContain("I battled on PuzzleWarz");
-    expect(draw.shareText).toContain("ended in a draw");
-    expect(neutral.shareText).toContain("Jason defeated Rival");
-    expect(forfeit.shareText).toContain("by forfeit");
-    for (const text of [victory.shareText, defeat.shareText, draw.shareText, neutral.shareText, forfeit.shareText]) {
+    expect(challengerVictory.shareText).toContain("42s vs 1m 6s");
+    expect(opponentVictory.shareText).toContain("42s vs 1m 6s");
+    expect(opponentVictory.shareText).not.toContain("1m 6s vs 42s");
+    expect(challengerDefeat.shareText).toContain("1m 6s vs 42s");
+    expect(opponentDefeat.shareText).toContain("1m 6s vs 42s");
+    expect(opponentDefeat.shareText).not.toContain("42s vs 1m 6s");
+    expect(neutral.shareText).toContain("42s vs 1m 6s");
+    expect(victoryByForfeit.shareText).toBe(
+      "I won a Puzzle Warz battle by forfeit on PuzzleWarz!\nMidnight Sudoku · 100 Point pot"
+    );
+    expect(defeatByForfeit.shareText).toBe(
+      "My Puzzle Warz battle ended by forfeit.\nMidnight Sudoku · 100 Point pot"
+    );
+    expect(draw.shareText).toBe("My Puzzle Warz battle ended in a draw.\n42s each · wagers returned");
+    for (const text of [
+      challengerVictory.shareText,
+      opponentVictory.shareText,
+      challengerDefeat.shareText,
+      opponentDefeat.shareText,
+      draw.shareText,
+      neutral.shareText,
+      victoryByForfeit.shareText,
+      defeatByForfeit.shareText,
+    ]) {
       expect(text).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
       expect(text).not.toContain("challenge-secret-id");
       expect(text).not.toContain("challenger-id");
@@ -237,6 +277,6 @@ describe("warzResult", () => {
       expect(text).not.toContain("@example.com");
       expect(text).not.toMatch(/solution|puzzleGrid|imageUrl/);
     }
-    expect(buildWarzShareCopy(victory)).toBe(victory.shareText);
+    expect(buildWarzShareCopy(challengerVictory)).toBe(challengerVictory.shareText);
   });
 });

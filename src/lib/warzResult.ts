@@ -264,17 +264,19 @@ export function buildWarzShareCopy(model: WarzResultViewModel): string {
     model.challenger.rawTime == null ? "unavailable" : formatWarzShareTime(model.challenger.rawTime);
   const opponentTime =
     model.opponent.rawTime == null ? "unavailable" : formatWarzShareTime(model.opponent.rawTime);
+  const viewerTime = model.viewerRole === "opponent" ? opponentTime : challengerTime;
+  const rivalTime = model.viewerRole === "opponent" ? challengerTime : opponentTime;
 
   if (model.viewerOutcome === "victory") {
     const byForfeit = model.headline === "Victory by Forfeit";
     return byForfeit
       ? `I won a Puzzle Warz battle by forfeit on PuzzleWarz!\n${model.puzzleTitle} · ${model.pot} Point pot`
-      : `I won a Puzzle Warz battle on PuzzleWarz!\n${challengerTime} vs ${opponentTime} · ${model.pot} Point pot`;
+      : `I won a Puzzle Warz battle on PuzzleWarz!\n${viewerTime} vs ${rivalTime} · ${model.pot} Point pot`;
   }
   if (model.viewerOutcome === "defeat") {
     return model.headline === "Defeat by Forfeit"
       ? `My Puzzle Warz battle ended by forfeit.\n${model.puzzleTitle} · ${model.pot} Point pot`
-      : `I battled on PuzzleWarz: ${challengerTime} vs ${opponentTime}.\n${model.puzzleTitle} · ${model.pot} Point pot`;
+      : `I battled on PuzzleWarz: ${viewerTime} vs ${rivalTime}.\n${model.puzzleTitle} · ${model.pot} Point pot`;
   }
   if (model.viewerOutcome === "draw") {
     const same = challengerTime === opponentTime ? `${challengerTime} each` : `${challengerTime} vs ${opponentTime}`;

@@ -84,6 +84,14 @@ export default function WarzResultShare({
         : status === "copied"
           ? "Copied"
           : "Share Result";
+  const feedback =
+    status === "shared"
+      ? "Result shared."
+      : status === "copied"
+        ? "Result copied to clipboard."
+        : status === "error"
+          ? "We couldn’t share this result."
+          : "";
 
   return (
     <div className="w-full">
@@ -108,7 +116,7 @@ export default function WarzResultShare({
         className="mt-2 min-h-5 text-center text-xs"
         style={{ color: status === "error" ? "var(--pw-error-text)" : "var(--pw-text-muted)" }}
       >
-        {status === "error" ? "We couldn’t share this result." : ""}
+        {feedback}
       </p>
     </div>
   );

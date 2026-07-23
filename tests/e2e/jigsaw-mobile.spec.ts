@@ -74,6 +74,7 @@ async function installCatalogFixture(page: Page, failCompletions = 0, skipTokens
 }
 
 async function installWarzFixture(page: Page) {
+  let createCalls = 0;
   await page.route("**/e2e-jigsaw.svg*", (route) => route.fulfill({ status: 200, contentType: "image/svg+xml", body: IMAGE_BODY }));
   await page.route("**/api/**", async (route) => {
     const request = route.request(); const path = new URL(request.url()).pathname.replace(/\/$/, "");
@@ -82,9 +83,14 @@ async function installWarzFixture(page: Page) {
     if (path === `/api/puzzles/${PUZZLE_ID}`) return fulfill({ id: PUZZLE_ID, title: "Warz Jigsaw E2E", difficulty: "easy", puzzleType: "jigsaw", data: {}, jigsaw: { imageUrl: IMAGE, gridRows: 2, gridCols: 2, snapTolerance: 24, rotationEnabled: false } });
     if (path === "/api/user/info") return fulfill({ id: "e2e-user", totalPoints: 1000 });
     if (path === "/api/warz/check-eligible") return fulfill({ eligible: true });
-    if (path === "/api/warz/create" && request.method() === "POST") return fulfill({ id: "challenge-e2e" });
+    if (path === "/api/warz/create" && request.method() === "POST") {
+      createCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return fulfill({ id: "challenge-e2e" });
+    }
     return fulfill({});
   });
+  return { createCalls: () => createCalls };
 }
 
 async function openDaily(page: Page) {
@@ -397,17 +403,21 @@ test("Completion reaches a stable framed layout with the clean image before the 
 // Warz keeps its existing fully automatic completion — no footer, no waiting on the player.
 test("Warz completes automatically with no completion footer and no wait for Continue", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await installWarzFixture(page);
+  const fixture = await installWarzFixture(page);
   await page.addInitScript(() => localStorage.setItem("pw_cookie_consent", "1"));
   await page.goto(`/warz/play/${PUZZLE_ID}`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /Start Battle/ }).click();
   await expect(page.locator(".jigsaw-root")).toHaveAttribute("data-mode", "warz", { timeout: 15_000 });
   await dragEachTrayPieceToItsSlot(page, 2, 2);
 
-  // Warz's own automatic "submitting result" UI appears without any Continue interaction.
-  await expect(page.getByText(/Solved in .*! Submitting result/)).toBeVisible({ timeout: 15_000 });
+  // Warz's Pass 11 terminal panel appears without any Continue interaction.
+  await expect(page.getByText("Puzzle Complete", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Solved in \d{2}:\d{2}/)).toBeVisible();
+  await expect(page.getByText(/Posting your challenge/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Claim Rewards" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Puzzle complete" })).toHaveCount(0);
+  await expect(page.getByText("Challenge Posted", { exact: true })).toBeVisible({ timeout: 15_000 });
+  expect(fixture.createCalls()).toBe(1);
 });
 
 // Regression coverage for two 320px mobile bugs found after manual reproduction:

@@ -167,6 +167,22 @@ function completedChallenge(overrides: Partial<ChallengeFixture> = {}): Challeng
   });
 }
 
+function completionResponse(authoritative = completedChallenge()) {
+  const winnerId = authoritative.winnerId ?? authoritative.winner?.id ?? null;
+  const outcome =
+    winnerId === authoritative.challenger.id
+      ? "challenger"
+      : winnerId === authoritative.opponent?.id
+        ? "opponent"
+        : "split";
+  return {
+    challenge: authoritative,
+    outcome,
+    pot: authoritative.challengerWager * 2,
+    winnerId,
+  };
+}
+
 interface FetchOptions {
   challengeStatus?: number;
   userStatus?: number;
@@ -216,7 +232,7 @@ function mockFetch(options: FetchOptions = {}) {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ challenge: completedChallenge() }),
+        json: () => Promise.resolve(completionResponse()),
       } as Response);
     }
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response);
@@ -1078,7 +1094,7 @@ describe("Warz challenge page — frozen completion regression", () => {
       calls.push({ url, init });
       if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) }) } as Response);
       if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
-      if (url.includes("/api/warz/complete")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) } as Response);
+      if (url.includes("/api/warz/complete")) return Promise.resolve({ ok: true, json: () => Promise.resolve(completionResponse()) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     }) as jest.Mock;
 
@@ -1109,14 +1125,14 @@ describe("Warz challenge page — frozen completion regression", () => {
       if (url.includes("/api/warz/complete")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            challenge: completedChallenge({
+          json: () => Promise.resolve(completionResponse(
+            completedChallenge({
               challengerTime: 42,
               opponentTime: 999999,
               winnerId: "challenger-1",
               winner: CHALLENGER,
-            }),
-          }),
+            })
+          )),
         } as Response);
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
@@ -1239,7 +1255,7 @@ describe("Warz challenge page — authoritative result restoration", () => {
         completionAttempt += 1;
         return Promise.resolve(completionAttempt === 1
           ? { ok: false, status: 409, json: () => Promise.resolve({ error: "Result is still pending." }) }
-          : { ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) }) as Promise<Response>;
+          : { ok: true, json: () => Promise.resolve(completionResponse()) }) as Promise<Response>;
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     }) as jest.Mock;
@@ -1299,7 +1315,7 @@ describe("Warz challenge page — authoritative result restoration", () => {
     fireEvent.click(solve);
     expect(calls.filter((url) => url.includes("/api/warz/complete"))).toHaveLength(1);
     await act(async () => {
-      resolveComplete({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) } as Response);
+      resolveComplete({ ok: true, json: () => Promise.resolve(completionResponse()) } as Response);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1346,7 +1362,7 @@ describe("Warz challenge page — Pass 11 WarzPlayBoard submission integration",
     expect(screen.getByTestId("board-submission-pending-label").textContent).toBe("Submitting result…");
 
     await act(async () => {
-      resolveComplete({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) });
+      resolveComplete({ ok: true, json: () => Promise.resolve(completionResponse()) });
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1402,7 +1418,7 @@ describe("Warz challenge page — Pass 11 WarzPlayBoard submission integration",
     expect(screen.getAllByText("Submitting result…").length).toBe(1);
 
     await act(async () => {
-      resolveComplete({ ok: true, json: () => Promise.resolve({ challenge: completedChallenge() }) });
+      resolveComplete({ ok: true, json: () => Promise.resolve(completionResponse()) });
       await Promise.resolve();
       await Promise.resolve();
     });
