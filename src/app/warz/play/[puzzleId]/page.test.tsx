@@ -16,7 +16,11 @@ jest.mock("next/navigation", () => ({
 
 jest.mock("@/components/warz/WarzSetupLoadingState", () => ({
   __esModule: true,
-  default: () => <div data-testid="setup-loading" />,
+  default: () => (
+    <div role="status" aria-label="Loading challenge setup" data-testid="setup-loading">
+      <div data-skeleton="true" className="motion-safe:animate-pulse motion-reduce:animate-none" />
+    </div>
+  ),
 }));
 
 jest.mock("@/components/warz/WarzChallengeSetup", () => ({
@@ -194,7 +198,29 @@ describe("Warz challenge setup page — initial loading", () => {
     mockFetch();
     render(<WarzPlayPage />);
     expect(screen.getByTestId("setup-loading")).toBeTruthy();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    const shape = screen.getByTestId("setup-loading").querySelector("[data-skeleton='true']")!;
+    expect([...shape.classList]).toEqual(expect.arrayContaining(["motion-safe:animate-pulse", "motion-reduce:animate-none"]));
     await flush();
+  });
+
+  it("4a. loading wrapper is full-width and bounded without duplicate status semantics", async () => {
+    mockFetch();
+    const { container } = render(<WarzPlayPage />);
+    expect(container.querySelector(".w-full.min-w-0.max-w-xl")).toBeTruthy();
+    expect(screen.getAllByLabelText("Loading challenge setup")).toHaveLength(1);
+    expect(screen.queryByTestId("warz-play-board")).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls.filter(([input]) => String(input).includes("/api/warz/create"))).toHaveLength(0);
+    await flush();
+  });
+
+  it("4b. setup makes each initial request exactly once", async () => {
+    const calls = mockFetch();
+    render(<WarzPlayPage />);
+    await flush();
+    expect(calls.filter((url) => url.includes("/api/puzzles/warz-setup-puzzle"))).toHaveLength(1);
+    expect(calls.filter((url) => url.includes("/api/user/info"))).toHaveLength(1);
+    expect(calls.filter((url) => url.includes("/api/warz/check-eligible"))).toHaveLength(1);
   });
 
   it("5-7. successful load shows setup with exact puzzle and user", async () => {

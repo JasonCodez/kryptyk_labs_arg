@@ -330,8 +330,7 @@ export default function WarzPlayPage() {
         className="flex min-h-screen items-center justify-center px-4"
         style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
       >
-        <div role="status" aria-label="Loading challenge setup">
-          <span className="sr-only">Loading challenge setup…</span>
+        <div className="w-full min-w-0 max-w-xl">
           <WarzSetupLoadingState />
         </div>
       </div>

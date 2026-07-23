@@ -1,9 +1,10 @@
 "use client";
 
+import { Skeleton } from "@/components/Skeleton";
+
 /**
- * Static loading skeleton for the Daily Puzzle Lineup — no spinner, shimmer,
- * or animation. Mirrors the final structure: progress overview, recommended
- * challenge region, and a six-card grid.
+ * Loading skeleton for the Daily Puzzle Lineup. Mirrors the final structure:
+ * progress overview, recommended challenge region, and a six-card grid.
  */
 export default function DailyLineupLoadingState() {
   return (
@@ -21,43 +22,37 @@ export default function DailyLineupLoadingState() {
           <div>
             <div className="grid grid-cols-3 gap-3 mb-4">
               {[...Array(3)].map((_, i) => (
-                <div
+                <Skeleton
                   key={i}
                   className="rounded-xl"
-                  style={{ height: 68, background: "color-mix(in srgb, var(--pw-border-default) 40%, transparent)" }}
+                  style={{ height: 68 }}
                 />
               ))}
             </div>
-            <div
-              className="h-2 w-full rounded-full"
-              style={{ background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)" }}
-            />
+            <Skeleton className="h-2 w-full rounded-full" />
           </div>
           <div>
-            <div
+            <Skeleton
               style={{
                 height: 12,
                 width: "40%",
                 marginBottom: 10,
                 borderRadius: 4,
-                background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)",
               }}
             />
-            <div
+            <Skeleton
               style={{
                 height: 18,
                 width: "70%",
                 marginBottom: 14,
                 borderRadius: 4,
-                background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)",
               }}
             />
-            <div
+            <Skeleton
               style={{
                 height: 44,
                 width: 140,
                 borderRadius: 16,
-                background: "color-mix(in srgb, var(--pw-border-default) 40%, transparent)",
               }}
             />
           </div>
@@ -80,35 +75,34 @@ export default function DailyLineupLoadingState() {
             style={{ background: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)", minHeight: 160 }}
           >
             <div className="flex items-start gap-3">
-              <div
+              <Skeleton
                 style={{
                   width: 36,
                   height: 36,
                   borderRadius: 8,
                   flexShrink: 0,
-                  background: "color-mix(in srgb, var(--pw-border-default) 60%, transparent)",
                 }}
               />
               <div className="min-w-0 flex-1">
-                <div
+                <Skeleton
                   style={{
                     height: 12,
                     borderRadius: 4,
-                    background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)",
                     marginBottom: 8,
                     width: "70%",
                   }}
                 />
-                <div
+                <Skeleton
                   style={{
                     height: 10,
                     borderRadius: 4,
-                    background: "color-mix(in srgb, var(--pw-border-default) 30%, transparent)",
                     width: "90%",
                   }}
                 />
               </div>
             </div>
+            <Skeleton className="mt-5 h-2 w-full rounded-full" />
+            <Skeleton className="mt-4 h-9 w-28 rounded-xl" />
           </div>
         ))}
       </div>

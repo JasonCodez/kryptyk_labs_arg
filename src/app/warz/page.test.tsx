@@ -80,7 +80,11 @@ jest.mock("@/components/warz/WarzPuzzlePickerDialog", () => ({
 
 jest.mock("@/components/warz/WarzLobbyLoadingState", () => ({
   __esModule: true,
-  default: () => <div data-testid="warz-loading-state" />,
+  default: () => (
+    <div role="status" aria-label="Loading Warz arena" data-testid="warz-loading-state">
+      <div data-skeleton="true" className="motion-safe:animate-pulse motion-reduce:animate-none" />
+    </div>
+  ),
 }));
 
 function challengeFixture(overrides: Record<string, unknown> = {}) {
@@ -205,6 +209,25 @@ describe("Warz lobby page", () => {
     mockFetch();
     render(<WarzLobbyPage />);
     expect(screen.getByTestId("warz-loading-state")).toBeTruthy();
+  });
+
+  it("3a. initial loading uses safe pulse classes and disappears after success", async () => {
+    mockFetch();
+    render(<WarzLobbyPage />);
+    const shape = screen.getByTestId("warz-loading-state").querySelector("[data-skeleton='true']")!;
+    expect([...shape.classList]).toEqual(expect.arrayContaining(["motion-safe:animate-pulse", "motion-reduce:animate-none"]));
+    await flush();
+    expect(screen.queryByTestId("warz-loading-state")).toBeNull();
+  });
+
+  it("3b. Suspense has a semantic, full-width lobby fallback without a Navbar", () => {
+    const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).toMatch(/<Suspense\s+fallback=/);
+    expect(source).toMatch(/background:\s*"var\(--pw-bg-base\)"/);
+    expect(source).toMatch(/paddingTop:\s*"calc\(56px \+ env\(safe-area-inset-top, 0px\)\)"/);
+    expect(source).toMatch(/mx-auto w-full max-w-5xl/);
+    expect(source).toMatch(/<WarzLobbyLoadingState \/>/);
+    expect(source).not.toMatch(/<Navbar/);
   });
 
   it("4. successful load renders the header", async () => {

@@ -1,13 +1,13 @@
-interface SkeletonProps {
-  className?: string;
-  style?: React.CSSProperties;
-}
+type SkeletonProps = React.HTMLAttributes<HTMLDivElement>;
 
-export function Skeleton({ className = "", style }: SkeletonProps) {
+export function Skeleton({ className = "", style, ...props }: SkeletonProps) {
   return (
     <div
-      className={`animate-pulse rounded ${className}`}
-      style={{ background: "rgba(255,255,255,0.06)", ...style }}
+      {...props}
+      data-skeleton="true"
+      aria-hidden="true"
+      className={`motion-safe:animate-pulse motion-reduce:animate-none rounded ${className}`}
+      style={{ background: "var(--pw-surface-2)", ...style }}
     />
   );
 }

@@ -1,10 +1,7 @@
+import { Skeleton } from "@/components/Skeleton";
+
 function Placeholder({ className }: { className?: string }) {
-  return (
-    <div
-      className={`rounded-lg ${className ?? ""}`}
-      style={{ background: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)" }}
-    />
-  );
+  return <Skeleton className={`rounded-lg ${className ?? ""}`} style={{ border: "1px solid var(--pw-border-subtle)" }} />;
 }
 
 /**
@@ -15,7 +12,12 @@ function Placeholder({ className }: { className?: string }) {
  */
 export default function WarzSetupLoadingState() {
   return (
-    <div aria-label="Loading challenge setup" role="status" className="mx-auto flex w-full max-w-xl flex-col gap-6">
+    <div
+      data-testid="warz-setup-loading"
+      aria-label="Loading challenge setup"
+      role="status"
+      className="mx-auto flex w-full min-w-0 max-w-xl flex-col gap-6"
+    >
       <span className="sr-only">Loading challenge setup…</span>
       <Placeholder className="h-24 w-full" />
       <Placeholder className="h-20 w-full" />

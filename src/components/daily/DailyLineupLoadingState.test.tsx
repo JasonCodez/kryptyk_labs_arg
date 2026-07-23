@@ -3,65 +3,49 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import DailyLineupLoadingState from "./DailyLineupLoadingState";
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(cleanup);
 
 describe("DailyLineupLoadingState", () => {
-  it("renders Today's Challenges heading", () => {
+  it("has exactly one loading announcement", () => {
     render(<DailyLineupLoadingState />);
-    expect(screen.getByText(/today.*challenges/i)).toBeTruthy();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status").textContent).toBe("Loading today’s puzzles…");
   });
 
-  it("exposes role=status with Loading today's puzzles… text", () => {
+  it("keeps the real heading readable and static", () => {
     render(<DailyLineupLoadingState />);
-    const status = screen.getByRole("status");
-    expect(status.textContent).toMatch(/loading today.*puzzles/i);
+    const heading = screen.getByRole("heading", { name: "Today’s Challenges" });
+    expect(heading.classList.contains("motion-safe:animate-pulse")).toBe(false);
+    expect(heading.hasAttribute("data-skeleton")).toBe(false);
   });
 
-  it("renders exactly six placeholders", () => {
-    render(<DailyLineupLoadingState />);
+  it("preserves progress, recommendation, and six-card geometry", () => {
+    const { container } = render(<DailyLineupLoadingState />);
     expect(screen.getByTestId("daily-lineup-loading-grid").children).toHaveLength(6);
+    expect(container.querySelectorAll("[data-skeleton='true']")).toHaveLength(37);
+    expect([...screen.getByTestId("daily-lineup-loading-grid").classList]).toEqual(
+      expect.arrayContaining(["md:grid-cols-2", "lg:grid-cols-3"]),
+    );
   });
 
-  it("placeholder group is aria-hidden", () => {
-    render(<DailyLineupLoadingState />);
-    expect(screen.getByTestId("daily-lineup-loading-grid").getAttribute("aria-hidden")).toBe("true");
-  });
-
-  it("contains no buttons or links", () => {
-    render(<DailyLineupLoadingState />);
-    expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.queryByRole("link")).toBeNull();
-  });
-
-  it("contains no emoji", () => {
+  it("uses shared motion-safe skeleton shapes", () => {
     const { container } = render(<DailyLineupLoadingState />);
-    expect(container.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u);
-  });
-
-  it("contains no legacy purple, magenta, or pink color strings", () => {
-    const { container } = render(<DailyLineupLoadingState />);
-    const html = container.innerHTML.toLowerCase();
-    for (const legacy of ["8b3dff", "ff4fa3", "purple", "magenta", "pink", "139,61,255", "255,79,163"]) {
-      expect(html).not.toContain(legacy);
+    for (const shape of container.querySelectorAll("[data-skeleton='true']")) {
+      expect([...shape.classList]).toEqual(expect.arrayContaining(["motion-safe:animate-pulse", "motion-reduce:animate-none"]));
+      expect(shape.getAttribute("aria-hidden")).toBe("true");
     }
   });
 
-  it("has no spinner, animation classes, keyframes, or inline animation styles", () => {
+  it("contains no fake data, raw colors, emoji, buttons, links, or requests", () => {
+    const fetchMock = jest.fn();
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock;
     const { container } = render(<DailyLineupLoadingState />);
-    expect(container.innerHTML).not.toMatch(/animate-spin|@keyframes|pulse|shimmer/);
-    const animated = Array.from(container.querySelectorAll<HTMLElement>("*")).filter(
-      (el) => el.style.animation || el.style.animationName,
-    );
-    expect(animated).toHaveLength(0);
-  });
-
-  it("grid uses correct responsive breakpoints", () => {
-    render(<DailyLineupLoadingState />);
-    const classNames = screen.getByTestId("daily-lineup-loading-grid").className;
-    expect(classNames).toContain("md:grid-cols-2");
-    expect(classNames).toContain("lg:grid-cols-3");
-    expect(classNames).not.toContain("min-[430px]:grid-cols-2");
+    expect(container.innerHTML).not.toMatch(/#[\da-f]{3,8}\b|rgba?\(/i);
+    expect(container.textContent).not.toMatch(/\b\d+\b|[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    global.fetch = originalFetch;
   });
 });

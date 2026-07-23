@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
+import { Skeleton } from "@/components/Skeleton";
 
 function Placeholder({ className, style }: { className?: string; style?: CSSProperties }) {
   return (
-    <div
+    <Skeleton
       className={`rounded-lg ${className ?? ""}`}
-      style={{ background: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)", ...style }}
+      style={{ border: "1px solid var(--pw-border-subtle)", ...style }}
     />
   );
 }
@@ -16,7 +17,12 @@ function Placeholder({ className, style }: { className?: string; style?: CSSProp
  */
 export default function WarzLobbyLoadingState() {
   return (
-    <div aria-label="Loading Warz arena" role="status" className="flex flex-col gap-6">
+    <div
+      data-testid="warz-lobby-loading"
+      aria-label="Loading Warz arena"
+      role="status"
+      className="flex w-full min-w-0 flex-col gap-6"
+    >
       <ul className="flex flex-wrap items-center justify-center gap-6">
         {[0, 1, 2].map((key) => (
           <li key={key}>
