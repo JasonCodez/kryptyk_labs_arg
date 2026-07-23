@@ -8,8 +8,12 @@ import AnagramBlitz from "@/components/puzzle/AnagramBlitz";
 import ArgPuzzle from "@/components/puzzle/ArgPuzzle";
 import BlackoutPuzzle from "@/components/puzzle/BlackoutPuzzle";
 import JigsawPuzzle from "@/components/puzzle/JigsawPuzzle";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { CircleCheck, TriangleAlert, RefreshCw, Skull, Flag } from "lucide-react";
 import { useJigsawImageInfo } from "@/hooks/useJigsawImageInfo";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
+import WarzBattleHUD, { formatBattleTime } from "@/components/warz/WarzBattleHUD";
+import WarzBattleDialog from "@/components/warz/WarzBattleDialog";
 
 interface WarzPuzzle {
   id: string;
@@ -36,183 +40,119 @@ interface Props {
   onDone: (completionSeconds: number, forfeited?: boolean) => void;
   submitError?: string | null;
   onRetry?: () => void;
+  submissionPending?: boolean;
+  submissionPendingLabel?: string;
 }
 
-function formatTime(sec: number) {
-  const m = Math.floor(sec / 60).toString().padStart(2, "0");
-  const s = (sec % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
-}
+type BattleTerminalKind = "solved" | "failed" | "forfeited" | null;
 
-export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRetry }: Props) {
+export default function WarzPlayBoard({
+  puzzle,
+  wager,
+  onDone,
+  submitError,
+  onRetry,
+  submissionPending = false,
+  submissionPendingLabel = "Submitting result…",
+}: Props) {
+  const reduceMotion = useAppReducedMotion();
   const startRef = useRef<number>(0);
+
   const [elapsed, setElapsed] = useState(0);
-  const [solved, setSolved] = useState(false);
+  const [terminalKind, setTerminalKind] = useState<BattleTerminalKind>(null);
+  const [submittedSolveSeconds, setSubmittedSolveSeconds] = useState<number | null>(null);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
-  const [showFailedModal, setShowFailedModal] = useState(false);
+  const [showFailedDialog, setShowFailedDialog] = useState(false);
   const [failCountdown, setFailCountdown] = useState(5);
-  const jigsawImageInfo = useJigsawImageInfo(puzzle.puzzleType === 'jigsaw' ? puzzle.jigsaw?.imageUrl : null);
+
+  // Synchronous guards — a React state update alone cannot prevent a
+  // duplicate submission within the same tick (two callbacks firing before
+  // a re-render lands), so these refs are the actual source of truth.
+  const interactionEndedRef = useRef(false);
+  const terminalSubmittedRef = useRef(false);
+
+  const forfeitButtonRef = useRef<HTMLButtonElement>(null);
+  const keepFightingRef = useRef<HTMLButtonElement>(null);
+  const forfeitNowRef = useRef<HTMLButtonElement>(null);
+
+  const jigsawImageInfo = useJigsawImageInfo(puzzle.puzzleType === "jigsaw" ? puzzle.jigsaw?.imageUrl : null);
 
   useEffect(() => {
     startRef.current = Date.now();
   }, []);
 
+  // A single timer interval for the life of the component — it never
+  // depends on state, so a rerender (e.g. opening the Forfeit dialog) can
+  // never spawn a second one. The ref check inside decides whether a tick
+  // actually updates the visible clock.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!solved) setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      if (!interactionEndedRef.current) {
+        setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      }
     }, 1000);
     return () => clearInterval(interval);
-  }, [solved]);
+  }, []);
 
-  // Auto-forfeit countdown after puzzle failure
-  useEffect(() => {
-    if (!showFailedModal) return;
-    if (failCountdown <= 0) {
-      // The countdown subscription owns this terminal transition.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSolved(true);
-      onDone(0, true);
-      return;
-    }
-    const t = setTimeout(() => setFailCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [showFailedModal, failCountdown, onDone]);
+  const submitTerminal = useCallback(
+    (completionSeconds: number, forfeited: boolean, kind: Exclude<BattleTerminalKind, null>) => {
+      if (terminalSubmittedRef.current) return;
 
-  const handleSolved = useCallback((overrideSeconds?: number) => {
-    if (solved) return;
-    setSolved(true);
-    const secs = overrideSeconds ?? Math.max(1, Math.round((Date.now() - startRef.current) / 1000));
-    onDone(secs);
-  }, [solved, onDone]);
+      terminalSubmittedRef.current = true;
+      interactionEndedRef.current = true;
+
+      setTerminalKind(kind);
+
+      if (!forfeited) {
+        setSubmittedSolveSeconds(completionSeconds);
+        setElapsed(completionSeconds);
+      }
+
+      setShowForfeitConfirm(false);
+      setShowFailedDialog(false);
+
+      onDone(completionSeconds, forfeited || undefined);
+    },
+    [onDone]
+  );
+
+  const handleSolved = useCallback(
+    (overrideSeconds?: number) => {
+      if (interactionEndedRef.current) return;
+      const secs = overrideSeconds ?? Math.max(1, Math.round((Date.now() - startRef.current) / 1000));
+      submitTerminal(secs, false, "solved");
+    },
+    [submitTerminal]
+  );
 
   const handleFailed = useCallback(() => {
-    if (solved) return;
-    // Stop the warz timer and show the failure modal
-    setSolved(true);
+    if (interactionEndedRef.current) return;
+    interactionEndedRef.current = true;
+    setTerminalKind("failed");
     setFailCountdown(5);
-    setShowFailedModal(true);
-  }, [solved]);
+    setShowFailedDialog(true);
+  }, []);
 
-  const handleForfeit = () => {
-    setSolved(true);
-    onDone(0, true);
-  };
+  // Auto-forfeit countdown after puzzle failure.
+  useEffect(() => {
+    if (!showFailedDialog || terminalSubmittedRef.current) return;
+    if (failCountdown <= 0) {
+      submitTerminal(0, true, "failed");
+      return;
+    }
+    const t = setTimeout(() => setFailCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [showFailedDialog, failCountdown, submitTerminal]);
 
-  const header = (
-    <div
-      className="flex items-center justify-between px-4 py-3 rounded-xl mb-6 border"
-      style={{ backgroundColor: "rgba(253,231,76,0.06)", borderColor: "rgba(253,231,76,0.25)" }}
-    >
-      <div>
-        <span className="text-xs font-bold uppercase tracking-widest mr-2" style={{ color: "#FDE74C" }}>
-          ⚔️ Warz
-        </span>
-        <span className="text-white font-semibold">{puzzle.title}</span>
-      </div>
+  const handleForfeitBattle = useCallback(() => {
+    submitTerminal(0, true, "forfeited");
+  }, [submitTerminal]);
 
-      <div className="flex items-center gap-4">
-        <div className="text-sm font-bold" style={{ color: "#FFB86B" }}>
-          🪙 {wager} pts wagered
-        </div>
-        <div className="text-2xl font-black tabular-nums" style={{ color: solved ? "#22c55e" : "#FDE74C" }}>
-          {formatTime(elapsed)}
-        </div>
-        {!solved && (
-          <button
-            onClick={() => setShowForfeitConfirm(true)}
-            className="text-xs px-3 py-1.5 rounded-lg border font-semibold"
-            style={{ backgroundColor: "rgba(220,38,38,0.1)", borderColor: "rgba(220,38,38,0.3)", color: "#fca5a5" }}
-          >
-            Forfeit
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  const handleForfeitNow = useCallback(() => {
+    submitTerminal(0, true, "failed");
+  }, [submitTerminal]);
 
-  const forfeitModal = (
-    <AnimatePresence>
-      {showForfeitConfirm && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-        >
-          <motion.div
-            initial={{ scale: 0.85, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.85, opacity: 0 }}
-            className="w-full max-w-sm mx-4 rounded-2xl border-2 p-8 text-center shadow-2xl"
-            style={{ backgroundColor: "rgba(10,8,0,0.98)", borderColor: "#ef4444" }}
-          >
-            <div className="text-4xl mb-3">🏳️</div>
-            <h2 className="text-xl font-extrabold text-white mb-2">Forfeit this battle?</h2>
-            <p className="text-sm mb-6" style={{ color: "#AB9F9D" }}>
-              You will automatically lose and your wager of{" "}
-              <span className="font-bold" style={{ color: "#FDE74C" }}>{wager} pts</span>{" "}
-              goes to your opponent (or split back if they also forfeit).
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowForfeitConfirm(false)}
-                className="flex-1 py-2 rounded-lg font-semibold border"
-                style={{ borderColor: "#374151", color: "#9ca3af" }}
-              >
-                Keep Fighting
-              </button>
-              <button
-                onClick={handleForfeit}
-                className="flex-1 py-2 rounded-lg font-semibold"
-                style={{ backgroundColor: "rgba(220,38,38,0.85)", color: "#fff" }}
-              >
-                Forfeit
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-
-  const failedModal = (
-    <AnimatePresence>
-      {showFailedModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-        >
-          <motion.div
-            initial={{ scale: 0.85, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.85, opacity: 0 }}
-            className="w-full max-w-sm mx-4 rounded-2xl border-2 p-8 text-center shadow-2xl"
-            style={{ backgroundColor: "rgba(10,8,0,0.99)", borderColor: "#ef4444" }}
-          >
-            <div className="text-5xl mb-3">💀</div>
-            <h2 className="text-2xl font-extrabold mb-2" style={{ color: "#f87171" }}>Puzzle Failed</h2>
-            <p className="text-sm mb-2" style={{ color: "#AB9F9D" }}>
-              You ran out of attempts. Your wager of{" "}
-              <span className="font-bold" style={{ color: "#FDE74C" }}>{wager} pts</span>{" "}
-              goes to your opponent.
-            </p>
-            <p className="text-lg font-black tabular-nums mb-6" style={{ color: "#f87171" }}>
-              Forfeiting in {failCountdown}…
-            </p>
-            <button
-              onClick={() => { setSolved(true); onDone(0, true); }}
-              className="w-full py-2 rounded-xl font-bold text-sm"
-              style={{ backgroundColor: "rgba(220,38,38,0.85)", color: "#fff" }}
-            >
-              Forfeit Now
-            </button>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+  const ended = terminalKind !== null;
 
   const renderPuzzle = () => {
     switch (puzzle.puzzleType) {
@@ -244,7 +184,7 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
         );
 
       case "sudoku": {
-        if (!puzzle.sudoku) return <p className="text-white">Sudoku data missing.</p>;
+        if (!puzzle.sudoku) return <p style={{ color: "var(--pw-text-primary)" }}>Sudoku data missing.</p>;
         let parsed: number[][] = [];
         let solution: number[][] = [];
         try { parsed = JSON.parse(puzzle.sudoku.puzzleGrid); } catch { parsed = []; }
@@ -265,8 +205,8 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
       }
 
       case "jigsaw": {
-        if (!puzzle.jigsaw?.imageUrl) return <p className="text-white">Jigsaw image missing.</p>;
-        if (!jigsawImageInfo.ready) return <p className="text-white">Loading puzzle image…</p>;
+        if (!puzzle.jigsaw?.imageUrl) return <p style={{ color: "var(--pw-text-primary)" }}>Jigsaw image missing.</p>;
+        if (!jigsawImageInfo.ready) return <p style={{ color: "var(--pw-text-primary)" }}>Loading puzzle image…</p>;
         return (
           <JigsawPuzzle
             imageUrl={puzzle.jigsaw.imageUrl}
@@ -322,48 +262,160 @@ export default function WarzPlayBoard({ puzzle, wager, onDone, submitError, onRe
         );
 
       default:
-        return <p className="text-white">Unsupported puzzle type: {puzzle.puzzleType}</p>;
+        return <p style={{ color: "var(--pw-text-primary)" }}>Unsupported puzzle type: {puzzle.puzzleType}</p>;
     }
   };
 
+  const showSubmissionPanel = terminalKind === "solved";
+  const displaySolveTime = submittedSolveSeconds ?? elapsed;
+
   return (
-    <div>
-      {header}
-      {forfeitModal}
-      {failedModal}
-      <div className={solved ? "pointer-events-none opacity-60" : ""}>
-        {renderPuzzle()}
-      </div>
-      {solved && !submitError && (
-        <div
-          className="mt-6 p-4 rounded-xl border text-center font-bold text-lg"
-          style={{ backgroundColor: "rgba(34,197,94,0.1)", borderColor: "#22c55e", color: "#4ade80" }}
+    <div className="min-w-0 w-full">
+      <WarzBattleHUD
+        puzzleTitle={puzzle.title}
+        wager={wager}
+        elapsedSeconds={elapsed}
+        ended={ended}
+        onForfeit={() => setShowForfeitConfirm(true)}
+        forfeitButtonRef={forfeitButtonRef}
+      />
+
+      <WarzBattleDialog
+        open={showForfeitConfirm}
+        role="dialog"
+        title="Forfeit Battle?"
+        description="Leaving now counts as a loss and submits your battle as a forfeit."
+        icon={Flag}
+        dismissible
+        initialFocusRef={keepFightingRef}
+        returnFocusRef={forfeitButtonRef}
+        onClose={() => setShowForfeitConfirm(false)}
+      >
+        <p
+          className="mb-2 text-xs font-semibold uppercase tracking-wide"
+          style={{ color: "var(--pw-brand-secondary)" }}
         >
-          ✅ Solved in {formatTime(elapsed)}! Submitting result…
+          Puzzle Warz
+        </p>
+        <div
+          className="mb-6 rounded-lg p-3 text-sm"
+          style={{ background: "var(--pw-surface-2)" }}
+        >
+          <span style={{ color: "var(--pw-text-muted)" }}>Wager at risk</span>
+          <br />
+          <span className="font-bold tabular-nums" style={{ color: "var(--pw-brand-secondary)" }}>
+            {wager} Points
+          </span>
         </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            ref={keepFightingRef}
+            type="button"
+            onClick={() => setShowForfeitConfirm(false)}
+            className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border font-semibold"
+            style={{ minHeight: 44, borderColor: "var(--pw-border-default)", color: "var(--pw-text-secondary)" }}
+          >
+            Keep Fighting
+          </button>
+          <button
+            type="button"
+            onClick={handleForfeitBattle}
+            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg font-bold"
+            style={{ minHeight: 48, background: "var(--pw-error)", color: "var(--pw-text-primary)" }}
+          >
+            Forfeit Battle
+          </button>
+        </div>
+      </WarzBattleDialog>
+
+      <WarzBattleDialog
+        open={showFailedDialog}
+        role="alertdialog"
+        title="Puzzle Failed"
+        description="This battle will be submitted as a forfeit."
+        icon={Skull}
+        dismissible={false}
+        initialFocusRef={forfeitNowRef}
+      >
+        <p
+          className="mb-2 text-xs font-semibold uppercase tracking-wide"
+          style={{ color: "var(--pw-brand-secondary)" }}
+        >
+          Puzzle Warz
+        </p>
+        <p className="mb-6 text-lg font-black tabular-nums" style={{ color: "var(--pw-error-text)" }}>
+          Forfeiting in {Math.max(0, failCountdown)}…
+        </p>
+        <button
+          ref={forfeitNowRef}
+          type="button"
+          onClick={handleForfeitNow}
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-lg font-bold"
+          style={{ minHeight: 48, background: "var(--pw-error)", color: "var(--pw-text-primary)" }}
+        >
+          Forfeit Now
+        </button>
+      </WarzBattleDialog>
+
+      <div className={ended ? "pointer-events-none opacity-60" : ""}>{renderPuzzle()}</div>
+
+      {showSubmissionPanel && !submitError && (
+        <motion.div
+          initial={reduceMotion ? undefined : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="mt-6 rounded-xl border p-5 text-center"
+          style={{ background: "color-mix(in srgb, var(--pw-success) 10%, transparent)", borderColor: "var(--pw-success)" }}
+        >
+          <p className="text-xs font-extrabold uppercase tracking-widest" style={{ color: "var(--pw-success)" }}>
+            Puzzle Complete
+          </p>
+          <p className="mt-1 flex items-center justify-center gap-1.5 text-lg font-black tabular-nums" style={{ color: "var(--pw-text-primary)" }}>
+            <CircleCheck aria-hidden="true" size={18} style={{ color: "var(--pw-success)" }} />
+            Solved in {formatBattleTime(displaySolveTime)}
+          </p>
+          {submissionPending && (
+            <p role="status" className="mt-2 text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+              {submissionPendingLabel}
+            </p>
+          )}
+        </motion.div>
       )}
-      {solved && submitError && (
-        <div
-          className="mt-6 p-5 rounded-xl border text-center"
-          style={{ backgroundColor: "rgba(220,38,38,0.08)", borderColor: "rgba(220,38,38,0.4)" }}
+
+      {showSubmissionPanel && submitError && (
+        <motion.div
+          initial={reduceMotion ? undefined : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="mt-6 rounded-xl border p-5 text-center"
+          style={{ background: "color-mix(in srgb, var(--pw-error) 10%, transparent)", borderColor: "var(--pw-error)" }}
         >
-          <p className="font-bold mb-1" style={{ color: "#fca5a5" }}>⚠️ {submitError}</p>
-          <p className="text-sm mb-4" style={{ color: "#9ca3af" }}>Your puzzle time was saved. Try submitting again.</p>
-          <div className="flex gap-3 justify-center">
-            {onRetry && (
-              <button
-                onClick={onRetry}
-                className="px-5 py-2 rounded-lg font-bold text-sm transition-colors"
-                style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        </div>
+          <p className="text-xs font-extrabold uppercase tracking-widest" style={{ color: "var(--pw-error-text)" }}>
+            Submission Interrupted
+          </p>
+          <p className="mt-2 flex items-center justify-center gap-1.5 font-bold" style={{ color: "var(--pw-error-text)" }}>
+            <TriangleAlert aria-hidden="true" size={16} />
+            {submitError}
+          </p>
+          <p className="mt-1 text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+            Your solve time is ready to retry.
+          </p>
+          <p className="mt-1 text-sm font-semibold tabular-nums" style={{ color: "var(--pw-text-primary)" }}>
+            Solved in {formatBattleTime(displaySolveTime)}
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-4 inline-flex min-h-12 items-center justify-center gap-1.5 rounded-lg px-5 font-bold"
+              style={{ minHeight: 48, background: "var(--pw-brand-secondary)", color: "var(--pw-bg-base)" }}
+            >
+              <RefreshCw aria-hidden="true" size={15} />
+              Try Again
+            </button>
+          )}
+        </motion.div>
       )}
     </div>
   );
 }
-
-

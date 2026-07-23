@@ -506,17 +506,13 @@ export default function WarzChallengePage() {
         className="min-h-screen px-4 pt-4 min-[1032px]:pt-24 pb-8 max-w-4xl mx-auto"
         style={{ background: "var(--pw-bg-base)" }}
       >
-        {submittingResult && (
-          <div className="flex items-center justify-center mb-4 gap-2">
-            <div className="w-3 h-3 rounded-full bg-yellow-400 animate-bounce" />
-            <p className="text-sm font-semibold text-white">Submitting result…</p>
-          </div>
-        )}
         <WarzPlayBoard
           key={`challenge:${id}`}
           puzzle={challenge.puzzle}
           wager={challenge.challengerWager}
           onDone={handlePuzzleDone}
+          submissionPending={submittingResult}
+          submissionPendingLabel="Submitting result…"
         />
       </div>
     );

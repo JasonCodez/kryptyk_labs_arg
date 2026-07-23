@@ -91,11 +91,15 @@ jest.mock("@/components/puzzle/WarzPlayBoard", () => ({
     onDone: (secs: number, forfeited?: boolean) => void;
     submitError?: string | null;
     onRetry?: () => void;
+    submissionPending?: boolean;
+    submissionPendingLabel?: string;
   }) => (
     <div data-testid="warz-play-board">
       <div data-testid="board-puzzle">{JSON.stringify(props.puzzle)}</div>
       <div data-testid="board-wager">{props.wager}</div>
       <div data-testid="board-submit-error">{String(props.submitError)}</div>
+      <div data-testid="board-submission-pending">{String(props.submissionPending)}</div>
+      <div data-testid="board-submission-pending-label">{String(props.submissionPendingLabel)}</div>
       <button type="button" onClick={() => props.onDone(42)}>solve</button>
       <button type="button" onClick={() => props.onDone(0, true)}>forfeit</button>
       {props.onRetry && <button type="button" onClick={props.onRetry}>board-retry</button>}
@@ -778,5 +782,126 @@ describe("Warz challenge setup page — challenge submission", () => {
     const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
     expect(source).not.toMatch(/totalPoints\s*[-+]=|totalPoints\s*[-+]\s*wager/);
     expect(source).not.toMatch(/reward|xpEarned/i);
+  });
+});
+
+describe("Warz challenge setup page — Pass 11 WarzPlayBoard submission integration", () => {
+  it("1. passes submissionPending while a create request is pending", async () => {
+    let resolveCreate!: (v: unknown) => void;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/warz/create")) return new Promise((resolve) => { resolveCreate = resolve; });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "start-battle" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "solve" }));
+    await flush();
+
+    // 2. exact pending label passed through.
+    expect(screen.getByTestId("board-submission-pending").textContent).toBe("true");
+    expect(screen.getByTestId("board-submission-pending-label").textContent).toBe("Posting your challenge…");
+
+    await act(async () => {
+      resolveCreate({ ok: true, json: () => Promise.resolve({ success: true }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("3-4. still passes exact wager and puzzle to WarzPlayBoard", async () => {
+    mockFetch();
+    render(<WarzPlayPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "start-battle" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    expect(JSON.parse(screen.getByTestId("board-puzzle").textContent!)).toMatchObject({ id: PUZZLE.id });
+    expect(screen.getByTestId("board-wager").textContent).toBe("50");
+  });
+
+  it("5-6. still passes submitError and retry with the exact stored solve time", async () => {
+    let createCalls = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/warz/create")) {
+        createCalls += 1;
+        if (createCalls === 1) return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: "Failed to post challenge" }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "start-battle" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "solve" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("board-submit-error").textContent).toBe("Failed to post challenge");
+    expect(screen.getByTestId("board-submission-pending").textContent).toBe("false");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "board-retry" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(createCalls).toBe(2);
+    expect(screen.getByTestId("warz-posted")).toBeTruthy();
+  });
+
+  it("7. no parent full-screen pending overlay remains in the page source", () => {
+    const fs = jest.requireActual("fs");
+    const path = jest.requireActual("path");
+    const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).not.toMatch(/fixed inset-0 z-50/);
+    expect(source).toMatch(/submissionPendingLabel="Posting your challenge…"/);
+  });
+
+  it("14-15. WarzPlayBoard remains mounted once during submission, with no duplicate pending message", async () => {
+    let resolveCreate!: (v: unknown) => void;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/puzzles/")) return Promise.resolve({ ok: true, json: () => Promise.resolve(PUZZLE) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/check-eligible")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ eligible: true }) } as Response);
+      if (url.includes("/api/warz/create")) return new Promise((resolve) => { resolveCreate = resolve; });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzPlayPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "start-battle" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "solve" }));
+    await flush();
+
+    expect(screen.getAllByTestId("warz-play-board").length).toBe(1);
+    expect(screen.getAllByText("Posting your challenge…").length).toBe(1);
+
+    await act(async () => {
+      resolveCreate({ ok: true, json: () => Promise.resolve({ success: true }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   });
 });

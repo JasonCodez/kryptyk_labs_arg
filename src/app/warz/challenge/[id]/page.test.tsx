@@ -51,10 +51,14 @@ jest.mock("@/components/puzzle/WarzPlayBoard", () => ({
     puzzle: { id: string; title: string };
     wager: number;
     onDone: (secs: number, forfeited?: boolean) => void;
+    submissionPending?: boolean;
+    submissionPendingLabel?: string;
   }) => (
     <div data-testid="warz-play-board">
       <div data-testid="board-puzzle">{JSON.stringify(props.puzzle)}</div>
       <div data-testid="board-wager">{props.wager}</div>
+      <div data-testid="board-submission-pending">{String(props.submissionPending)}</div>
+      <div data-testid="board-submission-pending-label">{String(props.submissionPendingLabel)}</div>
       <button type="button" onClick={() => props.onDone(42)}>solve</button>
       <button type="button" onClick={() => props.onDone(0, true)}>forfeit</button>
     </div>
@@ -1076,5 +1080,92 @@ describe("Warz challenge page — frozen completion regression", () => {
     });
     expect(screen.getByText("You Win!")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Share Result/ })).toBeTruthy();
+  });
+});
+
+describe("Warz challenge page — Pass 11 WarzPlayBoard submission integration", () => {
+  it("1-2. passes submissionPending and the exact 'Submitting result…' label", async () => {
+    let resolveComplete!: (v: unknown) => void;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/complete")) return new Promise((resolve) => { resolveComplete = resolve; });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "solve" }));
+    await flush();
+
+    expect(screen.getByTestId("board-submission-pending").textContent).toBe("true");
+    expect(screen.getByTestId("board-submission-pending-label").textContent).toBe("Submitting result…");
+
+    await act(async () => {
+      resolveComplete({ ok: true, json: () => Promise.resolve({ winnerId: "me", tie: false }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("3-4. still passes exact wager and merged puzzle payload", async () => {
+    const challenge = baseChallenge({
+      status: "IN_PROGRESS",
+      opponent: { id: "me" },
+      challengerWager: 75,
+      puzzle: { ...PUZZLE, data: { grid: [["Z"]] } },
+    });
+    mockFetch({ challenge });
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    expect(screen.getByTestId("board-wager").textContent).toBe("75");
+    const boardPuzzle = JSON.parse(screen.getByTestId("board-puzzle").textContent!);
+    expect(boardPuzzle.data).toEqual({ grid: [["Z"]] });
+  });
+
+  it("5. no external inline pending indicator remains in the page source", () => {
+    const fs = jest.requireActual("fs");
+    const path = jest.requireActual("path");
+    const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).not.toMatch(/animate-bounce/);
+    expect(source).toMatch(/submissionPendingLabel="Submitting result…"/);
+  });
+
+  it("14-15. WarzPlayBoard remains mounted once during submission, with no duplicate pending message", async () => {
+    let resolveComplete!: (v: unknown) => void;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/warz/challenge-1")) return Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: baseChallenge({ status: "IN_PROGRESS", opponent: { id: "me" } }) }) } as Response);
+      if (url.includes("/api/user/info")) return Promise.resolve({ ok: true, json: () => Promise.resolve(USER) } as Response);
+      if (url.includes("/api/warz/complete")) return new Promise((resolve) => { resolveComplete = resolve; });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    }) as jest.Mock;
+
+    render(<WarzChallengePage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "solve" }));
+    await flush();
+
+    expect(screen.getAllByTestId("warz-play-board").length).toBe(1);
+    expect(screen.getAllByText("Submitting result…").length).toBe(1);
+
+    await act(async () => {
+      resolveComplete({ ok: true, json: () => Promise.resolve({ winnerId: "me", tie: false }) });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   });
 });

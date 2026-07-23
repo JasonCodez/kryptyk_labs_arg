@@ -452,16 +452,6 @@ export default function WarzPlayPage() {
       className="min-h-screen px-4 pt-4 min-[1032px]:pt-24 pb-8 max-w-4xl mx-auto"
       style={{ background: "var(--pw-bg-base)" }}
     >
-      {submitting && !submitError && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "color-mix(in srgb, black 85%, transparent)" }}
-        >
-          <p role="status" className="text-sm font-semibold" style={{ color: "var(--pw-text-primary)" }}>
-            Posting your challenge…
-          </p>
-        </div>
-      )}
       <WarzPlayBoard
         key={`play:${puzzleId}`}
         puzzle={puzzle}
@@ -469,6 +459,8 @@ export default function WarzPlayPage() {
         onDone={handlePuzzleDone}
         submitError={submitError}
         onRetry={solveTime !== null ? () => handlePuzzleDone(solveTime) : undefined}
+        submissionPending={submitting && !submitError}
+        submissionPendingLabel="Posting your challenge…"
       />
     </div>
   );
