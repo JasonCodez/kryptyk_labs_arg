@@ -21,7 +21,7 @@ test("Preview traps focus, closes with Escape, and restores board focus", () => 
   board.focus(); fireEvent.click(board);
   expect(screen.getByRole("dialog", { name: "Puzzle preview" })).toBeTruthy();
   expect(screen.getByRole("img", { name: "Completed image for Sunset" })).toBeTruthy();
-  const closePreview = screen.getByRole("button", { name: "Close Preview" });
+  const closePreview = screen.getByRole("button", { name: "Back to Puzzle" });
   closePreview.focus(); fireEvent.keyDown(window, { key: "Tab" });
   expect(screen.getByRole("button", { name: "Close" })).toBe(document.activeElement);
   fireEvent.keyDown(window, { key: "Escape" });

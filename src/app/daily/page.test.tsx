@@ -75,7 +75,7 @@ describe("Daily hub", () => {
 
   it("2. loading state remains visible while session is loading", () => {
     mockUseSession.mockReturnValue({ status: "loading" });
-    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(FULL_SUMMARY) } as Response)) as jest.Mock;
+    global.fetch = jest.fn(() => new Promise(() => {})) as jest.Mock;
     render(<DailyHubPage />);
     expect(screen.getByRole("status").textContent).toMatch(/loading today.*puzzles/i);
   });

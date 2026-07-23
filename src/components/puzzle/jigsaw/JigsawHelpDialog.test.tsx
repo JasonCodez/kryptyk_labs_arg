@@ -7,6 +7,7 @@ afterEach(cleanup);
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", { writable: true, value: () => ({ matches: false, addEventListener: jest.fn(), removeEventListener: jest.fn() }) });
+  Object.defineProperty(window, "scrollTo", { writable: true, value: jest.fn() });
 });
 
 describe("JigsawHelpDialog", () => {

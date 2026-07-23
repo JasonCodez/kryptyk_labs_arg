@@ -99,7 +99,6 @@ function GlobalAchievementModal() {
       // ignore
     }
 
-    let interval: any;
     let mounted = true;
     const fetchAchievements = async () => {
       try {
@@ -123,7 +122,7 @@ function GlobalAchievementModal() {
       }
     };
     fetchAchievements();
-    interval = setInterval(fetchAchievements, 30000);
+    const interval = setInterval(fetchAchievements, 30000);
     // Also check immediately whenever a puzzle is solved
     window.addEventListener('puzzlewarz:puzzle-solved', fetchAchievements);
     return () => {

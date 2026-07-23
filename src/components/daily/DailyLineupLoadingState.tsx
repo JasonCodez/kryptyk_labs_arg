@@ -64,19 +64,15 @@ export default function DailyLineupLoadingState() {
         </div>
       </div>
 
-      <div
-        aria-hidden="true"
-        style={{
-          height: 20,
-          width: 180,
-          marginBottom: 16,
-          borderRadius: 4,
-          background: "color-mix(in srgb, var(--pw-border-default) 50%, transparent)",
-        }}
-        className="max-w-5xl mx-auto"
-      />
+      <h2 className="mx-auto mb-4 max-w-5xl text-xl font-extrabold" style={{ color: "var(--pw-text-primary)" }}>
+        Today&rsquo;s Challenges
+      </h2>
 
-      <div aria-hidden="true" className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
+      <div
+        data-testid="daily-lineup-loading-grid"
+        aria-hidden="true"
+        className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto"
+      >
         {[...Array(6)].map((_, i) => (
           <div
             key={i}

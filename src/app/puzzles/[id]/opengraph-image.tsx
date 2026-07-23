@@ -2,7 +2,6 @@ import { ImageResponse } from "next/og";
 import prisma from "@/lib/prisma";
 import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
 
-export const runtime = "edge";
 export const alt = "Puzzle Warz — Puzzle Preview";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -100,6 +99,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={previewImageUrl}
+                alt=""
                 width={432}
                 height={432}
                 style={{

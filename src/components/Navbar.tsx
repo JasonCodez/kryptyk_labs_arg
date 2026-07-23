@@ -180,7 +180,7 @@ export default function Navbar({ isStandalone = false }: { isStandalone?: boolea
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
         {/* Logo */}
         {session ? (
-          <div className="flex items-center gap-2.5 select-none shrink-0" aria-disabled="true" role="img" tabIndex={-1}>
+          <div className="flex items-center gap-2.5 select-none shrink-0">
             <img src="/images/puzzle_warz_logo.png" alt="Puzzle Warz Logo" className="h-8 w-auto" />
             <span
               className="text-sm font-black tracking-widest uppercase hidden sm:block"

@@ -88,7 +88,7 @@ type WordSearchMockProps = {
   onSolved?: () => void;
 };
 jest.mock("@/components/puzzle/WordSearchPuzzle", () => {
-  const React = jest.requireActual("react");
+  const React = jest.requireActual<typeof import("react")>("react");
   function WordSearchPuzzleMock(props: WordSearchMockProps) {
     const [outcome, setOutcome] = React.useState<{ success: boolean; error?: string } | null>(null);
     return (

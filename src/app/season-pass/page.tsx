@@ -1058,8 +1058,6 @@ export default function SeasonPassPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!FEATURE_SEASONS_ENABLED) return null;
-
   const fetchSeason = useCallback(async () => {
     try {
       const res = await fetch("/api/season");
@@ -1075,6 +1073,7 @@ export default function SeasonPassPage() {
   }, []);
 
   useEffect(() => {
+    if (!FEATURE_SEASONS_ENABLED) return;
     if (status === "unauthenticated") {
       router.push("/auth/signin");
       return;
@@ -1086,6 +1085,7 @@ export default function SeasonPassPage() {
 
   // Handle Stripe return URL params
   useEffect(() => {
+    if (!FEATURE_SEASONS_ENABLED) return;
     if (typeof window === "undefined") return;
     if (status !== "authenticated") return;
     const params = new URLSearchParams(window.location.search);
@@ -1114,6 +1114,8 @@ export default function SeasonPassPage() {
       window.history.replaceState({}, "", "/season-pass");
     }
   }, [status, fetchSeason]);
+
+  if (!FEATURE_SEASONS_ENABLED) return null;
 
   const handleClaim = async (tierNumber: number, track: "free" | "premium", e: React.MouseEvent) => {
     const key = `${track}-${tierNumber}`;

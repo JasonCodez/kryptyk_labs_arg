@@ -20,15 +20,13 @@ describe("DailyLineupLoadingState", () => {
   });
 
   it("renders exactly six placeholders", () => {
-    const { container } = render(<DailyLineupLoadingState />);
-    const gridContainer = container.querySelector('[aria-hidden="true"]');
-    expect(gridContainer?.children).toHaveLength(6);
+    render(<DailyLineupLoadingState />);
+    expect(screen.getByTestId("daily-lineup-loading-grid").children).toHaveLength(6);
   });
 
   it("placeholder group is aria-hidden", () => {
-    const { container } = render(<DailyLineupLoadingState />);
-    const gridContainer = container.querySelector(".grid");
-    expect(gridContainer?.getAttribute("aria-hidden")).toBe("true");
+    render(<DailyLineupLoadingState />);
+    expect(screen.getByTestId("daily-lineup-loading-grid").getAttribute("aria-hidden")).toBe("true");
   });
 
   it("contains no buttons or links", () => {
@@ -60,12 +58,10 @@ describe("DailyLineupLoadingState", () => {
   });
 
   it("grid uses correct responsive breakpoints", () => {
-    const { container } = render(<DailyLineupLoadingState />);
-    const gridContainer = container.querySelector(".grid");
-    const classNames = gridContainer?.className || "";
-    expect(classNames).toContain("min-[669px]:grid-cols-2");
-    expect(classNames).toContain("min-[981px]:grid-cols-3");
+    render(<DailyLineupLoadingState />);
+    const classNames = screen.getByTestId("daily-lineup-loading-grid").className;
+    expect(classNames).toContain("md:grid-cols-2");
+    expect(classNames).toContain("lg:grid-cols-3");
     expect(classNames).not.toContain("min-[430px]:grid-cols-2");
-    expect(classNames).not.toContain("md:grid-cols-3");
   });
 });

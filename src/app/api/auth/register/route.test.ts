@@ -60,7 +60,7 @@ describe("POST /api/auth/register", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Non-production, no explicit verification requirement -> dev flow (auto-verified, no email sent).
-    process.env.NODE_ENV = "test";
+    Reflect.set(process.env, "NODE_ENV", "test");
     delete process.env.REQUIRE_EMAIL_VERIFICATION;
 
     (enforceRateLimit as jest.Mock).mockResolvedValue(null);
@@ -79,7 +79,7 @@ describe("POST /api/auth/register", () => {
   });
 
   afterAll(() => {
-    process.env.NODE_ENV = prevEnv;
+    Reflect.set(process.env, "NODE_ENV", prevEnv);
     if (prevRequireVerification === undefined) {
       delete process.env.REQUIRE_EMAIL_VERIFICATION;
     } else {
