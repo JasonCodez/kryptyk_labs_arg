@@ -1,10 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
+import { TriangleAlert, RefreshCw, Swords } from "lucide-react";
 import WarzPlayBoard from "@/components/puzzle/WarzPlayBoard";
-import { getPuzzleTypeLabel } from "@/lib/puzzleTypeLabels";
+import WarzSetupLoadingState from "@/components/warz/WarzSetupLoadingState";
+import WarzChallengeSetup, { type WarzSetupOpponent, type WarzSetupUser } from "@/components/warz/WarzChallengeSetup";
+import WarzChallengePosted from "@/components/warz/WarzChallengePosted";
+import { useAppReducedMotion } from "@/hooks/useAppReducedMotion";
+
+const WAGER_MIN = 10;
+const WAGER_MAX = 500;
+const DEFAULT_WAGER = 50;
+
+type Phase = "loading" | "error" | "setup" | "starting" | "playing" | "posted";
 
 interface WarzPuzzle {
   id: string;
@@ -22,426 +33,417 @@ interface WarzPuzzle {
   };
 }
 
-interface UserSearchResult {
-  id: string;
-  username: string;
-  avatarUrl?: string | null;
+interface ParsedWager {
+  value: number | null;
+  error: string | null;
 }
 
-interface CurrentUser {
-  id: string;
-  username: string;
-  totalPoints: number;
+function parseWager(input: string, balance: number): ParsedWager {
+  const trimmed = input.trim();
+  if (trimmed === "") return { value: null, error: "Enter a wager." };
+  if (!/^\d+$/.test(trimmed)) return { value: null, error: "Enter a whole-number wager." };
+  const n = Number(trimmed);
+  if (n < WAGER_MIN) return { value: null, error: `Minimum wager is ${WAGER_MIN} Points.` };
+  if (n > WAGER_MAX) return { value: null, error: `Maximum wager is ${WAGER_MAX} Points.` };
+  if (n > balance) return { value: null, error: "You don’t have enough Points for this wager." };
+  return { value: n, error: null };
 }
-
-const WAGER_MIN = 10;
-const WAGER_MAX = 500;
-const WAGER_PRESETS = [10, 25, 50, 100, 250, 500];
 
 export default function WarzPlayPage() {
   const { puzzleId } = useParams<{ puzzleId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const reduceMotion = useAppReducedMotion();
 
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [puzzle, setPuzzle] = useState<WarzPuzzle | null>(null);
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<WarzSetupUser | null>(null);
 
-  // Wager / invite (set before starting)
-  const [wager, setWager] = useState(50);
-  const [wagerInput, setWagerInput] = useState("50");
-  const [inviteUsername, setInviteUsername] = useState("");
-  const [userSearchResults, setUserSearchResults] = useState<UserSearchResult[]>([]);
-  const [selectedInvite, setSelectedInvite] = useState<UserSearchResult | null>(null);
-  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [wagerInput, setWagerInput] = useState(String(DEFAULT_WAGER));
+  const [selectedOpponent, setSelectedOpponent] = useState<WarzSetupOpponent | null>(null);
+  const [resolvingInvite, setResolvingInvite] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteResolvedForId, setInviteResolvedForId] = useState<string | null>(null);
+  const [manualOpponentChosen, setManualOpponentChosen] = useState(false);
 
-  // Play state
-  const [playing, setPlaying] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [solveTime, setSolveTime] = useState<number | null>(null);
+  const [posted, setPosted] = useState<{ opponent: WarzSetupOpponent | null; wager: number } | null>(null);
 
-  // Pre-populate invite from ?invite= query param (set when navigating from a player's profile)
-  useEffect(() => {
-    const inviteId = searchParams.get("invite");
-    if (!inviteId || selectedInvite) return;
-    (async () => {
-      try {
-        const res = await fetch(`/api/users/${inviteId}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.id) {
-            setSelectedInvite({ id: data.id, username: data.name ?? data.username ?? "Player", avatarUrl: data.image ?? null });
-          }
-        }
-      } catch { /* ignore */ }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  const loadRequestSeqRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const loadInFlightRef = useRef(false);
 
-  // Load puzzle + current user
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [puzzleRes, userRes, eligRes] = await Promise.all([
-          fetch(`/api/puzzles/${puzzleId}`),
-          fetch("/api/user/info"),
-          fetch(`/api/warz/check-eligible?puzzleId=${encodeURIComponent(puzzleId)}`),
-        ]);
-        if (!puzzleRes.ok) throw new Error("Puzzle not found");
-        if (!userRes.ok) { router.replace('/auth/register?reason=warz'); return; }
-        const puzzleData = await puzzleRes.json();
-        const userData = await userRes.json();
-        if (eligRes.ok) {
-          const eligData = await eligRes.json();
-          if (!eligData.eligible) {
-            if (!cancelled) setError(eligData.reason ?? "You are not eligible to challenge on this puzzle.");
-            if (!cancelled) setLoading(false);
-            return;
-          }
-        }
-        if (!cancelled) {
-          setPuzzle(puzzleData);
-          setCurrentUser(userData);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [puzzleId]);
+  const inviteRequestSeqRef = useRef(0);
+  const inviteAbortRef = useRef<AbortController | null>(null);
 
-  // Debounced user search
-  useEffect(() => {
-    if (!inviteUsername.trim() || inviteUsername.trim().length < 2) {
-      setUserSearchResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setSearchingUsers(true);
-      try {
-        const res = await fetch(`/api/users/search?q=${encodeURIComponent(inviteUsername.trim())}&limit=6`);
-        if (res.ok) {
-          const data = await res.json();
-          setUserSearchResults(
-            (data.users ?? []).filter((u: UserSearchResult) => u.id !== currentUser?.id)
-          );
-        }
-      } finally {
-        setSearchingUsers(false);
-      }
-    }, 350);
-    return () => clearTimeout(t);
-  }, [inviteUsername, currentUser?.id]);
+  const submissionInFlightRef = useRef(false);
+  const startingRef = useRef(false);
 
-  const handleWagerChange = (val: string) => {
-    setWagerInput(val);
-    const n = parseInt(val, 10);
-    if (!isNaN(n)) setWager(Math.max(WAGER_MIN, Math.min(WAGER_MAX, n)));
-  };
+  const loadSetup = useCallback(async () => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+    const seq = ++loadRequestSeqRef.current;
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
 
-  // Called by WarzPlayBoard when the puzzle is solved or forfeited
-  const handlePuzzleDone = useCallback(async (secs: number, forfeited?: boolean) => {
-    if (forfeited) {
-      router.push("/warz");
-      return;
-    }
-    setSubmitting(true);
-    setSubmitError(null);
+    setPhase("loading");
+    setLoadError(null);
+
     try {
-      const res = await fetch("/api/warz/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          puzzleId,
-          completionSeconds: secs,
-          wager,
-          ...(selectedInvite ? { invitedUserId: selectedInvite.id } : {}),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSubmitError(data.error ?? "Failed to post challenge");
+      const [puzzleRes, userRes, eligRes] = await Promise.all([
+        fetch(`/api/puzzles/${puzzleId}`, { signal: controller.signal }),
+        fetch("/api/user/info", { signal: controller.signal }),
+        fetch(`/api/warz/check-eligible?puzzleId=${encodeURIComponent(puzzleId)}`, { signal: controller.signal }),
+      ]);
+
+      if (seq !== loadRequestSeqRef.current) return;
+
+      if (userRes.status === 401) {
+        router.replace("/auth/register?reason=warz");
         return;
       }
-      setSolveTime(secs);
-      setSubmitted(true);
-    } catch {
-      setSubmitError("Network error — please try again");
+
+      if (!puzzleRes.ok) {
+        setLoadError("This puzzle is not available for Warz.");
+        setPhase("error");
+        return;
+      }
+      if (!userRes.ok) {
+        setLoadError("We couldn’t prepare this challenge.");
+        setPhase("error");
+        return;
+      }
+      if (!eligRes.ok) {
+        setLoadError("We couldn’t confirm your eligibility for this puzzle.");
+        setPhase("error");
+        return;
+      }
+
+      const puzzleData = await puzzleRes.json();
+      const userData = await userRes.json();
+      const eligData = await eligRes.json();
+
+      if (seq !== loadRequestSeqRef.current) return;
+
+      if (!eligData.eligible) {
+        setLoadError(eligData.reason ?? "You are not eligible to challenge on this puzzle.");
+        setPhase("error");
+        return;
+      }
+
+      setPuzzle(puzzleData);
+      setCurrentUser({
+        id: userData.id,
+        username: userData.username ?? userData.name ?? "Player",
+        totalPoints: userData.totalPoints ?? 0,
+      });
+      setPhase("setup");
+    } catch (err) {
+      if (seq !== loadRequestSeqRef.current) return;
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setLoadError("We couldn’t prepare this challenge.");
+      setPhase("error");
     } finally {
-      setSubmitting(false);
+      if (seq === loadRequestSeqRef.current) loadInFlightRef.current = false;
     }
-  }, [puzzleId, wager, selectedInvite, router]);
+  }, [puzzleId, router]);
 
-  // ── Loading / error ──────────────────────────────────────────────────────
-  if (loading) {
+  useEffect(() => {
+    loadSetup();
+    return () => {
+      loadRequestSeqRef.current += 1;
+      loadAbortRef.current?.abort();
+    };
+
+  }, []);
+
+  const resolveInvite = useCallback(
+    (inviteId: string) => {
+      inviteAbortRef.current?.abort();
+      const seq = ++inviteRequestSeqRef.current;
+      const controller = new AbortController();
+      inviteAbortRef.current = controller;
+
+      setResolvingInvite(true);
+      setInviteError(null);
+
+      fetch(`/api/users/${encodeURIComponent(inviteId)}`, { signal: controller.signal })
+        .then(async (res) => {
+          if (seq !== inviteRequestSeqRef.current) return;
+          if (!res.ok) {
+            setInviteError("That player is unavailable.");
+            return;
+          }
+          const data = await res.json();
+          if (seq !== inviteRequestSeqRef.current) return;
+          if (!data?.id) {
+            setInviteError("That player is unavailable.");
+            return;
+          }
+          setSelectedOpponent({
+            id: data.id,
+            username: data.name ?? data.username ?? "Player",
+            avatarUrl: data.image ?? null,
+          });
+          setInviteResolvedForId(inviteId);
+        })
+        .catch((err) => {
+          if (seq !== inviteRequestSeqRef.current) return;
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setInviteError("That player is unavailable.");
+        })
+        .finally(() => {
+          if (seq === inviteRequestSeqRef.current) setResolvingInvite(false);
+        });
+    },
+    []
+  );
+
+  useEffect(() => {
+    const inviteId = searchParams.get("invite");
+    if (!inviteId || manualOpponentChosen || inviteResolvedForId === inviteId) return;
+    resolveInvite(inviteId);
+
+  }, [searchParams, manualOpponentChosen, inviteResolvedForId]);
+
+  useEffect(() => {
+    return () => {
+      inviteRequestSeqRef.current += 1;
+      inviteAbortRef.current?.abort();
+    };
+  }, []);
+
+  const balance = currentUser?.totalPoints ?? 0;
+  const { value: wager, error: wagerError } = useMemo(() => parseWager(wagerInput, balance), [wagerInput, balance]);
+
+  const handlePresetWager = (value: number) => setWagerInput(String(value));
+
+  const handleSelectOpponent = (opponent: WarzSetupOpponent) => {
+    inviteRequestSeqRef.current += 1;
+    inviteAbortRef.current?.abort();
+    setResolvingInvite(false);
+    setManualOpponentChosen(true);
+    setInviteError(null);
+    setSelectedOpponent(opponent);
+  };
+
+  const handleRemoveOpponent = () => {
+    inviteRequestSeqRef.current += 1;
+    inviteAbortRef.current?.abort();
+    setResolvingInvite(false);
+    setManualOpponentChosen(true);
+    setInviteError(null);
+    setSelectedOpponent(null);
+  };
+
+  const handleRetryInvite = () => {
+    const inviteId = searchParams.get("invite");
+    if (inviteId) resolveInvite(inviteId);
+  };
+
+  const startDisabled =
+    !puzzle || !currentUser || wager == null || resolvingInvite || (inviteError != null && !selectedOpponent);
+
+  const handleStart = () => {
+    if (startingRef.current || startDisabled) return;
+    startingRef.current = true;
+    setPhase("starting");
+    const delay = reduceMotion ? 0 : 200;
+    window.setTimeout(() => {
+      setPhase("playing");
+    }, delay);
+  };
+
+  const handlePuzzleDone = useCallback(
+    async (secs: number, forfeited?: boolean) => {
+      if (forfeited) {
+        router.push("/warz");
+        return;
+      }
+      if (submissionInFlightRef.current) return;
+      submissionInFlightRef.current = true;
+      setSubmitting(true);
+      setSolveTime(secs);
+      setSubmitError(null);
+      try {
+        const res = await fetch("/api/warz/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            puzzleId,
+            completionSeconds: secs,
+            wager: wager ?? DEFAULT_WAGER,
+            ...(selectedOpponent ? { invitedUserId: selectedOpponent.id } : {}),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setSubmitError(data.error ?? "Failed to post challenge");
+          submissionInFlightRef.current = false;
+          setSubmitting(false);
+          return;
+        }
+        setPosted({ opponent: selectedOpponent, wager: wager ?? DEFAULT_WAGER });
+        setPhase("posted");
+      } catch {
+        setSubmitError("Network error — please try again");
+        submissionInFlightRef.current = false;
+        setSubmitting(false);
+      }
+    },
+    [puzzleId, wager, selectedOpponent, router]
+  );
+
+  const handleCancel = () => {
+    loadRequestSeqRef.current += 1;
+    loadAbortRef.current?.abort();
+  };
+
+  if (phase === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#0A0800" }}>
-        <div className="text-center">
-          <div className="text-4xl mb-4">⚔️</div>
-          <p className="text-white text-lg font-semibold">Loading battle…</p>
+      <div
+        className="flex min-h-screen items-center justify-center px-4"
+        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+      >
+        <div role="status" aria-label="Loading challenge setup">
+          <span className="sr-only">Loading challenge setup…</span>
+          <WarzSetupLoadingState />
         </div>
       </div>
     );
   }
 
-  if (error || !puzzle) {
+  if (phase === "error" || (!puzzle || !currentUser)) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#0A0800" }}>
-        <div className="text-center">
-          <div className="text-4xl mb-4">❌</div>
-          <p className="text-red-400 text-lg font-semibold">{error ?? "Puzzle not found"}</p>
-          <button onClick={() => router.push("/warz")} className="mt-4 text-sm underline" style={{ color: "#FDE74C" }}>
-            Back to Warz
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Pre-play screen (set wager + invite before starting) ─────────────────
-  if (!playing) {
-    const balanceOk = !currentUser || currentUser.totalPoints >= wager;
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: "#0A0800" }}>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md rounded-2xl border-2 p-8 shadow-2xl"
-          style={{ backgroundColor: "rgba(20,16,0,0.98)", borderColor: "rgba(253,231,76,0.35)" }}
-        >
-          <div className="text-center mb-6">
-            <div className="text-5xl mb-3">⚔️</div>
-            <h1 className="text-2xl font-extrabold text-white mb-1">Warz Challenge</h1>
-            <p className="text-sm" style={{ color: "#AB9F9D" }}>
-              Set your wager, then solve the puzzle as fast as you can.
-              The opponent must beat your time to win!
-            </p>
-          </div>
-
-          {/* Puzzle info */}
-          <div
-            className="rounded-xl p-4 mb-5 text-left"
-            style={{ backgroundColor: "rgba(253,231,76,0.06)", border: "1px solid rgba(253,231,76,0.2)" }}
-          >
-            <div className="text-white font-bold mb-1">{puzzle.title}</div>
-            <div className="flex gap-2">
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                style={{ backgroundColor: "rgba(255,184,107,0.15)", color: "#FFB86B" }}>
-                {getPuzzleTypeLabel(puzzle.puzzleType)}
-              </span>
-            </div>
-          </div>
-
-          {/* Wager picker */}
-          <div className="mb-5">
-            <label className="block text-sm font-semibold mb-2 text-white">
-              Your Wager <span style={{ color: "#FFB86B" }}>(10–500 pts)</span>
-            </label>
-            <div className="flex gap-2 flex-wrap mb-3">
-              {WAGER_PRESETS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => { setWager(p); setWagerInput(String(p)); }}
-                  className="px-3 py-1 rounded-lg text-sm font-bold transition-colors"
-                  style={{
-                    backgroundColor: wager === p ? "rgba(253,231,76,0.25)" : "rgba(255,255,255,0.05)",
-                    borderWidth: 1,
-                    borderStyle: "solid",
-                    borderColor: wager === p ? "#FDE74C" : "rgba(255,255,255,0.1)",
-                    color: wager === p ? "#FDE74C" : "#9ca3af",
-                  }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <input
-              type="number"
-              min={WAGER_MIN}
-              max={WAGER_MAX}
-              value={wagerInput}
-              onChange={(e) => handleWagerChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-white text-sm outline-none"
-              style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}
-            />
-            {currentUser && (
-              <p className="text-xs mt-1" style={{ color: balanceOk ? "#6b7280" : "#fca5a5" }}>
-                Balance: <span className="font-semibold" style={{ color: "#FFB86B" }}>{currentUser.totalPoints}</span> pts
-                {" · "}Pot: <span className="font-semibold" style={{ color: "#4ade80" }}>{wager * 2}</span> pts
-                {!balanceOk && <span className="ml-1 font-bold"> — insufficient balance</span>}
-              </p>
-            )}
-          </div>
-
-          {/* Optional invite */}
-          <div className="mb-6">
-            <label className="block text-sm font-semibold mb-2 text-white">
-              Invite a specific player{" "}
-              <span className="font-normal" style={{ color: "#6b7280" }}>(optional)</span>
-            </label>
-            {selectedInvite ? (
-              <div
-                className="flex items-center justify-between px-3 py-2 rounded-lg"
-                style={{ backgroundColor: "rgba(253,231,76,0.1)", border: "1px solid rgba(253,231,76,0.3)" }}
-              >
-                <span className="text-white font-semibold text-sm">@{selectedInvite.username}</span>
-                <button
-                  onClick={() => { setSelectedInvite(null); setInviteUsername(""); }}
-                  className="text-xs px-2 py-0.5 rounded"
-                  style={{ color: "#9ca3af", backgroundColor: "rgba(255,255,255,0.07)" }}
-                >
-                  Remove
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search by username…"
-                  value={inviteUsername}
-                  onChange={(e) => setInviteUsername(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-white text-sm outline-none"
-                  style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)" }}
-                />
-                {userSearchResults.length > 0 && (
-                  <div
-                    className="absolute left-0 right-0 mt-1 rounded-lg border z-10 overflow-hidden"
-                    style={{ backgroundColor: "rgba(20,16,0,0.98)", borderColor: "rgba(255,255,255,0.15)" }}
-                  >
-                    {userSearchResults.map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => { setSelectedInvite(u); setInviteUsername(""); setUserSearchResults([]); }}
-                        className="w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-white/5 transition-colors"
-                        style={{ color: "#e5e7eb" }}
-                      >
-                        @{u.username}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {searchingUsers && (
-                  <p className="text-xs mt-1" style={{ color: "#6b7280" }}>Searching…</p>
-                )}
-              </div>
-            )}
-            <p className="text-xs mt-1.5" style={{ color: "#6b7280" }}>
-              Leave blank to open the challenge to anyone.
-            </p>
-          </div>
-
-          <div
-            className="rounded-xl p-3 mb-5 text-sm"
-            style={{ backgroundColor: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.25)", color: "#fca5a5" }}
-          >
-            ⚠️ <strong>No hints, no XP.</strong> Timer starts the moment you press &ldquo;Start Battle&rdquo;.
-          </div>
-
-          {submitError && (
-            <div className="mb-4 text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#fca5a5" }}>
-              {submitError}
-            </div>
-          )}
-
-          {!balanceOk && currentUser && (
-            <div className="mb-4 text-sm px-4 py-3 rounded-xl text-center"
-              style={{ backgroundColor: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)", color: "#fca5a5" }}>
-              ⚠️ You need <span className="font-bold">{wager} pts</span> to create this challenge, but you only have <span className="font-bold">{currentUser.totalPoints} pts</span>.
-              {" "}Earn more by solving puzzles or visit the <a href="/store" className="underline font-semibold" style={{ color: "#a78bfa" }}>Point Store</a>.
-            </div>
-          )}
-
-          <button
-            onClick={() => setPlaying(true)}
-            disabled={!balanceOk || wager < WAGER_MIN || wager > WAGER_MAX}
-            className="w-full py-4 rounded-xl font-extrabold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
-          >
-            ⚔️ Start Battle
-          </button>
-
-          <button
-            onClick={() => router.push("/warz")}
-            className="mt-3 w-full py-2 text-sm font-semibold"
-            style={{ color: "#6b7280" }}
-          >
-            Cancel
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ── Submitted confirmation ─────────────────────────────────────────────
-  if (submitted) {
-    const mins = Math.floor((solveTime ?? 0) / 60);
-    const secs2 = (solveTime ?? 0) % 60;
-    const timeStr = mins > 0 ? `${mins}m ${secs2}s` : `${secs2}s`;
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: "#0A0800" }}>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md rounded-2xl border-2 p-8 shadow-2xl text-center"
-          style={{ backgroundColor: "rgba(20,16,0,0.98)", borderColor: "rgba(253,231,76,0.35)" }}
-        >
-          <div className="text-5xl mb-4">🏆</div>
-          <h2 className="text-2xl font-extrabold text-white mb-2">Challenge Posted!</h2>
-          <p className="text-sm mb-5" style={{ color: "#AB9F9D" }}>
-            Your time: <span className="font-bold text-white">{timeStr}</span> &nbsp;·&nbsp;
-            Wager: <span className="font-bold" style={{ color: "#FFB86B" }}>{wager} pts</span>
+      <div
+        className="flex min-h-screen items-center justify-center px-4"
+        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+      >
+        <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-2xl p-8 text-center" style={{ background: "var(--pw-surface-1)" }}>
+          <TriangleAlert aria-hidden="true" size={32} style={{ color: "var(--pw-error-text)" }} />
+          <h1 className="text-lg font-extrabold" style={{ color: "var(--pw-text-primary)" }}>
+            We couldn&rsquo;t prepare this challenge
+          </h1>
+          <p className="text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+            {loadError ?? "Check your connection and try again."}
           </p>
-
-          <div
-            className="rounded-xl p-4 mb-6 text-sm text-left"
-            style={{ backgroundColor: "rgba(253,231,76,0.07)", border: "1px solid rgba(253,231,76,0.25)" }}
-          >
-            <p className="font-semibold mb-1" style={{ color: "#FDE74C" }}>What happens next?</p>
-            <ul className="space-y-1" style={{ color: "#AB9F9D" }}>
-              <li>⚔️ &nbsp;Your challenge is now open for an opponent to accept.</li>
-              <li>🕐 &nbsp;If no one accepts within <strong className="text-white">24 hours</strong>, your {wager} pts will be fully refunded.</li>
-              <li>📣 &nbsp;You&rsquo;ll be notified when someone accepts and beats (or fails to beat) your time.</li>
-            </ul>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={loadSetup}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-4 text-sm font-bold"
+              style={{
+                color: "var(--pw-brand-primary)",
+                background: "color-mix(in srgb, var(--pw-brand-primary) 15%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 35%, transparent)",
+              }}
+            >
+              <RefreshCw aria-hidden="true" size={15} />
+              Try again
+            </button>
+            <Link
+              href="/warz"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-4 text-sm font-bold"
+              style={{ color: "var(--pw-text-muted)", background: "var(--pw-surface-2)" }}
+            >
+              Back to Warz Arena
+            </Link>
           </div>
-
-          <button
-            onClick={() => router.push("/warz")}
-            className="w-full py-3 rounded-xl font-extrabold text-base transition-all"
-            style={{ background: "linear-gradient(135deg, #FDE74C, #FFB86B)", color: "#1a1400" }}
-          >
-            View My Battles
-          </button>
-        </motion.div>
+        </div>
       </div>
     );
   }
 
-  // ── Active play ──────────────────────────────────────────────────────────
+  if (phase === "setup" || phase === "starting") {
+    return (
+      <div
+        className="min-h-screen px-4 py-8"
+        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+      >
+        <AnimatePresence mode="wait">
+          {phase === "setup" ? (
+            <motion.div
+              key="setup"
+              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.99 }}
+              transition={{ duration: reduceMotion ? 0 : 0.2 }}
+            >
+              <WarzChallengeSetup
+                puzzle={puzzle}
+                currentUser={currentUser}
+                wagerInput={wagerInput}
+                wager={wager}
+                wagerError={wagerError}
+                selectedOpponent={selectedOpponent}
+                resolvingInvite={resolvingInvite}
+                inviteError={inviteError}
+                onPresetWager={handlePresetWager}
+                onWagerInputChange={setWagerInput}
+                onSelectOpponent={handleSelectOpponent}
+                onRemoveOpponent={handleRemoveOpponent}
+                onRetryInvite={handleRetryInvite}
+                onStart={handleStart}
+                onCancel={handleCancel}
+                startDisabled={startDisabled}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="starting"
+              initial={reduceMotion ? undefined : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: reduceMotion ? 0 : 0.15 }}
+              className="flex flex-col items-center justify-center gap-3 py-24 text-center"
+            >
+              <Swords aria-hidden="true" size={32} style={{ color: "var(--pw-brand-secondary)" }} />
+              <p className="text-sm font-extrabold uppercase tracking-widest" style={{ color: "var(--pw-brand-secondary)" }}>
+                Battle Ready
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  if (phase === "posted" && posted) {
+    return (
+      <div
+        className="min-h-screen px-4 py-8"
+        style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+      >
+        <WarzChallengePosted
+          puzzleTitle={puzzle.title}
+          solveTimeSeconds={solveTime ?? 0}
+          wager={posted.wager}
+          opponent={posted.opponent}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       data-testid="warz-active-play-shell"
       className="min-h-screen px-4 pt-4 min-[1032px]:pt-24 pb-8 max-w-4xl mx-auto"
-      style={{ backgroundColor: "#0A0800" }}
+      style={{ background: "var(--pw-bg-base)" }}
     >
-      {submitting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(10,8,0,0.85)" }}>
-          <div className="text-center">
-            <div className="text-4xl mb-3 animate-pulse">⚔️</div>
-            <p className="text-white font-semibold">Posting your challenge…</p>
-          </div>
+      {submitting && !submitError && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "color-mix(in srgb, black 85%, transparent)" }}
+        >
+          <p role="status" className="text-sm font-semibold" style={{ color: "var(--pw-text-primary)" }}>
+            Posting your challenge…
+          </p>
         </div>
       )}
       <WarzPlayBoard
         key={`play:${puzzleId}`}
         puzzle={puzzle}
-        wager={wager}
+        wager={wager ?? DEFAULT_WAGER}
         onDone={handlePuzzleDone}
         submitError={submitError}
         onRetry={solveTime !== null ? () => handlePuzzleDone(solveTime) : undefined}
