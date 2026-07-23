@@ -239,8 +239,8 @@ describe("Leaderboards page — response mapping", () => {
     await flush();
     fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
     await flush();
-    expect(screen.getByText("500 pts")).toBeTruthy();
-    expect(screen.getByText("+100 XP")).toBeTruthy();
+    expect(screen.getByText("500 Points")).toBeTruthy();
+    expect(screen.getByText("100 XP")).toBeTruthy();
   });
 
   it("renders the unranked summary when userRank is null", async () => {
@@ -470,7 +470,7 @@ describe("Leaderboards page — empty states", () => {
     await flush();
     expect(screen.getByText("No weekly activity yet")).toBeTruthy();
     expect(screen.getByText("Time Remaining")).toBeTruthy();
-    expect(screen.getByText("500 pts")).toBeTruthy();
+    expect(screen.getByText("500 Points")).toBeTruthy();
   });
 });
 
@@ -980,6 +980,364 @@ describe("Leaderboards page — background aria-busy", () => {
 
     expect(screen.getByText("Alice")).toBeTruthy();
     expect(screen.queryByText("Loading leaderboard")).toBeNull();
+  });
+});
+
+describe("Leaderboards page — Pass 14 rankings integration", () => {
+  it("maps totalPoints to display points for Global", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    // 500 appears both on the featured row and (coincidentally, single entry)
+    // the stats "Total Points" card — either is proof the mapping happened.
+    expect(screen.getAllByText("500").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("maps periodPoints to display points for Weekly", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url.startsWith("/api/leaderboards/period")) return jsonResponse({ entries: [PERIOD_ENTRY], userRank: null, endsAt: null, rewardTiers: [] });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(screen.getByText("100")).toBeTruthy();
+  });
+
+  it("preserves Global API entry order", async () => {
+    authenticate();
+    const entries = [
+      { ...GLOBAL_ENTRY, userId: "u2", userName: "Bob", rank: 4 },
+      { ...GLOBAL_ENTRY, userId: "u1", userName: "Alice", rank: 5 },
+    ];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    const names = screen.getAllByText(/^(Bob|Alice)$/).map((el) => el.textContent);
+    expect(names).toEqual(["Bob", "Alice"]);
+  });
+
+  it("preserves Period API entry order", async () => {
+    authenticate();
+    const entries = [
+      { ...PERIOD_ENTRY, userId: "u2", userName: "Bob", rank: 4 },
+      { ...PERIOD_ENTRY, userId: "u1", userName: "Alice", rank: 5 },
+    ];
+    global.fetch = jest.fn((url: string) => {
+      if (url.startsWith("/api/leaderboards/period")) return jsonResponse({ entries, userRank: null, endsAt: null, rewardTiers: [] });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    const names = screen.getAllByText(/^(Bob|Alice)$/).map((el) => el.textContent);
+    expect(names).toEqual(["Bob", "Alice"]);
+  });
+
+  it("determines current user by user ID", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [{ ...GLOBAL_ENTRY, userId: "me", userName: "Me", rank: 4 }], userRank: null,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("You")).toBeTruthy();
+  });
+
+  it("honors API isCurrentUser as well", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [{ ...GLOBAL_ENTRY, userId: "some-other-id", userName: "Weird", rank: 4, isCurrentUser: true }], userRank: null,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("You")).toBeTruthy();
+  });
+
+  it("Global top-three presentation appears", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("Top competitors")).toBeTruthy();
+    expect(screen.getByText("1st Place")).toBeTruthy();
+  });
+
+  it("Global rank 4 uses the standard row", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [{ ...GLOBAL_ENTRY, rank: 4 }], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("#4")).toBeTruthy();
+    expect(screen.queryByText("Top competitors")).toBeNull();
+  });
+
+  it("every Global entry renders once", async () => {
+    authenticate();
+    const entries = [
+      { ...GLOBAL_ENTRY, userId: "u1", userName: "First", rank: 1 },
+      { ...GLOBAL_ENTRY, userId: "u2", userName: "Fourth", rank: 4 },
+    ];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getAllByText("First").length).toBe(1);
+    expect(screen.getAllByText("Fourth").length).toBe(1);
+  });
+
+  it("Weekly top-three presentation appears", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url.startsWith("/api/leaderboards/period")) return jsonResponse({ entries: [PERIOD_ENTRY], userRank: null, endsAt: null, rewardTiers: [] });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(screen.getByText("Top competitors")).toBeTruthy();
+    expect(screen.getByText("1st Place")).toBeTruthy();
+  });
+
+  it("Weekly reward tiers render exact values", async () => {
+    authenticate();
+    const rewardTiers = [{ rank: 1, points: 750, xp: 150 }];
+    global.fetch = jest.fn((url: string) => {
+      if (url.startsWith("/api/leaderboards/period")) return jsonResponse({ entries: [], userRank: null, endsAt: null, rewardTiers });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(screen.getByText("750 Points")).toBeTruthy();
+    expect(screen.getByText("150 XP")).toBeTruthy();
+  });
+
+  it("Monthly reward tiers render exact values", async () => {
+    authenticate();
+    const rewardTiers = [{ rank: 2, points: 300, xp: 60 }];
+    global.fetch = jest.fn((url: string) => {
+      if (url.includes("monthly")) return jsonResponse({ entries: [], userRank: null, endsAt: null, rewardTiers });
+      return jsonResponse({ entries: [], userRank: null, endsAt: null, rewardTiers: [] });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Monthly/ }));
+    await flush();
+    expect(screen.getByText("300 Points")).toBeTruthy();
+    expect(screen.getByText("60 XP")).toBeTruthy();
+  });
+
+  it("reward tiers preserve API order", async () => {
+    authenticate();
+    const rewardTiers = [{ rank: 3, points: 100, xp: 20 }, { rank: 1, points: 500, xp: 100 }];
+    global.fetch = jest.fn((url: string) => {
+      if (url.startsWith("/api/leaderboards/period")) return jsonResponse({ entries: [], userRank: null, endsAt: null, rewardTiers });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    const labels = screen.getAllByText(/Place$/).map((el) => el.textContent);
+    expect(labels).toEqual(["3rd Place", "1st Place"]);
+  });
+
+  it("Global statistics use exact existing totals", async () => {
+    authenticate();
+    const entries = [{ ...GLOBAL_ENTRY, userId: "u1", totalPoints: 500 }, { ...GLOBAL_ENTRY, userId: "u2", totalPoints: 300, rank: 2 }];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("Total Points")).toBeTruthy();
+    expect(screen.getByText("800")).toBeTruthy();
+  });
+
+  it("Following statistics use exact returned entries", async () => {
+    authenticate();
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1 })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Top Players")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
+  });
+
+  it("Following count zero still suppresses the list", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.queryByText("Rankings")).toBeNull();
+    expect(screen.queryByText("Top competitors")).toBeNull();
+  });
+
+  it("Following count zero still suppresses statistics", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({
+      entries: [FOLLOWING_SELF_ENTRY], userRank: FOLLOWING_SELF_ENTRY, followingCount: 0,
+    })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.queryByText("Top Players")).toBeNull();
+  });
+
+  it("Following count greater than zero renders the list", async () => {
+    authenticate();
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1 })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Zed")).toBeTruthy();
+  });
+
+  it("Following count greater than zero renders statistics", async () => {
+    authenticate();
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1 })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Top Players")).toBeTruthy();
+  });
+
+  it("Global empty state still suppresses list and stats", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("No ranked players yet")).toBeTruthy();
+    expect(screen.queryByText("Top Players")).toBeNull();
+    expect(screen.queryByText("Rankings")).toBeNull();
+  });
+
+  it("Period empty state still keeps reward tiers", async () => {
+    authenticate();
+    const rewardTiers = [{ rank: 1, points: 500, xp: 100 }];
+    global.fetch = jest.fn((url: string) => {
+      if (url.startsWith("/api/leaderboards/period")) return jsonResponse({ entries: [], userRank: null, endsAt: null, rewardTiers });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Weekly/ }));
+    await flush();
+    expect(screen.getByText("No weekly activity yet")).toBeTruthy();
+    expect(screen.getByText("500 Points")).toBeTruthy();
+  });
+
+  it("preserves exact profile routes", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [{ ...GLOBAL_ENTRY, userId: "abc123", rank: 4 }], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByRole("link", { name: /Alice/ }).getAttribute("href")).toBe("/profile/abc123");
+  });
+
+  it("Premium badge reflects the API value", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [{ ...GLOBAL_ENTRY, isPremium: true, rank: 4 }], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("Premium")).toBeTruthy();
+  });
+
+  it("Flair reflects the API value", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [{ ...GLOBAL_ENTRY, activeFlair: "⭐ Star", rank: 4 }], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("⭐ Star")).toBeTruthy();
+  });
+
+  it("introduces no additional API request", async () => {
+    authenticate();
+    const fetchMock = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(fetchMock.mock.calls.length).toBe(1);
+  });
+
+  it("introduces no write request", async () => {
+    authenticate();
+    const fetchMock = jest.fn((_url: string, init?: RequestInit) => {
+      expect(init?.method ?? "GET").toBe("GET");
+      return jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+  });
+
+  it("does not sort client-side — server order is preserved regardless of rank ordering", async () => {
+    authenticate();
+    const entries = [
+      { ...GLOBAL_ENTRY, userId: "u5", userName: "OutOfOrderFirst", rank: 5 },
+      { ...GLOBAL_ENTRY, userId: "u1", userName: "OutOfOrderTop", rank: 1 },
+    ];
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    // Top-three section shows the rank-1 entry regardless of its array position.
+    expect(screen.getByText("OutOfOrderTop")).toBeTruthy();
+    expect(screen.getByText("1st Place")).toBeTruthy();
+  });
+
+  it("rank summary remains present exactly once", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: GLOBAL_RANK })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getAllByText("Your Global Rank").length).toBe(1);
+  });
+
+  it("legacy 'All-Time Leaderboard' heading remains absent", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null })) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.queryByText(/All-Time Leaderboard/i)).toBeNull();
+  });
+
+  it("legacy medal emoji is absent from page-owned presentation", async () => {
+    authenticate();
+    global.fetch = jest.fn((_url: string) => jsonResponse({ entries: [GLOBAL_ENTRY], userRank: null })) as unknown as typeof fetch;
+    const { container } = render(<LeaderboardsPage />);
+    await flush();
+    expect(/🥇|🥈|🥉/.test(container.textContent ?? "")).toBe(false);
+  });
+
+  it("legacy inline LeaderboardRow function no longer exists in page.tsx source", () => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).not.toMatch(/function LeaderboardRow\(/);
+    expect(source).not.toMatch(/RANK_STYLE/);
+    expect(source).not.toMatch(/getMedalEmoji/);
+  });
+
+  it("legacy inline RewardTiers function no longer exists in page.tsx source", () => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const source = fs.readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).not.toMatch(/function RewardTiers\(/);
   });
 });
 

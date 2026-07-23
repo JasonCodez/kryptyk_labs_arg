@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -11,6 +11,10 @@ import LeaderboardHeader from "@/components/leaderboards/LeaderboardHeader";
 import LeaderboardTabs, { type LeaderboardTab } from "@/components/leaderboards/LeaderboardTabs";
 import LeaderboardRankSummary from "@/components/leaderboards/LeaderboardRankSummary";
 import LeaderboardLoadingState from "@/components/leaderboards/LeaderboardLoadingState";
+import LeaderboardList from "@/components/leaderboards/LeaderboardList";
+import LeaderboardRewardTiers from "@/components/leaderboards/LeaderboardRewardTiers";
+import LeaderboardStats from "@/components/leaderboards/LeaderboardStats";
+import type { LeaderboardDisplayEntry } from "@/components/leaderboards/LeaderboardRow";
 
 interface LeaderboardEntry {
   userId: string;
@@ -69,151 +73,6 @@ const URGENCY_COLOR: Record<CountdownUrgency, string> = {
   warning: "var(--pw-warning)",
   critical: "var(--pw-error-text)",
 };
-
-// ── Frozen for Pass 14 — do not redesign row mechanics or visual styling ──
-
-const RANK_STYLE: Record<number, { color: string; glow: string; ring: string }> = {
-  1: { color: "#FFC93C", glow: "rgba(255,201,60,0.5)", ring: "#FFC93C" },
-  2: { color: "#EEF1FA", glow: "rgba(236,232,247,0.35)", ring: "#8891AC" },
-  3: { color: "#E8934A", glow: "rgba(232,147,74,0.45)", ring: "#E8934A" },
-};
-
-function getMedalEmoji(rank: number) {
-  if (rank === 1) return "🥇";
-  if (rank === 2) return "🥈";
-  if (rank === 3) return "🥉";
-  return null;
-}
-
-/** Shared row for both the all-time and weekly/monthly leaderboards — flex-based rather
- * than a table so it reflows cleanly at any width instead of hiding columns/scrolling.
- * Frozen for Pass 14 — mechanics and visual styling are not part of Pass 13. */
-function LeaderboardRow({
-  rank,
-  userId,
-  userName,
-  userImage,
-  isPremium,
-  activeFlair,
-  points,
-  puzzlesSolved,
-  isCurrentUser,
-}: {
-  rank: number;
-  userId: string;
-  userName: string | null;
-  userImage: string | null;
-  isPremium?: boolean;
-  activeFlair?: string;
-  points: number;
-  puzzlesSolved: number;
-  isCurrentUser: boolean;
-}) {
-  const podium = RANK_STYLE[rank];
-  const medal = getMedalEmoji(rank);
-
-  return (
-    <div
-      className={`relative overflow-hidden transition-colors${podium ? " shadow-skeu-raised-sm" : ""}`}
-      style={{
-        borderBottom: "1px solid var(--pw-line)",
-        borderLeft: podium ? `3px solid ${podium.color}` : isCurrentUser ? "3px solid #8B3DFF" : "3px solid transparent",
-      }}
-    >
-      {podium && <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.4 }} />}
-      <div
-        className="relative flex items-center gap-3 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4"
-        style={{
-          background: isCurrentUser
-            ? "linear-gradient(160deg, rgba(139,61,255,0.16), rgba(139,61,255,0.05))"
-            : "linear-gradient(160deg, var(--pw-surface-hi), var(--pw-surface) 70%)",
-        }}
-      >
-        {/* Rank */}
-        <div
-          className="shrink-0 flex items-center justify-center font-mono font-bold text-sm"
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: "50%",
-            color: podium ? podium.color : "#8891AC",
-            background: podium ? "rgba(255,255,255,0.06)" : "transparent",
-            boxShadow: podium ? `0 0 14px ${podium.glow}` : undefined,
-            fontSize: medal ? 17 : 13,
-          }}
-        >
-          {medal || rank}
-        </div>
-
-        {/* Avatar + name */}
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-          <img
-            src={userImage || "/images/default-avatar.svg"}
-            alt=""
-            className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover flex-shrink-0"
-            style={{
-              border: podium ? `2px solid ${podium.ring}` : "1px solid rgba(255,255,255,0.1)",
-              boxShadow: podium ? `0 0 10px ${podium.glow}` : undefined,
-            }}
-            onError={(e) => { const img = e.currentTarget; img.onerror = null; img.src = "/images/default-avatar.svg"; }}
-          />
-          <div className="min-w-0">
-            {userId ? (
-              <Link href={`/profile/${userId}`} className="text-white font-semibold hover:underline hover:text-[#FF4FA3] truncate block text-sm sm:text-base">
-                {userName || "Anonymous"}
-                {isPremium ? <span style={{ display: "inline-block", transform: "translateY(-1px)" }}> 💎</span> : ""}
-                {activeFlair && activeFlair !== "none" ? <span style={{ display: "inline-block", transform: "translateY(-1px)" }}> {activeFlair}</span> : ""}
-              </Link>
-            ) : (
-              <span className="text-white font-semibold truncate block text-sm sm:text-base">{userName || "Anonymous"}</span>
-            )}
-            <p className="text-xs sm:hidden" style={{ color: "#5B6483" }}>{puzzlesSolved} solved</p>
-          </div>
-        </div>
-
-        {/* Puzzles solved — desktop only, mobile shows it as subtext above */}
-        <div className="hidden sm:block shrink-0 text-sm w-20 text-center" style={{ color: "#8891AC" }}>
-          {puzzlesSolved} solved
-        </div>
-
-        {/* Points */}
-        <div className="shrink-0 text-right">
-          <span className="text-base sm:text-lg font-bold" style={{ color: "#FFC93C" }}>{points.toLocaleString()}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Frozen for Pass 14 — mechanics and visual styling are not part of Pass 13. */
-function RewardTiers({ tiers, periodLabel }: { tiers: RewardTier[]; periodLabel: string }) {
-  if (tiers.length === 0) return null;
-  return (
-    <div className="pw-surface pw-bevel p-4 sm:p-5 min-w-0">
-      <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "#FFC93C" }}>
-        🏆 End-of-{periodLabel} Rewards <span style={{ color: "#5B6483" }}>· Top 50</span>
-      </p>
-      <div className="flex gap-2.5 overflow-x-auto pb-1 sm:flex-wrap no-scrollbar min-w-0">
-        {tiers.map((t) => (
-          <div
-            key={String(t.rank)}
-            className="shrink-0 rounded-lg px-3.5 py-2.5 min-w-[104px]"
-            style={{
-              background: "linear-gradient(160deg, rgba(255,201,60,0.1), rgba(139,61,255,0.06))",
-              border: "1px solid rgba(255,201,60,0.25)",
-            }}
-          >
-            <p className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: "#EEF1FA" }}>
-              Rank #{t.rank}
-            </p>
-            <p className="text-sm font-bold" style={{ color: "#FFC93C" }}>{t.points.toLocaleString()} pts</p>
-            <p className="text-xs font-semibold" style={{ color: "#8B3DFF" }}>+{t.xp} XP</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ── New for Pass 13 ──────────────────────────────────────────────────────
 
@@ -504,6 +363,39 @@ export default function LeaderboardsPage() {
     return () => window.clearInterval(interval);
   }, [isPeriodTab, hasValidPeriodEnd, periodEndsAt]);
 
+  // Pure, non-mutating normalization into the shared presentation shape — the
+  // server's rank/order/values are carried through exactly, never resorted
+  // or recalculated here.
+  const allTimeDisplayEntries = useMemo<LeaderboardDisplayEntry[]>(
+    () => entries.map((entry) => ({
+      userId: entry.userId,
+      userName: entry.userName,
+      userImage: entry.userImage,
+      activeFlair: entry.activeFlair,
+      isPremium: entry.isPremium,
+      points: entry.totalPoints,
+      puzzlesSolved: entry.puzzlesSolved,
+      rank: entry.rank,
+      isCurrentUser: entry.userId === currentUserId || entry.isCurrentUser === true,
+    })),
+    [entries, currentUserId]
+  );
+
+  const periodDisplayEntries = useMemo<LeaderboardDisplayEntry[]>(
+    () => periodEntries.map((entry) => ({
+      userId: entry.userId,
+      userName: entry.userName,
+      userImage: entry.userImage,
+      activeFlair: entry.activeFlair,
+      isPremium: entry.isPremium,
+      points: entry.periodPoints,
+      puzzlesSolved: entry.puzzlesSolved,
+      rank: entry.rank,
+      isCurrentUser: entry.userId === currentUserId,
+    })),
+    [periodEntries, currentUserId]
+  );
+
   return (
     <div className="min-h-screen" style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
       <PageContainer size="content" className="py-8">
@@ -552,7 +444,7 @@ export default function LeaderboardsPage() {
                         </div>
                       );
                     })()}
-                    <RewardTiers tiers={periodRewardTiers} periodLabel={activeTab === "weekly" ? "Week" : "Month"} />
+                    <LeaderboardRewardTiers tiers={periodRewardTiers} periodLabel={activeTab === "weekly" ? "Week" : "Month"} />
                   </div>
                 )}
 
@@ -596,22 +488,7 @@ export default function LeaderboardsPage() {
                       action={<BrowsePuzzlesAction />}
                     />
                   ) : (
-                    <div className="pw-surface pw-bevel overflow-hidden rounded-xl">
-                      {periodEntries.map((entry) => (
-                        <LeaderboardRow
-                          key={entry.userId}
-                          rank={entry.rank}
-                          userId={entry.userId}
-                          userName={entry.userName}
-                          userImage={entry.userImage}
-                          isPremium={entry.isPremium}
-                          activeFlair={entry.activeFlair}
-                          points={entry.periodPoints}
-                          puzzlesSolved={entry.puzzlesSolved}
-                          isCurrentUser={entry.userId === currentUserId}
-                        />
-                      ))}
-                    </div>
+                    <LeaderboardList entries={periodDisplayEntries} pointsLabel="Period points" />
                   )
                 ) : isFollowingGroupEmpty ? null : activeTab === "global" && entries.length === 0 ? (
                   <EmptyStatePanel
@@ -621,41 +498,8 @@ export default function LeaderboardsPage() {
                   />
                 ) : entries.length > 0 ? (
                   <>
-                    <div className="pw-surface pw-bevel overflow-hidden rounded-xl">
-                      {entries.map((entry) => (
-                        <LeaderboardRow
-                          key={entry.userId}
-                          rank={entry.rank}
-                          userId={entry.userId}
-                          userName={entry.userName}
-                          userImage={entry.userImage}
-                          isPremium={entry.isPremium}
-                          activeFlair={entry.activeFlair}
-                          points={entry.totalPoints}
-                          puzzlesSolved={entry.puzzlesSolved}
-                          isCurrentUser={entry.userId === currentUserId}
-                        />
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
-                        <p className="mb-1 text-sm" style={{ color: "var(--pw-text-muted)" }}>Top Players</p>
-                        <p className="text-2xl font-bold" style={{ color: "var(--pw-text-primary)" }}>{entries.length}</p>
-                      </div>
-                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
-                        <p className="mb-1 text-sm" style={{ color: "var(--pw-text-muted)" }}>Total Points</p>
-                        <p className="text-2xl font-bold" style={{ color: "var(--pw-text-primary)" }}>
-                          {entries.reduce((sum, e) => sum + e.totalPoints, 0).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
-                        <p className="mb-1 text-sm" style={{ color: "var(--pw-text-muted)" }}>Puzzles Solved</p>
-                        <p className="text-2xl font-bold" style={{ color: "var(--pw-text-primary)" }}>
-                          {entries.reduce((sum, e) => sum + e.puzzlesSolved, 0).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
+                    <LeaderboardList entries={allTimeDisplayEntries} pointsLabel="Earned points" />
+                    <LeaderboardStats entries={allTimeDisplayEntries} />
                   </>
                 ) : null}
               </>
