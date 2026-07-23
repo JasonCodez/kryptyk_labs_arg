@@ -14,9 +14,6 @@ export interface WarzLobbyCurrentUser {
 
 export interface WarzLobbyHeaderProps {
   currentUser: WarzLobbyCurrentUser | null;
-  openCount: number;
-  activeCount: number;
-  completedCount: number;
   targetingRival: boolean;
   onIssueChallenge: () => void;
   issueButtonRef?: RefObject<HTMLButtonElement | null>;
@@ -35,9 +32,6 @@ const STEPS = [
  */
 export default function WarzLobbyHeader({
   currentUser,
-  openCount,
-  activeCount,
-  completedCount,
   targetingRival,
   onIssueChallenge,
   issueButtonRef,
@@ -119,25 +113,6 @@ export default function WarzLobbyHeader({
               </span>
             </li>
           ))}
-        </ul>
-
-        <ul
-          aria-label="Competitive overview"
-          className="mt-1 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm"
-          style={{ color: "var(--pw-text-secondary)" }}
-        >
-          <li className="inline-flex items-center gap-1.5">
-            <Swords aria-hidden="true" size={14} />
-            <span className="font-bold tabular-nums">{openCount}</span> Open Challenges
-          </li>
-          <li className="inline-flex items-center gap-1.5">
-            <Shield aria-hidden="true" size={14} />
-            <span className="font-bold tabular-nums">{activeCount}</span> My Active Battles
-          </li>
-          <li className="inline-flex items-center gap-1.5">
-            <Trophy aria-hidden="true" size={14} />
-            <span className="font-bold tabular-nums">{completedCount}</span> Completed Battles
-          </li>
         </ul>
       </div>
     </motion.header>

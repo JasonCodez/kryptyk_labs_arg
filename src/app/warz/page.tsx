@@ -213,16 +213,6 @@ function WarzLobbyInner() {
     (c) => c.status === "COMPLETED" || c.status === "EXPIRED" || c.status === "CANCELLED"
   );
 
-  const openCount = challenges.filter((c) => c.status === "OPEN").length; // includes spotlighted
-  const activeCount = currentUser
-    ? challenges.filter(
-        (c) =>
-          (c.challenger.id === currentUser.id || c.opponent?.id === currentUser.id) &&
-          (c.status === "OPEN" || c.status === "IN_PROGRESS")
-      ).length
-    : 0;
-  const completedCount = challenges.filter((c) => c.status === "COMPLETED").length;
-
   const displayChallenges = tab === "open" ? openChallenges : tab === "mine" ? myChallenges : historyChallenges;
 
   const tabs: Array<{ key: TabKey; label: string; count: number }> = [
@@ -240,9 +230,6 @@ function WarzLobbyInner() {
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
           <WarzLobbyHeader
             currentUser={currentUser}
-            openCount={openCount}
-            activeCount={activeCount}
-            completedCount={completedCount}
             targetingRival={Boolean(searchParams.get("invite"))}
             onIssueChallenge={handleOpenPicker}
             issueButtonRef={issueButtonRef}

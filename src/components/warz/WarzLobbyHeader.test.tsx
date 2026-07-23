@@ -14,9 +14,6 @@ afterEach(() => {
 function baseProps(overrides: Partial<Parameters<typeof WarzLobbyHeader>[0]> = {}) {
   return {
     currentUser: { id: "u1", username: "arena-player", totalPoints: 875, level: 12 },
-    openCount: 3,
-    activeCount: 2,
-    completedCount: 1,
     targetingRival: false,
     onIssueChallenge: jest.fn(),
     ...overrides,
@@ -85,20 +82,11 @@ describe("WarzLobbyHeader", () => {
     expect(screen.queryByText(/Level/)).toBeNull();
   });
 
-  it("shows open challenge count", () => {
-    render(<WarzLobbyHeader {...baseProps({ openCount: 7 })} />);
-    expect(screen.getByText("7")).toBeTruthy();
-    expect(screen.getByText(/Open Challenges/)).toBeTruthy();
-  });
-
-  it("shows active battle count", () => {
-    render(<WarzLobbyHeader {...baseProps({ activeCount: 4 })} />);
-    expect(screen.getByText(/My Active Battles/)).toBeTruthy();
-  });
-
-  it("shows completed battle count", () => {
-    render(<WarzLobbyHeader {...baseProps({ completedCount: 9 })} />);
-    expect(screen.getByText(/Completed Battles/)).toBeTruthy();
+  it("does not duplicate the challenge-group counts already shown by the tabs", () => {
+    render(<WarzLobbyHeader {...baseProps()} />);
+    expect(screen.queryByText(/Open Challenges/)).toBeNull();
+    expect(screen.queryByText(/My Active Battles/)).toBeNull();
+    expect(screen.queryByText(/Completed Battles/)).toBeNull();
   });
 
   it("shows the targeted-rival message only when requested", () => {

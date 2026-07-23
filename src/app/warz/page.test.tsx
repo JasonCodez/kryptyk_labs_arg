@@ -18,18 +18,12 @@ jest.mock("@/components/warz/WarzLobbyHeader", () => ({
   __esModule: true,
   default: (props: {
     currentUser: { id: string; username: string | null; totalPoints: number; level: number } | null;
-    openCount: number;
-    activeCount: number;
-    completedCount: number;
     targetingRival: boolean;
     onIssueChallenge: () => void;
   }) => (
     <div data-testid="warz-header">
       <h1>Puzzle Warz</h1>
       <div data-testid="header-user">{JSON.stringify(props.currentUser)}</div>
-      <div data-testid="header-open-count">{props.openCount}</div>
-      <div data-testid="header-active-count">{props.activeCount}</div>
-      <div data-testid="header-completed-count">{props.completedCount}</div>
       <div data-testid="header-targeting-rival">{String(props.targetingRival)}</div>
       <button type="button" onClick={props.onIssueChallenge}>
         Issue a Challenge
@@ -227,38 +221,13 @@ describe("Warz lobby page", () => {
     expect(JSON.parse(screen.getByTestId("header-user").textContent!)).toEqual(USER);
   });
 
-  it("6. open count includes spotlighted challenges", async () => {
+  it("6-9. the header no longer receives redundant challenge-group counts (shown by the tabs instead)", async () => {
     mockFetch();
     render(<WarzLobbyPage />);
     await flush();
-    // 3 OPEN challenges total: spotlighted, open-normal, open-mine
-    expect(screen.getByTestId("header-open-count").textContent).toBe("3");
-  });
-
-  it("7. active count includes current-user OPEN and IN_PROGRESS challenges", async () => {
-    mockFetch();
-    render(<WarzLobbyPage />);
-    await flush();
-    // open-mine (OPEN, challenger=me) + in-progress-mine (IN_PROGRESS, opponent=me) = 2
-    expect(screen.getByTestId("header-active-count").textContent).toBe("2");
-  });
-
-  it("8. active count excludes completed challenges", async () => {
-    mockFetch({
-      challenges: [
-        challengeFixture({ id: "completed-mine", status: "COMPLETED", challenger: { id: "me", name: "Me", image: null, level: 1 } }),
-      ],
-    });
-    render(<WarzLobbyPage />);
-    await flush();
-    expect(screen.getByTestId("header-active-count").textContent).toBe("0");
-  });
-
-  it("9. completed count includes only COMPLETED", async () => {
-    mockFetch();
-    render(<WarzLobbyPage />);
-    await flush();
-    expect(screen.getByTestId("header-completed-count").textContent).toBe("1");
+    expect(screen.queryByTestId("header-open-count")).toBeNull();
+    expect(screen.queryByTestId("header-active-count")).toBeNull();
+    expect(screen.queryByTestId("header-completed-count")).toBeNull();
   });
 
   it("10. featured challenges are excluded from the normal Open list", async () => {
