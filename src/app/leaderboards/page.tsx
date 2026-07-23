@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { RefreshCw, Trophy, UserPlus } from "lucide-react";
+import PageContainer from "@/components/ui/PageContainer";
 import LeaderboardIntroCard from "@/components/onboarding/LeaderboardIntroCard";
 import LeaderboardHeader from "@/components/leaderboards/LeaderboardHeader";
 import LeaderboardTabs, { type LeaderboardTab } from "@/components/leaderboards/LeaderboardTabs";
@@ -53,13 +55,22 @@ export function formatCountdown(endsAt: string, nowMs = Date.now()): string {
 }
 
 type CountdownUrgency = "normal" | "warning" | "critical";
-function getCountdownUrgency(endsAt: string, nowMs = Date.now()): CountdownUrgency {
+
+export function getCountdownUrgency(endsAt: string, nowMs = Date.now()): CountdownUrgency {
   const hoursLeft = (new Date(endsAt).getTime() - nowMs) / 3_600_000;
   if (!Number.isFinite(hoursLeft)) return "normal";
   if (hoursLeft <= 6) return "critical";
   if (hoursLeft <= 48) return "warning";
   return "normal";
 }
+
+const URGENCY_COLOR: Record<CountdownUrgency, string> = {
+  normal: "var(--pw-brand-primary)",
+  warning: "var(--pw-warning)",
+  critical: "var(--pw-error-text)",
+};
+
+// ── Frozen for Pass 14 — do not redesign row mechanics or visual styling ──
 
 const RANK_STYLE: Record<number, { color: string; glow: string; ring: string }> = {
   1: { color: "#FFC93C", glow: "rgba(255,201,60,0.5)", ring: "#FFC93C" },
@@ -75,7 +86,8 @@ function getMedalEmoji(rank: number) {
 }
 
 /** Shared row for both the all-time and weekly/monthly leaderboards — flex-based rather
- * than a table so it reflows cleanly at any width instead of hiding columns/scrolling. */
+ * than a table so it reflows cleanly at any width instead of hiding columns/scrolling.
+ * Frozen for Pass 14 — mechanics and visual styling are not part of Pass 13. */
 function LeaderboardRow({
   rank,
   userId,
@@ -173,6 +185,7 @@ function LeaderboardRow({
   );
 }
 
+/** Frozen for Pass 14 — mechanics and visual styling are not part of Pass 13. */
 function RewardTiers({ tiers, periodLabel }: { tiers: RewardTier[]; periodLabel: string }) {
   if (tiers.length === 0) return null;
   return (
@@ -202,21 +215,113 @@ function RewardTiers({ tiers, periodLabel }: { tiers: RewardTier[]; periodLabel:
   );
 }
 
+// ── New for Pass 13 ──────────────────────────────────────────────────────
+
+const ACTION_FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--pw-brand-primary)]";
+
+function ErrorPanel({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-xl border p-6 text-center sm:p-8"
+      style={{
+        borderColor: "var(--pw-error-text)",
+        background: "color-mix(in srgb, var(--pw-error-text) 8%, var(--pw-surface-1))",
+      }}
+    >
+      <h2 className="text-lg font-bold" style={{ color: "var(--pw-text-primary)" }}>
+        We couldn’t load this leaderboard
+      </h2>
+      <p className="mt-2 text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+        Check your connection and try again.
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className={`mt-4 inline-flex min-h-12 items-center gap-2 rounded-lg px-5 text-sm font-bold ${ACTION_FOCUS}`}
+        style={{ minHeight: 48, background: "var(--pw-error-text)", color: "var(--pw-bg-base)" }}
+      >
+        <RefreshCw aria-hidden="true" size={16} />
+        <span>Try Again</span>
+      </button>
+    </div>
+  );
+}
+
+function RefreshWarning() {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border p-3 text-sm"
+      style={{
+        borderColor: "var(--pw-warning)",
+        background: "color-mix(in srgb, var(--pw-warning) 10%, var(--pw-surface-1))",
+        color: "var(--pw-text-secondary)",
+      }}
+    >
+      Couldn’t refresh just now — showing the last known rankings.
+    </div>
+  );
+}
+
+function EmptyStatePanel({
+  heading,
+  copy,
+  action,
+}: {
+  heading: string;
+  copy: string;
+  action: React.ReactNode;
+}) {
+  return (
+    <div
+      className="rounded-xl border p-6 text-center sm:p-8"
+      style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}
+    >
+      <h2 className="text-lg font-bold" style={{ color: "var(--pw-text-primary)" }}>{heading}</h2>
+      <p className="mt-2 text-sm" style={{ color: "var(--pw-text-secondary)" }}>{copy}</p>
+      <div className="mt-4 flex justify-center">{action}</div>
+    </div>
+  );
+}
+
+function BrowsePuzzlesAction() {
+  return (
+    <Link
+      href="/puzzles"
+      className={`inline-flex min-h-12 items-center gap-2 rounded-lg px-5 text-sm font-bold ${ACTION_FOCUS}`}
+      style={{ minHeight: 48, background: "var(--pw-brand-primary)", color: "var(--pw-bg-base)" }}
+    >
+      <Trophy aria-hidden="true" size={16} />
+      <span>Browse Puzzles</span>
+    </Link>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────
+
+type LeaderboardLoadStatus = "loading" | "ready" | "error";
+type FetchMode = "foreground" | "background";
+
 export default function LeaderboardsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
   const [activeTab, setActiveTab] = useState<LeaderboardTab>("global");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
+  const [followingCount, setFollowingCount] = useState(0);
+
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [periodUserRank, setPeriodUserRank] = useState<PeriodEntry | null>(null);
   const [periodEndsAt, setPeriodEndsAt] = useState<string | null>(null);
   const [periodRewardTiers, setPeriodRewardTiers] = useState<RewardTier[]>([]);
-  const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  const [loadStatus, setLoadStatus] = useState<LeaderboardLoadStatus>("loading");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [error, setError] = useState("");
-  const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
-  const [followingCount, setFollowingCount] = useState(0);
+
   const requestSeqRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
@@ -224,49 +329,45 @@ export default function LeaderboardsPage() {
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/auth/signin");
-      return;
     }
   }, [status, router]);
 
-  const fetchLeaderboard = useCallback(async (tab: LeaderboardTab, mode: "foreground" | "background" = "foreground") => {
+  const fetchLeaderboard = useCallback(async (tab: LeaderboardTab, mode: FetchMode = "foreground") => {
     requestAbortRef.current?.abort();
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const seq = ++requestSeqRef.current;
+
     if (mode === "foreground") setLoadStatus("loading");
     else setRefreshing(true);
-    setError("");
+
     try {
       if (tab === "weekly" || tab === "monthly") {
-        const res = await fetch(`/api/leaderboards/period?type=${tab}`, { signal: controller.signal });
-        if (!res.ok) throw new Error("Failed to fetch period leaderboard");
-        const data = await res.json();
+        const response = await fetch(`/api/leaderboards/period?type=${tab}`, { signal: controller.signal });
+        if (!response.ok) throw new Error("request-failed");
+        const data = await response.json();
         if (!mountedRef.current || seq !== requestSeqRef.current) return;
         setPeriodEntries(Array.isArray(data.entries) ? data.entries : []);
         setPeriodUserRank(data.userRank ?? null);
-        setPeriodEndsAt(data.endsAt ?? null);
-        setPeriodRewardTiers(data.rewardTiers ?? []);
-        setLoadStatus("ready");
-        setRefreshFailed(false);
-        return;
+        setPeriodEndsAt(typeof data.endsAt === "string" ? data.endsAt : null);
+        setPeriodRewardTiers(Array.isArray(data.rewardTiers) ? data.rewardTiers : []);
+      } else {
+        const url = tab === "following" ? "/api/leaderboards/following" : "/api/leaderboards/global";
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error("request-failed");
+        const data = await response.json();
+        if (!mountedRef.current || seq !== requestSeqRef.current) return;
+        setEntries(Array.isArray(data.entries) ? data.entries : []);
+        setUserRank(data.userRank ?? null);
+        if (tab === "following") setFollowingCount(typeof data.followingCount === "number" ? data.followingCount : 0);
       }
-      const url = tab === "following" ? "/api/leaderboards/following" : "/api/leaderboards/global";
-      const response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) throw new Error("Failed to fetch leaderboard");
-      const data = await response.json();
       if (!mountedRef.current || seq !== requestSeqRef.current) return;
-      setEntries(Array.isArray(data.entries) ? data.entries : []);
-      setUserRank(data.userRank);
-      if (tab === "following") setFollowingCount(data.followingCount ?? 0);
       setLoadStatus("ready");
       setRefreshFailed(false);
     } catch (err) {
       if ((err as Error)?.name === "AbortError" || seq !== requestSeqRef.current || !mountedRef.current) return;
       if (mode === "background") setRefreshFailed(true);
-      else {
-        setError("Failed to load leaderboard");
-        setLoadStatus("error");
-      }
+      else setLoadStatus("error");
     } finally {
       if (seq === requestSeqRef.current && mountedRef.current) setRefreshing(false);
     }
@@ -276,13 +377,12 @@ export default function LeaderboardsPage() {
     if (status === "authenticated") void fetchLeaderboard(activeTab);
   }, [activeTab, fetchLeaderboard, status]);
 
-  // Real-time updates: re-fetch when any player solves a puzzle
+  // Real-time updates: refresh the active tab in the background when any player solves a puzzle.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = () => void fetchLeaderboard(activeTab, "background");
     window.addEventListener("puzzlewarz:puzzle-solved", handler);
     return () => window.removeEventListener("puzzlewarz:puzzle-solved", handler);
-
   }, [activeTab, fetchLeaderboard]);
 
   useEffect(() => () => {
@@ -291,277 +391,173 @@ export default function LeaderboardsPage() {
     requestAbortRef.current?.abort();
   }, []);
 
-  if (status === "loading" || loadStatus === "loading") {
-    return (
-      <div className="min-h-screen bg-[var(--pw-bg-base)] px-4 pt-24">
-        <div className="mx-auto max-w-4xl"><LeaderboardLoadingState activeTab={activeTab} /></div>
-      </div>
-    );
-  }
-
-  const currentUserId = (session?.user as any)?.id;
+  const currentUserId = (session?.user as { id?: string } | undefined)?.id;
   const isAuthenticated = status === "authenticated";
   const onboardingUserId = session?.user
     ? (session.user as { id?: string }).id || session.user.email || null
     : null;
 
+  const isPeriodTab = activeTab === "weekly" || activeTab === "monthly";
+  const isBootLoading = status !== "authenticated" || loadStatus === "loading";
+
+  const activeRank = isPeriodTab ? periodUserRank?.rank ?? null : userRank?.rank ?? null;
+  const activePoints = isPeriodTab ? periodUserRank?.periodPoints ?? null : userRank?.totalPoints ?? null;
+  const activePuzzlesSolved = isPeriodTab ? periodUserRank?.puzzlesSolved ?? null : userRank?.puzzlesSolved ?? null;
+
+  void refreshing;
+
   return (
-    <div
-      style={{
-        background:
-          "radial-gradient(1300px 800px at 15% -10%, rgba(139,61,255,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,60,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(62,217,122,0.09), transparent 60%), #170B26",
-      }}
-      className="min-h-screen"
-    >
-      <div className="px-3 sm:px-8 pt-24 sm:pt-28 pb-8">
-        <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen" style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
+      <PageContainer size="content" className="py-8">
+        <div className="flex flex-col gap-6">
           <LeaderboardHeader activeTab={activeTab} />
-          <div className="my-5"><LeaderboardTabs activeTab={activeTab} onChange={setActiveTab} loading={false} /></div>
-          <div className="hidden mb-6 sm:mb-8">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 mb-4">
-              <Link
-                href="/dashboard"
-                className="inline-block px-3.5 sm:px-4 py-2 rounded-lg text-white hover:opacity-90 transition-all text-sm font-medium"
-                style={{ background: "var(--pw-surface-hi)", border: "1px solid rgba(139,61,255,0.3)" }}
-              >
-                ← Back to Dashboard
-              </Link>
-
-              <Link
-                href="/leaderboards/teams"
-                className="px-3.5 sm:px-4 py-2 text-sm rounded-lg font-semibold transition-all whitespace-nowrap"
-                style={{
-                  background: "linear-gradient(135deg, #FF4FA3, #C7157A)",
-                  color: "#170B26",
-                  boxShadow: "0 0 14px rgba(255,79,163,0.4)",
-                }}
-              >
-                Team Leaderboards
-              </Link>
-            </div>
-
-            <div>
-              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-2">🏆 All-Time Leaderboard</h1>
-              <p style={{ color: "#EEF1FA" }} className="text-sm sm:text-base">
-                Top players solving puzzles and earning points
-              </p>
-            </div>
-
-            {/* Tab switcher */}
-            <div className="flex gap-2 mt-4 overflow-x-auto pb-1 no-scrollbar sm:flex-wrap">
-              {(
-                [
-                  { id: "global", label: "🌍 Global" },
-                  { id: "weekly", label: "📅 Weekly" },
-                  { id: "monthly", label: "🗓️ Monthly" },
-                  { id: "following", label: "👥 Following" },
-                ] as { id: LeaderboardTab; label: string }[]
-              ).map(({ id, label }) => (
-                <button
-                  key={id}
-                  onClick={() => setActiveTab(id)}
-                  className="shrink-0 px-4 sm:px-5 py-2 rounded-lg font-semibold text-sm transition-all"
-                  style={{
-                    background: activeTab === id ? "linear-gradient(135deg, #FF4FA3, #C7157A)" : "var(--pw-surface-hi)",
-                    color: activeTab === id ? "#170B26" : "#FF4FA3",
-                    border: "1px solid rgba(255,79,163,0.35)",
-                    boxShadow: activeTab === id ? "0 0 14px rgba(255,79,163,0.4)" : undefined,
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <LeaderboardTabs activeTab={activeTab} onChange={setActiveTab} loading={loadStatus === "loading"} />
 
           {isAuthenticated && onboardingUserId && <LeaderboardIntroCard userId={onboardingUserId} />}
 
-          <div className="mb-5">
-            <LeaderboardRankSummary
-              activeTab={activeTab}
-              rank={(activeTab === "weekly" || activeTab === "monthly" ? periodUserRank : userRank)?.rank ?? null}
-              points={activeTab === "weekly" || activeTab === "monthly" ? periodUserRank?.periodPoints ?? null : userRank?.totalPoints ?? null}
-              puzzlesSolved={(activeTab === "weekly" || activeTab === "monthly" ? periodUserRank : userRank)?.puzzlesSolved ?? null}
-              followingCount={followingCount}
-            />
+          <div
+            role="tabpanel"
+            id={`leaderboard-panel-${activeTab}`}
+            aria-labelledby={`leaderboard-tab-${activeTab}`}
+            aria-busy={isBootLoading}
+            className="flex flex-col gap-6"
+          >
+            {isBootLoading ? (
+              <LeaderboardLoadingState activeTab={activeTab} />
+            ) : loadStatus === "error" ? (
+              <ErrorPanel onRetry={() => void fetchLeaderboard(activeTab)} />
+            ) : (
+              <>
+                {isPeriodTab && (
+                  <div className="grid gap-3 sm:grid-cols-[220px_1fr] sm:gap-4">
+                    {periodEndsAt && (() => {
+                      const urgency = getCountdownUrgency(periodEndsAt);
+                      return (
+                        <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
+                          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: URGENCY_COLOR[urgency] }}>
+                            Time Remaining
+                          </p>
+                          <p className="text-xl font-bold" style={{ color: "var(--pw-text-primary)" }}>{formatCountdown(periodEndsAt)}</p>
+                          {urgency === "critical" && (
+                            <p className="text-xs font-bold" style={{ color: "var(--pw-error-text)" }}>Closing soon</p>
+                          )}
+                          <p className="mt-1 text-xs" style={{ color: "var(--pw-text-muted)" }}>
+                            Ends {new Date(periodEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                          </p>
+                        </div>
+                      );
+                    })()}
+                    <RewardTiers tiers={periodRewardTiers} periodLabel={activeTab === "weekly" ? "Week" : "Month"} />
+                  </div>
+                )}
+
+                <LeaderboardRankSummary
+                  activeTab={activeTab}
+                  rank={activeRank}
+                  points={activePoints}
+                  puzzlesSolved={activePuzzlesSolved}
+                  followingCount={followingCount}
+                />
+
+                {refreshFailed && <RefreshWarning />}
+
+                {activeTab === "following" && followingCount === 0 && (
+                  <EmptyStatePanel
+                    heading="Build your comparison group"
+                    copy="Follow players from the Global leaderboard or their profile pages to compare your progress here."
+                    action={
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("global")}
+                        className={`inline-flex min-h-12 items-center gap-2 rounded-lg px-5 text-sm font-bold ${ACTION_FOCUS}`}
+                        style={{ minHeight: 48, background: "var(--pw-brand-primary)", color: "var(--pw-bg-base)" }}
+                      >
+                        <UserPlus aria-hidden="true" size={16} />
+                        <span>Browse Global Leaderboard</span>
+                      </button>
+                    }
+                  />
+                )}
+
+                {isPeriodTab ? (
+                  periodEntries.length === 0 ? (
+                    <EmptyStatePanel
+                      heading={activeTab === "weekly" ? "No weekly activity yet" : "No monthly activity yet"}
+                      copy={
+                        activeTab === "weekly"
+                          ? "Solve a puzzle this week to enter the rankings."
+                          : "Solve a puzzle this month to enter the rankings."
+                      }
+                      action={<BrowsePuzzlesAction />}
+                    />
+                  ) : (
+                    <div className="pw-surface pw-bevel overflow-hidden rounded-xl">
+                      {periodEntries.map((entry) => (
+                        <LeaderboardRow
+                          key={entry.userId}
+                          rank={entry.rank}
+                          userId={entry.userId}
+                          userName={entry.userName}
+                          userImage={entry.userImage}
+                          isPremium={entry.isPremium}
+                          activeFlair={entry.activeFlair}
+                          points={entry.periodPoints}
+                          puzzlesSolved={entry.puzzlesSolved}
+                          isCurrentUser={entry.userId === currentUserId}
+                        />
+                      ))}
+                    </div>
+                  )
+                ) : activeTab === "global" && entries.length === 0 ? (
+                  <EmptyStatePanel
+                    heading="No ranked players yet"
+                    copy="Solve a puzzle to claim a place on the leaderboard."
+                    action={<BrowsePuzzlesAction />}
+                  />
+                ) : entries.length > 0 ? (
+                  <>
+                    <div className="pw-surface pw-bevel overflow-hidden rounded-xl">
+                      {entries.map((entry) => (
+                        <LeaderboardRow
+                          key={entry.userId}
+                          rank={entry.rank}
+                          userId={entry.userId}
+                          userName={entry.userName}
+                          userImage={entry.userImage}
+                          isPremium={entry.isPremium}
+                          activeFlair={entry.activeFlair}
+                          points={entry.totalPoints}
+                          puzzlesSolved={entry.puzzlesSolved}
+                          isCurrentUser={entry.userId === currentUserId}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
+                        <p className="mb-1 text-sm" style={{ color: "var(--pw-text-muted)" }}>Top Players</p>
+                        <p className="text-2xl font-bold" style={{ color: "var(--pw-text-primary)" }}>{entries.length}</p>
+                      </div>
+                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
+                        <p className="mb-1 text-sm" style={{ color: "var(--pw-text-muted)" }}>Total Points</p>
+                        <p className="text-2xl font-bold" style={{ color: "var(--pw-text-primary)" }}>
+                          {entries.reduce((sum, e) => sum + e.totalPoints, 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}>
+                        <p className="mb-1 text-sm" style={{ color: "var(--pw-text-muted)" }}>Puzzles Solved</p>
+                        <p className="text-2xl font-bold" style={{ color: "var(--pw-text-primary)" }}>
+                          {entries.reduce((sum, e) => sum + e.puzzlesSolved, 0).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            )}
           </div>
-          {refreshFailed && <div role="status" className="mb-5 rounded-lg border border-[var(--pw-line)] bg-[var(--pw-surface)] p-3 text-sm text-[var(--pw-text-muted)]">Couldn’t refresh just now — showing the last known rankings.</div>}
-
-          {error && (
-            <div className="mb-6 p-4 rounded-lg text-white border" style={{ backgroundColor: "rgba(255,90,90,0.1)", borderColor: "rgba(255,90,90,0.4)" }}>
-              {error}
-            </div>
-          )}
-
-          {/* Following empty state */}
-          {activeTab === "following" && loadStatus === "ready" && followingCount === 0 && (
-            <div className="mb-6 pw-surface pw-bevel p-6 text-center">
-              <p className="text-2xl mb-2">👥</p>
-              <p className="text-white font-semibold mb-1">You&apos;re not following anyone yet</p>
-              <p className="text-sm mb-4" style={{ color: "#8891AC" }}>Follow players from the Global leaderboard or their profile pages to see them here.</p>
-              <button
-                onClick={() => setActiveTab("global")}
-                className="px-4 py-2 rounded-lg text-sm font-semibold"
-                style={{ background: "linear-gradient(135deg, #FF4FA3, #C7157A)", color: "#170B26" }}
-              >
-                Browse Global Leaderboard
-              </button>
-            </div>
-          )}
-
-          {/* ── Period (weekly / monthly) view ─────────────────────────────── */}
-          {(activeTab === "weekly" || activeTab === "monthly") && (
-            <>
-              {/* Countdown + reward info */}
-              <div className="mb-4 sm:mb-6 grid gap-3 sm:gap-4 sm:grid-cols-[220px_1fr] min-w-0">
-                {periodEndsAt && (() => {
-                  const urgency = getCountdownUrgency(periodEndsAt);
-                  return (
-                    <div className="pw-surface pw-bevel p-4">
-                      <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${urgency === "critical" ? "text-[var(--pw-danger)]" : urgency === "warning" ? "text-[var(--pw-warning)]" : "text-[var(--pw-accent)]"}`}>Time Remaining</p>
-                      <p className="text-xl font-bold text-white">{formatCountdown(periodEndsAt)}</p>
-                      {urgency === "critical" && <p className="text-xs font-bold text-[var(--pw-danger)]">Closing soon</p>}
-                      <p className="text-xs mt-1" style={{ color: "#5B6483" }}>
-                        Ends {new Date(periodEndsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                      </p>
-                    </div>
-                  );
-                })()}
-                <RewardTiers tiers={periodRewardTiers} periodLabel={activeTab === "weekly" ? "Week" : "Month"} />
-              </div>
-
-              {/* Your period rank */}
-              {periodUserRank && (
-                <div
-                  className="mb-6 sm:mb-8 pw-surface pw-bevel p-4 sm:p-6 relative overflow-hidden"
-                  style={{
-                    borderColor: "rgba(139,61,255,0.4)",
-                    boxShadow: "0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.12)",
-                  }}
-                >
-                  <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
-                  <div className="relative flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold uppercase tracking-wide" style={{ color: "#8891AC" }}>
-                        Your Rank This {activeTab === "weekly" ? "Week" : "Month"}
-                      </p>
-                      <p className="text-3xl font-bold text-white">#{periodUserRank.rank}</p>
-                      {periodUserRank.rank <= 50 && (
-                        <span
-                          className="inline-block mt-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: "rgba(62,217,122,0.15)", color: "#3ED97A" }}
-                        >
-                          ✓ In the reward zone
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-4xl sm:text-5xl font-bold" style={{ color: "#FFC93C" }}>{periodUserRank.periodPoints.toLocaleString()}</p>
-                      <p className="text-sm" style={{ color: "#EEF1FA" }}>{periodUserRank.puzzlesSolved} puzzles solved</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Period rows */}
-              <div className="pw-surface pw-bevel overflow-hidden">
-                {periodEntries.map((entry) => (
-                  <LeaderboardRow
-                    key={entry.userId}
-                    rank={entry.rank}
-                    userId={entry.userId}
-                    userName={entry.userName}
-                    userImage={entry.userImage}
-                    isPremium={entry.isPremium}
-                    activeFlair={entry.activeFlair}
-                    points={entry.periodPoints}
-                    puzzlesSolved={entry.puzzlesSolved}
-                    isCurrentUser={entry.userId === currentUserId}
-                  />
-                ))}
-                {periodEntries.length === 0 && (
-                  <div className="p-8 text-center" style={{ color: "#8891AC" }}>
-                    No activity yet this {activeTab === "weekly" ? "week" : "month"}. Solve a puzzle to appear here!
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* ── Global / Following view ─────────────────────────────────────── */}
-          {(activeTab === "global" || activeTab === "following") && (
-            <>
-              {/* Your Rank Card */}
-              {userRank && (
-                <div
-                  className="mb-6 sm:mb-8 pw-surface pw-bevel p-4 sm:p-6 relative overflow-hidden"
-                  style={{
-                    borderColor: "rgba(139,61,255,0.4)",
-                    boxShadow: "0 12px 28px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.12)",
-                  }}
-                >
-                  <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
-                  <div className="relative flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold uppercase tracking-wide" style={{ color: "#8891AC" }}>
-                        {activeTab === "following" ? "Your Rank (Among Following)" : "Your Rank"}
-                      </p>
-                      <p className="text-3xl font-bold text-white">#{userRank.rank}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-4xl sm:text-5xl font-bold" style={{ color: "#FFC93C" }}>{userRank.totalPoints.toLocaleString()}</p>
-                      <p className="text-sm" style={{ color: "#EEF1FA" }}>{userRank.puzzlesSolved} puzzles solved</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Leaderboard rows */}
-              <div className="pw-surface pw-bevel overflow-hidden">
-                {entries.map((entry) => (
-                  <LeaderboardRow
-                    key={entry.userId}
-                    rank={entry.rank}
-                    userId={entry.userId}
-                    userName={entry.userName}
-                    userImage={entry.userImage}
-                    isPremium={entry.isPremium}
-                    activeFlair={entry.activeFlair}
-                    points={entry.totalPoints}
-                    puzzlesSolved={entry.puzzlesSolved}
-                    isCurrentUser={entry.userId === currentUserId}
-                  />
-                ))}
-                {entries.length === 0 && (
-                  <div className="p-8 text-center" style={{ color: "#8891AC" }}>
-                    No players yet. Be the first to solve a puzzle!
-                  </div>
-                )}
-              </div>
-
-              {/* Info Footer */}
-              <div className="mt-6 sm:mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                <div className="pw-surface pw-bevel p-4">
-                  <p className="text-sm mb-1" style={{ color: "#8891AC" }}>🥇 Top Players</p>
-                  <p className="text-2xl font-bold text-white">{entries.length}</p>
-                </div>
-                <div className="pw-surface pw-bevel p-4">
-                  <p className="text-sm mb-1" style={{ color: "#8891AC" }}>📊 Total Points</p>
-                  <p className="text-2xl font-bold text-white">
-                    {entries.reduce((sum, e) => sum + e.totalPoints, 0).toLocaleString()}
-                  </p>
-                </div>
-                <div className="pw-surface pw-bevel p-4">
-                  <p className="text-sm mb-1" style={{ color: "#8891AC" }}>🧩 Puzzles Solved</p>
-                  <p className="text-2xl font-bold text-white">
-                    {entries.reduce((sum, e) => sum + e.puzzlesSolved, 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </>
-          )}
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }
