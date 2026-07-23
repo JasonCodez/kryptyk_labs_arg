@@ -1,21 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Trophy, Users, Target, TrendingUp, Clock, Star, Activity, Palette } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Lock, Mail, Palette, RefreshCw, Trophy, UsersRound } from "lucide-react";
 import InviteTeamModal from "@/components/teams/InviteTeamModal";
 import ActionModal from "@/components/ActionModal";
 import ConfirmModal from "@/components/ConfirmModal";
-import { getThemeConfig, THEME_CONFIGS, type ThemeConfig } from "@/lib/profileThemes";
+import { getThemeConfig, THEME_CONFIGS } from "@/lib/profileThemes";
+import PageContainer from "@/components/ui/PageContainer";
+import TeamDetailLoadingState from "@/components/teams/TeamDetailLoadingState";
+import TeamDetailHero from "@/components/teams/TeamDetailHero";
+import TeamDetailReadOnlyContent, {
+  normalizeTeamDetailStats,
+  type TeamDetailMember,
+  type TeamDetailStatsData,
+} from "@/components/teams/TeamDetailReadOnlyContent";
 
 interface TeamMember {
   user: {
     id: string;
     name: string | null;
-    email: string | null;
+    email: string | null | undefined;
     image: string | null;
   };
   role: string;
@@ -23,45 +30,174 @@ interface TeamMember {
 
 interface Team {
   id: string;
-  name: string;
+  name: string | null;
   description: string | null;
   isPublic: boolean;
   activeTheme: string;
+  createdAt: string | null;
   members: TeamMember[];
-  createdAt: string;
 }
 
-// Semantic UI colors that stay fixed regardless of the team's equipped cosmetic theme (role
-// badges, status pills, approve/deny actions) — the jewel-tone palette used site-wide, kept
-// separate from the theme-driven `t.*` colors which style the team's customizable chrome.
-const ROLE_STYLE: Record<string, { bg: string; text: string; label: string }> = {
-  admin: { bg: "rgba(255,201,74,0.15)", text: "#FFC94A", label: "👑 Admin" },
-  moderator: { bg: "rgba(178,75,243,0.15)", text: "#B24BF3", label: "🛡️ Mod" },
-};
-const DIFFICULTY_STYLE: Record<string, { bg: string; text: string }> = {
-  easy: { bg: "rgba(46,217,145,0.15)", text: "#2ED991" },
-  medium: { bg: "rgba(255,201,74,0.15)", text: "#FFC94A" },
-  hard: { bg: "rgba(255,59,92,0.15)", text: "#FF3B5C" },
-};
-const PODIUM_STYLE: Record<number, { color: string; glow: string; ring: string }> = {
-  0: { color: "#FFC94A", glow: "rgba(255,201,74,0.5)", ring: "#FFC94A" },
-  1: { color: "#EEF1FA", glow: "rgba(236,232,247,0.35)", ring: "#8891AC" },
-  2: { color: "#E8934A", glow: "rgba(232,147,74,0.45)", ring: "#E8934A" },
-};
-const PAGE_BG =
-  "radial-gradient(1300px 800px at 15% -10%, rgba(178,75,243,0.2), transparent 62%), radial-gradient(1100px 700px at 90% 0%, rgba(255,201,74,0.12), transparent 58%), radial-gradient(1000px 650px at 50% 100%, rgba(46,217,145,0.09), transparent 60%), #10121F";
+type TeamLoadStatus = "loading" | "ready" | "private" | "not-found" | "error";
 
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+function isTeamMember(value: unknown): value is TeamMember {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const m = value as Record<string, unknown>;
+  const user = m.user;
+  if (typeof user !== "object" || user === null || Array.isArray(user)) return false;
+  const u = user as Record<string, unknown>;
+  return (
+    typeof u.id === "string" &&
+    (typeof u.name === "string" || u.name === null) &&
+    (typeof u.image === "string" || u.image === null) &&
+    (typeof u.email === "string" || u.email === null || u.email === undefined) &&
+    typeof m.role === "string"
+  );
+}
+
+// Defends against a malformed or partial primary Team API payload before it
+// ever reaches state. Rejects a malformed base object outright (the caller
+// falls back to the normal primary-load error state); individually
+// malformed members are simply filtered out rather than rejecting the whole
+// team, since a bad member row shouldn't hide an otherwise-valid team.
+function normalizeTeamPayload(value: unknown): Team | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+
+  if (typeof v.id !== "string") return null;
+  if (typeof v.name !== "string" && v.name !== null) return null;
+  if (typeof v.description !== "string" && v.description !== null) return null;
+  if (typeof v.isPublic !== "boolean") return null;
+  if (v.activeTheme !== undefined && v.activeTheme !== null && typeof v.activeTheme !== "string") return null;
+  if (typeof v.createdAt !== "string" && v.createdAt !== null && v.createdAt !== undefined) return null;
+  if (!Array.isArray(v.members)) return null;
+
+  return {
+    id: v.id,
+    name: (v.name as string | null) ?? null,
+    description: (v.description as string | null) ?? null,
+    isPublic: v.isPublic,
+    activeTheme: typeof v.activeTheme === "string" && v.activeTheme.trim() ? v.activeTheme : "default",
+    createdAt: typeof v.createdAt === "string" ? v.createdAt : null,
+    members: v.members.filter(isTeamMember),
+  };
+}
+
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--pw-brand-primary)]";
+
+function ShellWrapper({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="min-h-screen"
+      style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}
+    >
+      <PageContainer size="catalog" className="pb-12 pt-6">
+        <div className="mx-auto w-full max-w-5xl">{children}</div>
+      </PageContainer>
+    </div>
+  );
+}
+
+function PrivateTeamPanel() {
+  return (
+    <ShellWrapper>
+      <div
+        className="rounded-2xl border p-8 text-center"
+        style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}
+      >
+        <Lock aria-hidden="true" size={32} style={{ color: "var(--pw-text-muted)", margin: "0 auto" }} />
+        <h1 className="mt-3 text-xl font-bold" style={{ color: "var(--pw-text-primary)" }}>Private Team</h1>
+        <p className="mt-2 text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+          This team is private. You must be a member to view it.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Link
+            href="/leaderboards/teams"
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 text-sm font-bold ${FOCUS_RING}`}
+            style={{ background: "var(--pw-brand-primary)", color: "var(--pw-bg-base)" }}
+          >
+            <ArrowLeft aria-hidden="true" size={16} />
+            <span>Back to Team Leaderboards</span>
+          </Link>
+          <Link
+            href="/teams"
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm font-bold ${FOCUS_RING}`}
+            style={{ borderColor: "var(--pw-border-default)", color: "var(--pw-text-secondary)" }}
+          >
+            <UsersRound aria-hidden="true" size={16} />
+            <span>Explore Teams</span>
+          </Link>
+        </div>
+      </div>
+    </ShellWrapper>
+  );
+}
+
+function TeamNotFoundPanel() {
+  return (
+    <ShellWrapper>
+      <div
+        className="rounded-2xl border p-8 text-center"
+        style={{ borderColor: "var(--pw-border-default)", background: "var(--pw-surface-1)" }}
+      >
+        <UsersRound aria-hidden="true" size={32} style={{ color: "var(--pw-text-muted)", margin: "0 auto" }} />
+        <h1 className="mt-3 text-xl font-bold" style={{ color: "var(--pw-text-primary)" }}>Team not found</h1>
+        <p className="mt-2 text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+          This team may have been disbanded, or the link is no longer valid.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Link
+            href="/teams"
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 text-sm font-bold ${FOCUS_RING}`}
+            style={{ background: "var(--pw-brand-primary)", color: "var(--pw-bg-base)" }}
+          >
+            <UsersRound aria-hidden="true" size={16} />
+            <span>Explore Teams</span>
+          </Link>
+          <Link
+            href="/leaderboards/teams"
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm font-bold ${FOCUS_RING}`}
+            style={{ borderColor: "var(--pw-border-default)", color: "var(--pw-text-secondary)" }}
+          >
+            <Trophy aria-hidden="true" size={16} />
+            <span>Team Leaderboards</span>
+          </Link>
+        </div>
+      </div>
+    </ShellWrapper>
+  );
+}
+
+function TeamLoadErrorPanel({ onRetry, pending }: { onRetry: () => void; pending: boolean }) {
+  return (
+    <ShellWrapper>
+      <div
+        role="alert"
+        className="rounded-2xl border p-8 text-center"
+        style={{
+          borderColor: "var(--pw-error-text)",
+          background: "color-mix(in srgb, var(--pw-error-text) 8%, var(--pw-surface-1))",
+        }}
+      >
+        <AlertTriangle aria-hidden="true" size={32} style={{ color: "var(--pw-error-text)", margin: "0 auto" }} />
+        <h1 className="mt-3 text-xl font-bold" style={{ color: "var(--pw-text-primary)" }}>We couldn’t load this team</h1>
+        <p className="mt-2 text-sm" style={{ color: "var(--pw-text-secondary)" }}>
+          Check your connection and try again.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={pending}
+          className={`mt-5 inline-flex min-h-12 items-center gap-2 rounded-lg px-5 text-sm font-bold disabled:opacity-70 ${FOCUS_RING}`}
+          style={{ minHeight: 48, background: "var(--pw-error-text)", color: "var(--pw-bg-base)" }}
+        >
+          <RefreshCw aria-hidden="true" size={16} />
+          <span>{pending ? "Trying…" : "Try Again"}</span>
+        </button>
+      </div>
+    </ShellWrapper>
+  );
 }
 
 export default function TeamDetailPage() {
@@ -71,8 +207,9 @@ export default function TeamDetailPage() {
   const teamId = params.id as string;
 
   const [team, setTeam] = useState<Team | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [teamLoadStatus, setTeamLoadStatus] = useState<TeamLoadStatus>("loading");
+  const [retrying, setRetrying] = useState(false);
+
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [applications, setApplications] = useState<any[]>([]);
@@ -85,68 +222,121 @@ export default function TeamDetailPage() {
   const [confirmMember, setConfirmMember] = useState<TeamMember | null>(null);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
 
-  // Team stats
-  const [stats, setStats] = useState<any>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
+  const [stats, setStats] = useState<TeamDetailStatsData | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
-  // Team theme picker
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [ownedTeamThemes, setOwnedTeamThemes] = useState<string[]>([]);
 
+  const mountedRef = useRef(false);
+  const teamRequestSeqRef = useRef(0);
+  const teamAbortRef = useRef<AbortController | null>(null);
+  const retryInFlightRef = useRef(false);
+  const statsRequestSeqRef = useRef(0);
+  const statsAbortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
-    // Allow public viewing; fetch team data regardless of auth status.
-    let cancelled = false;
-    const fetchTeam = async () => {
-      try {
-        const response = await fetch(`/api/teams/${teamId}`);
-        if (response.status === 404) {
-          // Team was disbanded or never existed — show clean not-found screen
-          setLoading(false);
-          return;
-        }
-        if (response.status === 403) {
-          // Team exists but is private and user is not a member
-          if (!cancelled) setError("private");
-          if (!cancelled) setLoading(false);
-          return;
-        }
-        if (!response.ok) throw new Error("Failed to fetch team");
-        const data = await response.json();
-        setTeam(data);
-
-        // If signed-in, ask server for membership/role to avoid relying on client-side member email fields.
-        if (session?.user?.email) {
-          try {
-            const m = await fetch(`/api/teams/${teamId}/membership`);
-            if (m.ok) {
-              const jr = await m.json();
-              setUserRole(jr.role);
-            }
-            // fetch invite status for current user
-            try {
-              const s = await fetch(`/api/teams/${teamId}/invite-status`);
-              if (s.ok) {
-                const js = await s.json();
-                setInviteStatus(js.status === 'declined' ? 'none' : (js.status ?? 'none'));
-              }
-            } catch (ie) {
-              console.error('Failed to fetch invite status', ie);
-            }
-          } catch (e) {
-            console.error('Failed to fetch membership role', e);
-          }
-        }
-      } catch (err) {
-        setError("Failed to load team");
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      teamRequestSeqRef.current += 1;
+      teamAbortRef.current?.abort();
+      statsRequestSeqRef.current += 1;
+      statsAbortRef.current?.abort();
     };
+  }, []);
 
-    if (teamId) fetchTeam();
+  const loadTeam = useCallback(async () => {
+    teamAbortRef.current?.abort();
+    const seq = ++teamRequestSeqRef.current;
+    const controller = new AbortController();
+    teamAbortRef.current = controller;
+
+    setTeamLoadStatus("loading");
+    setTeam(null);
+
+    const shouldApply = () => mountedRef.current && seq === teamRequestSeqRef.current;
+
+    try {
+      const response = await fetch(`/api/teams/${teamId}`, { cache: "no-store", signal: controller.signal });
+      if (!shouldApply()) return;
+
+      if (response.status === 403) {
+        setTeamLoadStatus("private");
+        return;
+      }
+      if (response.status === 404) {
+        setTeamLoadStatus("not-found");
+        return;
+      }
+      if (!response.ok) {
+        setTeamLoadStatus("error");
+        return;
+      }
+
+      const data = await response.json();
+      if (!shouldApply()) return;
+
+      const normalized = normalizeTeamPayload(data);
+      if (!normalized) {
+        setTeamLoadStatus("error");
+        return;
+      }
+
+      setTeam(normalized);
+      setTeamLoadStatus("ready");
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError" || !shouldApply()) return;
+      setTeamLoadStatus("error");
+    }
+  }, [teamId]);
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (teamId) void loadTeam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, status]);
+
+  const retryTeamLoad = useCallback(async () => {
+    if (retryInFlightRef.current) return;
+    retryInFlightRef.current = true;
+    setRetrying(true);
+    try {
+      await loadTeam();
+    } finally {
+      retryInFlightRef.current = false;
+      if (mountedRef.current) setRetrying(false);
+    }
+  }, [loadTeam]);
+
+  // Initial membership/invite-status lookup once a team has loaded successfully and the
+  // visitor is signed in — mirrors the existing polling effects' own immediate call below,
+  // just triggered by the primary team becoming ready rather than embedded in loadTeam.
+  useEffect(() => {
+    if (teamLoadStatus !== "ready" || !session?.user?.email || !teamId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const m = await fetch(`/api/teams/${teamId}/membership`);
+        if (!cancelled && m.ok) {
+          const jr = await m.json();
+          setUserRole(jr.role);
+        }
+      } catch (e) {
+        console.error('Failed to fetch membership role', e);
+      }
+      try {
+        const s = await fetch(`/api/teams/${teamId}/invite-status`);
+        if (!cancelled && s.ok) {
+          const js = await s.json();
+          setInviteStatus(js.status === 'declined' ? 'none' : (js.status ?? 'none'));
+        }
+      } catch (ie) {
+        console.error('Failed to fetch invite status', ie);
+      }
+    })();
     return () => { cancelled = true; };
-  }, [teamId, status, router]);
+  }, [teamLoadStatus, session?.user?.email, teamId]);
 
   useEffect(() => {
     // If user is admin/moderator, fetch pending applications
@@ -180,7 +370,10 @@ export default function TeamDetailPage() {
           // If promoted to admin, refresh full team details so UI updates
           if (newRole === 'admin') {
             const t = await fetch(`/api/teams/${teamId}`);
-            if (t.ok) setTeam(await t.json());
+            if (t.ok) {
+              const normalized = normalizeTeamPayload(await t.json());
+              if (normalized) setTeam(normalized);
+            }
           }
         }
       } catch {
@@ -210,7 +403,10 @@ export default function TeamDetailPage() {
           // if accepted, refresh team and membership
           if (data.status === 'accepted') {
             const t = await fetch(`/api/teams/${teamId}`);
-            if (t.ok) setTeam(await t.json());
+            if (t.ok) {
+              const normalized = normalizeTeamPayload(await t.json());
+              if (normalized) setTeam(normalized);
+            }
             const m = await fetch(`/api/teams/${teamId}/membership`);
             if (m.ok) setUserRole((await m.json()).role);
           }
@@ -229,24 +425,43 @@ export default function TeamDetailPage() {
     };
   }, [inviteStatus, teamId]);
 
-  // Fetch team stats
+  // Fetch team stats — only once the primary team has loaded successfully; stale-safe via
+  // its own sequence/AbortController, independent of the primary team request lifecycle.
   useEffect(() => {
-    if (!teamId) return;
-    let cancelled = false;
+    if (teamLoadStatus !== "ready") return;
+
+    const seq = ++statsRequestSeqRef.current;
+    const controller = new AbortController();
+    statsAbortRef.current = controller;
+    setStatsLoading(true);
+    setStats(null);
+
+    const shouldApply = () => mountedRef.current && seq === statsRequestSeqRef.current;
+
     (async () => {
       try {
-        const res = await fetch(`/api/teams/${teamId}/stats`);
-        if (res.ok && !cancelled) {
-          setStats(await res.json());
+        const res = await fetch(`/api/teams/${teamId}/stats`, { cache: "no-store", signal: controller.signal });
+        if (!shouldApply()) return;
+        if (!res.ok) {
+          setStats(null);
+          return;
         }
-      } catch (e) {
-        console.error("Failed to fetch team stats:", e);
+        const data = await res.json();
+        if (!shouldApply()) return;
+        setStats(normalizeTeamDetailStats(data));
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError" || !shouldApply()) return;
+        setStats(null);
       } finally {
-        if (!cancelled) setStatsLoading(false);
+        if (shouldApply()) setStatsLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [teamId]);
+
+    return () => {
+      statsRequestSeqRef.current += 1;
+      controller.abort();
+    };
+  }, [teamLoadStatus, teamId]);
 
   // Fetch owned team themes for admin theme picker
   useEffect(() => {
@@ -265,61 +480,45 @@ export default function TeamDetailPage() {
     })();
   }, [userRole]);
 
-  if (status === "loading" || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: PAGE_BG }}>
-        <div style={{ color: '#FFC94A' }} className="text-lg">Loading team...</div>
-      </div>
-    );
+  // A retry is itself a foreground load, which flips teamLoadStatus back to
+  // "loading" — but the retry button (with its pending "Trying…" state) must
+  // stay visible rather than being replaced by the full skeleton, so this
+  // check must run before the loading-skeleton branch below.
+  if (retrying) {
+    return <TeamLoadErrorPanel onRetry={() => void retryTeamLoad()} pending />;
   }
 
-  if (error === "private") {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: PAGE_BG }}>
-        <div className="text-center pw-surface pw-bevel p-8 max-w-sm">
-          <div className="text-5xl mb-4">🔒</div>
-          <h2 className="text-2xl font-bold text-white mb-2">Private Team</h2>
-          <p className="mb-6" style={{ color: '#8891AC' }}>This team is private. You must be a member to view it.</p>
-          <Link href="/leaderboards/teams" className="inline-block px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors" style={{ backgroundColor: 'rgba(255,201,74,0.15)', color: '#FFC94A', border: '1px solid rgba(255,201,74,0.3)' }}>
-            ← Back to Leaderboards
-          </Link>
-        </div>
-      </div>
-    );
+  if (status === "loading" || teamLoadStatus === "loading") {
+    return <ShellWrapper><TeamDetailLoadingState /></ShellWrapper>;
   }
 
-  if (!team) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: PAGE_BG }}>
-        <div className="text-center pw-surface pw-bevel p-8 max-w-sm">
-          <div className="text-5xl mb-4">🏚️</div>
-          <h2 className="text-2xl font-bold text-white mb-2">Team Not Found</h2>
-          <p className="mb-6" style={{ color: '#8891AC' }}>This team may have been disbanded or the link is no longer valid.</p>
-          <Link href="/teams" className="inline-block px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors" style={{ backgroundColor: 'rgba(255,201,74,0.15)', color: '#FFC94A', border: '1px solid rgba(255,201,74,0.3)' }}>
-            ← Back to Teams
-          </Link>
-        </div>
-      </div>
-    );
+  if (teamLoadStatus === "private") {
+    return <PrivateTeamPanel />;
   }
 
-  // Resolve team theme — page background, header gradient, and any element styled from `t.*`
-  // stays fully driven by the team's equipped cosmetic theme; everything else (badges, buttons
-  // for fixed-purpose actions, row chrome) uses the fixed jewel-tone palette below.
-  const t = getThemeConfig(team.activeTheme);
+  if (teamLoadStatus === "not-found") {
+    return <TeamNotFoundPanel />;
+  }
 
-  const handleSetTheme = async (theme: string) => {
+  if (teamLoadStatus === "error" || !team) {
+    return <TeamLoadErrorPanel onRetry={() => void retryTeamLoad()} pending={false} />;
+  }
+
+  const theme = getThemeConfig(team.activeTheme);
+  const displayTeamName = team.name && team.name.trim() ? team.name : "Unnamed Team";
+
+  const handleSetTheme = async (themeKey: string) => {
     try {
       const res = await fetch(`/api/teams/${teamId}/theme`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme }),
+        body: JSON.stringify({ theme: themeKey }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to update theme');
       }
-      setTeam((prev) => prev ? { ...prev, activeTheme: theme } : prev);
+      setTeam((prev) => prev ? { ...prev, activeTheme: themeKey } : prev);
       setShowThemePicker(false);
     } catch (err: any) {
       setModalTitle('Theme update failed');
@@ -329,552 +528,282 @@ export default function TeamDetailPage() {
     }
   };
 
+  const readOnlyMembers: TeamDetailMember[] = team.members;
+
+  const renderMemberAction = (member: TeamDetailMember): ReactNode => {
+    if (!(userRole && ["admin", "moderator"].includes(userRole))) return null;
+    if (session?.user?.email && session.user.email === member.user.email) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setConfirmMember({
+            user: { id: member.user.id, name: member.user.name, email: member.user.email ?? null, image: member.user.image },
+            role: member.role,
+          });
+          setConfirmOpen(true);
+        }}
+        className="px-2.5 py-0.5 rounded text-xs font-semibold transition-colors hover:opacity-80"
+        style={{ backgroundColor: "rgba(255,59,92,0.18)", color: "#FF3B5C" }}
+      >
+        Remove
+      </button>
+    );
+  };
+
+  const heroActions = (
+    <>
+      {userRole === 'admin' && (
+        <button
+          onClick={() => setShowThemePicker(!showThemePicker)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+          style={{ backgroundColor: theme.primaryMuted, color: theme.primary, border: `1px solid ${theme.primaryBorder}` }}
+        >
+          <Palette className="w-4 h-4" />
+          Theme
+        </button>
+      )}
+      {userRole && ["admin", "moderator"].includes(userRole) && (
+        <button
+          onClick={() => setShowInviteModal(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+          style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}
+        >
+          <Mail className="w-4 h-4" />
+          Invite Members
+        </button>
+      )}
+      {userRole && (
+        <button
+          onClick={() => setConfirmLeaveOpen(true)}
+          className="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+          style={{ backgroundColor: 'rgba(255,59,92,0.15)', color: '#FF3B5C', border: '1px solid rgba(255,59,92,0.35)' }}
+        >
+          Leave Team
+        </button>
+      )}
+      {!userRole && team.isPublic && (
+        session?.user?.email ? (
+          inviteStatus === 'pending' ? (
+            <button disabled className="px-4 py-2 rounded-lg font-semibold text-sm opacity-70 cursor-not-allowed" style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}>
+              Application Submitted
+            </button>
+          ) : (
+            <button
+              onClick={async () => {
+                setInviteStatus('pending');
+                try {
+                  const res = await fetch(`/api/teams/${team.id}/apply`, { method: "POST" });
+                  if (res.ok) {
+                    setModalTitle('Application submitted');
+                    setModalMessage('Your application was submitted. Team admins will be notified.');
+                    setModalVariant('success');
+                    setModalOpen(true);
+                    return;
+                  }
+                  let body: any = null;
+                  try { body = await res.json(); } catch { /* ignore */ }
+                  const errorMsg = body?.error || (await res.text().catch(() => null)) || 'Failed to apply';
+                  if (typeof errorMsg === 'string' && /pending|already/i.test(errorMsg)) {
+                    setInviteStatus('pending');
+                    setModalTitle('Application pending');
+                    setModalMessage('You already have a pending application or invitation.');
+                    setModalVariant('info');
+                    setModalOpen(true);
+                    return;
+                  }
+                  throw new Error(errorMsg);
+                } catch (err: any) {
+                  setInviteStatus('none');
+                  setModalTitle('Application failed');
+                  setModalMessage(err?.message || 'Failed to submit application.');
+                  setModalVariant('error');
+                  setModalOpen(true);
+                }
+              }}
+              className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
+              style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}
+            >
+              Apply to Join
+            </button>
+          )
+        ) : (
+          <Link
+            href="/auth/signin"
+            className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
+            style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}
+          >
+            Sign in to Join
+          </Link>
+        )
+      )}
+    </>
+  );
+
   return (
-    <div style={{ backgroundColor: t.pageBg, backgroundImage: t.headerGradient }} className="min-h-screen">
-      <div className="px-3 sm:px-8 py-6 sm:py-8 pt-24 sm:pt-28">
-      <div className="max-w-5xl mx-auto">
+    <div style={{ backgroundColor: theme.pageBg, backgroundImage: theme.headerGradient }} className="min-h-screen">
+      <PageContainer size="catalog" className="pb-12 pt-24 sm:pt-28">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+          <TeamDetailHero
+            teamId={teamId}
+            name={team.name}
+            description={team.description}
+            isPublic={team.isPublic}
+            createdAt={team.createdAt}
+            userRole={userRole}
+            rank={stats?.rank ?? null}
+            totalTeams={stats?.totalTeams ?? null}
+            theme={theme}
+            actions={heroActions}
+          />
 
-        {error && (
-          <div className="mb-6 p-4 rounded-lg border text-white" style={{ backgroundColor: 'rgba(91,100,131,0.15)', borderColor: '#5B6483' }}>
-            {error}
-          </div>
-        )}
-
-        {/* ── Team Header ── */}
-        <div className="pw-bevel p-5 sm:p-8 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-          <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-6">
-            <div className="min-w-0">
-              <h1 className="text-2xl sm:text-4xl font-bold text-white mb-1 truncate">
-                {team.name}
-              </h1>
-              {team.description && (
-                <p className="text-sm sm:text-base" style={{ color: t.subtleText }}>{team.description}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {team.isPublic ? (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "rgba(46,217,145,0.15)", color: "#2ED991", border: "1px solid rgba(46,217,145,0.35)" }}>
-                  Public
-                </span>
-              ) : (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "rgba(91,100,131,0.2)", color: "#8891AC", border: "1px solid rgba(91,100,131,0.4)" }}>
-                  Private
-                </span>
-              )}
-              {stats && stats.rank > 0 && (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: t.primaryMuted, color: t.accentText, border: `1px solid ${t.primaryBorder}` }}>
-                  <Trophy className="w-3 h-3 inline mr-1" />
-                  Rank #{stats.rank}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex flex-wrap gap-2">
-            {userRole === 'admin' && (
-              <button
-                onClick={() => setShowThemePicker(!showThemePicker)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-                style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primaryBorder}` }}
-              >
-                <Palette className="w-4 h-4" />
-                Theme
-              </button>
-            )}
-            {userRole && ["admin", "moderator"].includes(userRole) && (
-              <button
-                onClick={() => setShowInviteModal(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-                style={{ background: t.btnPrimary, color: t.btnPrimaryText }}
-              >
-                <Mail className="w-4 h-4" />
-                Invite Members
-              </button>
-            )}
-            {userRole && (
-              <button
-                onClick={() => setConfirmLeaveOpen(true)}
-                className="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-                style={{ backgroundColor: 'rgba(255,59,92,0.15)', color: '#FF3B5C', border: '1px solid rgba(255,59,92,0.35)' }}
-              >
-                Leave Team
-              </button>
-            )}
-            {!userRole && team.isPublic && (
-              session?.user?.email ? (
-                inviteStatus === 'pending' ? (
-                  <button disabled className="px-4 py-2 rounded-lg font-semibold text-sm opacity-70 cursor-not-allowed" style={{ background: t.btnPrimary, color: t.btnPrimaryText }}>
-                    Application Submitted
-                  </button>
-                ) : (
-                  <button
-                    onClick={async () => {
-                      setInviteStatus('pending');
-                      try {
-                        const res = await fetch(`/api/teams/${team.id}/apply`, { method: "POST" });
-                        if (res.ok) {
-                          setModalTitle('Application submitted');
-                          setModalMessage('Your application was submitted. Team admins will be notified.');
-                          setModalVariant('success');
-                          setModalOpen(true);
-                          return;
-                        }
-                        let body: any = null;
-                        try { body = await res.json(); } catch { /* ignore */ }
-                        const errorMsg = body?.error || (await res.text().catch(() => null)) || 'Failed to apply';
-                        if (typeof errorMsg === 'string' && /pending|already/i.test(errorMsg)) {
-                          setInviteStatus('pending');
-                          setModalTitle('Application pending');
-                          setModalMessage('You already have a pending application or invitation.');
-                          setModalVariant('info');
-                          setModalOpen(true);
-                          return;
-                        }
-                        throw new Error(errorMsg);
-                      } catch (err: any) {
-                        setInviteStatus('none');
-                        setModalTitle('Application failed');
-                        setModalMessage(err?.message || 'Failed to submit application.');
-                        setModalVariant('error');
-                        setModalOpen(true);
-                      }
-                    }}
-                    className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
-                    style={{ background: t.btnPrimary, color: t.btnPrimaryText }}
-                  >
-                    Apply to Join
-                  </button>
-                )
-              ) : (
-                <Link
-                  href="/auth/signin"
-                  className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
-                  style={{ background: t.btnPrimary, color: t.btnPrimaryText }}
-                >
-                  Sign in to Join
-                </Link>
-              )
-            )}
-          </div>
-        </div>
-
-        {/* ── Theme Picker (admin only) ── */}
-        {showThemePicker && userRole === 'admin' && (
-          <div className="pw-bevel p-5 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-white font-bold text-sm">Choose Team Theme</h3>
-              <button onClick={() => setShowThemePicker(false)} className="hover:text-white text-sm transition-colors" style={{ color: "#8891AC" }}>✕</button>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
-              {['default', ...Object.keys(THEME_CONFIGS).filter(k => k !== 'default' && (ownedTeamThemes.includes(k)))].map((key) => {
-                const tc = THEME_CONFIGS[key];
-                const isActive = (team.activeTheme || 'default') === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => handleSetTheme(key)}
-                    className="relative rounded-lg p-3 text-center transition-all text-xs font-semibold"
-                    style={{
-                      backgroundColor: isActive ? tc.primaryMuted : 'rgba(255,255,255,0.03)',
-                      border: `2px solid ${isActive ? tc.primary : 'rgba(255,255,255,0.08)'}`,
-                      color: tc.primary,
-                    }}
-                  >
-                    <div className="w-6 h-6 rounded-full mx-auto mb-1" style={{ background: tc.btnPrimary.startsWith('linear') ? tc.btnPrimary : tc.primary }} />
-                    <span className="capitalize">{key.replace(/_/g, ' ')}</span>
-                    {isActive && <span className="absolute top-1 right-1 text-xs">✓</span>}
-                  </button>
-                );
-              })}
-              {ownedTeamThemes.length === 0 && (
-                <div className="col-span-full text-center py-2">
-                  <p className="text-xs" style={{ color: t.subtleText }}>No team themes owned yet.</p>
-                  <Link href="/store" className="text-xs font-semibold" style={{ color: t.primary }}>Visit Store →</Link>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Stats Overview ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
-          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Trophy className="w-4 h-4" style={{ color: t.accentText }} />
-              <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Rank</p>
-            </div>
-            {statsLoading ? (
-              <div className="h-7 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
-            ) : (
-              <p className="text-2xl font-bold text-white">
-                {stats?.rank ? `#${stats.rank}` : '—'}
-                {stats?.totalTeams ? <span className="text-xs font-normal ml-1" style={{ color: "#5B6483" }}>/ {stats.totalTeams}</span> : null}
-              </p>
-            )}
-          </div>
-          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Star className="w-4 h-4" style={{ color: t.primary }} />
-              <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Points</p>
-            </div>
-            {statsLoading ? (
-              <div className="h-7 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
-            ) : (
-              <p className="text-2xl font-bold text-white">
-                {stats?.totalEarnedPoints?.toLocaleString() ?? '0'}
-              </p>
-            )}
-          </div>
-          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Target className="w-4 h-4" style={{ color: t.primary }} />
-              <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Solved</p>
-            </div>
-            {statsLoading ? (
-              <div className="h-7 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
-            ) : (
-              <p className="text-2xl font-bold text-white">
-                {stats?.totalPuzzlesSolved?.toLocaleString() ?? '0'}
-                <span className="text-xs font-normal ml-1" style={{ color: "#5B6483" }}>puzzles</span>
-              </p>
-            )}
-          </div>
-          <div className="pw-bevel p-4" style={{ backgroundColor: t.statCardBg, border: `1px solid ${t.statCardBorder}`, boxShadow: t.cardGlow }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="w-4 h-4" style={{ color: t.primary }} />
-              <p className="text-xs font-medium uppercase tracking-wide" style={{ color: t.subtleText }}>Members</p>
-            </div>
-            <p className="text-2xl font-bold text-white">
-              {team.members.length}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
-
-          {/* ── Top Contributors ── */}
-          <div className="lg:col-span-2 pw-bevel p-5 sm:p-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-5 h-5" style={{ color: t.accentText }} />
-              <h2 className="text-lg font-bold text-white">Top Contributors</h2>
-            </div>
-            {statsLoading ? (
-              <div className="space-y-3">
-                {[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}
+          {/* ── Theme Picker (admin only) ── */}
+          {showThemePicker && userRole === 'admin' && (
+            <div className="pw-bevel p-5" style={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.cardBorder}`, boxShadow: theme.cardGlow }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white font-bold text-sm">Choose Team Theme</h3>
+                <button onClick={() => setShowThemePicker(false)} className="hover:text-white text-sm transition-colors" style={{ color: "#8891AC" }}>✕</button>
               </div>
-            ) : stats?.topContributors?.length > 0 ? (
-              <div className="space-y-2">
-                {stats.topContributors.slice(0, 5).map((c: any, i: number) => {
-                  const maxPts = stats.topContributors[0]?.earnedPoints || 1;
-                  const pct = Math.max(5, Math.round((c.earnedPoints / maxPts) * 100));
-                  const medals = ['🥇', '🥈', '🥉'];
-                  const podium = PODIUM_STYLE[i];
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                {['default', ...Object.keys(THEME_CONFIGS).filter(k => k !== 'default' && (ownedTeamThemes.includes(k)))].map((key) => {
+                  const tc = THEME_CONFIGS[key];
+                  const isActive = (team.activeTheme || 'default') === key;
                   return (
-                    <div key={c.userId} className="relative">
-                      <div
-                        className="absolute inset-0 rounded-lg opacity-10"
-                        style={{
-                          width: `${pct}%`,
-                          backgroundColor: podium ? podium.color : "#5B6483",
-                        }}
-                      />
-                      <div className="relative flex items-center justify-between p-3 rounded-lg">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className="shrink-0 flex items-center justify-center font-mono font-bold text-xs rounded-full"
-                            style={{
-                              width: 26,
-                              height: 26,
-                              color: podium ? podium.color : "#8891AC",
-                              background: podium ? "rgba(255,255,255,0.06)" : "transparent",
-                              boxShadow: podium ? `0 0 10px ${podium.glow}` : undefined,
-                              fontSize: medals[i] ? 14 : 11,
-                            }}
-                          >
-                            {medals[i] ?? i + 1}
-                          </div>
-                          {c.image ? (
-                            <img src={c.image} alt="" className="w-8 h-8 rounded-full object-cover object-center flex-shrink-0" style={{ border: podium ? `2px solid ${podium.ring}` : "1px solid rgba(255,255,255,0.1)" }} />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: podium ? `2px solid ${podium.ring}` : "1px solid rgba(255,255,255,0.1)" }}>
-                              👤
-                            </div>
-                          )}
-                          <Link href={`/profile/${c.userId}`} className="text-white font-medium hover:underline truncate">
-                            {c.name || 'Member'}
-                          </Link>
-                        </div>
-                        <div className="text-right flex-shrink-0 ml-2">
-                          <span className="text-white font-bold">{c.earnedPoints.toLocaleString()}</span>
-                          <span className="text-xs ml-1" style={{ color: "#8891AC" }}>pts</span>
-                          <span className="text-xs ml-2" style={{ color: "#5B6483" }}>{c.puzzlesSolved} solved</span>
-                        </div>
-                      </div>
-                    </div>
+                    <button
+                      key={key}
+                      onClick={() => handleSetTheme(key)}
+                      className="relative rounded-lg p-3 text-center transition-all text-xs font-semibold"
+                      style={{
+                        backgroundColor: isActive ? tc.primaryMuted : 'rgba(255,255,255,0.03)',
+                        border: `2px solid ${isActive ? tc.primary : 'rgba(255,255,255,0.08)'}`,
+                        color: tc.primary,
+                      }}
+                    >
+                      <div className="w-6 h-6 rounded-full mx-auto mb-1" style={{ background: tc.btnPrimary.startsWith('linear') ? tc.btnPrimary : tc.primary }} />
+                      <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+                      {isActive && <span className="absolute top-1 right-1 text-xs">✓</span>}
+                    </button>
                   );
                 })}
-              </div>
-            ) : (
-              <p className="text-sm" style={{ color: "#8891AC" }}>No activity yet. Solve puzzles to climb the ranks!</p>
-            )}
-          </div>
-
-          {/* ── Team Info Sidebar ── */}
-          <div className="pw-bevel p-5 sm:p-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-            <h2 className="text-lg font-bold text-white mb-4">Team Info</h2>
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: t.subtleText }}>Created</p>
-                <p className="text-white text-sm">{new Date(team.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: t.subtleText }}>Avg Points / Member</p>
-                {statsLoading ? (
-                  <div className="h-5 w-16 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
-                ) : (
-                  <p className="text-white text-sm font-semibold">{stats?.avgPointsPerMember?.toLocaleString() ?? '0'}</p>
+                {ownedTeamThemes.length === 0 && (
+                  <div className="col-span-full text-center py-2">
+                    <p className="text-xs" style={{ color: theme.subtleText }}>No team themes owned yet.</p>
+                    <Link href="/store" className="text-xs font-semibold" style={{ color: theme.primary }}>Visit Store →</Link>
+                  </div>
                 )}
               </div>
-              {userRole && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: t.subtleText }}>Team Code</p>
-                  <code className="text-xs font-mono px-2 py-1 rounded" style={{ color: t.primary, backgroundColor: t.inputBg }}>
-                    {teamId.substring(0, 8)}
-                  </code>
+            </div>
+          )}
+
+          <TeamDetailReadOnlyContent
+            members={readOnlyMembers}
+            stats={stats}
+            statsLoading={statsLoading}
+            theme={theme}
+            renderMemberAction={renderMemberAction}
+          />
+
+          {/* ── Pending Applications (admin/mod only) ── */}
+          {userRole && ["admin", "moderator"].includes(userRole) && (
+            <div className="pw-bevel p-5 sm:p-6" style={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.cardBorder}`, boxShadow: theme.cardGlow }}>
+              <h2 className="text-lg font-bold text-white mb-4">Pending Applications</h2>
+              {applications.length === 0 ? (
+                <p className="text-sm" style={{ color: "#8891AC" }}>No pending applications.</p>
+              ) : (
+                <div className="space-y-2">
+                  {applications.map((app) => (
+                    <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}>
+                      <div className="flex items-center gap-3">
+                        {app.user?.image ? (
+                          <img src={app.user.image} alt="" className="w-10 h-10 rounded-full object-cover object-center" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.primaryMuted, color: theme.primary }}>👤</div>
+                        )}
+                        <div>
+                          <p className="text-white font-semibold">{app.user?.name || app.user?.email || 'Applicant'}</p>
+                          <p className="text-xs" style={{ color: "#8891AC" }}>Applied {new Date(app.createdAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 sm:mt-0 flex gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'approve' }),
+                              });
+                              if (!res.ok) {
+                                const txt = await res.text();
+                                throw new Error(txt || 'Failed to approve applicant');
+                              }
+                              setApplications((prev) => prev.filter(a => a.id !== app.id));
+                              const t = await fetch(`/api/teams/${teamId}`);
+                              if (t.ok) {
+                                const normalized = normalizeTeamPayload(await t.json());
+                                if (normalized) setTeam(normalized);
+                              }
+                              setModalTitle('Applicant approved');
+                              setModalMessage('The applicant has been added to the team.');
+                              setModalVariant('success');
+                              setModalOpen(true);
+                            } catch (err) {
+                              console.error(err);
+                              setModalTitle('Approve failed');
+                              setModalMessage((err as any)?.message || 'Failed to approve applicant');
+                              setModalVariant('error');
+                              setModalOpen(true);
+                            }
+                          }}
+                          className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: "#2ED991", color: "#0B0E1A" }}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'deny' }),
+                              });
+                              if (!res.ok) {
+                                const txt = await res.text();
+                                throw new Error(txt || 'Failed to deny applicant');
+                              }
+                              setApplications((prev) => prev.filter(a => a.id !== app.id));
+                              setModalTitle('Applicant denied');
+                              setModalMessage('The applicant has been denied.');
+                              setModalVariant('info');
+                              setModalOpen(true);
+                            } catch (err) {
+                              console.error(err);
+                              setModalTitle('Deny failed');
+                              setModalMessage((err as any)?.message || 'Failed to deny applicant');
+                              setModalVariant('error');
+                              setModalOpen(true);
+                            }
+                          }}
+                          className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: "rgba(255,59,92,0.85)", color: "#fff" }}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: t.subtleText }}>Your Role</p>
-                <p className="text-white text-sm">{userRole ? (userRole === 'admin' ? '👑 Admin' : userRole === 'moderator' ? '🛡️ Moderator' : 'Member') : 'Not a member'}</p>
-              </div>
             </div>
-          </div>
-        </div>
-
-        {/* ── Recent Activity ── */}
-        <div className="pw-bevel p-5 sm:p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="w-5 h-5" style={{ color: t.primary }} />
-            <h2 className="text-lg font-bold text-white">Recent Activity</h2>
-          </div>
-          {statsLoading ? (
-            <div className="space-y-3">
-              {[1,2,3,4].map(i => <div key={i} className="h-10 rounded-lg animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}
-            </div>
-          ) : stats?.recentActivity?.length > 0 ? (
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {stats.recentActivity.map((a: any, i: number) => {
-                const diff = DIFFICULTY_STYLE[a.difficulty as string];
-                return (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}>
-                  {a.userImage ? (
-                    <img src={a.userImage} alt="" className="w-7 h-7 rounded-full object-cover object-center flex-shrink-0" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                  ) : (
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs" style={{ backgroundColor: t.primaryMuted, color: t.primary }}>
-                      👤
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm truncate">
-                      <span className="font-medium">{a.userName}</span>
-                      {' solved '}
-                      <span style={{ color: t.primary }}>{a.puzzleTitle || 'a puzzle'}</span>
-                    </p>
-                    <div className="flex items-center gap-2 text-xs" style={{ color: "#8891AC" }}>
-                      {a.difficulty && (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-medium" style={diff ? { backgroundColor: diff.bg, color: diff.text } : { backgroundColor: "rgba(91,100,131,0.2)", color: "#8891AC" }}>
-                          {a.difficulty}
-                        </span>
-                      )}
-                      <span>+{a.pointsEarned} pts</span>
-                      {a.solvedAt && (
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatTimeAgo(new Date(a.solvedAt))}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm" style={{ color: "#8891AC" }}>No puzzles solved yet. Get started!</p>
           )}
         </div>
-
-        {/* ── Members ── */}
-        <div className="pw-bevel p-5 sm:p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-          <div className="flex items-center gap-2 mb-4">
-            <Users className="w-5 h-5" style={{ color: t.primary }} />
-            <h2 className="text-lg font-bold text-white">Members</h2>
-            <span className="text-sm" style={{ color: "#8891AC" }}>({team.members.length})</span>
-          </div>
-          <div className="space-y-2">
-            {(stats?.topContributors || team.members).map((member: any) => {
-              const m = stats?.topContributors
-                ? member
-                : { userId: member.user.id, name: member.user.name, image: member.user.image, role: member.role, joinedAt: null, earnedPoints: 0, puzzlesSolved: 0 };
-              const teamMember = team.members.find((tm) => tm.user.id === m.userId);
-              const role = (m.role || teamMember?.role) as string;
-              const roleStyle = ROLE_STYLE[role];
-              return (
-                <div
-                  key={m.userId}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 rounded-lg"
-                  style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {m.image ? (
-                      <img src={m.image} alt="" className="w-10 h-10 rounded-full object-cover object-center flex-shrink-0" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.primaryMuted, color: t.primary }}>
-                        👤
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-white font-semibold truncate">
-                        <Link href={`/profile/${m.userId}`} className="hover:underline">
-                          {m.name || "Member"}
-                        </Link>
-                      </p>
-                      <div className="flex items-center gap-2 text-xs" style={{ color: "#8891AC" }}>
-                        {m.joinedAt && (
-                          <span>Joined {new Date(m.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                        )}
-                        {stats && <span>· {m.puzzlesSolved} solved · {m.earnedPoints.toLocaleString()} pts</span>}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 sm:mt-0 flex items-center gap-2">
-                    <span
-                      className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                      style={roleStyle ? { backgroundColor: roleStyle.bg, color: roleStyle.text } : { backgroundColor: "rgba(91,100,131,0.2)", color: "#8891AC" }}
-                    >
-                      {roleStyle ? roleStyle.label : "Member"}
-                    </span>
-
-                    {userRole && ["admin", "moderator"].includes(userRole) && session?.user?.email !== teamMember?.user?.email && teamMember && (
-                      <button
-                        onClick={() => {
-                          setConfirmMember(teamMember);
-                          setConfirmOpen(true);
-                        }}
-                        className="px-2.5 py-0.5 rounded text-xs font-semibold transition-colors hover:opacity-80"
-                        style={{ backgroundColor: "rgba(255,59,92,0.18)", color: "#FF3B5C" }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Pending Applications (admin/mod only) ── */}
-        {userRole && ["admin", "moderator"].includes(userRole) && (
-          <div className="pw-bevel p-5 sm:p-6 mb-6" style={{ backgroundColor: t.cardBg, border: `1px solid ${t.cardBorder}`, boxShadow: t.cardGlow }}>
-            <h2 className="text-lg font-bold text-white mb-4">Pending Applications</h2>
-            {applications.length === 0 ? (
-              <p className="text-sm" style={{ color: "#8891AC" }}>No pending applications.</p>
-            ) : (
-              <div className="space-y-2">
-                {applications.map((app) => (
-                  <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}>
-                    <div className="flex items-center gap-3">
-                      {app.user?.image ? (
-                        <img src={app.user.image} alt="" className="w-10 h-10 rounded-full object-cover object-center" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: t.primaryMuted, color: t.primary }}>👤</div>
-                      )}
-                      <div>
-                        <p className="text-white font-semibold">{app.user?.name || app.user?.email || 'Applicant'}</p>
-                        <p className="text-xs" style={{ color: "#8891AC" }}>Applied {new Date(app.createdAt).toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 sm:mt-0 flex gap-2">
-                      <button
-                        onClick={async () => {
-                          try {
-                            const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ action: 'approve' }),
-                            });
-                            if (!res.ok) {
-                              const txt = await res.text();
-                              throw new Error(txt || 'Failed to approve applicant');
-                            }
-                            setApplications((prev) => prev.filter(a => a.id !== app.id));
-                            const t = await fetch(`/api/teams/${teamId}`);
-                            if (t.ok) setTeam(await t.json());
-                            setModalTitle('Applicant approved');
-                            setModalMessage('The applicant has been added to the team.');
-                            setModalVariant('success');
-                            setModalOpen(true);
-                          } catch (err) {
-                            console.error(err);
-                            setModalTitle('Approve failed');
-                            setModalMessage((err as any)?.message || 'Failed to approve applicant');
-                            setModalVariant('error');
-                            setModalOpen(true);
-                          }
-                        }}
-                        className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
-                        style={{ backgroundColor: "#2ED991", color: "#0B0E1A" }}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ action: 'deny' }),
-                            });
-                            if (!res.ok) {
-                              const txt = await res.text();
-                              throw new Error(txt || 'Failed to deny applicant');
-                            }
-                            setApplications((prev) => prev.filter(a => a.id !== app.id));
-                            setModalTitle('Applicant denied');
-                            setModalMessage('The applicant has been denied.');
-                            setModalVariant('info');
-                            setModalOpen(true);
-                          } catch (err) {
-                            console.error(err);
-                            setModalTitle('Deny failed');
-                            setModalMessage((err as any)?.message || 'Failed to deny applicant');
-                            setModalVariant('error');
-                            setModalOpen(true);
-                          }
-                        }}
-                        className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
-                        style={{ backgroundColor: "rgba(255,59,92,0.85)", color: "#fff" }}
-                      >
-                        Deny
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-      </div>
+      </PageContainer>
 
       {team && (
         <InviteTeamModal
           teamId={team.id}
-          teamName={team.name}
+          teamName={displayTeamName}
           isOpen={showInviteModal}
           onClose={() => setShowInviteModal(false)}
           onSuccess={() => {
@@ -905,7 +834,10 @@ export default function TeamDetailPage() {
             }
             // Refresh team members
             const t = await fetch(`/api/teams/${teamId}`);
-            if (t.ok) setTeam(await t.json());
+            if (t.ok) {
+              const normalized = normalizeTeamPayload(await t.json());
+              if (normalized) setTeam(normalized);
+            }
             setModalTitle('Member removed');
             setModalMessage(`${confirmMember.user.name || confirmMember.user.email} was removed from the team.`);
             setModalVariant('success');
@@ -924,7 +856,7 @@ export default function TeamDetailPage() {
       <ConfirmModal
         isOpen={confirmLeaveOpen}
         title={`Leave team`}
-        message={`Are you sure you want to leave the team ${team.name}?`}
+        message={`Are you sure you want to leave the team ${displayTeamName}?`}
         confirmLabel="Leave"
         cancelLabel="Cancel"
         onCancel={() => setConfirmLeaveOpen(false)}
@@ -940,7 +872,7 @@ export default function TeamDetailPage() {
               throw new Error(txt);
             }
             setModalTitle('Left team');
-            setModalMessage(`You have left ${team.name}.`);
+            setModalMessage(`You have left ${displayTeamName}.`);
             setModalVariant('success');
             setModalOpen(true);
             // show the modal briefly, then navigate back to teams list so user sees confirmation
