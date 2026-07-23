@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuthenticatedUser } from "@/lib/requireAuthenticatedUser";
 import { validateSameOrigin } from "@/lib/requestSecurity";
+import { sanitizePublicPuzzleData } from "@/lib/publicPuzzleData";
+import { Prisma } from "@prisma/client";
 
 /**
  * POST /api/warz/accept
@@ -112,12 +114,49 @@ export async function POST(request: NextRequest) {
           status: "IN_PROGRESS",
         },
         include: {
-          puzzle: { select: { id: true, title: true, difficulty: true, puzzleType: true } },
+          puzzle: {
+            select: {
+              id: true,
+              title: true,
+              difficulty: true,
+              puzzleType: true,
+              data: true,
+              sudoku: {
+                select: {
+                  puzzleGrid: true,
+                  solutionGrid: true,
+                },
+              },
+              jigsaw: {
+                select: {
+                  imageUrl: true,
+                  gridRows: true,
+                  gridCols: true,
+                  snapTolerance: true,
+                  rotationEnabled: true,
+                },
+              },
+            },
+          },
           challenger: { select: { id: true, name: true, image: true, level: true } },
           opponent: { select: { id: true, name: true, image: true, level: true } },
         },
       }),
     ]);
+
+    const safeUpdated = {
+      ...updated,
+      puzzle:
+        updated.puzzle && updated.puzzle.data
+          ? {
+              ...updated.puzzle,
+              data: sanitizePublicPuzzleData(
+                updated.puzzle.puzzleType,
+                updated.puzzle.data
+              ) as Prisma.JsonValue,
+            }
+          : updated.puzzle,
+    };
 
     // Notify challenger
     try {
@@ -135,7 +174,7 @@ export async function POST(request: NextRequest) {
       // Non-critical
     }
 
-    return NextResponse.json({ challenge: updated });
+    return NextResponse.json({ challenge: safeUpdated });
   } catch (err) {
     console.error("[WARZ ACCEPT]", err);
     return NextResponse.json({ error: "Failed to accept challenge" }, { status: 500 });

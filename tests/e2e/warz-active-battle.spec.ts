@@ -19,6 +19,65 @@ const HIDDEN_WORD_PUZZLE = {
   data: { wordLength: 5, maxGuesses: 6 },
 };
 
+// A well-known valid Sudoku puzzle/solution pair — deterministic, real
+// gameplay data, matching the `JSON.stringify(number[][])` shape
+// WarzPlayBoard parses via `puzzle.sudoku.puzzleGrid` / `solutionGrid`.
+const SUDOKU_SOLUTION = [
+  [5, 3, 4, 6, 7, 8, 9, 1, 2],
+  [6, 7, 2, 1, 9, 5, 3, 4, 8],
+  [1, 9, 8, 3, 4, 2, 5, 6, 7],
+  [8, 5, 9, 7, 6, 1, 4, 2, 3],
+  [4, 2, 6, 8, 5, 3, 7, 9, 1],
+  [7, 1, 3, 9, 2, 4, 8, 5, 6],
+  [9, 6, 1, 5, 3, 7, 2, 8, 4],
+  [2, 8, 7, 4, 1, 9, 6, 3, 5],
+  [3, 4, 5, 2, 8, 6, 1, 7, 9],
+];
+const SUDOKU_PUZZLE_GRID = [
+  [5, 3, 0, 0, 7, 0, 0, 0, 0],
+  [6, 0, 0, 1, 9, 5, 0, 0, 0],
+  [0, 9, 8, 0, 0, 0, 0, 6, 0],
+  [8, 0, 0, 0, 6, 0, 0, 0, 3],
+  [4, 0, 0, 8, 0, 3, 0, 0, 1],
+  [7, 0, 0, 0, 2, 0, 0, 0, 6],
+  [0, 6, 0, 0, 0, 0, 2, 8, 0],
+  [0, 0, 0, 4, 1, 9, 0, 0, 5],
+  [0, 0, 0, 0, 8, 0, 0, 7, 9],
+];
+
+const SUDOKU_PUZZLE = {
+  id: "battle-sudoku",
+  title: "Arena Sudoku",
+  difficulty: "medium",
+  puzzleType: "sudoku",
+  data: {},
+  sudoku: {
+    puzzleGrid: JSON.stringify(SUDOKU_PUZZLE_GRID),
+    solutionGrid: JSON.stringify(SUDOKU_SOLUTION),
+  },
+};
+
+// Deterministic jigsaw fixture — same inline SVG + route pattern already
+// established in tests/e2e/jigsaw-mobile.spec.ts.
+const JIGSAW_IMAGE = "/e2e-battle-jigsaw.svg";
+const JIGSAW_IMAGE_BODY =
+  "<svg xmlns='http://www.w3.org/2000/svg' width='800' height='500' viewBox='0 0 800 500'><rect width='800' height='500' fill='#1d4ed8'/><circle cx='400' cy='250' r='150' fill='#fde74c'/></svg>";
+
+const JIGSAW_PUZZLE = {
+  id: "battle-jigsaw",
+  title: "Arena Jigsaw",
+  difficulty: "medium",
+  puzzleType: "jigsaw",
+  data: {},
+  jigsaw: {
+    imageUrl: JIGSAW_IMAGE,
+    gridRows: 2,
+    gridCols: 2,
+    snapTolerance: 24,
+    rotationEnabled: false,
+  },
+};
+
 async function authenticate(page: Page, userId: string, name: string) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("NEXTAUTH_SECRET is required for protected-route browser tests");
@@ -174,6 +233,63 @@ async function installOpponentFixture(page: Page, options: { failGuessesUntilLos
     completeCallCount: () => completeCalls,
     lastCompleteBody: () => lastCompleteBody,
     guessCallCount: () => guessCalls,
+    challengeId: challenge.id,
+  };
+}
+
+/** Installs deterministic routes for the opponent flow with a Sudoku or
+ * Jigsaw puzzle, pre-accepted (IN_PROGRESS) — used to verify the real
+ * renderer (not the missing-payload fallback) mounts inside the shared
+ * active-battle shell. */
+async function installOpponentFixtureForPuzzle(
+  page: Page,
+  puzzle: typeof SUDOKU_PUZZLE | typeof JIGSAW_PUZZLE
+) {
+  let completeCalls = 0;
+
+  const challenge = {
+    id: `battle-challenge-${puzzle.id}`,
+    status: "IN_PROGRESS",
+    challengerWager: 50,
+    expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+    puzzle,
+    challenger: CHALLENGER,
+    opponent: { id: USER.id, username: USER.username },
+    invitedUser: null,
+  };
+
+  if (puzzle.puzzleType === "jigsaw") {
+    await page.route("**/e2e-battle-jigsaw.svg*", (route) =>
+      route.fulfill({ status: 200, contentType: "image/svg+xml", body: JIGSAW_IMAGE_BODY })
+    );
+  }
+
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname.replace(/\/$/, "");
+    const method = request.method();
+    const fulfill = (body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
+
+    if (path === "/api/auth/session") {
+      return fulfill({ user: { id: USER.id, name: USER.name, email: "battler@example.test" }, expires: "2099-01-01T00:00:00.000Z" });
+    }
+    if (path === `/api/warz/${challenge.id}` && method === "GET") {
+      return fulfill({ challenge });
+    }
+    if (path === "/api/user/info" && method === "GET") {
+      return fulfill(USER);
+    }
+    if (path === "/api/warz/complete" && method === "POST") {
+      completeCalls += 1;
+      return fulfill({ winnerId: USER.id, tie: false });
+    }
+    return fulfill({});
+  });
+
+  return {
+    completeCallCount: () => completeCalls,
     challengeId: challenge.id,
   };
 }
@@ -460,5 +576,74 @@ test.describe("Warz active battle — reduced motion", () => {
     await startSolving(page);
     await solveHiddenWord(page);
     await expect(page.getByText("Puzzle Complete")).toBeVisible({ timeout: 15000 });
+  });
+});
+
+test.describe("Warz active battle — Sudoku and Jigsaw opponent rendering", () => {
+  test("Sudoku: the real board renders inside the shared shell with a working HUD, timer, wager, and forfeit", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page, USER.id, USER.name);
+    const fixture = await installOpponentFixtureForPuzzle(page, SUDOKU_PUZZLE);
+    await page.goto(opponentUrl(fixture.challengeId), { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await page.getByRole("button", { name: "Play Battle" }).click();
+    await expect(page.locator('[data-testid="warz-active-play-shell"]')).toBeVisible();
+
+    // Real Sudoku board content — not the missing-payload fallback.
+    await expect(page.locator('[data-testid="sudoku-root"]')).toBeVisible();
+    await expect(page.getByRole("gridcell").first()).toBeVisible();
+    await expect(page.getByText("Sudoku data missing.")).toHaveCount(0);
+    await expect(page.getByText("Jigsaw image missing.")).toHaveCount(0);
+    await expect(page.getByText(/Unsupported puzzle type/i)).toHaveCount(0);
+
+    // Shared HUD, timer, wager.
+    await expect(page.locator('[data-testid="warz-active-play-shell"]').getByText("Puzzle Warz")).toBeVisible();
+    await expect(page.getByText("50 Points")).toBeVisible();
+    await expect(page.locator("text=/^\\d{2}:\\d{2}$/").first()).toBeVisible();
+
+    // Forfeit remains functional.
+    const forfeitBtn = page.getByRole("button", { name: /forfeit/i });
+    await forfeitBtn.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Keep Fighting" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(fixture.completeCallCount()).toBe(0);
+
+    // Interact with the real board — click an editable cell.
+    await page.getByRole("gridcell").first().click();
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("Jigsaw: the real board renders inside the shared shell with a working HUD, timer, wager, and forfeit", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page, USER.id, USER.name);
+    const fixture = await installOpponentFixtureForPuzzle(page, JIGSAW_PUZZLE);
+    await page.goto(opponentUrl(fixture.challengeId), { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await page.getByRole("button", { name: "Play Battle" }).click();
+    await expect(page.locator('[data-testid="warz-active-play-shell"]')).toBeVisible();
+
+    // Real Jigsaw board content — not the missing-image fallback.
+    await expect(page.locator(".jigsaw-root")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".jigsaw-board-canvas")).toBeVisible();
+    await expect(page.locator(".jigsaw-tray-piece").first()).toBeVisible();
+    await expect(page.getByText("Jigsaw image missing.")).toHaveCount(0);
+    await expect(page.getByText("Sudoku data missing.")).toHaveCount(0);
+    await expect(page.getByText(/Unsupported puzzle type/i)).toHaveCount(0);
+
+    // Shared HUD, timer, wager.
+    await expect(page.locator('[data-testid="warz-active-play-shell"]').getByText("Puzzle Warz")).toBeVisible();
+    await expect(page.getByText("50 Points")).toBeVisible();
+    await expect(page.locator("text=/^\\d{2}:\\d{2}$/").first()).toBeVisible();
+
+    // Forfeit remains functional.
+    const forfeitBtn = page.getByRole("button", { name: /forfeit/i });
+    await forfeitBtn.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Keep Fighting" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(fixture.completeCallCount()).toBe(0);
+
+    await expectNoHorizontalOverflow(page);
   });
 });

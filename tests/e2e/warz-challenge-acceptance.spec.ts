@@ -32,11 +32,79 @@ const PUZZLE = {
   },
 };
 
-/** The exact shape the real `/api/warz/accept` response uses — metadata
- * only, never the playable payload. Spreading the full original challenge
- * here would mask the defect this spec exists to catch. */
-function acceptResponsePuzzle(puzzle: typeof PUZZLE) {
-  return { id: puzzle.id, title: puzzle.title, difficulty: puzzle.difficulty, puzzleType: puzzle.puzzleType };
+// A well-known valid Sudoku puzzle/solution pair — deterministic, real
+// gameplay data, matching the `JSON.stringify(number[][])` shape
+// WarzPlayBoard parses via `puzzle.sudoku.puzzleGrid` / `solutionGrid`.
+const SUDOKU_SOLUTION = [
+  [5, 3, 4, 6, 7, 8, 9, 1, 2],
+  [6, 7, 2, 1, 9, 5, 3, 4, 8],
+  [1, 9, 8, 3, 4, 2, 5, 6, 7],
+  [8, 5, 9, 7, 6, 1, 4, 2, 3],
+  [4, 2, 6, 8, 5, 3, 7, 9, 1],
+  [7, 1, 3, 9, 2, 4, 8, 5, 6],
+  [9, 6, 1, 5, 3, 7, 2, 8, 4],
+  [2, 8, 7, 4, 1, 9, 6, 3, 5],
+  [3, 4, 5, 2, 8, 6, 1, 7, 9],
+];
+const SUDOKU_PUZZLE_GRID = [
+  [5, 3, 0, 0, 7, 0, 0, 0, 0],
+  [6, 0, 0, 1, 9, 5, 0, 0, 0],
+  [0, 9, 8, 0, 0, 0, 0, 6, 0],
+  [8, 0, 0, 0, 6, 0, 0, 0, 3],
+  [4, 0, 0, 8, 0, 3, 0, 0, 1],
+  [7, 0, 0, 0, 2, 0, 0, 0, 6],
+  [0, 6, 0, 0, 0, 0, 2, 8, 0],
+  [0, 0, 0, 4, 1, 9, 0, 0, 5],
+  [0, 0, 0, 0, 8, 0, 0, 7, 9],
+];
+
+const SUDOKU_PUZZLE = {
+  id: "warz-accept-sudoku",
+  title: "Arena Sudoku",
+  difficulty: "medium",
+  puzzleType: "sudoku",
+  data: {},
+  sudoku: {
+    puzzleGrid: JSON.stringify(SUDOKU_PUZZLE_GRID),
+    solutionGrid: JSON.stringify(SUDOKU_SOLUTION),
+  },
+};
+
+// Deterministic jigsaw fixture — same inline SVG + route pattern already
+// established in tests/e2e/jigsaw-mobile.spec.ts.
+const JIGSAW_IMAGE = "/e2e-warz-jigsaw.svg";
+const JIGSAW_IMAGE_BODY =
+  "<svg xmlns='http://www.w3.org/2000/svg' width='800' height='500' viewBox='0 0 800 500'><rect width='800' height='500' fill='#1d4ed8'/><circle cx='400' cy='250' r='150' fill='#fde74c'/></svg>";
+
+const JIGSAW_PUZZLE = {
+  id: "warz-accept-jigsaw",
+  title: "Arena Jigsaw",
+  difficulty: "medium",
+  puzzleType: "jigsaw",
+  data: {},
+  jigsaw: {
+    imageUrl: JIGSAW_IMAGE,
+    gridRows: 2,
+    gridCols: 2,
+    snapTolerance: 24,
+    rotationEnabled: false,
+  },
+};
+
+/** The exact shape the real `/api/warz/accept` response uses after the Pass
+ * 11 correction — full playable payload, not metadata-only. */
+function acceptResponsePuzzle(
+  puzzle: typeof PUZZLE | typeof SUDOKU_PUZZLE | typeof JIGSAW_PUZZLE
+) {
+  return {
+    id: puzzle.id,
+    title: puzzle.title,
+    difficulty: puzzle.difficulty,
+    puzzleType: puzzle.puzzleType,
+    data: puzzle.data,
+    sudoku: "sudoku" in puzzle ? puzzle.sudoku : null,
+    jigsaw: "jigsaw" in puzzle ? puzzle.jigsaw : null,
+  };
 }
 
 async function authenticate(page: Page) {
@@ -65,7 +133,7 @@ interface ChallengeFixture {
   status: string;
   challengerWager: number;
   expiresAt: string;
-  puzzle: typeof PUZZLE;
+  puzzle: typeof PUZZLE | typeof SUDOKU_PUZZLE | typeof JIGSAW_PUZZLE;
   challenger: typeof CHALLENGER;
   opponent?: { id: string; username?: string; name?: string } | null;
   invitedUser?: { id: string; username?: string; name?: string } | null;
@@ -102,6 +170,10 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let userInfoRequestCount = 0;
   let puzzleDetailRequestCount = 0;
   const heldAcceptRoutes: Array<{ fulfill: (body: unknown, status?: number) => Promise<void> }> = [];
+
+  await page.route("**/e2e-warz-jigsaw.svg*", (route) =>
+    route.fulfill({ status: 200, contentType: "image/svg+xml", body: JIGSAW_IMAGE_BODY })
+  );
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -331,6 +403,95 @@ test.describe("Warz challenge acceptance — open challenge", () => {
 
     // 11. Exactly one WarzPlayBoard/active-play-shell instance.
     await expect(page.locator('[data-testid="warz-active-play-shell"]')).toHaveCount(1);
+  });
+});
+
+test.describe("Warz challenge acceptance — Sudoku and Jigsaw payloads", () => {
+  test("Sudoku: challenge-detail and acceptance responses carry the playable payload and the real renderer mounts", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const challenge = baseChallenge({ id: "open-accept-sudoku", puzzle: SUDOKU_PUZZLE });
+    const fixture = await installFixture(page, { challenge });
+
+    let sawSudokuInChallengeDetail = false;
+    let sawSudokuInAcceptResponse = false;
+    page.on("response", async (response) => {
+      const url = new URL(response.url());
+      const path = url.pathname.replace(/\/$/, "");
+      if (path === `/api/warz/${challenge.id}` && response.request().method() === "GET") {
+        const json = await response.json().catch(() => null);
+        if (json?.challenge?.puzzle?.sudoku?.puzzleGrid && json?.challenge?.puzzle?.sudoku?.solutionGrid) {
+          sawSudokuInChallengeDetail = true;
+        }
+      }
+      if (path === "/api/warz/accept" && response.request().method() === "POST") {
+        const json = await response.json().catch(() => null);
+        if (json?.challenge?.puzzle?.sudoku?.puzzleGrid && json?.challenge?.puzzle?.sudoku?.solutionGrid) {
+          sawSudokuInAcceptResponse = true;
+        }
+      }
+    });
+
+    await page.goto(challengeUrl("open-accept-sudoku"), { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByRole("button", { name: "Accept & Start Battle" }).click();
+    await expect(page.locator('[data-testid="warz-active-play-shell"]')).toBeVisible();
+
+    expect(sawSudokuInChallengeDetail).toBe(true);
+    expect(sawSudokuInAcceptResponse).toBe(true);
+
+    // The real Sudoku renderer mounted — not the missing-payload fallback.
+    await expect(page.locator('[data-testid="sudoku-root"]')).toBeVisible();
+    await expect(page.getByText("Sudoku data missing.")).toHaveCount(0);
+    await expect(page.getByText("Jigsaw image missing.")).toHaveCount(0);
+    await expect(page.getByRole("gridcell").first()).toBeVisible();
+
+    expect(fixture.challengeRequestCount()).toBe(1);
+    expect(fixture.acceptCallCount()).toBe(1);
+    expect(fixture.puzzleDetailRequestCount()).toBe(0);
+  });
+
+  test("Jigsaw: challenge-detail and acceptance responses carry the playable payload and the real renderer mounts", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const challenge = baseChallenge({ id: "open-accept-jigsaw", puzzle: JIGSAW_PUZZLE });
+    const fixture = await installFixture(page, { challenge });
+
+    let sawJigsawInChallengeDetail = false;
+    let sawJigsawInAcceptResponse = false;
+    page.on("response", async (response) => {
+      const url = new URL(response.url());
+      const path = url.pathname.replace(/\/$/, "");
+      if (path === `/api/warz/${challenge.id}` && response.request().method() === "GET") {
+        const json = await response.json().catch(() => null);
+        if (json?.challenge?.puzzle?.jigsaw?.imageUrl) sawJigsawInChallengeDetail = true;
+      }
+      if (path === "/api/warz/accept" && response.request().method() === "POST") {
+        const json = await response.json().catch(() => null);
+        if (json?.challenge?.puzzle?.jigsaw?.imageUrl) sawJigsawInAcceptResponse = true;
+      }
+    });
+
+    await page.goto(challengeUrl("open-accept-jigsaw"), { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByRole("button", { name: "Accept & Start Battle" }).click();
+    await expect(page.locator('[data-testid="warz-active-play-shell"]')).toBeVisible();
+
+    expect(sawJigsawInChallengeDetail).toBe(true);
+    expect(sawJigsawInAcceptResponse).toBe(true);
+
+    // The real Jigsaw renderer mounted — not the missing-image fallback.
+    await expect(page.locator(".jigsaw-root")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator(".jigsaw-board-canvas")).toBeVisible();
+    await expect(page.locator(".jigsaw-tray-piece").first()).toBeVisible();
+    await expect(page.getByText("Jigsaw image missing.")).toHaveCount(0);
+    await expect(page.getByText("Sudoku data missing.")).toHaveCount(0);
+
+    expect(fixture.challengeRequestCount()).toBe(1);
+    expect(fixture.acceptCallCount()).toBe(1);
+    expect(fixture.puzzleDetailRequestCount()).toBe(0);
   });
 });
 

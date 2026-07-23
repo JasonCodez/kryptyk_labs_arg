@@ -18,7 +18,30 @@ export async function GET(
     const challenge = await prisma.puzzleWarzChallenge.findUnique({
       where: { id },
       include: {
-        puzzle: { select: { id: true, title: true, difficulty: true, puzzleType: true, data: true } },
+        puzzle: {
+          select: {
+            id: true,
+            title: true,
+            difficulty: true,
+            puzzleType: true,
+            data: true,
+            sudoku: {
+              select: {
+                puzzleGrid: true,
+                solutionGrid: true,
+              },
+            },
+            jigsaw: {
+              select: {
+                imageUrl: true,
+                gridRows: true,
+                gridCols: true,
+                snapTolerance: true,
+                rotationEnabled: true,
+              },
+            },
+          },
+        },
         challenger: { select: { id: true, name: true, image: true, level: true } },
         opponent: { select: { id: true, name: true, image: true, level: true } },
         winner: { select: { id: true, name: true } },
