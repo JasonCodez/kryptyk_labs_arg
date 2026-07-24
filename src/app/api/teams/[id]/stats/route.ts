@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   aggregateTeamScoreFromMembershipWindow,
@@ -31,6 +33,7 @@ export async function GET(
                 id: true,
                 name: true,
                 image: true,
+                email: true,
               },
             },
           },
@@ -40,6 +43,15 @@ export async function GET(
 
     if (!team) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+
+    if (!team.isPublic) {
+      const session = await getServerSession(authOptions);
+      const isMember = !!session?.user?.email
+        && team.members.some((m) => m.user.email === session.user?.email);
+      if (!isMember) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     const memberIds = team.members.map((m) => m.userId);

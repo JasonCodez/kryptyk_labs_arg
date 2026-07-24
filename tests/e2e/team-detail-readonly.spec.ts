@@ -221,18 +221,86 @@ test.describe("Team Detail — populated fixture", () => {
 });
 
 test.describe("Team Detail — public anonymous", () => {
-  // The site's existing proxy (src/proxy.ts, frozen and out of Pass 16A's
-  // scope) unconditionally gates every /teams/* path behind authentication
-  // at the edge, redirecting unauthenticated visitors to /auth/signin before
-  // the page ever renders — the same pre-existing, pass-independent gate
-  // already documented for other protected routes (e.g. mobile-shell.spec.ts's
-  // /puzzles/nonexistent-id case). This is unrelated to and unaffected by the
-  // read-only redesign: the page component itself never redirects
-  // unauthenticated visitors (see page.tsx's session-status effect).
-  test("pre-existing proxy auth gate redirects unauthenticated visitors to sign-in (unaffected by the read-only redesign)", async ({ page }) => {
+  // Pass 16A.1: the proxy now carries a narrow exception for the exact
+  // /teams/[id] path, so an unauthenticated visitor reaches the page for a
+  // public team instead of being redirected to /auth/signin. The primary
+  // Team API and the page itself already handled anonymous viewing
+  // correctly — this exercises that the routing layer now lets them.
+  test("anonymous visitor reaches a public team, sees full read-only content, and no management controls or mutations", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fixture = await installFixture(page, { authenticated: false });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+    await expect(page).not.toHaveURL(/\/auth\/signin/);
+
+    await expect(page.getByText("Midnight Puzzle Society")).toBeVisible();
+
+    const stats = page.getByTestId("team-detail-stats");
+    await expect(stats).toBeVisible();
+    await expect(stats.getByText("#4")).toBeVisible();
+
+    const contributors = page.getByTestId("team-detail-contributors");
+    await expect(contributors.getByText("Top Contributors")).toBeVisible();
+    await expect(contributors.getByText("3,000")).toBeVisible();
+
+    const activity = page.getByTestId("team-detail-activity");
+    await expect(activity.getByText("Recent Activity")).toBeVisible();
+
+    const roster = page.getByTestId("team-detail-members");
+    await expect(roster.getByText("Moderator Mo")).toBeVisible();
+
+    await expect(page.getByRole("link", { name: "Sign in to Join" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Theme$/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Invite Members" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Leave Team" })).toHaveCount(0);
+    await expect(page.getByText("Pending Applications")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Remove" })).toHaveCount(0);
+
+    expect(fixture.mutations.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Detail — anonymous private team", () => {
+  test("anonymous visitor reaches the route but sees only the Private Team panel, with no data exposure and no stats request", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fixture = await installFixture(page, { authenticated: false, teamStatus: 403 });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+    await expect(page).not.toHaveURL(/\/auth\/signin/);
+
+    await expect(page.getByText("Private Team")).toBeVisible();
+    await expect(page.getByText("This team is private. You must be a member to view it.")).toBeVisible();
+
+    await expect(page.getByText("Midnight Puzzle Society")).toHaveCount(0);
+    await expect(page.getByText("Moderator Mo")).toHaveCount(0);
+    await expect(page.getByTestId("team-detail-stats")).toHaveCount(0);
+    await expect(page.getByTestId("team-detail-contributors")).toHaveCount(0);
+    await expect(page.getByTestId("team-detail-activity")).toHaveCount(0);
+
+    expect(fixture.statsCallCount()).toBe(0);
+    expect(fixture.mutations.length).toBe(0);
+  });
+});
+
+test.describe("Team Detail — proxy boundary", () => {
+  test("the Teams index remains protected for anonymous visitors", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await installFixture(page, { authenticated: false });
-    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await page.goto("/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page).toHaveURL(/\/auth\/signin/);
+  });
+
+  test("a nested Team management-like path remains protected for anonymous visitors", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { authenticated: false });
+    await page.goto(`/teams/${TEAM_ID}/settings`, { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
 
     await expect(page).toHaveURL(/\/auth\/signin/);
