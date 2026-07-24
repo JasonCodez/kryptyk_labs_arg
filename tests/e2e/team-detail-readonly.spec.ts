@@ -103,6 +103,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let teamCalls = 0;
   let statsCalls = 0;
   const mutations: Array<{ url: string; method: string }> = [];
+  const themeRequests: Array<{ method: string; body: unknown }> = [];
   const held: Route[] = [];
 
   await page.route("**/*.png", async (route) => {
@@ -125,6 +126,12 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       return fulfill(route, { user: { id: USER.id, name: USER.name, email: "me-tester@example.test" }, expires: "2099-01-01T00:00:00.000Z" });
     }
 
+    if (path === `/api/teams/${TEAM_ID}/theme`) {
+      let parsedBody: unknown = null;
+      try { parsedBody = request.postDataJSON(); } catch { /* ignore */ }
+      themeRequests.push({ method, body: parsedBody });
+      return fulfill(route, {});
+    }
     if (path === `/api/teams/${TEAM_ID}/stats`) {
       statsCalls += 1;
       if (options.statsStatus && options.statsStatus !== 200) return fulfill(route, { error: "failed" }, options.statsStatus);
@@ -160,6 +167,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     teamCallCount: () => teamCalls,
     statsCallCount: () => statsCalls,
     mutations,
+    themeRequests,
     release: async (body: unknown, status = 200) => {
       for (const route of held.splice(0)) await fulfill(route, body, status);
     },
@@ -338,6 +346,63 @@ test.describe("Team Detail — authenticated admin", () => {
     // Admin can't remove themselves — Remove appears only for other members.
     expect(await page.getByRole("button", { name: "Remove" }).count()).toBeGreaterThan(0);
     expect(fixture.mutations.length).toBe(0);
+  });
+});
+
+test.describe("Team Detail — admin theme management (Pass 16B.1)", () => {
+  test("admin opens the action deck theme picker, sees owned themes, and switching themes sends exactly one PUT with the exact body", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      membershipRole: "admin",
+      applications: [],
+      inventoryThemes: ["neon", "gold"],
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const actions = page.getByTestId("team-detail-actions");
+    await expect(actions).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Theme$/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Invite Members" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Leave Team" })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    const themeButton = page.getByRole("button", { name: /^Theme$/ });
+    await expect(themeButton).toHaveAttribute("aria-expanded", "false");
+    await themeButton.click();
+    await expect(themeButton).toHaveAttribute("aria-expanded", "true");
+
+    const picker = page.getByTestId("team-theme-picker");
+    await expect(picker).toBeVisible();
+    await expect(picker.getByTestId("team-theme-option-default")).toBeVisible();
+    await expect(picker.getByTestId("team-theme-option-neon")).toBeVisible();
+    await expect(picker.getByTestId("team-theme-option-gold")).toBeVisible();
+    await expect(picker.getByTestId("team-theme-option-crimson")).toHaveCount(0);
+
+    // TEAM_FIXTURE.activeTheme is "neon" — that tile should be marked active.
+    await expect(picker.getByTestId("team-theme-option-neon")).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: "Close theme picker" }).click();
+    await expect(picker).toHaveCount(0);
+    expect(fixture.mutations.length).toBe(0);
+
+    await themeButton.click();
+    await expect(page.getByTestId("team-theme-picker")).toBeVisible();
+    await page.getByTestId("team-theme-option-gold").click();
+
+    await expect(page.getByTestId("team-theme-picker")).toHaveCount(0);
+    expect(fixture.themeRequests.length).toBe(1);
+    expect(fixture.themeRequests[0]!.method).toBe("PUT");
+    expect(fixture.themeRequests[0]!.body).toEqual({ theme: "gold" });
+
+    await themeButton.click();
+    await expect(page.getByTestId("team-theme-option-gold")).toHaveAttribute("aria-pressed", "true");
+
+    const teamMutations = fixture.mutations.filter((m) => !m.url.endsWith("/theme"));
+    expect(teamMutations.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
   });
 });
 
@@ -616,6 +681,21 @@ test.describe("Team Detail — required viewports", () => {
 
       await expect(page.getByTestId("team-detail-stats")).toBeVisible();
       await expectNoHorizontalOverflow(page);
+
+      if (viewport.width === 320) {
+        const actions = page.getByTestId("team-detail-actions");
+        await expect(actions).toBeVisible();
+        const themeBtn = page.getByRole("button", { name: /^Theme$/ });
+        const inviteBtn = page.getByRole("button", { name: "Invite Members" });
+        const leaveBtn = page.getByRole("button", { name: "Leave Team" });
+        for (const btn of [themeBtn, inviteBtn, leaveBtn]) {
+          const box = await btn.boundingBox();
+          expect(box).not.toBeNull();
+          expect(box!.height).toBeGreaterThanOrEqual(43.9);
+          // Single-column mobile layout — each action fills the available width.
+          expect(box!.width).toBeGreaterThan(200);
+        }
+      }
     });
   }
 

@@ -4,14 +4,16 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Lock, Mail, Palette, RefreshCw, Trophy, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Lock, RefreshCw, Trophy, UsersRound } from "lucide-react";
 import InviteTeamModal from "@/components/teams/InviteTeamModal";
 import ActionModal from "@/components/ActionModal";
 import ConfirmModal from "@/components/ConfirmModal";
-import { getThemeConfig, THEME_CONFIGS } from "@/lib/profileThemes";
+import { getThemeConfig } from "@/lib/profileThemes";
 import PageContainer from "@/components/ui/PageContainer";
 import TeamDetailLoadingState from "@/components/teams/TeamDetailLoadingState";
 import TeamDetailHero from "@/components/teams/TeamDetailHero";
+import TeamDetailActions, { type TeamInviteStatus } from "@/components/teams/TeamDetailActions";
+import TeamThemePicker from "@/components/teams/TeamThemePicker";
 import TeamDetailReadOnlyContent, {
   normalizeTeamDetailStats,
   type TeamDetailMember,
@@ -217,7 +219,7 @@ export default function TeamDetailPage() {
   const [modalTitle, setModalTitle] = useState<string | undefined>(undefined);
   const [modalMessage, setModalMessage] = useState<string | undefined>(undefined);
   const [modalVariant, setModalVariant] = useState<"success" | "error" | "info">("info");
-  const [inviteStatus, setInviteStatus] = useState<'none' | 'pending' | 'accepted' | 'declined'>('none');
+  const [inviteStatus, setInviteStatus] = useState<TeamInviteStatus>('none');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmMember, setConfirmMember] = useState<TeamMember | null>(null);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
@@ -528,6 +530,38 @@ export default function TeamDetailPage() {
     }
   };
 
+  const handleApplyToJoin = async () => {
+    setInviteStatus('pending');
+    try {
+      const res = await fetch(`/api/teams/${team.id}/apply`, { method: "POST" });
+      if (res.ok) {
+        setModalTitle('Application submitted');
+        setModalMessage('Your application was submitted. Team admins will be notified.');
+        setModalVariant('success');
+        setModalOpen(true);
+        return;
+      }
+      let body: any = null;
+      try { body = await res.json(); } catch { /* ignore */ }
+      const errorMsg = body?.error || (await res.text().catch(() => null)) || 'Failed to apply';
+      if (typeof errorMsg === 'string' && /pending|already/i.test(errorMsg)) {
+        setInviteStatus('pending');
+        setModalTitle('Application pending');
+        setModalMessage('You already have a pending application or invitation.');
+        setModalVariant('info');
+        setModalOpen(true);
+        return;
+      }
+      throw new Error(errorMsg);
+    } catch (err: any) {
+      setInviteStatus('none');
+      setModalTitle('Application failed');
+      setModalMessage(err?.message || 'Failed to submit application.');
+      setModalVariant('error');
+      setModalOpen(true);
+    }
+  };
+
   const readOnlyMembers: TeamDetailMember[] = team.members;
 
   const renderMemberAction = (member: TeamDetailMember): ReactNode => {
@@ -552,92 +586,18 @@ export default function TeamDetailPage() {
   };
 
   const heroActions = (
-    <>
-      {userRole === 'admin' && (
-        <button
-          onClick={() => setShowThemePicker(!showThemePicker)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-          style={{ backgroundColor: theme.primaryMuted, color: theme.primary, border: `1px solid ${theme.primaryBorder}` }}
-        >
-          <Palette className="w-4 h-4" />
-          Theme
-        </button>
-      )}
-      {userRole && ["admin", "moderator"].includes(userRole) && (
-        <button
-          onClick={() => setShowInviteModal(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-          style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}
-        >
-          <Mail className="w-4 h-4" />
-          Invite Members
-        </button>
-      )}
-      {userRole && (
-        <button
-          onClick={() => setConfirmLeaveOpen(true)}
-          className="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-          style={{ backgroundColor: 'rgba(255,59,92,0.15)', color: '#FF3B5C', border: '1px solid rgba(255,59,92,0.35)' }}
-        >
-          Leave Team
-        </button>
-      )}
-      {!userRole && team.isPublic && (
-        session?.user?.email ? (
-          inviteStatus === 'pending' ? (
-            <button disabled className="px-4 py-2 rounded-lg font-semibold text-sm opacity-70 cursor-not-allowed" style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}>
-              Application Submitted
-            </button>
-          ) : (
-            <button
-              onClick={async () => {
-                setInviteStatus('pending');
-                try {
-                  const res = await fetch(`/api/teams/${team.id}/apply`, { method: "POST" });
-                  if (res.ok) {
-                    setModalTitle('Application submitted');
-                    setModalMessage('Your application was submitted. Team admins will be notified.');
-                    setModalVariant('success');
-                    setModalOpen(true);
-                    return;
-                  }
-                  let body: any = null;
-                  try { body = await res.json(); } catch { /* ignore */ }
-                  const errorMsg = body?.error || (await res.text().catch(() => null)) || 'Failed to apply';
-                  if (typeof errorMsg === 'string' && /pending|already/i.test(errorMsg)) {
-                    setInviteStatus('pending');
-                    setModalTitle('Application pending');
-                    setModalMessage('You already have a pending application or invitation.');
-                    setModalVariant('info');
-                    setModalOpen(true);
-                    return;
-                  }
-                  throw new Error(errorMsg);
-                } catch (err: any) {
-                  setInviteStatus('none');
-                  setModalTitle('Application failed');
-                  setModalMessage(err?.message || 'Failed to submit application.');
-                  setModalVariant('error');
-                  setModalOpen(true);
-                }
-              }}
-              className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
-              style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}
-            >
-              Apply to Join
-            </button>
-          )
-        ) : (
-          <Link
-            href="/auth/signin"
-            className="px-4 py-2 rounded-lg font-semibold text-sm transition-opacity hover:opacity-90"
-            style={{ background: theme.btnPrimary, color: theme.btnPrimaryText }}
-          >
-            Sign in to Join
-          </Link>
-        )
-      )}
-    </>
+    <TeamDetailActions
+      userRole={userRole}
+      isPublic={team.isPublic}
+      isAuthenticated={!!session?.user?.email}
+      inviteStatus={inviteStatus}
+      themePickerOpen={showThemePicker}
+      theme={theme}
+      onToggleThemePicker={() => setShowThemePicker((v) => !v)}
+      onInviteMembers={() => setShowInviteModal(true)}
+      onLeaveTeam={() => setConfirmLeaveOpen(true)}
+      onApplyToJoin={() => void handleApplyToJoin()}
+    />
   );
 
   return (
@@ -659,40 +619,13 @@ export default function TeamDetailPage() {
 
           {/* ── Theme Picker (admin only) ── */}
           {showThemePicker && userRole === 'admin' && (
-            <div className="pw-bevel p-5" style={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.cardBorder}`, boxShadow: theme.cardGlow }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-white font-bold text-sm">Choose Team Theme</h3>
-                <button onClick={() => setShowThemePicker(false)} className="hover:text-white text-sm transition-colors" style={{ color: "#8891AC" }}>✕</button>
-              </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                {['default', ...Object.keys(THEME_CONFIGS).filter(k => k !== 'default' && (ownedTeamThemes.includes(k)))].map((key) => {
-                  const tc = THEME_CONFIGS[key];
-                  const isActive = (team.activeTheme || 'default') === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => handleSetTheme(key)}
-                      className="relative rounded-lg p-3 text-center transition-all text-xs font-semibold"
-                      style={{
-                        backgroundColor: isActive ? tc.primaryMuted : 'rgba(255,255,255,0.03)',
-                        border: `2px solid ${isActive ? tc.primary : 'rgba(255,255,255,0.08)'}`,
-                        color: tc.primary,
-                      }}
-                    >
-                      <div className="w-6 h-6 rounded-full mx-auto mb-1" style={{ background: tc.btnPrimary.startsWith('linear') ? tc.btnPrimary : tc.primary }} />
-                      <span className="capitalize">{key.replace(/_/g, ' ')}</span>
-                      {isActive && <span className="absolute top-1 right-1 text-xs">✓</span>}
-                    </button>
-                  );
-                })}
-                {ownedTeamThemes.length === 0 && (
-                  <div className="col-span-full text-center py-2">
-                    <p className="text-xs" style={{ color: theme.subtleText }}>No team themes owned yet.</p>
-                    <Link href="/store" className="text-xs font-semibold" style={{ color: theme.primary }}>Visit Store →</Link>
-                  </div>
-                )}
-              </div>
-            </div>
+            <TeamThemePicker
+              activeTheme={team.activeTheme}
+              ownedTeamThemes={ownedTeamThemes}
+              theme={theme}
+              onClose={() => setShowThemePicker(false)}
+              onSelectTheme={(themeKey) => void handleSetTheme(themeKey)}
+            />
           )}
 
           <TeamDetailReadOnlyContent

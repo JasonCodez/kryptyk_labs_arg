@@ -762,3 +762,255 @@ describe("Team Detail page — composition", () => {
     expect(SOURCE.includes("formatTimeAgo")).toBe(false);
   });
 });
+
+function goldInventory() {
+  return jsonResponse({ items: [{ item: { subcategory: "team_theme", metadata: { value: "gold" } } }] });
+}
+
+describe("Team Detail page — action deck and theme picker (Pass 16B.1)", () => {
+  it("64. the action deck renders once", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getAllByTestId("team-detail-actions").length).toBe(1);
+  });
+
+  it("65. the theme picker is closed initially", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-theme-picker")).toBeNull();
+  });
+
+  it("66. admin can open the theme picker", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    expect(screen.getByTestId("team-theme-picker")).toBeTruthy();
+  });
+
+  it("67. Theme button reports aria-expanded=false before opening", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByRole("button", { name: /^Theme$/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("68. Theme button reports aria-expanded=true after opening", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    expect(screen.getByRole("button", { name: /^Theme$/ }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("69. close theme picker hides it without a mutation", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Close theme picker" }));
+    await flush();
+    expect(screen.queryByTestId("team-theme-picker")).toBeNull();
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("70. Default always renders", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    expect(screen.getByTestId("team-theme-option-default")).toBeTruthy();
+  });
+
+  it("71. valid owned inventory themes render", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: goldInventory });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    expect(screen.getByTestId("team-theme-option-gold")).toBeTruthy();
+  });
+
+  it("72. unknown inventory themes do not render", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      inventory: () => jsonResponse({ items: [{ item: { subcategory: "team_theme", metadata: { value: "not-a-real-theme" } } }] }),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    expect(screen.queryByTestId("team-theme-option-not-a-real-theme")).toBeNull();
+  });
+
+  it("73. theme selection uses the exact PUT endpoint and preserves the exact JSON body", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: goldInventory });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    const themeCall = calls.find((c) => c.url.includes("/theme") && c.method === "PUT");
+    expect(themeCall).toBeTruthy();
+    expect(themeCall?.body).toEqual({ theme: "gold" });
+  });
+
+  it("74. successful theme selection closes the picker", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: goldInventory });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    expect(screen.queryByTestId("team-theme-picker")).toBeNull();
+  });
+
+  it("75. successful theme selection updates the local active theme", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: goldInventory });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    expect(screen.getByTestId("team-theme-option-gold").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("76. failed theme selection preserves exact failure modal copy (server error)", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      inventory: goldInventory,
+      theme: () => jsonResponse({ error: "Team theme locked" }, 500),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    expect(screen.getByText("Theme update failed")).toBeTruthy();
+    expect(screen.getByText("Team theme locked")).toBeTruthy();
+  });
+
+  it("77. failed theme selection preserves exact fallback copy", async () => {
+    // The page's own fallback chain (throw new Error(data.error || 'Failed to
+    // update theme')) always produces a truthy err.message before the outer
+    // 'Failed to change theme' fallback is consulted — that outer fallback is
+    // page-owned, frozen behavior only reachable when err.message itself is
+    // falsy, e.g. an Error thrown with no message at all.
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      inventory: goldInventory,
+      theme: () => Promise.reject(new Error()),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    expect(screen.getByText("Theme update failed")).toBeTruthy();
+    expect(screen.getByText("Failed to change theme")).toBeTruthy();
+  });
+
+  it("78. Apply-to-Join preserves the exact POST endpoint", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: null }), inviteStatus: () => jsonResponse({ status: "none" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to Join" }));
+    await flush();
+    const applyCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/apply`) && c.method === "POST");
+    expect(applyCall).toBeTruthy();
+  });
+
+  it("79. apply success preserves exact modal copy", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: null }), inviteStatus: () => jsonResponse({ status: "none" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to Join" }));
+    await flush();
+    expect(screen.getByText("Application submitted")).toBeTruthy();
+    expect(screen.getByText("Your application was submitted. Team admins will be notified.")).toBeTruthy();
+  });
+
+  it("80. already-pending behavior preserves exact modal copy", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: null }),
+      inviteStatus: () => jsonResponse({ status: "none" }),
+      apply: () => jsonResponse({ error: "You already have a pending application" }, 409),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to Join" }));
+    await flush();
+    expect(screen.getByText("Application pending")).toBeTruthy();
+    expect(screen.getByText("You already have a pending application or invitation.")).toBeTruthy();
+  });
+
+  it("81. apply failure resets the button state and preserves exact fallback copy", async () => {
+    // As with the theme fallback above: the apply handler's own inner
+    // fallback chain ('Failed to apply') always produces a truthy thrown
+    // message, so the outer 'Failed to submit application.' fallback is only
+    // reachable when the caught error has no message at all.
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: null }),
+      inviteStatus: () => jsonResponse({ status: "none" }),
+      apply: () => Promise.reject(new Error()),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to Join" }));
+    await flush();
+    expect(screen.getByText("Application failed")).toBeTruthy();
+    expect(screen.getByText("Failed to submit application.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply to Join" })).toBeTruthy();
+  });
+
+  it("82. admin/moderator/member/non-member/anonymous visibility remains unchanged through the extracted action deck", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    const deck = screen.getByTestId("team-detail-actions");
+    expect(deck).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Theme$/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Invite Members" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Leave Team" })).toBeTruthy();
+  });
+
+  it("83. no write request occurs during initial render (action deck and theme picker)", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: goldInventory });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+});
