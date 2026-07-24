@@ -20,6 +20,10 @@ import TeamApplicationsPanel, {
   type ApplicationsLoadStatus,
   type PendingApplicationAction,
 } from "@/components/teams/TeamApplicationsPanel";
+import TeamMemberRemovalDialog, {
+  TeamMemberRemoveButton,
+  getRemovalMemberDisplayName,
+} from "@/components/teams/TeamMemberRemovalDialog";
 import TeamDetailReadOnlyContent, {
   normalizeTeamDetailStats,
   type TeamDetailMember,
@@ -228,8 +232,8 @@ export default function TeamDetailPage() {
   const [modalMessage, setModalMessage] = useState<string | undefined>(undefined);
   const [modalVariant, setModalVariant] = useState<"success" | "error" | "info">("info");
   const [inviteStatus, setInviteStatus] = useState<TeamInviteStatus>('none');
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmMember, setConfirmMember] = useState<TeamMember | null>(null);
+  const [memberRemovalTarget, setMemberRemovalTarget] = useState<TeamDetailMember | null>(null);
+  const [memberRemovalPending, setMemberRemovalPending] = useState(false);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
 
   const [stats, setStats] = useState<TeamDetailStatsData | null>(null);
@@ -247,6 +251,7 @@ export default function TeamDetailPage() {
   const applicationsRequestSeqRef = useRef(0);
   const applicationsAbortRef = useRef<AbortController | null>(null);
   const applicationActionInFlightRef = useRef(false);
+  const memberRemovalInFlightRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -664,24 +669,71 @@ export default function TeamDetailPage() {
 
   const readOnlyMembers: TeamDetailMember[] = team.members;
 
+  const handleRemoveMember = async () => {
+    if (memberRemovalInFlightRef.current) return;
+    const target = memberRemovalTarget;
+    if (!target) return;
+    memberRemovalInFlightRef.current = true;
+    setMemberRemovalPending(true);
+    const displayName = getRemovalMemberDisplayName(target);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/members/${target.user.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        let body: any = null;
+        try { body = await res.json(); } catch { /* ignore */ }
+        const txt = (typeof body?.error === "string" && body.error.trim()) || (await res.text().catch(() => null)) || "Failed to remove member";
+        throw new Error(txt);
+      }
+      setTeam((prev) => (prev ? { ...prev, members: prev.members.filter((m) => m.user.id !== target.user.id) } : prev));
+      // Best-effort only: the removal itself already succeeded above, so a
+      // failed/rejected/malformed refresh here must never turn a successful
+      // removal into a reported failure.
+      try {
+        const t = await fetch(`/api/teams/${teamId}`);
+        if (t.ok) {
+          const normalized = normalizeTeamPayload(await t.json());
+          if (normalized) setTeam(normalized);
+        }
+      } catch {
+        // Ignore — removal already succeeded.
+      }
+      setMemberRemovalTarget(null);
+      setModalTitle('Member removed');
+      setModalMessage(`${displayName} was removed from the team.`);
+      setModalVariant('success');
+      setModalOpen(true);
+    } catch (err) {
+      console.error(err);
+      setMemberRemovalTarget(null);
+      setModalTitle('Remove failed');
+      setModalMessage((err as any)?.message || 'Failed to remove member');
+      setModalVariant('error');
+      setModalOpen(true);
+    } finally {
+      memberRemovalInFlightRef.current = false;
+      if (mountedRef.current) setMemberRemovalPending(false);
+    }
+  };
+
   const renderMemberAction = (member: TeamDetailMember): ReactNode => {
     if (!(userRole && ["admin", "moderator"].includes(userRole))) return null;
-    if (session?.user?.email && session.user.email === member.user.email) return null;
+    const memberId = member.user.id?.trim();
+    if (!memberId) return null;
+    const sessionUserId = (session?.user as { id?: string } | undefined)?.id?.trim();
+    const sessionEmail = session?.user?.email?.trim().toLowerCase();
+    const memberEmail = member.user.email?.trim().toLowerCase();
+    const isSelf = (!!sessionUserId && sessionUserId === memberId) || (!!sessionEmail && !!memberEmail && sessionEmail === memberEmail);
+    if (isSelf) return null;
     return (
-      <button
-        type="button"
-        onClick={() => {
-          setConfirmMember({
-            user: { id: member.user.id, name: member.user.name, email: member.user.email ?? null, image: member.user.image },
-            role: member.role,
-          });
-          setConfirmOpen(true);
-        }}
-        className="px-2.5 py-0.5 rounded text-xs font-semibold transition-colors hover:opacity-80"
-        style={{ backgroundColor: "rgba(255,59,92,0.18)", color: "#FF3B5C" }}
-      >
-        Remove
-      </button>
+      <TeamMemberRemoveButton
+        memberId={memberId}
+        displayName={getRemovalMemberDisplayName(member)}
+        disabled={memberRemovalPending}
+        onRequestRemove={() => setMemberRemovalTarget(member)}
+      />
     );
   };
 
@@ -762,47 +814,13 @@ export default function TeamDetailPage() {
           }}
         />
       )}
-      <ConfirmModal
-        isOpen={confirmOpen}
-        title={`Remove member`}
-        message={confirmMember ? `Are you sure you want to remove ${confirmMember.user.name || confirmMember.user.email} from the team?` : ''}
-        confirmLabel="Remove"
-        cancelLabel="Cancel"
-        onCancel={() => { setConfirmOpen(false); setConfirmMember(null); }}
-        onConfirm={async () => {
-          if (!confirmMember) return;
-          setConfirmOpen(false);
-          try {
-            const res = await fetch(`/api/teams/${team.id}/members/${confirmMember.user.id}`, {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" },
-            });
-            if (!res.ok) {
-              let body: any = null;
-              try { body = await res.json(); } catch (_) { /* ignore */ }
-              const txt = body?.error || (await res.text().catch(() => null)) || 'Failed to remove member';
-              throw new Error(txt);
-            }
-            // Refresh team members
-            const t = await fetch(`/api/teams/${teamId}`);
-            if (t.ok) {
-              const normalized = normalizeTeamPayload(await t.json());
-              if (normalized) setTeam(normalized);
-            }
-            setModalTitle('Member removed');
-            setModalMessage(`${confirmMember.user.name || confirmMember.user.email} was removed from the team.`);
-            setModalVariant('success');
-            setModalOpen(true);
-          } catch (err) {
-            console.error(err);
-            setModalTitle('Remove failed');
-            setModalMessage((err as any)?.message || 'Failed to remove member');
-            setModalVariant('error');
-            setModalOpen(true);
-          } finally {
-            setConfirmMember(null);
-          }
-        }}
+      <TeamMemberRemovalDialog
+        isOpen={memberRemovalTarget !== null}
+        member={memberRemovalTarget}
+        pending={memberRemovalPending}
+        theme={theme}
+        onCancel={() => { if (!memberRemovalPending) setMemberRemovalTarget(null); }}
+        onConfirm={() => void handleRemoveMember()}
       />
       <ConfirmModal
         isOpen={confirmLeaveOpen}

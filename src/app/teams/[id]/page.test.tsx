@@ -652,14 +652,9 @@ describe("Team Detail page — management endpoint regression", () => {
     const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
     render(<TeamDetailPage />);
     await flush();
-    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
-    fireEvent.click(removeButtons[0]!);
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
     await flush();
-    // Once the ConfirmModal opens, its own "Remove" confirm button coexists
-    // with the still-mounted inline roster "Remove" action — the modal's
-    // confirm button is the last one rendered in DOM order.
-    const buttonsWithModalOpen = screen.getAllByRole("button", { name: "Remove" });
-    fireEvent.click(buttonsWithModalOpen[buttonsWithModalOpen.length - 1]!);
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
     await flush();
     const removeCall = calls.find((c) => c.url.includes("/members/") && c.method === "DELETE");
     expect(removeCall).toBeTruthy();
@@ -1800,11 +1795,9 @@ describe("Team Detail page — pending applications (Pass 16B.2)", () => {
     const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
     render(<TeamDetailPage />);
     await flush();
-    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
-    fireEvent.click(removeButtons[0]!);
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
     await flush();
-    const buttonsWithModalOpen = screen.getAllByRole("button", { name: "Remove" });
-    fireEvent.click(buttonsWithModalOpen[buttonsWithModalOpen.length - 1]!);
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
     await flush();
     const removeCall = calls.find((c) => c.url.includes("/members/") && c.method === "DELETE");
     expect(removeCall).toBeTruthy();
@@ -1846,6 +1839,752 @@ describe("Team Detail page — pending applications (Pass 16B.2)", () => {
   it("60. no write occurs during initial page render", async () => {
     authenticated();
     const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+});
+
+const THREE_MEMBER_TEAM = {
+  ...VALID_TEAM,
+  members: [
+    { user: { id: "me", name: "Me", email: "me@example.test", image: null }, role: "admin" },
+    { user: { id: "u2", name: "Bob", email: "bob@example.test", image: null }, role: "member" },
+    { user: { id: "u3", name: "Carol", email: "carol@example.test", image: null }, role: "member" },
+  ],
+};
+
+describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
+  it("1. admin sees removal controls for other members", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByTestId("team-member-remove-u2")).toBeTruthy();
+  });
+
+  it("2. moderator sees removal controls for other members", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "moderator" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByTestId("team-member-remove-u2")).toBeTruthy();
+  });
+
+  it("3. member sees no removal controls", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "member" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+  });
+
+  it("4. unknown role sees no removal controls", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "mascot" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+  });
+
+  it("5. signed-in non-member sees no removal controls", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: null }), inviteStatus: () => jsonResponse({ status: "none" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+  });
+
+  it("6. anonymous visitor sees no removal controls", async () => {
+    unauthenticated();
+    buildFetchMock();
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+  });
+
+  it("7. current user sees no self-removal control", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-me")).toBeNull();
+  });
+
+  it("8. session user ID matching hides self-removal", async () => {
+    mockUseSession.mockReturnValue({ status: "authenticated", data: { user: { id: "me", email: "different@example.test" } } });
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-me")).toBeNull();
+  });
+
+  it("9. session email matching hides self-removal", async () => {
+    mockUseSession.mockReturnValue({ status: "authenticated", data: { user: { id: "different-id", email: "me@example.test" } } });
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-me")).toBeNull();
+  });
+
+  it("10. empty member ID receives no removal control", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      team: () => jsonResponse({ ...VALID_TEAM, members: [...VALID_TEAM.members, { user: { id: "", name: "No Id", email: null, image: null }, role: "member" }] }),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Remove No Id/ })).toBeNull();
+  });
+
+  it("11. clicking a removal control opens the dialog for the correct member; 12. exact member name appears", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    expect(screen.getByText("Are you sure you want to remove Bob from the team?")).toBeTruthy();
+  });
+
+  it("13. email fallback appears when the name is absent", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      team: () => jsonResponse({ ...VALID_TEAM, members: [VALID_TEAM.members[0], { user: { id: "u2", name: null, email: "bob@example.test", image: null }, role: "member" }] }),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    expect(screen.getByText("Are you sure you want to remove bob@example.test from the team?")).toBeTruthy();
+  });
+
+  it("14. Member fallback appears when both are absent", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      team: () => jsonResponse({ ...VALID_TEAM, members: [VALID_TEAM.members[0], { user: { id: "u2", name: null, email: null, image: null }, role: "member" }] }),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    expect(screen.getByText("Are you sure you want to remove Member from the team?")).toBeTruthy();
+  });
+
+  it("15. cancel closes the dialog without a mutation", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-cancel"));
+    await flush();
+    expect(screen.queryByTestId("team-member-removal-dialog")).toBeNull();
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("16. confirm sends the exact member DELETE endpoint; 17. method is exactly DELETE", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    const removeCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && c.method === "DELETE");
+    expect(removeCall).toBeTruthy();
+  });
+
+  it("18. header is exactly Content-Type: application/json; 19. no request body is added", async () => {
+    authenticated();
+    let capturedInit: RequestInit | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        capturedInit = init;
+        return jsonResponse({});
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(capturedInit?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(capturedInit?.body).toBeUndefined();
+  });
+
+  it("20. no membership DELETE is issued", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(calls.some((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/membership`) && c.method === "DELETE")).toBe(false);
+  });
+
+  it("21. rapid repeated confirmation produces exactly one DELETE", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    const confirmBtn = screen.getByTestId("team-member-removal-confirm");
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+    await flush();
+    const removeCalls = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && c.method === "DELETE");
+    expect(removeCalls.length).toBe(1);
+  });
+
+  it("22. confirm label becomes Removing…; 23. dialog exposes busy state; 24. cancel is disabled; 25. every roster Remove control is disabled; 26. another member cannot replace the target", async () => {
+    authenticated();
+    let resolveDelete: (v: Response) => void = () => {};
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") return jsonResponse(THREE_MEMBER_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+
+    expect(screen.getByTestId("team-member-removal-confirm").textContent).toContain("Removing…");
+    expect(screen.getByTestId("team-member-removal-dialog").getAttribute("aria-busy")).toBe("true");
+    expect((screen.getByTestId("team-member-removal-cancel") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("team-member-remove-u2") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("team-member-remove-u3") as HTMLButtonElement).disabled).toBe(true);
+
+    // Another member's control is disabled and cannot become the target while pending.
+    fireEvent.click(screen.getByTestId("team-member-remove-u3"));
+    await flush();
+    expect(screen.getByText("Are you sure you want to remove Bob from the team?")).toBeTruthy();
+
+    act(() => { resolveDelete({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response); });
+    await flush();
+  });
+
+  it("27. pending state clears after success", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      team: () => jsonResponse(THREE_MEMBER_TEAM),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect((screen.getByTestId("team-member-remove-u3") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("28. pending state clears after failure", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      team: () => jsonResponse(THREE_MEMBER_TEAM),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect((screen.getByTestId("team-member-remove-u3") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("29. member is not removed before the DELETE resolves", async () => {
+    authenticated();
+    let resolveDelete: (v: Response) => void = () => {};
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Bob")).toBeTruthy();
+    act(() => { resolveDelete({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response); });
+    await flush();
+  });
+
+  it("30. successful DELETE removes only the selected member; 31. remaining member order preserved", async () => {
+    authenticated();
+    let deleted = false;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        deleted = true;
+        return jsonResponse({});
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        if (!deleted) return jsonResponse(THREE_MEMBER_TEAM);
+        return jsonResponse({ ...THREE_MEMBER_TEAM, members: THREE_MEMBER_TEAM.members.filter((m) => m.user.id !== "u2") });
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+    expect(screen.getByTestId("team-member-remove-u3")).toBeTruthy();
+    expect(screen.queryByText("Bob")).toBeNull();
+    expect(screen.getByText("Carol")).toBeTruthy();
+  });
+
+  it("32. successful removal performs exactly one primary Team refresh", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    const teamCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    const teamCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    expect(teamCallsAfter).toBe(teamCallsBefore + 1);
+  });
+
+  it("33. does not refetch applications; 34. does not refetch statistics; 35. does not refetch membership", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    const appsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length;
+    const statsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/stats`)).length;
+    const membershipBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/membership`)).length;
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length).toBe(appsBefore);
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/stats`)).length).toBe(statsBefore);
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/membership`)).length).toBe(membershipBefore);
+  });
+
+  it("36. successful removal closes the dialog; 37. preserves exact ActionModal copy", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.queryByTestId("team-member-removal-dialog")).toBeNull();
+    expect(screen.getByText("Member removed")).toBeTruthy();
+    expect(screen.getByText("Bob was removed from the team.")).toBeTruthy();
+  });
+
+  it("38. successful removal does not navigate", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("39. non-OK Team refresh still reports successful removal; 43. removed row stays absent; 44. Remove failed is absent", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return jsonResponse({ error: "boom" }, 500);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+    expect(screen.getByText("Member removed")).toBeTruthy();
+    expect(screen.queryByText("Remove failed")).toBeNull();
+  });
+
+  it("40. rejected Team refresh still reports successful removal", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return Promise.reject(new Error("network down"));
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+    expect(screen.getByText("Member removed")).toBeTruthy();
+    expect(screen.queryByText("Remove failed")).toBeNull();
+  });
+
+  it("41. rejected refresh JSON still reports successful removal", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error("bad json")) } as unknown as Response);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+    expect(screen.getByText("Member removed")).toBeTruthy();
+    expect(screen.queryByText("Remove failed")).toBeNull();
+  });
+
+  it("42. malformed refreshed Team payload still reports successful removal; 45. existing local Team content remains usable", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return jsonResponse({ id: 5 }); // malformed: id must be a string
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Midnight Puzzle Society")).toBeTruthy();
+    expect(screen.queryByTestId("team-member-remove-u2")).toBeNull();
+    expect(screen.getByText("Member removed")).toBeTruthy();
+    expect(screen.queryByText("Remove failed")).toBeNull();
+  });
+
+  it("46. failed DELETE keeps the member row; 47. preserves member order; 48. performs no Team refresh", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      team: () => jsonResponse(THREE_MEMBER_TEAM),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    const teamCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByTestId("team-member-remove-u2")).toBeTruthy();
+    expect(screen.getByTestId("team-member-remove-u3")).toBeTruthy();
+    const teamCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    expect(teamCallsAfter).toBe(teamCallsBefore);
+  });
+
+  it("49. JSON server error is displayed", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => jsonResponse({ error: "Cannot remove yourself" }, 400),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Cannot remove yourself")).toBeTruthy();
+  });
+
+  it("50. plain-text server error is displayed when applicable", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.reject(new Error("no json")), text: () => Promise.resolve("Server exploded") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Server exploded")).toBeTruthy();
+  });
+
+  it("51. empty error response uses Failed to remove member", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Failed to remove member")).toBeTruthy();
+  });
+
+  it("52. failure title is exactly Remove failed", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Remove failed")).toBeTruthy();
+  });
+
+  it("53. failure closes the removal dialog", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.queryByTestId("team-member-removal-dialog")).toBeNull();
+  });
+
+  it("54. failure does not navigate", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("55. failure does not refetch applications; 56. failure does not refetch statistics", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    const appsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length;
+    const statsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/stats`)).length;
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length).toBe(appsBefore);
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/stats`)).length).toBe(statsBefore);
+  });
+
+  it("57. Leave Team still uses exact membership DELETE endpoint", async () => {
+    jest.useFakeTimers();
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "member" }) });
+    render(<TeamDetailPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Leave Team" }));
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const leaveCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/membership`) && c.method === "DELETE");
+    expect(leaveCall).toBeTruthy();
+  });
+
+  it("58. Leave Team confirmation copy remains unchanged", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "member" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Leave Team" }));
+    await flush();
+    expect(screen.getByText("Are you sure you want to leave the team Midnight Puzzle Society?")).toBeTruthy();
+  });
+
+  it("59. Leave Team success copy remains unchanged; 60. failure copy remains unchanged", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "member" }),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Leave Team" }));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+    await flush();
+    expect(screen.getByText("Left team")).toBeTruthy();
+    expect(screen.getByText("You have left Midnight Puzzle Society.")).toBeTruthy();
+  });
+
+  it("61. Leave Team navigation remains delayed exactly 1,200ms", async () => {
+    jest.useFakeTimers();
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "member" }) });
+    render(<TeamDetailPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Leave Team" }));
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(mockPush).not.toHaveBeenCalled();
+    await act(async () => { jest.advanceTimersByTime(1200); });
+    expect(mockPush).toHaveBeenCalledWith("/teams");
+  });
+
+  it("62. Theme mutation remains unchanged", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: () => jsonResponse({ items: [{ item: { subcategory: "team_theme", metadata: { value: "gold" } } }] }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    const themeCall = calls.find((c) => c.url.includes("/theme") && c.method === "PUT");
+    expect(themeCall?.body).toEqual({ theme: "gold" });
+  });
+
+  it("63. Application approve remains unchanged", async () => {
+    authenticated();
+    const applicationFixtureLocal = [
+      { id: "app-1", createdAt: "2026-01-01T00:00:00.000Z", user: { id: "u-app1", name: "Applicant One", email: "one@example.test", image: null } },
+    ];
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(applicationFixtureLocal) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    const approveCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(approveCall?.body).toEqual({ action: "approve" });
+  });
+
+  it("64. membership polling remains 10 seconds; 65. invite-status polling remains 5 seconds while pending", async () => {
+    jest.useFakeTimers();
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inviteStatus: () => jsonResponse({ status: "pending" }) });
+    render(<TeamDetailPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    const membershipCallsBefore = calls.filter((c) => c.url.includes("/membership")).length;
+    const inviteCallsBefore = calls.filter((c) => c.url.includes("/invite-status")).length;
+    await act(async () => { jest.advanceTimersByTime(10000); await Promise.resolve(); });
+    expect(calls.filter((c) => c.url.includes("/membership")).length).toBeGreaterThan(membershipCallsBefore);
+    await act(async () => { jest.advanceTimersByTime(5000); await Promise.resolve(); });
+    expect(calls.filter((c) => c.url.includes("/invite-status")).length).toBeGreaterThan(inviteCallsBefore);
+  });
+
+  it("66. no write request occurs during initial render", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
     render(<TeamDetailPage />);
     await flush();
     expect(calls.every((c) => c.method === "GET")).toBe(true);

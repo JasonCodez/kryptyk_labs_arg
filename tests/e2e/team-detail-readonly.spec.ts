@@ -99,6 +99,9 @@ interface FixtureOptions {
   holdApplicationActions?: boolean;
   inventoryThemes?: string[];
   holdTeam?: boolean;
+  memberRemovalStatus?: number;
+  memberRemovalError?: string;
+  holdMemberRemovals?: boolean;
 }
 
 async function installFixture(page: Page, options: FixtureOptions = {}) {
@@ -107,8 +110,11 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   const mutations: Array<{ url: string; method: string }> = [];
   const themeRequests: Array<{ method: string; body: unknown }> = [];
   const applicationRequests: Array<{ applicationId: string; method: string; body: unknown }> = [];
+  const memberRemovalRequests: Array<{ memberId: string; method: string; body: unknown }> = [];
   const held: Route[] = [];
   const heldApplicationActions: Route[] = [];
+  const heldMemberRemovals: Route[] = [];
+  let removedMemberId: string | null = null;
 
   await page.route("**/*.png", async (route) => {
     if (route.request().url().includes("e2e-broken-avatar")) return route.fulfill({ status: 404, body: "not found" });
@@ -168,6 +174,21 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       const items = (options.inventoryThemes ?? []).map((value) => ({ item: { subcategory: "team_theme", metadata: { value } } }));
       return fulfill(route, { items });
     }
+    if (path.startsWith(`/api/teams/${TEAM_ID}/members/`)) {
+      const memberId = path.slice(path.lastIndexOf("/") + 1);
+      let parsedBody: unknown = null;
+      try { parsedBody = request.postDataJSON(); } catch { /* ignore */ }
+      memberRemovalRequests.push({ memberId, method, body: parsedBody });
+      if (options.holdMemberRemovals) {
+        heldMemberRemovals.push(route);
+        return;
+      }
+      if (options.memberRemovalStatus && options.memberRemovalStatus !== 200) {
+        return fulfill(route, { error: options.memberRemovalError ?? "failed" }, options.memberRemovalStatus);
+      }
+      removedMemberId = memberId;
+      return fulfill(route, {});
+    }
     if (path === `/api/teams/${TEAM_ID}`) {
       teamCalls += 1;
       if (options.holdTeam) {
@@ -175,7 +196,11 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
         return;
       }
       if (options.teamStatus && options.teamStatus !== 200) return fulfill(route, { error: "failed" }, options.teamStatus);
-      return fulfill(route, options.team ?? TEAM_FIXTURE);
+      const baseTeam = (options.team ?? TEAM_FIXTURE) as typeof TEAM_FIXTURE;
+      if (removedMemberId) {
+        return fulfill(route, { ...baseTeam, members: baseTeam.members.filter((m) => m.user.id !== removedMemberId) });
+      }
+      return fulfill(route, baseTeam);
     }
 
     return fulfill(route, {});
@@ -187,11 +212,19 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     mutations,
     themeRequests,
     applicationRequests,
+    memberRemovalRequests,
     release: async (body: unknown, status = 200) => {
       for (const route of held.splice(0)) await fulfill(route, body, status);
     },
     releaseApplicationAction: async (body: unknown, status = 200) => {
       for (const route of heldApplicationActions.splice(0)) await fulfill(route, body, status);
+    },
+    releaseMemberRemoval: async (body: unknown = {}, status = 200) => {
+      const releasing = heldMemberRemovals.splice(0);
+      if (status >= 200 && status < 300 && memberRemovalRequests.length > 0) {
+        removedMemberId = memberRemovalRequests[memberRemovalRequests.length - 1]!.memberId;
+      }
+      for (const route of releasing) await fulfill(route, body, status);
     },
   };
 }
@@ -578,6 +611,173 @@ test.describe("Team Detail — malformed applications payload (Pass 16B.2)", () 
     expect(await page.locator("body").innerText()).not.toMatch(/Invalid Date/);
 
     await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Detail — admin member removal (Pass 16B.3.1)", () => {
+  test("admin reviews, cancels, then confirms removal with exact endpoint, pending state, and modal copy", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      membershipRole: "admin",
+      holdMemberRemovals: true,
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    // Current user (me) has no self-removal control.
+    await expect(page.getByTestId("team-member-remove-me")).toHaveCount(0);
+
+    // Target member has a visible removal control with at least a 44px target.
+    const targetButton = page.getByTestId("team-member-remove-u5");
+    await expect(targetButton).toBeVisible();
+    const targetBox = await targetButton.boundingBox();
+    expect(targetBox!.height).toBeGreaterThanOrEqual(43.9);
+
+    expect(fixture.memberRemovalRequests.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
+
+    await targetButton.click();
+    const dialog = page.getByTestId("team-member-removal-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Remove member" })).toBeVisible();
+    await expect(page.getByText("Are you sure you want to remove Missing Avatar from the team?")).toBeVisible();
+    await expect(page.getByTestId("team-member-removal-cancel")).toBeVisible();
+    await expect(page.getByTestId("team-member-removal-confirm")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    // Cancel closes the dialog without a mutation.
+    await page.getByTestId("team-member-removal-cancel").click();
+    await expect(dialog).toHaveCount(0);
+    expect(fixture.memberRemovalRequests.length).toBe(0);
+
+    // Reopen and hold the DELETE request.
+    const teamCallsBeforeRemoval = fixture.teamCallCount();
+    await targetButton.click();
+    await expect(dialog).toBeVisible();
+    await page.getByTestId("team-member-removal-confirm").click();
+
+    await expect(page.getByTestId("team-member-removal-confirm")).toHaveText(/Removing…/);
+    await expect(dialog).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByTestId("team-member-removal-cancel")).toBeDisabled();
+    await expect(page.getByTestId("team-member-remove-u2")).toBeDisabled();
+    await expect(page.getByTestId("team-member-remove-u3")).toBeDisabled();
+    await expect(page.getByTestId("team-member-remove-u4")).toBeDisabled();
+    await expect(page.getByTestId("team-member-remove-u5")).toBeDisabled();
+    await expect(page.getByTestId("team-member-remove-u6")).toBeDisabled();
+
+    // Repeated confirmation cannot create another request.
+    await page.getByTestId("team-member-removal-confirm").click({ force: true });
+    expect(fixture.memberRemovalRequests.length).toBe(1);
+
+    // Target row remains visible while DELETE is pending.
+    const roster = page.getByTestId("team-detail-members");
+    await expect(roster.getByText("Missing Avatar")).toBeVisible();
+
+    await fixture.releaseMemberRemoval({});
+
+    expect(fixture.memberRemovalRequests.length).toBe(1);
+    expect(fixture.memberRemovalRequests[0]!.memberId).toBe("u5");
+    expect(fixture.memberRemovalRequests[0]!.method).toBe("DELETE");
+    expect(fixture.memberRemovalRequests[0]!.body).toBeFalsy();
+
+    await expect(page.getByTestId("team-member-remove-u5")).toHaveCount(0);
+    await expect(roster.getByText("Missing Avatar")).toHaveCount(0);
+    // Other rows preserve order.
+    await expect(roster.getByText("Moderator Mo")).toBeVisible();
+    await expect(roster.getByText(/Longname Featherstonehaugh/)).toBeVisible();
+    await expect(roster.getByText("Broken Avatar")).toBeVisible();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText("Member removed")).toBeVisible();
+    await expect(page.getByText("Missing Avatar was removed from the team.")).toBeVisible();
+
+    // Primary Team endpoint refreshed exactly once because of removal.
+    expect(fixture.teamCallCount()).toBe(teamCallsBeforeRemoval + 1);
+
+    const nonRemovalMutations = fixture.mutations.filter((m) => !m.url.includes("/members/"));
+    expect(nonRemovalMutations.length).toBe(0);
+
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Detail — failed member removal (Pass 16B.3.1)", () => {
+  test("failed removal keeps the member, closes the dialog, and shows the server error", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      membershipRole: "admin",
+      memberRemovalStatus: 400,
+      memberRemovalError: "Cannot remove yourself",
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const roster = page.getByTestId("team-detail-members");
+    await expect(roster.getByText("Missing Avatar")).toBeVisible();
+
+    const teamCallsBeforeRemoval = fixture.teamCallCount();
+    await page.getByTestId("team-member-remove-u5").click();
+    await page.getByTestId("team-member-removal-confirm").click();
+
+    await expect(page.getByTestId("team-member-removal-dialog")).toHaveCount(0);
+    await expect(page.getByText("Remove failed")).toBeVisible();
+    await expect(page.getByText("Cannot remove yourself")).toBeVisible();
+
+    await expect(roster.getByText("Missing Avatar")).toBeVisible();
+    // A failed removal must not trigger the best-effort Team refresh.
+    expect(fixture.teamCallCount()).toBe(teamCallsBeforeRemoval);
+
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+    await expect(page.getByTestId("team-member-remove-u5")).toBeEnabled();
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Detail — member removal role boundary (Pass 16B.3.1)", () => {
+  test("moderator sees removal actions for other members", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, { authenticated: true, membershipRole: "moderator" });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page.getByTestId("team-member-remove-u5")).toBeVisible();
+    await expect(page.getByTestId("team-member-remove-me")).toHaveCount(0);
+  });
+
+  test("member sees no removal actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, { authenticated: true, membershipRole: "member" });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page.getByTestId("team-member-remove-u5")).toHaveCount(0);
+  });
+
+  test("anonymous visitor sees no removal actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFixture(page, { authenticated: false });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page.getByTestId("team-member-remove-u5")).toHaveCount(0);
+  });
+
+  test("private-Team state exposes no removal actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, { authenticated: true, teamStatus: 403 });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await expect(page.getByText("Private Team")).toBeVisible();
+    await expect(page.getByTestId("team-member-remove-u5")).toHaveCount(0);
   });
 });
 
