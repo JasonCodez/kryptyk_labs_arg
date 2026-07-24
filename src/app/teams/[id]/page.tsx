@@ -628,10 +628,17 @@ export default function TeamDetailPage() {
       }
       setApplications((prev) => prev.filter((a) => a.id !== applicationId));
       if (action === "approve") {
-        const t = await fetch(`/api/teams/${teamId}`);
-        if (t.ok) {
-          const normalized = normalizeTeamPayload(await t.json());
-          if (normalized) setTeam(normalized);
+        // Best-effort only: the approval itself already succeeded above, so a
+        // failed/rejected/malformed refresh here must never turn a successful
+        // approval into a reported failure.
+        try {
+          const t = await fetch(`/api/teams/${teamId}`);
+          if (t.ok) {
+            const normalized = normalizeTeamPayload(await t.json());
+            if (normalized) setTeam(normalized);
+          }
+        } catch {
+          // Ignore — approval already succeeded.
         }
         setModalTitle('Applicant approved');
         setModalMessage('The applicant has been added to the team.');

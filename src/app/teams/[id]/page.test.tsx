@@ -1392,6 +1392,134 @@ describe("Team Detail page — pending applications (Pass 16B.2)", () => {
     expect(screen.getByText("The applicant has been added to the team.")).toBeTruthy();
   });
 
+  it("30a. approve remains successful when the post-approval Team refresh rejects (network failure)", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`) && method === "DELETE") return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.includes(`/api/teams/${TEAM_ID}/applications/`)) return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return Promise.reject(new Error("network down"));
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+
+    // Approved row removed, remaining rows preserved in order.
+    expect(screen.queryByTestId("team-application-row-app-1")).toBeNull();
+    expect(screen.getByTestId("team-application-row-app-2")).toBeTruthy();
+    expect(screen.getByTestId("team-application-row-app-3")).toBeTruthy();
+
+    // Approval remains successful; refresh failure is never surfaced.
+    expect(screen.getByText("Applicant approved")).toBeTruthy();
+    expect(screen.getByText("The applicant has been added to the team.")).toBeTruthy();
+    expect(screen.queryByText("Approve failed")).toBeNull();
+
+    // Pending state cleared; other rows usable again.
+    expect((screen.getByTestId("team-application-deny-app-2") as HTMLButtonElement).disabled).toBe(false);
+
+    // Applications and stats are not refetched by the approval flow.
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length).toBe(1);
+    expect(calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/stats`)).length).toBe(1);
+  });
+
+  it("30b. approve remains successful when the post-approval Team refresh response has unparsable JSON", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.includes(`/api/teams/${TEAM_ID}/applications/`)) return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error("bad json")) } as unknown as Response);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+
+    expect(screen.queryByTestId("team-application-row-app-1")).toBeNull();
+    expect(screen.getByText("Applicant approved")).toBeTruthy();
+    expect(screen.getByText("The applicant has been added to the team.")).toBeTruthy();
+    expect(screen.queryByText("Approve failed")).toBeNull();
+  });
+
+  it("30c. approve remains successful when the refreshed Team payload is malformed", async () => {
+    authenticated();
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.includes(`/api/teams/${TEAM_ID}/applications/`)) return jsonResponse({});
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        if (teamGetCount === 1) return jsonResponse(VALID_TEAM);
+        return jsonResponse({ id: 5 }); // malformed: id must be a string
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+
+    // Existing local Team content remains usable — name still renders.
+    expect(screen.getByText("Midnight Puzzle Society")).toBeTruthy();
+    expect(screen.queryByTestId("team-application-row-app-1")).toBeNull();
+    expect(screen.getByText("Applicant approved")).toBeTruthy();
+    expect(screen.getByText("The applicant has been added to the team.")).toBeTruthy();
+    expect(screen.queryByText("Approve failed")).toBeNull();
+  });
+
+  it("30d. a failed application POST itself still shows Approve failed and performs no Team refresh", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    const teamCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    const teamCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    expect(screen.getByTestId("team-application-row-app-1")).toBeTruthy();
+    expect(screen.getByText("Approve failed")).toBeTruthy();
+    expect(teamCallsAfter).toBe(teamCallsBefore);
+  });
+
   it("31. approve failure keeps the row; 32. preserves server response text", async () => {
     authenticated();
     buildFetchMock({
