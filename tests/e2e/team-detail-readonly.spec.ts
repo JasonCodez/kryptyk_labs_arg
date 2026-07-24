@@ -95,6 +95,8 @@ interface FixtureOptions {
   membershipRole?: string | null;
   inviteStatus?: string;
   applications?: unknown[];
+  applicationActionStatus?: number;
+  holdApplicationActions?: boolean;
   inventoryThemes?: string[];
   holdTeam?: boolean;
 }
@@ -104,7 +106,9 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   let statsCalls = 0;
   const mutations: Array<{ url: string; method: string }> = [];
   const themeRequests: Array<{ method: string; body: unknown }> = [];
+  const applicationRequests: Array<{ applicationId: string; method: string; body: unknown }> = [];
   const held: Route[] = [];
+  const heldApplicationActions: Route[] = [];
 
   await page.route("**/*.png", async (route) => {
     if (route.request().url().includes("e2e-broken-avatar")) return route.fulfill({ status: 404, body: "not found" });
@@ -143,6 +147,20 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     if (path === `/api/teams/${TEAM_ID}/invite-status`) {
       return fulfill(route, { status: options.inviteStatus ?? "none" });
     }
+    if (path.startsWith(`/api/teams/${TEAM_ID}/applications/`)) {
+      const applicationId = path.slice(path.lastIndexOf("/") + 1);
+      let parsedBody: unknown = null;
+      try { parsedBody = request.postDataJSON(); } catch { /* ignore */ }
+      applicationRequests.push({ applicationId, method, body: parsedBody });
+      if (options.holdApplicationActions) {
+        heldApplicationActions.push(route);
+        return;
+      }
+      if (options.applicationActionStatus && options.applicationActionStatus !== 200) {
+        return fulfill(route, { error: "failed" }, options.applicationActionStatus);
+      }
+      return fulfill(route, {});
+    }
     if (path === `/api/teams/${TEAM_ID}/applications`) {
       return fulfill(route, options.applications ?? []);
     }
@@ -168,8 +186,12 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     statsCallCount: () => statsCalls,
     mutations,
     themeRequests,
+    applicationRequests,
     release: async (body: unknown, status = 200) => {
       for (const route of held.splice(0)) await fulfill(route, body, status);
+    },
+    releaseApplicationAction: async (body: unknown, status = 200) => {
+      for (const route of heldApplicationActions.splice(0)) await fulfill(route, body, status);
     },
   };
 }
@@ -402,6 +424,159 @@ test.describe("Team Detail — admin theme management (Pass 16B.1)", () => {
 
     const teamMutations = fixture.mutations.filter((m) => !m.url.endsWith("/theme"));
     expect(teamMutations.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Detail — moderator applications visibility (Pass 16B.2)", () => {
+  test("moderator sees Pending Applications and its actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, {
+      authenticated: true,
+      membershipRole: "moderator",
+      applications: [
+        { id: "mod-app-1", createdAt: "2026-07-20T12:00:00.000Z", user: { id: "applicant-mod", name: "Mod Applicant", email: "mod-applicant@example.test", image: null } },
+      ],
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const panel = page.getByTestId("team-applications-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText("Mod Applicant")).toBeVisible();
+    await expect(page.getByTestId("team-application-approve-mod-app-1")).toBeVisible();
+    await expect(page.getByTestId("team-application-deny-mod-app-1")).toBeVisible();
+  });
+});
+
+test.describe("Team Detail — admin applications management (Pass 16B.2)", () => {
+  test("admin reviews, approves, and denies applications with exact endpoints, bodies, and modal copy", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const applicationFixture = [
+      { id: "application-first", createdAt: "2026-07-20T12:00:00.000Z", user: { id: "applicant-1", name: "First Applicant", email: "first@example.test", image: null } },
+      { id: "application-second", createdAt: "2026-07-19T12:00:00.000Z", user: { id: "applicant-2", name: null, email: "second@example.test", image: null } },
+    ];
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      membershipRole: "admin",
+      applications: applicationFixture,
+      holdApplicationActions: true,
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const panel = page.getByTestId("team-applications-panel");
+    await expect(panel).toBeVisible();
+
+    // Both rows render in supplied API order.
+    const rowIds = (await panel.locator("[data-testid^='team-application-row-']").all()).length;
+    expect(rowIds).toBe(2);
+    const rowTexts = await panel.locator("[data-testid^='team-application-row-']").allTextContents();
+    expect(rowTexts[0]).toContain("First Applicant");
+    expect(rowTexts[1]).toContain("second@example.test"); // name fallback: null name -> email
+
+    // Dates render without "Invalid Date".
+    expect(rowTexts.join(" ")).not.toMatch(/Invalid Date/);
+
+    // Approve appears before Deny in the first row.
+    const firstRowButtons = await page.getByTestId("team-application-row-application-first").getByRole("button").allTextContents();
+    expect(firstRowButtons[0]).toContain("Approve");
+    expect(firstRowButtons[1]).toContain("Deny");
+
+    expect(fixture.applicationRequests.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
+
+    const teamCallsBeforeApprove = fixture.teamCallCount();
+    const statsCallsBeforeApprove = fixture.statsCallCount();
+
+    // Hold the first approve request and verify the pending-state UI.
+    await page.getByTestId("team-application-approve-application-first").click();
+    await expect(page.getByTestId("team-application-approve-application-first")).toHaveText(/Approving…/);
+    await expect(page.getByTestId("team-application-approve-application-first")).toBeDisabled();
+    await expect(page.getByTestId("team-application-deny-application-first")).toBeDisabled();
+    await expect(page.getByTestId("team-application-approve-application-second")).toBeDisabled();
+    await expect(page.getByTestId("team-application-deny-application-second")).toBeDisabled();
+
+    // A second activation while pending cannot create another request.
+    await page.getByTestId("team-application-approve-application-first").click({ force: true });
+    expect(fixture.applicationRequests.length).toBe(1);
+
+    // Release the held approve request successfully.
+    await fixture.releaseApplicationAction({});
+    await expect(page.getByTestId("team-application-row-application-first")).toHaveCount(0);
+    await expect(page.getByTestId("team-application-row-application-second")).toBeVisible();
+
+    expect(fixture.applicationRequests.length).toBe(1);
+    expect(fixture.applicationRequests[0]!.applicationId).toBe("application-first");
+    expect(fixture.applicationRequests[0]!.body).toEqual({ action: "approve" });
+
+    await expect(page.getByText("Applicant approved")).toBeVisible();
+    await expect(page.getByText("The applicant has been added to the team.")).toBeVisible();
+    // Approve performs exactly one primary Team refresh; stats are never refetched.
+    expect(fixture.teamCallCount()).toBe(teamCallsBeforeApprove + 1);
+    expect(fixture.statsCallCount()).toBe(statsCallsBeforeApprove);
+
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+
+    const teamCallsBeforeDeny = fixture.teamCallCount();
+    const statsCallsBeforeDeny = fixture.statsCallCount();
+
+    // Deny the second application.
+    await page.getByTestId("team-application-deny-application-second").click();
+    await fixture.releaseApplicationAction({});
+    await expect(page.getByTestId("team-application-row-application-second")).toHaveCount(0);
+    await expect(page.getByText("No pending applications.")).toBeVisible();
+
+    expect(fixture.applicationRequests.length).toBe(2);
+    expect(fixture.applicationRequests[1]!.applicationId).toBe("application-second");
+    expect(fixture.applicationRequests[1]!.body).toEqual({ action: "deny" });
+
+    await expect(page.getByText("Applicant denied")).toBeVisible();
+    await expect(page.getByText("The applicant has been denied.")).toBeVisible();
+
+    // Denial performs no additional primary Team refresh and no stats refetch.
+    expect(fixture.teamCallCount()).toBe(teamCallsBeforeDeny);
+    expect(fixture.statsCallCount()).toBe(statsCallsBeforeDeny);
+
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Team Detail — malformed applications payload (Pass 16B.2)", () => {
+  test("malformed application rows are dropped safely; valid rows and fallbacks render", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    await installFixture(page, {
+      authenticated: true,
+      membershipRole: "admin",
+      applications: [
+        { id: "valid-app", createdAt: "2026-07-20T12:00:00.000Z", user: { id: "u1", name: "Valid Applicant", email: null, image: null } },
+        null,
+        "invalid",
+        { createdAt: "2026-07-20T12:00:00.000Z", user: { id: "u2", name: "No Id" } },
+        { id: "bad-date-app", createdAt: "not-a-date", user: null },
+      ],
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const panel = page.getByTestId("team-applications-panel");
+    await expect(panel).toBeVisible();
+
+    const rows = await panel.locator("[data-testid^='team-application-row-']").all();
+    expect(rows.length).toBe(2);
+
+    const validRow = page.getByTestId("team-application-row-valid-app");
+    const badDateRow = page.getByTestId("team-application-row-bad-date-app");
+    await expect(validRow).toBeVisible();
+    await expect(badDateRow).toBeVisible();
+    await expect(validRow.getByText("Valid Applicant")).toBeVisible();
+    await expect(badDateRow.getByText("Applicant", { exact: true })).toBeVisible(); // missing-user fallback
+    await expect(badDateRow.getByText("Date unavailable")).toBeVisible(); // invalid date fallback
+    expect(await page.locator("body").innerText()).not.toMatch(/Invalid Date/);
+
     await expectNoHorizontalOverflow(page);
   });
 });

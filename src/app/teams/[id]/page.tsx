@@ -14,6 +14,12 @@ import TeamDetailLoadingState from "@/components/teams/TeamDetailLoadingState";
 import TeamDetailHero from "@/components/teams/TeamDetailHero";
 import TeamDetailActions, { type TeamInviteStatus } from "@/components/teams/TeamDetailActions";
 import TeamThemePicker from "@/components/teams/TeamThemePicker";
+import TeamApplicationsPanel, {
+  normalizeTeamApplications,
+  type TeamApplication,
+  type ApplicationsLoadStatus,
+  type PendingApplicationAction,
+} from "@/components/teams/TeamApplicationsPanel";
 import TeamDetailReadOnlyContent, {
   normalizeTeamDetailStats,
   type TeamDetailMember,
@@ -214,7 +220,9 @@ export default function TeamDetailPage() {
 
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [applications, setApplications] = useState<any[]>([]);
+  const [applications, setApplications] = useState<TeamApplication[]>([]);
+  const [applicationsLoadStatus, setApplicationsLoadStatus] = useState<ApplicationsLoadStatus>("idle");
+  const [pendingApplicationAction, setPendingApplicationAction] = useState<PendingApplicationAction | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState<string | undefined>(undefined);
   const [modalMessage, setModalMessage] = useState<string | undefined>(undefined);
@@ -236,6 +244,9 @@ export default function TeamDetailPage() {
   const retryInFlightRef = useRef(false);
   const statsRequestSeqRef = useRef(0);
   const statsAbortRef = useRef<AbortController | null>(null);
+  const applicationsRequestSeqRef = useRef(0);
+  const applicationsAbortRef = useRef<AbortController | null>(null);
+  const applicationActionInFlightRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -245,6 +256,8 @@ export default function TeamDetailPage() {
       teamAbortRef.current?.abort();
       statsRequestSeqRef.current += 1;
       statsAbortRef.current?.abort();
+      applicationsRequestSeqRef.current += 1;
+      applicationsAbortRef.current?.abort();
     };
   }, []);
 
@@ -340,20 +353,57 @@ export default function TeamDetailPage() {
     return () => { cancelled = true; };
   }, [teamLoadStatus, session?.user?.email, teamId]);
 
-  useEffect(() => {
-    // If user is admin/moderator, fetch pending applications
-    if (userRole && ["admin", "moderator"].includes(userRole) && teamId) {
-      (async () => {
-        try {
-          const res = await fetch(`/api/teams/${teamId}/applications`);
-          if (!res.ok) throw new Error("Failed to fetch applications");
-          const data = await res.json();
-          setApplications(data || []);
-        } catch (err) {
-          console.error("Failed to load applications:", err);
-        }
-      })();
+  // Load pending applications for admins/moderators — its own stale-safe
+  // request lifecycle (seq/AbortController), mirroring the primary team and
+  // statistics loaders. Not polled: this remains the existing one-time,
+  // role-triggered loading cadence.
+  const loadApplications = useCallback(async () => {
+    if (!teamId) return;
+    applicationsAbortRef.current?.abort();
+    const seq = ++applicationsRequestSeqRef.current;
+    const controller = new AbortController();
+    applicationsAbortRef.current = controller;
+    setApplicationsLoadStatus("loading");
+
+    const shouldApply = () => mountedRef.current && seq === applicationsRequestSeqRef.current;
+
+    try {
+      const res = await fetch(`/api/teams/${teamId}/applications`, { cache: "no-store", signal: controller.signal });
+      if (!shouldApply()) return;
+      if (!res.ok) {
+        setApplicationsLoadStatus("error");
+        return;
+      }
+      const data = await res.json();
+      if (!shouldApply()) return;
+      setApplications(normalizeTeamApplications(data));
+      setApplicationsLoadStatus("ready");
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError" || !shouldApply()) return;
+      setApplicationsLoadStatus("error");
     }
+  }, [teamId]);
+
+  useEffect(() => {
+    const isApplicationsManager = userRole === "admin" || userRole === "moderator";
+
+    if (!isApplicationsManager) {
+      // Role lost (or never granted) — abort any in-flight request,
+      // invalidate its sequence, and clear previously loaded data.
+      applicationsAbortRef.current?.abort();
+      applicationsRequestSeqRef.current += 1;
+      setApplications([]);
+      setApplicationsLoadStatus("idle");
+      return;
+    }
+
+    void loadApplications();
+
+    return () => {
+      applicationsRequestSeqRef.current += 1;
+      applicationsAbortRef.current?.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole, teamId]);
 
   // Poll membership role periodically so a promoted member sees the role update without a hard refresh.
@@ -562,6 +612,49 @@ export default function TeamDetailPage() {
     }
   };
 
+  const handleApplicationDecision = async (applicationId: string, action: "approve" | "deny") => {
+    if (applicationActionInFlightRef.current) return;
+    applicationActionInFlightRef.current = true;
+    setPendingApplicationAction({ applicationId, action });
+    try {
+      const res = await fetch(`/api/teams/${teamId}/applications/${applicationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || (action === "approve" ? "Failed to approve applicant" : "Failed to deny applicant"));
+      }
+      setApplications((prev) => prev.filter((a) => a.id !== applicationId));
+      if (action === "approve") {
+        const t = await fetch(`/api/teams/${teamId}`);
+        if (t.ok) {
+          const normalized = normalizeTeamPayload(await t.json());
+          if (normalized) setTeam(normalized);
+        }
+        setModalTitle('Applicant approved');
+        setModalMessage('The applicant has been added to the team.');
+        setModalVariant('success');
+        setModalOpen(true);
+      } else {
+        setModalTitle('Applicant denied');
+        setModalMessage('The applicant has been denied.');
+        setModalVariant('info');
+        setModalOpen(true);
+      }
+    } catch (err) {
+      console.error(err);
+      setModalTitle(action === "approve" ? 'Approve failed' : 'Deny failed');
+      setModalMessage((err as any)?.message || (action === "approve" ? 'Failed to approve applicant' : 'Failed to deny applicant'));
+      setModalVariant('error');
+      setModalOpen(true);
+    } finally {
+      applicationActionInFlightRef.current = false;
+      if (mountedRef.current) setPendingApplicationAction(null);
+    }
+  };
+
   const readOnlyMembers: TeamDetailMember[] = team.members;
 
   const renderMemberAction = (member: TeamDetailMember): ReactNode => {
@@ -638,97 +731,15 @@ export default function TeamDetailPage() {
 
           {/* ── Pending Applications (admin/mod only) ── */}
           {userRole && ["admin", "moderator"].includes(userRole) && (
-            <div className="pw-bevel p-5 sm:p-6" style={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.cardBorder}`, boxShadow: theme.cardGlow }}>
-              <h2 className="text-lg font-bold text-white mb-4">Pending Applications</h2>
-              {applications.length === 0 ? (
-                <p className="text-sm" style={{ color: "#8891AC" }}>No pending applications.</p>
-              ) : (
-                <div className="space-y-2">
-                  {applications.map((app) => (
-                    <div key={app.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--pw-line)" }}>
-                      <div className="flex items-center gap-3">
-                        {app.user?.image ? (
-                          <img src={app.user.image} alt="" className="w-10 h-10 rounded-full object-cover object-center" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.primaryMuted, color: theme.primary }}>👤</div>
-                        )}
-                        <div>
-                          <p className="text-white font-semibold">{app.user?.name || app.user?.email || 'Applicant'}</p>
-                          <p className="text-xs" style={{ color: "#8891AC" }}>Applied {new Date(app.createdAt).toLocaleString()}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 sm:mt-0 flex gap-2">
-                        <button
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'approve' }),
-                              });
-                              if (!res.ok) {
-                                const txt = await res.text();
-                                throw new Error(txt || 'Failed to approve applicant');
-                              }
-                              setApplications((prev) => prev.filter(a => a.id !== app.id));
-                              const t = await fetch(`/api/teams/${teamId}`);
-                              if (t.ok) {
-                                const normalized = normalizeTeamPayload(await t.json());
-                                if (normalized) setTeam(normalized);
-                              }
-                              setModalTitle('Applicant approved');
-                              setModalMessage('The applicant has been added to the team.');
-                              setModalVariant('success');
-                              setModalOpen(true);
-                            } catch (err) {
-                              console.error(err);
-                              setModalTitle('Approve failed');
-                              setModalMessage((err as any)?.message || 'Failed to approve applicant');
-                              setModalVariant('error');
-                              setModalOpen(true);
-                            }
-                          }}
-                          className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
-                          style={{ backgroundColor: "#2ED991", color: "#0B0E1A" }}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(`/api/teams/${teamId}/applications/${app.id}`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'deny' }),
-                              });
-                              if (!res.ok) {
-                                const txt = await res.text();
-                                throw new Error(txt || 'Failed to deny applicant');
-                              }
-                              setApplications((prev) => prev.filter(a => a.id !== app.id));
-                              setModalTitle('Applicant denied');
-                              setModalMessage('The applicant has been denied.');
-                              setModalVariant('info');
-                              setModalOpen(true);
-                            } catch (err) {
-                              console.error(err);
-                              setModalTitle('Deny failed');
-                              setModalMessage((err as any)?.message || 'Failed to deny applicant');
-                              setModalVariant('error');
-                              setModalOpen(true);
-                            }
-                          }}
-                          className="px-3 py-1 rounded font-semibold text-sm transition-opacity hover:opacity-90"
-                          style={{ backgroundColor: "rgba(255,59,92,0.85)", color: "#fff" }}
-                        >
-                          Deny
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TeamApplicationsPanel
+              applications={applications}
+              loadStatus={applicationsLoadStatus}
+              pendingAction={pendingApplicationAction}
+              theme={theme}
+              onApprove={(applicationId) => void handleApplicationDecision(applicationId, "approve")}
+              onDeny={(applicationId) => void handleApplicationDecision(applicationId, "deny")}
+              onRetry={() => void loadApplications()}
+            />
           )}
         </div>
       </PageContainer>

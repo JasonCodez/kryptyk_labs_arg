@@ -1014,3 +1014,712 @@ describe("Team Detail page — action deck and theme picker (Pass 16B.1)", () =>
     expect(calls.every((c) => c.method === "GET")).toBe(true);
   });
 });
+
+const APPLICATION_FIXTURE = [
+  { id: "app-1", createdAt: "2026-01-01T00:00:00.000Z", user: { id: "u-app1", name: "Applicant One", email: "one@example.test", image: null } },
+  { id: "app-2", createdAt: "2026-01-02T00:00:00.000Z", user: { id: "u-app2", name: null, email: "two@example.test", image: null } },
+  { id: "app-3", createdAt: "2026-01-03T00:00:00.000Z", user: { id: "u-app3", name: "Applicant Three", email: "three@example.test", image: null } },
+];
+
+describe("Team Detail page — pending applications (Pass 16B.2)", () => {
+  it("1. admin triggers the exact applications GET endpoint", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    const appsCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`) && c.method === "GET");
+    expect(appsCall).toBeTruthy();
+  });
+
+  it("2. moderator triggers the exact applications GET endpoint", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "moderator" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    const appsCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`) && c.method === "GET");
+    expect(appsCall).toBeTruthy();
+  });
+
+  it("3. member does not request applications", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "member" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.some((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`))).toBe(false);
+  });
+
+  it("4. unknown role does not request applications", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "mascot" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.some((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`))).toBe(false);
+  });
+
+  it("5. public non-member does not request applications", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: null }), inviteStatus: () => jsonResponse({ status: "none" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.some((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`))).toBe(false);
+  });
+
+  it("6. anonymous visitor does not request applications", async () => {
+    unauthenticated();
+    const { calls } = buildFetchMock();
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.some((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`))).toBe(false);
+  });
+
+  it("7. applications request uses cache: no-store", async () => {
+    authenticated();
+    let capturedInit: RequestInit | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) {
+        capturedInit = init;
+        return jsonResponse(APPLICATION_FIXTURE);
+      }
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    expect(capturedInit?.cache).toBe("no-store");
+  });
+
+  it("8. applications request receives an AbortSignal", async () => {
+    authenticated();
+    let capturedSignal: AbortSignal | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) {
+        capturedSignal = init?.signal as AbortSignal;
+        return jsonResponse(APPLICATION_FIXTURE);
+      }
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("9. unmount aborts an active applications request", async () => {
+    authenticated();
+    let capturedSignal: AbortSignal | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) {
+        capturedSignal = init?.signal as AbortSignal;
+        return new Promise(() => {});
+      }
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    const { unmount } = render(<TeamDetailPage />);
+    await flush();
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("10. a stale earlier response cannot replace a later response (Strict Mode replay)", async () => {
+    const { StrictMode } = await import("react");
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+    });
+    render(
+      <StrictMode>
+        <TeamDetailPage />
+      </StrictMode>
+    );
+    await flush();
+    expect(screen.getByText("Applicant One")).toBeTruthy();
+    expect(screen.getAllByText("Applicant One")).toHaveLength(1);
+  });
+
+  it("11. role loss aborts and clears application state", async () => {
+    jest.useFakeTimers();
+    authenticated();
+    let membershipRole = "admin";
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: membershipRole });
+      if (url.includes(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    render(<TeamDetailPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByTestId("team-applications-panel")).toBeTruthy();
+
+    membershipRole = "member";
+    await act(async () => { jest.advanceTimersByTime(10000); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.queryByTestId("team-applications-panel")).toBeNull();
+  });
+
+  it("12. successful empty payload shows the empty state", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse([]) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByText("No pending applications.")).toBeTruthy();
+  });
+
+  it("13. malformed successful payload does not crash", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse({ not: "an array" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByTestId("team-applications-panel")).toBeTruthy();
+    expect(screen.getByText("No pending applications.")).toBeTruthy();
+  });
+
+  it("14. non-OK response shows the error state", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse({ error: "boom" }, 500) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByText("Applications couldn’t be loaded.")).toBeTruthy();
+  });
+
+  it("15. network rejection shows the error state", async () => {
+    authenticated();
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return Promise.reject(new Error("network down"));
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByText("Applications couldn’t be loaded.")).toBeTruthy();
+  });
+
+  it("16. retry calls only the applications endpoint", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse({ error: "boom" }, 500) });
+    render(<TeamDetailPage />);
+    await flush();
+    const before = calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
+    await flush();
+    const newCalls = calls.slice(before);
+    expect(newCalls.every((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`))).toBe(true);
+  });
+
+  it("17. retry does not reload the route", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse({ error: "boom" }, 500) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
+    await flush();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("18. retry success replaces the error state", async () => {
+    authenticated();
+    let shouldFail = true;
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => (shouldFail ? jsonResponse({ error: "boom" }, 500) : jsonResponse(APPLICATION_FIXTURE)),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(screen.getByText("Applications couldn’t be loaded.")).toBeTruthy();
+    shouldFail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
+    await flush();
+    expect(screen.queryByText("Applications couldn’t be loaded.")).toBeNull();
+    expect(screen.getByText("Applicant One")).toBeTruthy();
+  });
+
+  it("19. approve sends the exact POST endpoint", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    const approveCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(approveCall).toBeTruthy();
+  });
+
+  it("20. approve sends exact body { action: \"approve\" }", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    const approveCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(approveCall?.body).toEqual({ action: "approve" });
+  });
+
+  it("21. approve sends Content-Type: application/json", async () => {
+    authenticated();
+    let capturedHeaders: HeadersInit | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`)) {
+        capturedHeaders = init?.headers;
+        return jsonResponse({});
+      }
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect(capturedHeaders).toEqual({ "Content-Type": "application/json" });
+  });
+
+  it("22. rapid double activation produces exactly one mutation (approve)", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    const approveBtn = screen.getByTestId("team-application-approve-app-1");
+    fireEvent.click(approveBtn);
+    fireEvent.click(approveBtn);
+    await flush();
+    const approveCalls = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(approveCalls.length).toBe(1);
+  });
+
+  it("23. pending label becomes Approving…", async () => {
+    authenticated();
+    let resolveApprove: (v: Response) => void = () => {};
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`)) return new Promise<Response>((resolve) => { resolveApprove = resolve; });
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect(screen.getByTestId("team-application-approve-app-1").textContent).toContain("Approving…");
+    act(() => { resolveApprove({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response); });
+    await flush();
+  });
+
+  it("24. other row actions are disabled while approving", async () => {
+    authenticated();
+    let resolveApprove: (v: Response) => void = () => {};
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`)) return new Promise<Response>((resolve) => { resolveApprove = resolve; });
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect((screen.getByTestId("team-application-deny-app-1") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("team-application-approve-app-2") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("team-application-deny-app-2") as HTMLButtonElement).disabled).toBe(true);
+    act(() => { resolveApprove({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response); });
+    await flush();
+  });
+
+  it("25. successful approve removes only the selected row; 26. remaining order preserved", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-2"));
+    await flush();
+    expect(screen.queryByTestId("team-application-row-app-2")).toBeNull();
+    const remaining = screen.getAllByTestId(/^team-application-row-/).map((el) => el.getAttribute("data-testid"));
+    expect(remaining).toEqual(["team-application-row-app-1", "team-application-row-app-3"]);
+  });
+
+  it("27. successful approve performs one primary Team refresh", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    const teamCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    const teamCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    expect(teamCallsAfter).toBe(teamCallsBefore + 1);
+  });
+
+  it("28. approve does not refetch applications; 29. approve does not refetch stats", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    const appsCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length;
+    const statsCallsBefore = calls.filter((c) => c.url.includes(`/api/teams/${TEAM_ID}/stats`)).length;
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    const appsCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length;
+    const statsCallsAfter = calls.filter((c) => c.url.includes(`/api/teams/${TEAM_ID}/stats`)).length;
+    expect(appsCallsAfter).toBe(appsCallsBefore);
+    expect(statsCallsAfter).toBe(statsCallsBefore);
+  });
+
+  it("30. approve success preserves exact modal copy", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect(screen.getByText("Applicant approved")).toBeTruthy();
+    expect(screen.getByText("The applicant has been added to the team.")).toBeTruthy();
+  });
+
+  it("31. approve failure keeps the row; 32. preserves server response text", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("Applicant already resolved") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect(screen.getByTestId("team-application-row-app-1")).toBeTruthy();
+    expect(screen.getByText("Approve failed")).toBeTruthy();
+    expect(screen.getByText("Applicant already resolved")).toBeTruthy();
+  });
+
+  it("33. approve failure preserves fallback copy", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect(screen.getByText("Failed to approve applicant")).toBeTruthy();
+  });
+
+  it("34. pending state clears after approve success; 35. after approve failure", async () => {
+    authenticated();
+    let fail = false;
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => (fail
+        ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response)
+        : jsonResponse({})),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
+    await flush();
+    expect((screen.getByTestId("team-application-deny-app-2") as HTMLButtonElement).disabled).toBe(false);
+
+    fail = true;
+    fireEvent.click(screen.getByTestId("team-application-approve-app-2"));
+    await flush();
+    expect((screen.getByTestId("team-application-deny-app-3") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("36. deny sends the exact POST endpoint", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    const denyCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(denyCall).toBeTruthy();
+  });
+
+  it("37. deny sends exact body { action: \"deny\" }", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    const denyCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(denyCall?.body).toEqual({ action: "deny" });
+  });
+
+  it("38. deny sends Content-Type: application/json", async () => {
+    authenticated();
+    let capturedHeaders: HeadersInit | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`)) {
+        capturedHeaders = init?.headers;
+        return jsonResponse({});
+      }
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect(capturedHeaders).toEqual({ "Content-Type": "application/json" });
+  });
+
+  it("39. rapid double activation produces exactly one mutation (deny)", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    const denyBtn = screen.getByTestId("team-application-deny-app-1");
+    fireEvent.click(denyBtn);
+    fireEvent.click(denyBtn);
+    await flush();
+    const denyCalls = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`) && c.method === "POST");
+    expect(denyCalls.length).toBe(1);
+  });
+
+  it("40. pending label becomes Denying…", async () => {
+    authenticated();
+    let resolveDeny: (v: Response) => void = () => {};
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`)) return new Promise<Response>((resolve) => { resolveDeny = resolve; });
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect(screen.getByTestId("team-application-deny-app-1").textContent).toContain("Denying…");
+    act(() => { resolveDeny({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response); });
+    await flush();
+  });
+
+  it("41. other row actions are disabled while denying", async () => {
+    authenticated();
+    let resolveDeny: (v: Response) => void = () => {};
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications/app-1`)) return new Promise<Response>((resolve) => { resolveDeny = resolve; });
+      if (url.includes(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse(APPLICATION_FIXTURE);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`)) return jsonResponse(VALID_TEAM);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect((screen.getByTestId("team-application-approve-app-1") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("team-application-approve-app-2") as HTMLButtonElement).disabled).toBe(true);
+    act(() => { resolveDeny({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response); });
+    await flush();
+  });
+
+  it("42. successful deny removes only the selected row; 43. remaining order preserved", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-2"));
+    await flush();
+    expect(screen.queryByTestId("team-application-row-app-2")).toBeNull();
+    const remaining = screen.getAllByTestId(/^team-application-row-/).map((el) => el.getAttribute("data-testid"));
+    expect(remaining).toEqual(["team-application-row-app-1", "team-application-row-app-3"]);
+  });
+
+  it("44. deny does not refresh the primary Team", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    const teamCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    const teamCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}`) && c.method === "GET").length;
+    expect(teamCallsAfter).toBe(teamCallsBefore);
+  });
+
+  it("45. deny does not refetch applications; 46. deny does not refetch stats", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    const appsCallsBefore = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length;
+    const statsCallsBefore = calls.filter((c) => c.url.includes(`/api/teams/${TEAM_ID}/stats`)).length;
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    const appsCallsAfter = calls.filter((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/applications`)).length;
+    const statsCallsAfter = calls.filter((c) => c.url.includes(`/api/teams/${TEAM_ID}/stats`)).length;
+    expect(appsCallsAfter).toBe(appsCallsBefore);
+    expect(statsCallsAfter).toBe(statsCallsBefore);
+  });
+
+  it("47. deny success preserves exact modal copy", async () => {
+    authenticated();
+    buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect(screen.getByText("Applicant denied")).toBeTruthy();
+    expect(screen.getByText("The applicant has been denied.")).toBeTruthy();
+  });
+
+  it("48. deny failure keeps the row; 49. preserves server response text", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("Cannot deny now") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect(screen.getByTestId("team-application-row-app-1")).toBeTruthy();
+    expect(screen.getByText("Deny failed")).toBeTruthy();
+    expect(screen.getByText("Cannot deny now")).toBeTruthy();
+  });
+
+  it("50. deny failure preserves fallback copy", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect(screen.getByText("Failed to deny applicant")).toBeTruthy();
+  });
+
+  it("51. pending state clears after deny success; 52. after deny failure", async () => {
+    authenticated();
+    let fail = false;
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      applications: () => jsonResponse(APPLICATION_FIXTURE),
+      applicationAction: () => (fail
+        ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response)
+        : jsonResponse({})),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-application-deny-app-1"));
+    await flush();
+    expect((screen.getByTestId("team-application-approve-app-2") as HTMLButtonElement).disabled).toBe(false);
+
+    fail = true;
+    fireEvent.click(screen.getByTestId("team-application-deny-app-2"));
+    await flush();
+    expect((screen.getByTestId("team-application-approve-app-3") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("53. existing Theme mutation remains unchanged", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inventory: () => jsonResponse({ items: [{ item: { subcategory: "team_theme", metadata: { value: "gold" } } }] }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: /^Theme$/ }));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-theme-option-gold"));
+    await flush();
+    const themeCall = calls.find((c) => c.url.includes("/theme") && c.method === "PUT");
+    expect(themeCall?.body).toEqual({ theme: "gold" });
+  });
+
+  it("54. existing Apply-to-Join mutation remains unchanged", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: null }), inviteStatus: () => jsonResponse({ status: "none" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to Join" }));
+    await flush();
+    const applyCall = calls.find((c) => c.url.endsWith(`/api/teams/${TEAM_ID}/apply`) && c.method === "POST");
+    expect(applyCall).toBeTruthy();
+  });
+
+  it("55. existing remove-member mutation remains unchanged", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
+    render(<TeamDetailPage />);
+    await flush();
+    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
+    fireEvent.click(removeButtons[0]!);
+    await flush();
+    const buttonsWithModalOpen = screen.getAllByRole("button", { name: "Remove" });
+    fireEvent.click(buttonsWithModalOpen[buttonsWithModalOpen.length - 1]!);
+    await flush();
+    const removeCall = calls.find((c) => c.url.includes("/members/") && c.method === "DELETE");
+    expect(removeCall).toBeTruthy();
+  });
+
+  it("56. existing leave-team mutation and 57. 1200ms delay remain unchanged", async () => {
+    jest.useFakeTimers();
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "member" }) });
+    render(<TeamDetailPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Leave Team" }));
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const leaveCall = calls.find((c) => c.url.includes("/membership") && c.method === "DELETE");
+    expect(leaveCall).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
+    await act(async () => { jest.advanceTimersByTime(1200); });
+    expect(mockPush).toHaveBeenCalledWith("/teams");
+  });
+
+  it("58. membership polling remains 10 seconds; 59. invite-status polling remains 5 seconds while pending", async () => {
+    jest.useFakeTimers();
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), inviteStatus: () => jsonResponse({ status: "pending" }) });
+    render(<TeamDetailPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    const membershipCallsBefore = calls.filter((c) => c.url.includes("/membership")).length;
+    const inviteCallsBefore = calls.filter((c) => c.url.includes("/invite-status")).length;
+    await act(async () => { jest.advanceTimersByTime(10000); await Promise.resolve(); });
+    const membershipCallsAfter = calls.filter((c) => c.url.includes("/membership")).length;
+    expect(membershipCallsAfter).toBeGreaterThan(membershipCallsBefore);
+    await act(async () => { jest.advanceTimersByTime(5000); await Promise.resolve(); });
+    const inviteCallsAfter = calls.filter((c) => c.url.includes("/invite-status")).length;
+    expect(inviteCallsAfter).toBeGreaterThan(inviteCallsBefore);
+  });
+
+  it("60. no write occurs during initial page render", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ membership: () => jsonResponse({ role: "admin" }), applications: () => jsonResponse(APPLICATION_FIXTURE) });
+    render(<TeamDetailPage />);
+    await flush();
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+});
