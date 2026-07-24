@@ -12,6 +12,7 @@ import TeamDetailReadOnlyContent, {
   formatTeamActivityTime,
   getTeamRoleLabel,
   getDifficultyTone,
+  getContributionBarPercent,
   type TeamDetailMember,
   type TeamDetailStatsData,
 } from "./TeamDetailReadOnlyContent";
@@ -139,6 +140,69 @@ describe("TeamDetailReadOnlyContent — helpers", () => {
   it("unknown difficulty fallback remains readable", () => {
     expect(getDifficultyTone("bizarre").label).toBe("bizarre");
     expect(getDifficultyTone(null).label).toBe("Unknown");
+  });
+});
+
+describe("getContributionBarPercent", () => {
+  it("leader returns 100", () => {
+    expect(getContributionBarPercent(100, 100)).toBe(100);
+  });
+
+  it("normal ratio returns expected percentage", () => {
+    expect(getContributionBarPercent(50, 100)).toBe(50);
+  });
+
+  it("tiny positive ratio returns 5", () => {
+    expect(getContributionBarPercent(1, 1000)).toBe(5);
+  });
+
+  it("zero points returns 0", () => {
+    expect(getContributionBarPercent(0, 100)).toBe(0);
+  });
+
+  it("negative points return 0", () => {
+    expect(getContributionBarPercent(-10, 100)).toBe(0);
+  });
+
+  it("zero leading points returns 0", () => {
+    expect(getContributionBarPercent(50, 0)).toBe(0);
+  });
+
+  it("negative leading points return 0", () => {
+    expect(getContributionBarPercent(50, -100)).toBe(0);
+  });
+
+  it("NaN earned points return 0", () => {
+    expect(getContributionBarPercent(Number.NaN, 100)).toBe(0);
+  });
+
+  it("NaN leading points return 0", () => {
+    expect(getContributionBarPercent(50, Number.NaN)).toBe(0);
+  });
+
+  it("infinite earned points return 0", () => {
+    expect(getContributionBarPercent(Infinity, 100)).toBe(0);
+  });
+
+  it("infinite leading points return 0", () => {
+    expect(getContributionBarPercent(50, Infinity)).toBe(0);
+  });
+
+  it("contributor exceeding the first entry clamps to 100", () => {
+    expect(getContributionBarPercent(200, 100)).toBe(100);
+    expect(getContributionBarPercent(999, 10)).toBe(100);
+  });
+
+  it("result is always an integer", () => {
+    expect(Number.isInteger(getContributionBarPercent(33, 77))).toBe(true);
+  });
+
+  it("result never exceeds 100", () => {
+    expect(getContributionBarPercent(999999, 1)).toBeLessThanOrEqual(100);
+  });
+
+  it("result never falls below zero", () => {
+    expect(getContributionBarPercent(-1, -1)).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -346,16 +410,42 @@ describe("TeamDetailReadOnlyContent — contributors", () => {
     expect(screen.getByText("JG")).toBeTruthy();
   });
 
-  it("contribution width clamps between 0 and 100", () => {
-    const { container } = render(<TeamDetailReadOnlyContent members={[makeMember()]} stats={makeStats()} statsLoading={false} theme={theme} />);
-    const bars = Array.from(container.querySelectorAll("[style*='width']")) as HTMLElement[];
-    bars.forEach((bar) => {
-      const width = parseInt(bar.style.width, 10);
-      if (!Number.isNaN(width)) {
-        expect(width).toBeGreaterThanOrEqual(0);
-        expect(width).toBeLessThanOrEqual(100);
-      }
+  it("contribution width clamps between 0 and 100 for an out-of-order fixture", () => {
+    const outOfOrder = makeStats({
+      topContributors: [
+        { userId: "first", name: "First", image: null, role: "member", joinedAt: null, earnedPoints: 10, puzzlesSolved: 1 },
+        { userId: "larger", name: "Larger", image: null, role: "member", joinedAt: null, earnedPoints: 999, puzzlesSolved: 50 },
+        { userId: "tiny", name: "Tiny", image: null, role: "member", joinedAt: null, earnedPoints: 1, puzzlesSolved: 1 },
+        { userId: "zero", name: "Zero", image: null, role: "member", joinedAt: null, earnedPoints: 0, puzzlesSolved: 0 },
+      ],
     });
+    const snapshot = JSON.parse(JSON.stringify(outOfOrder));
+
+    const { container } = render(<TeamDetailReadOnlyContent members={[makeMember()]} stats={outOfOrder} statsLoading={false} theme={theme} />);
+
+    const bar0 = container.querySelector('[data-testid="contribution-bar-0"]') as HTMLElement;
+    const bar1 = container.querySelector('[data-testid="contribution-bar-1"]') as HTMLElement;
+    const bar2 = container.querySelector('[data-testid="contribution-bar-2"]') as HTMLElement;
+    const bar3 = container.querySelector('[data-testid="contribution-bar-3"]') as HTMLElement;
+
+    expect(parseInt(bar0.style.width, 10)).toBe(100);
+    expect(parseInt(bar1.style.width, 10)).toBe(100);
+    expect(parseInt(bar2.style.width, 10)).toBe(10);
+    expect(parseInt(bar3.style.width, 10)).toBe(0);
+
+    const allBars = Array.from(container.querySelectorAll("[data-testid^='contribution-bar-']")) as HTMLElement[];
+    allBars.forEach((bar) => {
+      const width = parseInt(bar.style.width, 10);
+      expect(Number.isNaN(width)).toBe(false);
+      expect(width).toBeGreaterThanOrEqual(0);
+      expect(width).toBeLessThanOrEqual(100);
+    });
+
+    const names = screen.getAllByText(/^(First|Larger|Tiny|Zero)$/).map((el) => el.textContent);
+    expect(names).toEqual(["First", "Larger", "Tiny", "Zero"]);
+
+    expect(outOfOrder).toEqual(snapshot);
+    expect(SOURCE).not.toMatch(/\.sort\(/);
   });
 
   it("does not sort contributors", () => {

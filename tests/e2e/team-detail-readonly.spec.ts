@@ -415,6 +415,72 @@ test.describe("Team Detail — statistics failure", () => {
   });
 });
 
+test.describe("Team Detail — out-of-order contributor progress bars", () => {
+  test("bars clamp to 100% and preserve API order even when a later contributor exceeds the first", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const outOfOrderStats = {
+      ...STATS_FIXTURE,
+      topContributors: [
+        { userId: "low-first", name: "Low First", image: null, role: "member", joinedAt: null, earnedPoints: 10, puzzlesSolved: 1 },
+        { userId: "high-second", name: "High Second", image: null, role: "member", joinedAt: null, earnedPoints: 999, puzzlesSolved: 50 },
+      ],
+    };
+    const fixture = await installFixture(page, { authenticated: true, membershipRole: "admin", stats: outOfOrderStats });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const contributors = page.getByTestId("team-detail-contributors");
+    await expect(contributors).toBeVisible();
+
+    // Order preserved — Low First stays first, High Second is not promoted.
+    const names = await contributors.locator("li").allTextContents();
+    expect(names[0]).toContain("Low First");
+    expect(names[1]).toContain("High Second");
+
+    await expect(contributors.getByTestId("contribution-bar-0")).toBeAttached();
+    await expect(contributors.getByTestId("contribution-bar-1")).toBeAttached();
+
+    const widths = await page.evaluate(() => {
+      const b0 = document.querySelector('[data-testid="contribution-bar-0"]') as HTMLElement | null;
+      const b1 = document.querySelector('[data-testid="contribution-bar-1"]') as HTMLElement | null;
+      const row0 = b0?.closest("li");
+      const row1 = b1?.closest("li");
+      return {
+        pct0: b0 ? parseInt(b0.style.width, 10) : null,
+        pct1: b1 ? parseInt(b1.style.width, 10) : null,
+        barWidth0: b0?.getBoundingClientRect().width ?? 0,
+        rowWidth0: row0?.getBoundingClientRect().width ?? 0,
+        barWidth1: b1?.getBoundingClientRect().width ?? 0,
+        rowWidth1: row1?.getBoundingClientRect().width ?? 0,
+      };
+    });
+
+    expect(widths.pct0).toBe(100);
+    expect(widths.pct1).toBe(100);
+    expect(widths.barWidth0).toBeLessThanOrEqual(widths.rowWidth0 + 1);
+    expect(widths.barWidth1).toBeLessThanOrEqual(widths.rowWidth1 + 1);
+
+    const allBars = await contributors.locator("[data-testid^='contribution-bar-']").all();
+    for (const bar of allBars) {
+      const style = await bar.getAttribute("style");
+      const match = style?.match(/width:\s*(\d+)%/);
+      expect(match).not.toBeNull();
+      const pct = Number(match![1]);
+      expect(pct).toBeGreaterThanOrEqual(0);
+      expect(pct).toBeLessThanOrEqual(100);
+    }
+
+    // Placement treatment stays based on supplied order — first entry gets the 1st-place icon.
+    await expect(contributors.locator("svg.lucide-crown")).toBeVisible();
+
+    await expect(page.getByText("999", { exact: false })).toBeVisible();
+    expect(fixture.mutations.length).toBe(0);
+
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
 test.describe("Team Detail — malformed data", () => {
   test("does not crash; fallbacks render; invalid theme falls back safely", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });

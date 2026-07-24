@@ -150,6 +150,21 @@ export function formatTeamDetailMetric(value: number): string {
   return value.toLocaleString();
 }
 
+export function getContributionBarPercent(earnedPoints: number, leadingPoints: number): number {
+  if (
+    !Number.isFinite(earnedPoints) ||
+    !Number.isFinite(leadingPoints) ||
+    earnedPoints <= 0 ||
+    leadingPoints <= 0
+  ) {
+    return 0;
+  }
+
+  const percentage = Math.round((earnedPoints / leadingPoints) * 100);
+
+  return Math.min(100, Math.max(5, percentage));
+}
+
 export function formatTeamDetailDate(value: string | null): string {
   if (!value) return "Date unavailable";
   const ms = new Date(value).getTime();
@@ -333,13 +348,12 @@ export default function TeamDetailReadOnlyContent({
           <ul className="space-y-2">
             {contributors.map((c, i) => {
               const placement = PLACEMENT[i];
-              const pct = Number.isFinite(c.earnedPoints) && c.earnedPoints > 0 && leadingPoints > 0
-                ? Math.max(5, Math.round((c.earnedPoints / leadingPoints) * 100))
-                : 0;
+              const pct = getContributionBarPercent(c.earnedPoints, leadingPoints);
               return (
                 <li key={c.userId || `${c.name}-${i}`} className="relative overflow-hidden rounded-lg border" style={BORDER_STYLE}>
                   <div
                     aria-hidden="true"
+                    data-testid={`contribution-bar-${i}`}
                     className="absolute inset-y-0 left-0 opacity-10"
                     style={{ width: `${pct}%`, background: placement ? placement.color : "var(--pw-text-secondary)" }}
                   />
