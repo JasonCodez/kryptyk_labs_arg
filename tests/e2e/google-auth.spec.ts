@@ -1,0 +1,224 @@
+import { expect, test, type Page, type Route } from "@playwright/test";
+import { config as loadEnv } from "dotenv";
+
+loadEnv({ path: ".env.local", override: false, quiet: true });
+loadEnv({ path: ".env", override: false, quiet: true });
+
+function fulfill(route: Route, body: unknown, status = 200) {
+  return route.fulfill({
+    status,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  });
+}
+
+async function dismissCookieBanner(page: Page) {
+  const gotIt = page.getByRole("button", { name: "Got it" });
+  try {
+    await gotIt.waitFor({ state: "visible", timeout: 3000 });
+    await gotIt.click();
+  } catch {
+    // Banner never appeared this session — nothing to close.
+  }
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const { scrollWidth, viewportWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
+}
+
+function providersPayload(includeGoogle: boolean) {
+  const credentials = {
+    id: "credentials",
+    name: "Credentials",
+    type: "credentials",
+    signinUrl: "/api/auth/signin/credentials",
+    callbackUrl: "/api/auth/callback/credentials",
+  };
+  if (!includeGoogle) return { credentials };
+  return {
+    credentials,
+    google: {
+      id: "google",
+      name: "Google",
+      type: "oauth",
+      signinUrl: "/api/auth/signin/google",
+      callbackUrl: "/api/auth/callback/google",
+    },
+  };
+}
+
+interface AuthFixtureOptions {
+  includeGoogle?: boolean;
+  holdGoogleSignin?: boolean;
+}
+
+// Fully intercepts every NextAuth endpoint these pages touch — no request
+// ever reaches Google, and no credentials are ever sent anywhere real.
+async function installAuthFixture(page: Page, options: AuthFixtureOptions = {}) {
+  const includeGoogle = options.includeGoogle ?? true;
+  const googleSigninRequests: Array<{ method: string }> = [];
+  const credentialsCallbackRequests: Array<{ method: string }> = [];
+  const heldGoogleSignin: Route[] = [];
+
+  await page.route("**/api/auth/session", (route) => fulfill(route, {}));
+  await page.route("**/api/auth/csrf", (route) => fulfill(route, { csrfToken: "test-csrf-token" }));
+  await page.route("**/api/auth/providers", (route) => fulfill(route, providersPayload(includeGoogle)));
+
+  await page.route("**/api/auth/signin/google", async (route) => {
+    googleSigninRequests.push({ method: route.request().method() });
+    if (options.holdGoogleSignin) {
+      heldGoogleSignin.push(route);
+      return;
+    }
+    // Never actually reaches Google — redirected to a harmless same-origin URL.
+    await route.fulfill({ status: 302, headers: { Location: "/auth/signin?google-init=1" } });
+  });
+
+  await page.route("**/api/auth/callback/google", (route) => fulfill(route, {}));
+
+  await page.route("**/api/auth/callback/credentials", (route) => {
+    credentialsCallbackRequests.push({ method: route.request().method() });
+    return fulfill(route, { url: "/auth/signin" });
+  });
+
+  return {
+    googleSigninRequests,
+    credentialsCallbackRequests,
+    releaseGoogleSignin: async () => {
+      for (const route of heldGoogleSignin.splice(0)) {
+        await route.fulfill({ status: 302, headers: { Location: "/auth/signin?google-init=1" } });
+      }
+    },
+  };
+}
+
+test.describe("Google auth — provider absent", () => {
+  test("Credentials-only provider list hides Google actions but keeps Credentials forms usable", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installAuthFixture(page, { includeGoogle: false });
+
+    await page.goto("/auth/signin", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await expect(page.getByRole("button", { name: /Continue with Google/i })).toHaveCount(0);
+    await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
+    await expect(page.getByPlaceholder("••••••••")).toBeVisible();
+
+    await page.goto("/auth/register", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await expect(page.getByRole("button", { name: /Sign up with Google/i })).toHaveCount(0);
+    await expect(page.getByPlaceholder("Your name")).toBeVisible();
+  });
+});
+
+test.describe("Google auth — provider present", () => {
+  test("Google actions render correctly on sign-in and registration, and do not submit Credentials forms", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fixture = await installAuthFixture(page, { includeGoogle: true });
+
+    await page.goto("/auth/signin", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const googleButton = page.getByTestId("google-signin-button");
+    await expect(googleButton).toBeVisible();
+    const box = await googleButton.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(43.9);
+    await expect(page.getByText("or continue with email")).toBeVisible();
+
+    await googleButton.click();
+    // The click must never also submit the Credentials form.
+    expect(fixture.credentialsCallbackRequests.length).toBe(0);
+
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/auth/register", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const signUpButton = page.getByTestId("google-signup-button");
+    await expect(signUpButton).toBeVisible();
+    const signUpBox = await signUpButton.boundingBox();
+    expect(signUpBox!.height).toBeGreaterThanOrEqual(43.9);
+    await expect(page.getByText("or create an account with email")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
+    await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
+
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("no horizontal overflow at 320px", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 710 });
+    await installAuthFixture(page, { includeGoogle: true });
+    await page.goto("/auth/signin", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await expect(page.getByTestId("google-signin-button")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/auth/register", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await expect(page.getByTestId("google-signup-button")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Google auth — duplicate invocation", () => {
+  test("rapid clicks initiate Google sign-in exactly once, with correct pending state", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fixture = await installAuthFixture(page, { includeGoogle: true, holdGoogleSignin: true });
+
+    await page.goto("/auth/signin", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const googleButton = page.getByTestId("google-signin-button");
+    await googleButton.click();
+    await googleButton.click({ force: true });
+    await googleButton.click({ force: true });
+
+    await expect.poll(() => fixture.googleSigninRequests.length).toBe(1);
+    await expect(googleButton).toContainText("Connecting to Google…");
+    await expect(googleButton).toBeDisabled();
+
+    // Credentials inputs remain usable — Google initiation alone doesn't
+    // disable the rest of the page (navigation hasn't begun yet).
+    await expect(page.getByPlaceholder("you@example.com")).toBeEditable();
+    await expect(page.getByPlaceholder("••••••••")).toBeEditable();
+
+    await fixture.releaseGoogleSignin();
+  });
+});
+
+test.describe("Google auth — error page", () => {
+  test("known error codes show their exact safe message; unknown codes fall back to the generic message", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installAuthFixture(page, { includeGoogle: true });
+
+    await page.goto("/auth/error?error=OAuthAccountNotLinked", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+    await expect(page.getByTestId("auth-error-message")).toHaveText(
+      "An account already exists with this email. Sign in with your email and password first. Google account linking will be added from Account Settings in a later pass."
+    );
+
+    await page.goto("/auth/error?error=AccessDenied", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("auth-error-message")).toHaveText("This Google account is not currently approved for PuzzleWarz access.");
+
+    await page.goto("/auth/error?error=Configuration", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("auth-error-message")).toHaveText(
+      "Google sign-in is temporarily unavailable. Please use email and password or try again later."
+    );
+
+    await page.goto("/auth/error?error=SomeTotallyUnknownCode", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("auth-error-message")).toHaveText("Google sign-in could not be completed. Please try again.");
+
+    // Arbitrary query content must never be rendered directly.
+    await page.goto("/auth/error?error=%3Cscript%3Ealert(1)%3C%2Fscript%3E", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("auth-error-message")).toHaveText("Google sign-in could not be completed. Please try again.");
+    await expect(page.locator("script:has-text('alert(1)')")).toHaveCount(0);
+
+    await page.getByRole("link", { name: "Back to sign in" }).click();
+    await expect(page).toHaveURL(/\/auth\/signin$/);
+
+    await expectNoHorizontalOverflow(page);
+  });
+});

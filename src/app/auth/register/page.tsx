@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { getProviders, signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getAnonId, clearPendingRewards } from "@/lib/gridlockAnon";
@@ -39,6 +39,9 @@ function RegisterForm() {
   const [showTos, setShowTos] = useState(false);
   const [emailOptIn, setEmailOptIn] = useState(false);
   const [honeypot, setHoneypot] = useState("");
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const googleInFlightRef = useRef(false);
 
   useEffect(() => {
     // Get referral code from URL params
@@ -47,6 +50,39 @@ function RegisterForm() {
       setReferralCode(ref);
     }
   }, [searchParams]);
+
+  // Only show the Google action when NextAuth actually has the provider
+  // registered — never assume availability from a public env var.
+  useEffect(() => {
+    let cancelled = false;
+    getProviders()
+      .then((discovered) => {
+        if (cancelled) return;
+        setGoogleAvailable(Boolean(discovered?.google));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGoogleAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleGoogleSignUp() {
+    if (googleInFlightRef.current) return;
+    googleInFlightRef.current = true;
+    setGoogleConnecting(true);
+    try {
+      // Referral-code rewards are not applied to the Google OAuth path in
+      // this pass — only the existing email/password registration flow
+      // reads/claims referralCode.
+      await signIn("google", { callbackUrl: "/dashboard" });
+    } finally {
+      googleInFlightRef.current = false;
+      setGoogleConnecting(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -165,6 +201,49 @@ function RegisterForm() {
               <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", fontSize: 14 }}>
                 {error}
               </div>
+            )}
+
+            {googleAvailable && (
+              <>
+                <button
+                  type="button"
+                  data-testid="google-signup-button"
+                  onClick={handleGoogleSignUp}
+                  disabled={googleConnecting}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                    width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
+                    background: "#fff", color: "#1f1f1f", border: "1px solid rgba(255,255,255,0.15)",
+                    fontWeight: 700, fontSize: 14, cursor: googleConnecting ? "not-allowed" : "pointer",
+                    opacity: googleConnecting ? 0.7 : 1, marginBottom: 12,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 18, height: 18, borderRadius: 4, background: "#4285F4",
+                      color: "#fff", fontSize: 12, fontWeight: 800, lineHeight: 1,
+                    }}
+                  >
+                    G
+                  </span>
+                  <span>{googleConnecting ? "Connecting to Google…" : "Sign up with Google"}</span>
+                </button>
+
+                <p style={{ fontSize: 12, color: "#6B7280", marginBottom: 20, lineHeight: 1.5 }}>
+                  By continuing with Google, you agree to the PuzzleWarz{" "}
+                  <Link href="/terms" style={{ color: "#3891A6", fontWeight: 600 }}>Terms of Service</Link>{" "}
+                  and{" "}
+                  <Link href="/privacy" style={{ color: "#3891A6", fontWeight: 600 }}>Privacy Policy</Link>.
+                </p>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+                  <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
+                  <span style={{ fontSize: 12, color: "#6B7280" }}>or create an account with email</span>
+                  <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
+                </div>
+              </>
             )}
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>

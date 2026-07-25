@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { getProviders, signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -17,10 +17,49 @@ function SignInForm() {
   const [loading, setLoading] = useState(false);
   const isLoggedOut = searchParams.get("logout") === "true";
   const [mounted, setMounted] = useState(false);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const googleInFlightRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Only show the Google action when NextAuth actually has the provider
+  // registered (i.e. GOOGLE_CLIENT_ID/SECRET are configured server-side) —
+  // never assume availability from a public env var.
+  useEffect(() => {
+    let cancelled = false;
+    getProviders()
+      .then((discovered) => {
+        if (cancelled) return;
+        setGoogleAvailable(Boolean(discovered?.google));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGoogleAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleGoogleSignIn() {
+    if (googleInFlightRef.current) return;
+    googleInFlightRef.current = true;
+    setGoogleConnecting(true);
+    try {
+      // Beta mode still lands on the normal dashboard once the signIn
+      // callback in src/lib/auth.ts approves the account — there is no
+      // separate beta callback destination.
+      await signIn("google", { callbackUrl: "/dashboard" });
+    } finally {
+      // Reached only if the redirect itself failed to start; a successful
+      // call navigates the browser away before this ever runs.
+      googleInFlightRef.current = false;
+      setGoogleConnecting(false);
+    }
+  }
 
   // Only redirect if session exists, not explicitly logging out, and mounted
   useEffect(() => {
@@ -46,8 +85,6 @@ function SignInForm() {
         password,
         redirect: false,
       });
-
-      console.log("Sign in result:", result);
 
       if (result?.error) {
         setError(result.error || "Sign in failed");
@@ -146,6 +183,42 @@ function SignInForm() {
               <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 10, background: "rgba(56,145,166,0.1)", border: "1px solid rgba(56,145,166,0.3)", color: "#9BD1D6", fontSize: 13 }}>
                 Signed in as <strong>{session.user.email}</strong>. Enter different credentials to switch.
               </div>
+            )}
+
+            {googleAvailable && (
+              <>
+                <button
+                  type="button"
+                  data-testid="google-signin-button"
+                  onClick={handleGoogleSignIn}
+                  disabled={googleConnecting}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                    width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
+                    background: "#fff", color: "#1f1f1f", border: "1px solid rgba(255,255,255,0.15)",
+                    fontWeight: 700, fontSize: 14, cursor: googleConnecting ? "not-allowed" : "pointer",
+                    opacity: googleConnecting ? 0.7 : 1, marginBottom: 20,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 18, height: 18, borderRadius: 4, background: "#4285F4",
+                      color: "#fff", fontSize: 12, fontWeight: 800, lineHeight: 1,
+                    }}
+                  >
+                    G
+                  </span>
+                  <span>{googleConnecting ? "Connecting to Google…" : "Continue with Google"}</span>
+                </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+                  <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
+                  <span style={{ fontSize: 12, color: "#6B7280" }}>or continue with email</span>
+                  <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
+                </div>
+              </>
             )}
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
