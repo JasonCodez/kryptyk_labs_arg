@@ -102,6 +102,10 @@ interface FixtureOptions {
   memberRemovalStatus?: number;
   memberRemovalError?: string;
   holdMemberRemovals?: boolean;
+  teamLeaveStatus?: number;
+  teamLeaveError?: string;
+  teamLeavePlainTextError?: string;
+  holdTeamLeave?: boolean;
 }
 
 async function installFixture(page: Page, options: FixtureOptions = {}) {
@@ -111,9 +115,11 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   const themeRequests: Array<{ method: string; body: unknown }> = [];
   const applicationRequests: Array<{ applicationId: string; method: string; body: unknown }> = [];
   const memberRemovalRequests: Array<{ memberId: string; method: string; body: unknown }> = [];
+  const teamLeaveRequests: Array<{ method: string; body: unknown }> = [];
   const held: Route[] = [];
   const heldApplicationActions: Route[] = [];
   const heldMemberRemovals: Route[] = [];
+  const heldTeamLeaves: Route[] = [];
   let removedMemberId: string | null = null;
 
   await page.route("**/*.png", async (route) => {
@@ -146,6 +152,22 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       statsCalls += 1;
       if (options.statsStatus && options.statsStatus !== 200) return fulfill(route, { error: "failed" }, options.statsStatus);
       return fulfill(route, options.stats ?? STATS_FIXTURE);
+    }
+    if (path === `/api/teams/${TEAM_ID}/membership` && method === "DELETE") {
+      let parsedBody: unknown = null;
+      try { parsedBody = request.postDataJSON(); } catch { /* ignore */ }
+      teamLeaveRequests.push({ method, body: parsedBody });
+      if (options.holdTeamLeave) {
+        heldTeamLeaves.push(route);
+        return;
+      }
+      if (options.teamLeaveStatus && options.teamLeaveStatus !== 200) {
+        if (options.teamLeavePlainTextError) {
+          return route.fulfill({ status: options.teamLeaveStatus, contentType: "text/plain", body: options.teamLeavePlainTextError });
+        }
+        return fulfill(route, { error: options.teamLeaveError ?? "failed" }, options.teamLeaveStatus);
+      }
+      return fulfill(route, {});
     }
     if (path === `/api/teams/${TEAM_ID}/membership`) {
       return fulfill(route, { role: options.membershipRole ?? null });
@@ -213,6 +235,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     themeRequests,
     applicationRequests,
     memberRemovalRequests,
+    teamLeaveRequests,
     release: async (body: unknown, status = 200) => {
       for (const route of held.splice(0)) await fulfill(route, body, status);
     },
@@ -225,6 +248,9 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
         removedMemberId = memberRemovalRequests[memberRemovalRequests.length - 1]!.memberId;
       }
       for (const route of releasing) await fulfill(route, body, status);
+    },
+    releaseTeamLeave: async (body: unknown = {}, status = 200) => {
+      for (const route of heldTeamLeaves.splice(0)) await fulfill(route, body, status);
     },
   };
 }
@@ -793,6 +819,137 @@ test.describe("Team Detail — member removal role boundary (Pass 16B.3.1)", () 
 
     await expect(page.getByText("Private Team")).toBeVisible();
     await expect(page.getByTestId("team-member-remove-u5")).toHaveCount(0);
+  });
+});
+
+test.describe("Team Detail — leave team (Pass 16B.3.2)", () => {
+  test("member cancels, then leaves with exact endpoint, focus containment, and delayed navigation", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      membershipRole: "member",
+      holdTeamLeave: true,
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const trigger = page.getByRole("button", { name: "Leave Team" });
+    await expect(trigger).toBeVisible();
+    const triggerBox = await trigger.boundingBox();
+    expect(triggerBox!.height).toBeGreaterThanOrEqual(43.9);
+
+    expect(fixture.teamLeaveRequests.length).toBe(0);
+
+    await trigger.click();
+    const dialog = page.getByTestId("team-leave-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("role", "dialog");
+    await expect(page.getByRole("heading", { name: "Leave team" })).toBeVisible();
+    await expect(page.getByText("Are you sure you want to leave the team Midnight Puzzle Society?")).toBeVisible();
+    await expect(page.getByTestId("team-leave-cancel")).toBeVisible();
+    await expect(page.getByTestId("team-leave-confirm")).toBeVisible();
+    await expect(page.getByTestId("team-leave-cancel")).toBeFocused();
+    await expectNoHorizontalOverflow(page);
+
+    await page.getByTestId("team-leave-cancel").click();
+    await expect(dialog).toHaveCount(0);
+    expect(fixture.teamLeaveRequests.length).toBe(0);
+    await expect(trigger).toBeFocused();
+
+    // Reopen and hold the DELETE request.
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    const confirmButton = page.getByTestId("team-leave-confirm");
+    await expect(confirmButton).toBeEnabled();
+    await confirmButton.click();
+
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId("team-leave-confirm")).toHaveText(/Leaving…/);
+    await expect(dialog).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByTestId("team-leave-cancel")).toBeDisabled();
+    await expect(page.getByTestId("team-leave-confirm")).toBeDisabled();
+
+    await expect(dialog).toBeFocused();
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Tab");
+      await expect(dialog).toBeFocused();
+    }
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("Shift+Tab");
+      await expect(dialog).toBeFocused();
+    }
+
+    // Forced repeated confirmation still records exactly one DELETE.
+    await page.getByTestId("team-leave-confirm").click({ force: true });
+    expect(fixture.teamLeaveRequests.length).toBe(1);
+    expect(fixture.teamLeaveRequests[0]!.method).toBe("DELETE");
+    expect(fixture.teamLeaveRequests[0]!.body).toBeFalsy();
+
+    const teamCallsBeforeRelease = fixture.teamCallCount();
+    const statsCallsBeforeRelease = fixture.statsCallCount();
+    const appsCallsBeforeRelease = fixture.mutations.filter((m) => m.url.includes("/applications")).length;
+
+    await fixture.releaseTeamLeave({});
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText("Left team")).toBeVisible();
+    await expect(page.getByText("You have left Midnight Puzzle Society.")).toBeVisible();
+
+    // The page has not navigated yet immediately after success.
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+    await expectNoHorizontalOverflow(page);
+
+    // Leaving performs no Team refresh and no applications/stats refetch.
+    expect(fixture.teamCallCount()).toBe(teamCallsBeforeRelease);
+    expect(fixture.statsCallCount()).toBe(statsCallsBeforeRelease);
+    expect(fixture.mutations.filter((m) => m.url.includes("/applications")).length).toBe(appsCallsBeforeRelease);
+
+    // Eventually navigates to /teams.
+    await expect(page).toHaveURL(/\/teams$/, { timeout: 5000 });
+
+    expect(fixture.teamLeaveRequests.length).toBe(1);
+  });
+});
+
+test.describe("Team Detail — failed leave team (Pass 16B.3.2)", () => {
+  test("failed leave keeps the user on the page and shows the server error", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      membershipRole: "member",
+      teamLeaveStatus: 400,
+      teamLeaveError: "You are not a member of this team",
+    });
+    await page.goto(`/teams/${TEAM_ID}`, { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const teamCallsBeforeLeave = fixture.teamCallCount();
+
+    await page.getByRole("button", { name: "Leave Team" }).click();
+    const dialog = page.getByTestId("team-leave-dialog");
+    await expect(dialog).toBeVisible();
+    await page.getByTestId("team-leave-confirm").click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText("Leave failed")).toBeVisible();
+    await expect(page.getByText("You are not a member of this team")).toBeVisible();
+
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+    await page.waitForTimeout(1400);
+    await expect(page).toHaveURL(new RegExp(`/teams/${TEAM_ID}$`));
+
+    expect(fixture.teamCallCount()).toBe(teamCallsBeforeLeave);
+    expect(fixture.teamLeaveRequests.length).toBe(1);
+
+    // The dialog can be opened again after the failure — close the failure
+    // feedback modal first so it doesn't intercept the trigger click.
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Leave Team" }).click();
+    await expect(dialog).toBeVisible();
+
+    await expectNoHorizontalOverflow(page);
   });
 });
 

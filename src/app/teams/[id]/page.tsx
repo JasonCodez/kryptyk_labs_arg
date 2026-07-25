@@ -7,7 +7,6 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeft, Lock, RefreshCw, Trophy, UsersRound } from "lucide-react";
 import InviteTeamModal from "@/components/teams/InviteTeamModal";
 import ActionModal from "@/components/ActionModal";
-import ConfirmModal from "@/components/ConfirmModal";
 import { getThemeConfig } from "@/lib/profileThemes";
 import PageContainer from "@/components/ui/PageContainer";
 import TeamDetailLoadingState from "@/components/teams/TeamDetailLoadingState";
@@ -24,6 +23,7 @@ import TeamMemberRemovalDialog, {
   TeamMemberRemoveButton,
   getRemovalMemberDisplayName,
 } from "@/components/teams/TeamMemberRemovalDialog";
+import TeamLeaveDialog, { getLeaveTeamDisplayName } from "@/components/teams/TeamLeaveDialog";
 import TeamDetailReadOnlyContent, {
   normalizeTeamDetailStats,
   type TeamDetailMember,
@@ -117,6 +117,33 @@ async function readMemberRemovalError(response: Response): Promise<string> {
     }
 
     return "Failed to remove member";
+  } catch {
+    return trimmed;
+  }
+}
+
+// A Fetch response body can only be consumed once, so this reads it exactly
+// once as text and then attempts JSON parsing locally — calling both
+// res.json() and res.text() on the same real Response is not reliable.
+async function readTeamLeaveError(response: Response): Promise<string> {
+  const raw = await response.text().catch(() => "");
+  const trimmed = raw.trim();
+
+  if (!trimmed) {
+    return "Failed to leave team";
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const error = (parsed as Record<string, unknown>).error;
+      if (typeof error === "string" && error.trim()) {
+        return error.trim();
+      }
+    }
+
+    return "Failed to leave team";
   } catch {
     return trimmed;
   }
@@ -261,7 +288,8 @@ export default function TeamDetailPage() {
   const [inviteStatus, setInviteStatus] = useState<TeamInviteStatus>('none');
   const [memberRemovalTarget, setMemberRemovalTarget] = useState<TeamDetailMember | null>(null);
   const [memberRemovalPending, setMemberRemovalPending] = useState(false);
-  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [leavePending, setLeavePending] = useState(false);
 
   const [stats, setStats] = useState<TeamDetailStatsData | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -279,6 +307,8 @@ export default function TeamDetailPage() {
   const applicationsAbortRef = useRef<AbortController | null>(null);
   const applicationActionInFlightRef = useRef(false);
   const memberRemovalInFlightRef = useRef(false);
+  const leaveInFlightRef = useRef(false);
+  const leaveNavigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -290,6 +320,11 @@ export default function TeamDetailPage() {
       statsAbortRef.current?.abort();
       applicationsRequestSeqRef.current += 1;
       applicationsAbortRef.current?.abort();
+      if (leaveNavigationTimerRef.current) {
+        clearTimeout(leaveNavigationTimerRef.current);
+        leaveNavigationTimerRef.current = null;
+      }
+      leaveInFlightRef.current = false;
     };
   }, []);
 
@@ -751,6 +786,52 @@ export default function TeamDetailPage() {
     }
   };
 
+  const handleLeaveTeam = async () => {
+    if (leaveInFlightRef.current) return;
+    leaveInFlightRef.current = true;
+    setLeavePending(true);
+    const displayName = getLeaveTeamDisplayName(team.name);
+    const isMounted = () => mountedRef.current;
+    try {
+      const res = await fetch(`/api/teams/${teamId}/membership`, { method: "DELETE" });
+      if (!isMounted()) return;
+      if (!res.ok) {
+        const message = await readTeamLeaveError(res);
+        if (!isMounted()) return;
+        throw new Error(message);
+      }
+      setLeaveDialogOpen(false);
+      setLeavePending(false);
+      setModalTitle('Left team');
+      setModalMessage(`You have left ${displayName}.`);
+      setModalVariant('success');
+      setModalOpen(true);
+      leaveNavigationTimerRef.current = setTimeout(() => {
+        leaveNavigationTimerRef.current = null;
+        if (!isMounted()) return;
+        try {
+          router.push('/teams');
+        } catch {
+          // Ignore — membership deletion already succeeded.
+        }
+      }, 1200);
+      // The synchronous leave guard deliberately stays set after success —
+      // it is released either by the navigation above or by unmount cleanup
+      // — so a second leave attempt cannot fire during the navigation delay.
+      return;
+    } catch (err) {
+      console.error(err);
+      if (!isMounted()) return;
+      setLeaveDialogOpen(false);
+      setModalTitle('Leave failed');
+      setModalMessage((err as any)?.message || 'Failed to leave team');
+      setModalVariant('error');
+      setModalOpen(true);
+      leaveInFlightRef.current = false;
+      setLeavePending(false);
+    }
+  };
+
   const renderMemberAction = (member: TeamDetailMember): ReactNode => {
     if (!(userRole && ["admin", "moderator"].includes(userRole))) return null;
     const memberId = member.user.id?.trim();
@@ -780,7 +861,7 @@ export default function TeamDetailPage() {
       theme={theme}
       onToggleThemePicker={() => setShowThemePicker((v) => !v)}
       onInviteMembers={() => setShowInviteModal(true)}
-      onLeaveTeam={() => setConfirmLeaveOpen(true)}
+      onLeaveTeam={() => setLeaveDialogOpen(true)}
       onApplyToJoin={() => void handleApplyToJoin()}
     />
   );
@@ -855,40 +936,13 @@ export default function TeamDetailPage() {
         onCancel={() => { if (!memberRemovalPending) setMemberRemovalTarget(null); }}
         onConfirm={() => void handleRemoveMember()}
       />
-      <ConfirmModal
-        isOpen={confirmLeaveOpen}
-        title={`Leave team`}
-        message={`Are you sure you want to leave the team ${displayTeamName}?`}
-        confirmLabel="Leave"
-        cancelLabel="Cancel"
-        onCancel={() => setConfirmLeaveOpen(false)}
-        onConfirm={async () => {
-          setConfirmLeaveOpen(false);
-          try {
-            const res = await fetch(`/api/teams/${team.id}/membership`, { method: 'DELETE' });
-            if (!res.ok) {
-              // Prefer JSON error message when available
-              let body: any = null;
-              try { body = await res.json(); } catch (_) { /* ignore */ }
-              const txt = body?.error || (await res.text().catch(() => null)) || 'Failed to leave team';
-              throw new Error(txt);
-            }
-            setModalTitle('Left team');
-            setModalMessage(`You have left ${displayTeamName}.`);
-            setModalVariant('success');
-            setModalOpen(true);
-            // show the modal briefly, then navigate back to teams list so user sees confirmation
-            setTimeout(() => {
-              try { router.push('/teams'); } catch { /* ignore */ }
-            }, 1200);
-          } catch (err) {
-            console.error(err);
-            setModalTitle('Leave failed');
-            setModalMessage((err as any)?.message || 'Failed to leave team');
-            setModalVariant('error');
-            setModalOpen(true);
-          }
-        }}
+      <TeamLeaveDialog
+        isOpen={leaveDialogOpen}
+        teamName={team.name}
+        pending={leavePending}
+        theme={theme}
+        onCancel={() => { if (!leavePending) setLeaveDialogOpen(false); }}
+        onConfirm={() => void handleLeaveTeam()}
       />
       <ActionModal
         isOpen={modalOpen}
