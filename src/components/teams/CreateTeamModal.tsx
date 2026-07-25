@@ -245,6 +245,7 @@ export function CreateTeamModal({ onClose, onSuccess }: CreateTeamModalProps) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!mountedRef.current) return;
     if (submitInFlightRef.current) return;
 
     const normalized = normalizeCreateTeamDraft({ name, description, isPublic });
@@ -298,9 +299,17 @@ export function CreateTeamModal({ onClose, onSuccess }: CreateTeamModalProps) {
 
     // Success is deliberately outside the try/catch above — a parent
     // callback exception must never be mistaken for a network/server
-    // failure. The synchronous submit guard deliberately stays set; the
+    // failure. It's still contained in its own try/catch so a throwing
+    // parent callback cannot reject this async handler (which React does
+    // not await) or leave an unhandled promise rejection behind — the
+    // Team creation itself already succeeded and must not be reported as
+    // failed. The synchronous submit guard deliberately stays set; the
     // parent unmounts this component via its generation-bound onSuccess.
-    onSuccess();
+    try {
+      onSuccess();
+    } catch (callbackError) {
+      console.error("Create Team success callback failed:", callbackError);
+    }
   };
 
   const nameErrorId = fieldErrors.name ? "create-team-name-error" : undefined;

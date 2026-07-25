@@ -57,6 +57,26 @@ async function flush() {
   });
 }
 
+type ReactSubmitEvent = { preventDefault: () => void };
+type ReactSubmitHandler = (event: ReactSubmitEvent) => Promise<void>;
+
+// Retrieves the *actual* React onSubmit function object bound to the form,
+// so a "retained handler" test genuinely invokes the same closure the real
+// app would retain — fireEvent.submit() on a detached (post-unmount) form
+// proves nothing, since React's delegated listener is already torn down by
+// then and no component code runs at all.
+function getReactSubmitHandler(form: HTMLFormElement): ReactSubmitHandler {
+  const propsKey = Object.keys(form).find((key) => key.startsWith("__reactProps$"));
+  if (!propsKey) {
+    throw new Error("Could not locate React form props");
+  }
+  const props = (form as unknown as Record<string, { onSubmit?: ReactSubmitHandler }>)[propsKey];
+  if (typeof props?.onSubmit !== "function") {
+    throw new Error("Could not locate React onSubmit handler");
+  }
+  return props.onSubmit;
+}
+
 afterEach(() => {
   jest.restoreAllMocks();
   document.body.style.overflow = "";
@@ -671,27 +691,21 @@ describe("CreateTeamModal — success", () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it("108. parent callback exceptions are not converted into a server error", () => {
-    // A throwing onSuccess() cannot be exercised at runtime here without
-    // producing a genuine unhandled promise rejection: React's synthetic
-    // event dispatch invokes the async handleSubmit handler without
-    // awaiting or attaching a .catch to its returned promise, so any error
-    // thrown after the call site (including by Jest/jsdom's own rejection
-    // reporting) is indistinguishable from a real crash — exactly as it
-    // would behave in production. The requirement is instead verified
-    // structurally: onSuccess() must be called outside the request's
-    // try/catch, so a throwing parent callback can never be caught and
-    // reinterpreted as a fetch/network failure.
-    const catchIndex = SOURCE.indexOf("} catch (err) {");
-    const successCallIndex = SOURCE.indexOf("onSuccess();");
-    // The catch block's own closing brace (the first "}" at catch-body
-    // indentation after the catch opens) must appear before the onSuccess()
-    // call — i.e. onSuccess() is not nested inside the catch block.
-    const catchBodyCloseIndex = SOURCE.indexOf("\n    }\n", catchIndex);
-    expect(catchIndex).toBeGreaterThan(-1);
-    expect(successCallIndex).toBeGreaterThan(-1);
-    expect(catchBodyCloseIndex).toBeGreaterThan(catchIndex);
-    expect(successCallIndex).toBeGreaterThan(catchBodyCloseIndex);
+  it("108. parent callback exceptions are not converted into a server error", async () => {
+    // onSuccess() is now individually try/caught (see the correction pass),
+    // so a throwing parent callback no longer produces an unhandled
+    // rejection and can be exercised via ordinary UI interaction.
+    global.fetch = jest.fn(() => jsonResponse({ id: "t" }, 201)) as unknown as typeof fetch;
+    const onSuccess = jest.fn(() => { throw new Error("parent blew up"); });
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    render(<CreateTeamModal onClose={jest.fn()} onSuccess={onSuccess} />);
+    fireEvent.change(screen.getByTestId("create-team-name"), { target: { value: "Team" } });
+    fireEvent.click(screen.getByTestId("create-team-submit"));
+    await flush();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("create-team-error")).toBeNull();
+    consoleErrorSpy.mockRestore();
   });
 });
 
@@ -962,16 +976,82 @@ describe("CreateTeamModal — unmount safety", () => {
     expect(true).toBe(true);
   });
 
-  it("141. retained submit handler after unmount issues no request; 142. no unhandled exception occurs", async () => {
+  it("1-13. a genuinely retained submit handler invoked after unmount issues no request and performs no work", async () => {
     let callCount = 0;
     global.fetch = jest.fn(() => { callCount += 1; return jsonResponse({ id: "t" }, 201); }) as unknown as typeof fetch;
-    const { unmount } = render(<CreateTeamModal onClose={jest.fn()} onSuccess={jest.fn()} />);
+    const onSuccess = jest.fn();
+    const onClose = jest.fn();
+    const { unmount } = render(<CreateTeamModal onClose={onClose} onSuccess={onSuccess} />);
+    fireEvent.change(screen.getByTestId("create-team-name"), { target: { value: "Team" } });
+
+    const form = screen.getByTestId("create-team-name").closest("form")!;
+    const retainedHandler = getReactSubmitHandler(form);
+    expect(typeof retainedHandler).toBe("function");
+
+    unmount();
+
+    const callCountBefore = callCount;
+    const preventDefault = jest.fn();
+    await expect(retainedHandler({ preventDefault })).resolves.toBeUndefined();
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(callCount).toBe(callCountBefore);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("14-17. the same real handler invoked while mounted still submits normally", async () => {
+    let capturedInit: RequestInit | undefined;
+    global.fetch = jest.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return jsonResponse({ id: "t" }, 201);
+    }) as unknown as typeof fetch;
+    const onSuccess = jest.fn();
+    render(<CreateTeamModal onClose={jest.fn()} onSuccess={onSuccess} />);
+    fireEvent.change(screen.getByTestId("create-team-name"), { target: { value: "Mounted Team" } });
+
+    const form = screen.getByTestId("create-team-name").closest("form")!;
+    const handler = getReactSubmitHandler(form);
+    await act(async () => {
+      await handler({ preventDefault: () => {} });
+    });
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(capturedInit?.body));
+    expect(body).toEqual({ name: "Mounted Team", description: "", isPublic: true });
+  });
+
+  it("18-29. a throwing onSuccess resolves cleanly, logs once, and does not affect the already-successful creation", async () => {
+    let callCount = 0;
+    global.fetch = jest.fn(() => { callCount += 1; return jsonResponse({ id: "t" }, 201); }) as unknown as typeof fetch;
+    const onClose = jest.fn();
+    const onSuccess = jest.fn(() => { throw new Error("parent blew up"); });
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    render(<CreateTeamModal onClose={onClose} onSuccess={onSuccess} />);
     fireEvent.change(screen.getByTestId("create-team-name"), { target: { value: "Team" } });
     const form = screen.getByTestId("create-team-name").closest("form")!;
-    unmount();
-    expect(() => fireEvent.submit(form)).not.toThrow();
-    await flush();
-    expect(callCount).toBe(0);
+    const handler = getReactSubmitHandler(form);
+
+    await act(async () => {
+      await handler({ preventDefault: () => {} });
+    });
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("create-team-error")).toBeNull();
+    expect(callCount).toBe(1);
+
+    // The submit guard remains active — invoking the handler again must not
+    // issue a second POST.
+    await act(async () => {
+      await handler({ preventDefault: () => {} });
+    });
+    expect(callCount).toBe(1);
+
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy.mock.calls[0]?.[0]).toBe("Create Team success callback failed:");
+    consoleErrorSpy.mockRestore();
   });
 });
 
