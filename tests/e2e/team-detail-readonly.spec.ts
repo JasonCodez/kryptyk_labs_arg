@@ -377,13 +377,17 @@ test.describe("Team Detail — anonymous private team", () => {
 });
 
 test.describe("Team Detail — proxy boundary", () => {
-  test("the Teams index remains protected for anonymous visitors", async ({ page }) => {
+  // Pass 17A widened the proxy's public-Teams exception to also cover the
+  // bare Teams hub (previously only /teams/<id> was exempt), so an anonymous
+  // visitor now reaches /teams instead of being redirected to sign-in.
+  test("the Teams index is reachable by anonymous visitors", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await installFixture(page, { authenticated: false });
     await page.goto("/teams", { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
 
-    await expect(page).toHaveURL(/\/auth\/signin/);
+    await expect(page).not.toHaveURL(/\/auth\/signin/);
+    await expect(page).toHaveURL(/\/teams$/);
   });
 
   test("a nested Team management-like path remains protected for anonymous visitors", async ({ page }) => {

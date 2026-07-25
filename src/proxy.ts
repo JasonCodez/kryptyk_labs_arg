@@ -60,12 +60,13 @@ const protectedPaths = [
   "/leaderboards",
 ];
 
-// Narrow exception: an exact Team Detail page (/teams/<id> or /teams/<id>/)
-// may be viewed by an unauthenticated visitor when the team is public — the
-// Team API and page already enforce that boundary. Nested paths like
-// /teams/<id>/settings or /teams/<id>/manage stay behind normal auth.
-function isPublicTeamDetailPath(pathname: string): boolean {
-  return /^\/teams\/[^/]+\/?$/.test(pathname);
+// Narrow exception: the Teams hub (/teams) and an exact Team Detail page
+// (/teams/<id> or /teams/<id>/) may be viewed by an unauthenticated visitor —
+// both the Teams list API and the Team Detail API already enforce the actual
+// public/private boundary server-side. Nested paths like /teams/<id>/settings
+// or /teams/<id>/manage stay behind normal auth.
+function isPublicTeamsPath(pathname: string): boolean {
+  return pathname === "/teams" || /^\/teams\/[^/]+\/?$/.test(pathname);
 }
 
 export async function proxy(request: NextRequest) {
@@ -119,7 +120,7 @@ export async function proxy(request: NextRequest) {
 
   // Check if accessing protected paths
   const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path))
-    && !isPublicTeamDetailPath(pathname);
+    && !isPublicTeamsPath(pathname);
 
   if (isProtectedPath && !token) {
     // Redirect to signin if not authenticated
