@@ -13,6 +13,23 @@ import TeamsHubContent, {
 
 type TeamsLoadStatus = "idle" | "loading" | "ready" | "error";
 
+// Identifies one specific opening of an authenticated-only surface (Create
+// Team / Pending Invitations) — identity alone is not enough to tell two
+// modal/panel generations apart (e.g. account A opens, account B opens a
+// replacement while A's request is still in flight), so every opening gets
+// its own monotonically increasing generation number.
+interface AuthenticatedSurfaceContext {
+  identity: string;
+  generation: number;
+}
+
+function sameSurfaceContext(
+  current: AuthenticatedSurfaceContext | null,
+  candidate: AuthenticatedSurfaceContext
+): boolean {
+  return current !== null && current.identity === candidate.identity && current.generation === candidate.generation;
+}
+
 export default function TeamsPage() {
   const { data: session, status } = useSession();
 
@@ -39,11 +56,17 @@ export default function TeamsPage() {
   // identity that is actually active right now rather than a captured one.
   const activeIdentityRef = useRef<string | null>(null);
   const invitationCountRef = useRef(0);
-  // Which identity opened each authenticated-only surface, so a stale
-  // success/close callback from a different identity can be told apart from
-  // a legitimate one for the currently active identity.
-  const createModalIdentityRef = useRef<string | null>(null);
-  const invitationsPanelIdentityRef = useRef<string | null>(null);
+  // Monotonically increasing per surface — never reset, even across
+  // identity transitions, so a generation from an older identity can never
+  // become valid again by coincidence.
+  const createSurfaceGenerationRef = useRef(0);
+  const invitationsSurfaceGenerationRef = useRef(0);
+  // The context that actually opened each currently-open surface, so a
+  // same-shaped callback from a *different* opening (a different account,
+  // or an earlier opening by the same account) can be told apart from the
+  // legitimate callback for the surface that is actually on screen.
+  const createSurfaceContextRef = useRef<AuthenticatedSurfaceContext | null>(null);
+  const invitationsSurfaceContextRef = useRef<AuthenticatedSurfaceContext | null>(null);
 
   const invalidateTeamsRequest = useCallback(() => {
     teamsRequestSeqRef.current += 1;
@@ -65,6 +88,13 @@ export default function TeamsPage() {
       teamsAbortRef.current?.abort();
       invitationRequestSeqRef.current += 1;
       invitationAbortRef.current?.abort();
+      // A retained callback invoked after unmount must find nothing to
+      // work with: no active identity, no positive count, no matchable
+      // surface context.
+      activeIdentityRef.current = null;
+      invitationCountRef.current = 0;
+      createSurfaceContextRef.current = null;
+      invitationsSurfaceContextRef.current = null;
     };
   }, []);
 
@@ -155,8 +185,8 @@ export default function TeamsPage() {
       setInvitationCount(0);
       setShowCreateModal(false);
       setShowInvitations(false);
-      createModalIdentityRef.current = null;
-      invitationsPanelIdentityRef.current = null;
+      createSurfaceContextRef.current = null;
+      invitationsSurfaceContextRef.current = null;
       return;
     }
 
@@ -178,10 +208,12 @@ export default function TeamsPage() {
       // authentication) must not leak the previous identity's open modals
       // or invitation count into the new one — clear the count immediately
       // rather than waiting for the new identity's request to resolve.
+      // Generation counters themselves are never reset, so an old
+      // generation can never accidentally match a future one.
       setShowCreateModal(false);
       setShowInvitations(false);
-      createModalIdentityRef.current = null;
-      invitationsPanelIdentityRef.current = null;
+      createSurfaceContextRef.current = null;
+      invitationsSurfaceContextRef.current = null;
       invalidateInvitationRequest();
       setInvitationCount(0);
     }
@@ -211,53 +243,60 @@ export default function TeamsPage() {
     }
   }, [loadTeams]);
 
-  // Every callback below is a stable function identity (empty deps), and
-  // each reads activeIdentityRef/invitationCountRef at call time rather than
-  // closing over the render that created it — a copy retained from an
-  // earlier, now-stale render must always defer to whichever identity is
-  // actually active when it eventually runs.
+  // Every callback below is a stable function identity (empty/fixed deps).
+  // The two "open" callbacks read activeIdentityRef/invitationCountRef at
+  // call time and mint a fresh surface context. The "close"/"success"
+  // callbacks are always invoked with the exact context that was rendered
+  // for that surface instance (see the JSX below) and verify it still
+  // matches the live context ref before doing anything — a callback bound
+  // to an older generation (a previous account, or a previous opening by
+  // the same account) can therefore never affect a newer one.
   const handleOpenCreateTeam = useCallback(() => {
+    if (!mountedRef.current) return;
     const identity = activeIdentityRef.current;
     if (!identity) return;
-    createModalIdentityRef.current = identity;
+    createSurfaceContextRef.current = { identity, generation: ++createSurfaceGenerationRef.current };
     setShowCreateModal(true);
   }, []);
 
   const handleOpenInvitations = useCallback(() => {
+    if (!mountedRef.current) return;
     const identity = activeIdentityRef.current;
     if (!identity) return;
     if (invitationCountRef.current <= 0) return;
-    invitationsPanelIdentityRef.current = identity;
+    invitationsSurfaceContextRef.current = { identity, generation: ++invitationsSurfaceGenerationRef.current };
     setShowInvitations(true);
   }, []);
 
-  const handleCloseCreateTeam = useCallback(() => {
-    createModalIdentityRef.current = null;
+  const handleCloseCreateTeam = useCallback((context: AuthenticatedSurfaceContext) => {
+    if (!mountedRef.current) return;
+    if (!sameSurfaceContext(createSurfaceContextRef.current, context)) return;
+    createSurfaceContextRef.current = null;
     setShowCreateModal(false);
   }, []);
 
-  const handleCreateTeamSuccess = useCallback(() => {
-    const openedFor = createModalIdentityRef.current;
-    createModalIdentityRef.current = null;
+  const handleCreateTeamSuccess = useCallback((context: AuthenticatedSurfaceContext) => {
+    if (!mountedRef.current) return;
+    if (!sameSurfaceContext(createSurfaceContextRef.current, context)) return;
+    // Defense in depth: the context check above already implies the
+    // identity matches (a context is only ever minted for the identity
+    // active at open time, and identity changes clear the context), but
+    // the active identity is re-checked explicitly per spec.
+    if (activeIdentityRef.current !== context.identity) return;
+    createSurfaceContextRef.current = null;
     setShowCreateModal(false);
-
-    // The account that opened Create Team must still be the active one for
-    // its success to reload Teams — a request begun under a since-replaced
-    // identity (logout, session refresh, a different account) must not
-    // reload data that identity no longer owns.
-    if (!openedFor || activeIdentityRef.current !== openedFor) return;
-
     void loadTeams();
   }, [loadTeams]);
 
-  const handleCloseInvitations = useCallback(() => {
-    const openedFor = invitationsPanelIdentityRef.current;
-    invitationsPanelIdentityRef.current = null;
+  const handleCloseInvitations = useCallback((context: AuthenticatedSurfaceContext) => {
+    if (!mountedRef.current) return;
+    if (!sameSurfaceContext(invitationsSurfaceContextRef.current, context)) return;
+    invitationsSurfaceContextRef.current = null;
     setShowInvitations(false);
 
     const currentIdentity = activeIdentityRef.current;
 
-    if (openedFor && currentIdentity === openedFor) {
+    if (currentIdentity === context.identity) {
       void loadInvitationCount();
       return;
     }
@@ -267,12 +306,11 @@ export default function TeamsPage() {
       // in flight for the identity that used to be active.
       invalidateInvitationRequest();
       setInvitationCount(0);
-      return;
     }
 
-    // A different authenticated identity is now active — its own invitation
-    // request (if any) is already correctly scoped; a stale close from the
-    // previous identity must not touch it.
+    // Otherwise a different authenticated identity is now active — its own
+    // invitation request (if any) is already correctly scoped; a stale
+    // close from the previous identity must not touch it.
   }, [invalidateInvitationRequest, loadInvitationCount]);
 
   const isAuthenticated = authenticatedEmail !== null;
@@ -286,6 +324,12 @@ export default function TeamsPage() {
         : teamsLoadStatus === "error"
           ? "error"
           : "loading";
+
+  // Captured once per render so the JSX below binds each rendered surface
+  // instance's callbacks to the exact context that opened it, rather than
+  // to whatever the ref happens to contain by the time the callback runs.
+  const renderedCreateContext = createSurfaceContextRef.current;
+  const renderedInvitationsContext = invitationsSurfaceContextRef.current;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
@@ -308,14 +352,18 @@ export default function TeamsPage() {
       </PageContainer>
 
       <PendingInvitations
-        isOpen={isAuthenticated && showInvitations}
-        onClose={handleCloseInvitations}
+        key={renderedInvitationsContext ? `${renderedInvitationsContext.identity}:${renderedInvitationsContext.generation}` : "closed"}
+        isOpen={isAuthenticated && showInvitations && renderedInvitationsContext !== null}
+        onClose={() => {
+          if (renderedInvitationsContext) handleCloseInvitations(renderedInvitationsContext);
+        }}
       />
 
-      {isAuthenticated && showCreateModal && (
+      {isAuthenticated && showCreateModal && renderedCreateContext && (
         <CreateTeamModal
-          onClose={handleCloseCreateTeam}
-          onSuccess={handleCreateTeamSuccess}
+          key={`${renderedCreateContext.identity}:${renderedCreateContext.generation}`}
+          onClose={() => handleCloseCreateTeam(renderedCreateContext)}
+          onSuccess={() => handleCreateTeamSuccess(renderedCreateContext)}
         />
       )}
     </div>

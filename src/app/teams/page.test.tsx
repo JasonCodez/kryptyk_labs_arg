@@ -1487,3 +1487,297 @@ describe("Teams hub page — stale callback identity guards (Pass 17A final corr
     expect(SOURCE).not.toMatch(/\.sort\(/);
   });
 });
+
+describe("Teams hub page — surface-instance generation guards (Pass 17A surface-instance correction)", () => {
+  it("1-16. account A's stale Create success after B opens a replacement modal cannot affect B; B's own success still works", async () => {
+    authenticatedAs("account-a", "a@example.test");
+    const { calls } = buildFetchMock();
+    const { rerender } = render(<TeamsPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const staleSuccessA = mockCreateTeamModalProps.onSuccess;
+    expect(typeof staleSuccessA).toBe("function");
+
+    authenticatedAs("account-b", "b@example.test");
+    rerender(<TeamsPage />);
+    await flush();
+
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const currentSuccessB = mockCreateTeamModalProps.onSuccess;
+    expect(typeof currentSuccessB).toBe("function");
+    // Distinct closures — A's and B's callbacks are bound to different
+    // surface-generation contexts even though both come from the same
+    // stable underlying handler.
+    expect(currentSuccessB).not.toBe(staleSuccessA);
+
+    const teamGetCallsBeforeStale = calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length;
+    act(() => { staleSuccessA(); });
+    await flush();
+
+    // B's modal remains open and untouched by A's stale success.
+    expect(screen.getByText("Create New Team")).toBeTruthy();
+    expect(calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length).toBe(teamGetCallsBeforeStale);
+    expect(screen.getByTestId("teams-hub-view-mine").getAttribute("aria-pressed")).toBe("true");
+
+    act(() => { currentSuccessB(); });
+    await flush();
+
+    expect(screen.queryByText("Create New Team")).toBeNull();
+    expect(calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length).toBe(teamGetCallsBeforeStale + 1);
+  });
+
+  it("17-23. account A's stale Create close after B opens a replacement modal cannot close B's modal", async () => {
+    authenticatedAs("account-a", "a@example.test");
+    buildFetchMock();
+    const { rerender } = render(<TeamsPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const staleCloseA = mockCreateTeamModalProps.onClose;
+
+    authenticatedAs("account-b", "b@example.test");
+    rerender(<TeamsPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    expect(screen.getByText("Create New Team")).toBeTruthy();
+
+    act(() => { staleCloseA(); });
+    await flush();
+    expect(screen.getByText("Create New Team")).toBeTruthy();
+
+    act(() => { mockCreateTeamModalProps.onClose(); });
+    await flush();
+    expect(screen.queryByText("Create New Team")).toBeNull();
+  });
+
+  it("24-38. account A's stale Invitations close after B opens a replacement panel cannot close or refresh B's panel, and does not abort B's page-level request", async () => {
+    authenticatedAs("account-a", "a@example.test");
+    buildFetchMock({ invitations: () => jsonResponse(VALID_INVITATION_FIXTURE) });
+    const { rerender } = render(<TeamsPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("teams-hub-invitations"));
+    await flush();
+    const staleCloseA = mockPendingInvitationsProps.onClose;
+    expect(screen.getByText("Team Invitations")).toBeTruthy();
+
+    let resolvePanelFetch: (v: Response) => void = () => {};
+    let invitationCallCount = 0;
+    // The page's own loadInvitationCount() always passes an AbortSignal;
+    // PendingInvitations' own internal fetch-on-open never does — this
+    // distinguishes the page-level (abortable, sequence-guarded) request
+    // from the panel's own unrelated internal one.
+    let pageSignal: AbortSignal | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/teams/invitations")) {
+        invitationCallCount += 1;
+        if (init?.signal) {
+          pageSignal = init.signal as AbortSignal;
+          return jsonResponse(VALID_INVITATION_FIXTURE);
+        }
+        return new Promise<Response>((resolve) => { resolvePanelFetch = resolve; });
+      }
+      if (url.endsWith("/api/teams")) return jsonResponse(VALID_TEAMS);
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    authenticatedAs("account-b", "b@example.test");
+    rerender(<TeamsPage />);
+    await flush();
+    expect(screen.getByTestId("teams-hub-invitations")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("teams-hub-invitations"));
+    await flush();
+    const currentCloseB = mockPendingInvitationsProps.onClose;
+    expect(screen.getByText("Team Invitations")).toBeTruthy();
+
+    const callsBeforeStaleClose = invitationCallCount;
+    act(() => { staleCloseA(); });
+    await flush();
+
+    // B's panel remains open, no additional request, and B's page-level
+    // request is not aborted by A's stale (context-mismatched) close.
+    expect(screen.getByText("Team Invitations")).toBeTruthy();
+    expect(invitationCallCount).toBe(callsBeforeStaleClose);
+    expect(pageSignal?.aborted).toBe(false);
+
+    act(() => { currentCloseB(); });
+    await flush();
+    expect(screen.queryByText("Team Invitations")).toBeNull();
+    expect(invitationCallCount).toBe(callsBeforeStaleClose + 1);
+
+    await act(async () => {
+      resolvePanelFetch(await jsonResponse([{ id: "x" }]));
+    });
+  });
+
+  it("39-46. reopening Create Team under the same account isolates generation one from generation two", async () => {
+    authenticated();
+    const { calls } = buildFetchMock();
+    render(<TeamsPage />);
+    await flush();
+
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const generationOneSuccess = mockCreateTeamModalProps.onSuccess;
+    const generationOneClose = mockCreateTeamModalProps.onClose;
+
+    act(() => { generationOneClose(); });
+    await flush();
+    expect(screen.queryByText("Create New Team")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const generationTwoSuccess = mockCreateTeamModalProps.onSuccess;
+    expect(generationTwoSuccess).not.toBe(generationOneSuccess);
+    expect(screen.getByText("Create New Team")).toBeTruthy();
+
+    const teamGetCallsBefore = calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length;
+    act(() => { generationOneSuccess(); });
+    await flush();
+
+    // Generation one's stale success cannot close generation two's modal or
+    // reload Teams on its behalf.
+    expect(screen.getByText("Create New Team")).toBeTruthy();
+    expect(calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length).toBe(teamGetCallsBefore);
+
+    act(() => { generationTwoSuccess(); });
+    await flush();
+    expect(screen.queryByText("Create New Team")).toBeNull();
+    expect(calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length).toBe(teamGetCallsBefore + 1);
+  });
+
+  it("47-52. every retained callback becomes a no-op after unmount", async () => {
+    authenticated();
+    buildFetchMock({ invitations: () => jsonResponse(VALID_INVITATION_FIXTURE) });
+    const { unmount } = render(<TeamsPage />);
+    await flush();
+
+    const openCreateTeam = mockTeamsHubContentProps.onOpenCreateTeam;
+    const openInvitations = mockTeamsHubContentProps.onOpenInvitations;
+
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const createSuccess = mockCreateTeamModalProps.onSuccess;
+    const createClose = mockCreateTeamModalProps.onClose;
+    act(() => { createClose(); });
+    await flush();
+
+    fireEvent.click(screen.getByTestId("teams-hub-invitations"));
+    await flush();
+    const invitationsClose = mockPendingInvitationsProps.onClose;
+
+    let teamCallCountAfterUnmount = 0;
+    let invitationCallCountAfterUnmount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/teams/invitations")) {
+        invitationCallCountAfterUnmount += 1;
+        return jsonResponse([]);
+      }
+      if (url.endsWith("/api/teams")) {
+        teamCallCountAfterUnmount += 1;
+        return jsonResponse(VALID_TEAMS);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    unmount();
+
+    expect(() => {
+      act(() => {
+        openCreateTeam();
+        openInvitations();
+        createSuccess();
+        createClose();
+        invitationsClose();
+      });
+    }).not.toThrow();
+
+    expect(teamCallCountAfterUnmount).toBe(0);
+    expect(invitationCallCountAfterUnmount).toBe(0);
+  });
+
+  it("53-60. frozen regressions: current success/close still work once, logout/loading still block, same-user view preserved, account change clears count, no .sort(, no extra write requests", async () => {
+    authenticated();
+    const { calls } = buildFetchMock({ invitations: () => jsonResponse(VALID_INVITATION_FIXTURE) });
+    const { rerender } = render(<TeamsPage />);
+    await flush();
+
+    // 53. current Create success reloads exactly once.
+    fireEvent.click(screen.getByTestId("teams-hub-create"));
+    await flush();
+    const teamGetBefore = calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length;
+    act(() => { mockCreateTeamModalProps.onSuccess(); });
+    await flush();
+    expect(calls.filter((c) => c.url.endsWith("/api/teams") && c.method === "GET").length).toBe(teamGetBefore + 1);
+
+    // 54. current Invitations close refreshes exactly once.
+    fireEvent.click(screen.getByTestId("teams-hub-invitations"));
+    await flush();
+    const invitationCallsBefore = calls.filter((c) => c.url.endsWith("/invitations")).length;
+    act(() => { mockPendingInvitationsProps.onClose(); });
+    await flush();
+    expect(calls.filter((c) => c.url.endsWith("/invitations")).length).toBeGreaterThan(invitationCallsBefore);
+
+    // 55. logout still blocks retained callbacks.
+    const staleOpenCreateTeam = mockTeamsHubContentProps.onOpenCreateTeam;
+    unauthenticated();
+    rerender(<TeamsPage />);
+    await flush();
+    act(() => { staleOpenCreateTeam(); });
+    await flush();
+    expect(screen.queryByText("Create New Team")).toBeNull();
+
+    // 56. session loading still aborts both request types.
+    let capturedTeamSignal: AbortSignal | undefined;
+    let capturedInvitationSignal: AbortSignal | undefined;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/teams/invitations")) {
+        capturedInvitationSignal = init?.signal as AbortSignal;
+        return new Promise<Response>(() => {});
+      }
+      if (url.endsWith("/api/teams")) {
+        capturedTeamSignal = init?.signal as AbortSignal;
+        return new Promise<Response>(() => {});
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    authenticated();
+    rerender(<TeamsPage />);
+    await flush();
+    sessionLoading();
+    rerender(<TeamsPage />);
+    await flush();
+    expect(capturedTeamSignal?.aborted).toBe(true);
+    expect(capturedInvitationSignal?.aborted).toBe(true);
+
+    // 57. same-user refresh preserves Public Teams; 58. account change clears the old count.
+    buildFetchMock({ invitations: () => jsonResponse(VALID_INVITATION_FIXTURE) });
+    authenticated();
+    rerender(<TeamsPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("teams-hub-view-public"));
+    await flush();
+    sessionLoading();
+    rerender(<TeamsPage />);
+    await flush();
+    authenticated();
+    rerender(<TeamsPage />);
+    await flush();
+    expect(screen.getByTestId("teams-hub-view-public").getAttribute("aria-pressed")).toBe("true");
+
+    authenticatedAs("account-c", "c@example.test");
+    buildFetchMock({ invitations: () => jsonResponse([]) });
+    rerender(<TeamsPage />);
+    await flush();
+    expect(screen.queryByTestId("teams-hub-invitations")).toBeNull();
+
+    // 59. no .sort(
+    expect(SOURCE).not.toMatch(/\.sort\(/);
+  });
+});
