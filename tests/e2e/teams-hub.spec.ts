@@ -70,6 +70,11 @@ interface FixtureOptions {
   teamPayload?: unknown;
   invitationPayload?: unknown;
   holdTeams?: boolean;
+  createStatus?: number;
+  createResponse?: unknown;
+  createPlainTextError?: string;
+  holdCreate?: boolean;
+  teamPayloadAfterCreate?: unknown;
 }
 
 async function installFixture(page: Page, options: FixtureOptions = {}) {
@@ -77,6 +82,9 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   const invitationRequests: Array<{ method: string }> = [];
   const mutations: Array<{ url: string; method: string }> = [];
   const held: Route[] = [];
+  const heldCreate: Route[] = [];
+  const createRequests: Array<{ method: string; url: string; headers: Record<string, string>; body: string | null }> = [];
+  let created = false;
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -95,6 +103,32 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
       return fulfill(route, options.invitationPayload ?? []);
     }
 
+    // POST /api/teams must be matched before the GET branch below.
+    if (path === "/api/teams" && method === "POST") {
+      createRequests.push({
+        method,
+        url: path,
+        headers: request.headers(),
+        body: request.postData(),
+      });
+      if (options.holdCreate) {
+        heldCreate.push(route);
+        return;
+      }
+      if (options.createPlainTextError) {
+        return route.fulfill({
+          status: options.createStatus ?? 503,
+          contentType: "text/plain",
+          body: options.createPlainTextError,
+        });
+      }
+      if (options.createStatus && options.createStatus !== 200 && options.createStatus !== 201) {
+        return fulfill(route, options.createResponse ?? { error: "failed" }, options.createStatus);
+      }
+      created = true;
+      return fulfill(route, options.createResponse ?? { id: "new-team", ...TEAMS_FIXTURE[0] }, 201);
+    }
+
     if (path === "/api/teams" && method === "GET") {
       teamRequests += 1;
       if (options.holdTeams) {
@@ -102,6 +136,7 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
         return;
       }
       if (options.teamStatus && options.teamStatus !== 200) return fulfill(route, { error: "failed" }, options.teamStatus);
+      if (created && options.teamPayloadAfterCreate) return fulfill(route, options.teamPayloadAfterCreate);
       return fulfill(route, options.teamPayload ?? TEAMS_FIXTURE);
     }
 
@@ -112,8 +147,13 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     teamRequestCount: () => teamRequests,
     invitationRequests,
     mutations,
+    createRequests,
     release: async (body: unknown, status = 200) => {
       for (const route of held.splice(0)) await fulfill(route, body, status);
+    },
+    releaseCreate: async (body: unknown = { id: "new-team", ...TEAMS_FIXTURE[0] }, status = 201) => {
+      created = status >= 200 && status < 300;
+      for (const route of heldCreate.splice(0)) await fulfill(route, body, status);
     },
   };
 }
@@ -286,6 +326,235 @@ test.describe("Teams hub — empty state", () => {
     expect(fixture.teamRequestCount()).toBe(teamRequestsBefore);
 
     expect(fixture.mutations.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Teams hub — create team (Pass 17B)", () => {
+  test("successful creation: exact request, pending containment, and exactly one Teams reload", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const createdTeam = { id: "night-owl-solvers", name: "Night Owl Solvers", description: "Late-night puzzle fans.", isPublic: false, createdAt: "2026-02-01T00:00:00.000Z", members: [{ user: { id: "me", name: "MeTester", image: null }, role: "admin" }] };
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      holdCreate: true,
+      createResponse: createdTeam,
+      teamPayloadAfterCreate: [...TEAMS_FIXTURE, createdTeam],
+    });
+    await page.goto("/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const createTrigger = page.getByTestId("teams-hub-create");
+    await expect(createTrigger).toBeVisible();
+    const triggerBox = await createTrigger.boundingBox();
+    expect(triggerBox!.height).toBeGreaterThanOrEqual(43.9);
+
+    await createTrigger.click();
+    const dialog = page.getByTestId("create-team-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("role", "dialog");
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+    await expect(page.getByRole("heading", { name: "Create New Team" })).toBeVisible();
+    await expect(page.getByTestId("create-team-name")).toBeFocused();
+    await expectNoHorizontalOverflow(page);
+    const dialogBox = await dialog.boundingBox();
+    const viewport = page.viewportSize()!;
+    expect(dialogBox!.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(dialogBox!.height).toBeLessThanOrEqual(viewport.height + 1);
+    await expect(page.getByTestId("create-team-visibility-public")).toBeChecked();
+
+    await page.getByTestId("create-team-name").fill("Night Owl Solvers");
+    await page.getByTestId("create-team-description").fill("Late-night puzzle fans.");
+    await page.getByTestId("create-team-visibility-private").click();
+
+    const submit = page.getByTestId("create-team-submit");
+    await submit.click();
+    await expect.poll(() => fixture.createRequests.length).toBe(1);
+
+    // Repeated activation while pending creates no second POST.
+    await submit.click({ force: true });
+    await page.keyboard.press("Enter");
+    expect(fixture.createRequests.length).toBe(1);
+
+    const createRequest = fixture.createRequests[0]!;
+    expect(createRequest.url).toBe("/api/teams");
+    expect(createRequest.method).toBe("POST");
+    expect(createRequest.headers["content-type"]).toContain("application/json");
+    expect(JSON.parse(createRequest.body ?? "{}")).toEqual({
+      name: "Night Owl Solvers",
+      description: "Late-night puzzle fans.",
+      isPublic: false,
+    });
+
+    await expect(submit).toHaveText(/Creating…/);
+    await expect(page.getByTestId("create-team-name")).toBeDisabled();
+    await expect(page.getByTestId("create-team-description")).toBeDisabled();
+    await expect(page.getByTestId("create-team-visibility-public")).toBeDisabled();
+    await expect(page.getByTestId("create-team-visibility-private")).toBeDisabled();
+    await expect(page.getByTestId("create-team-cancel")).toBeDisabled();
+    await expect(dialog).toHaveAttribute("aria-busy", "true");
+    await expect(dialog).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(dialog).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await page.mouse.click(4, 4);
+    await expect(dialog).toBeVisible();
+
+    await expect(createTrigger).not.toBeFocused();
+
+    const teamRequestsBeforeRelease = fixture.teamRequestCount();
+    await fixture.releaseCreate(createdTeam, 201);
+
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => fixture.teamRequestCount()).toBe(teamRequestsBeforeRelease + 1);
+    await expect(page).toHaveURL(/\/teams$/);
+    await expect(page.getByTestId("teams-hub-view-mine")).toHaveAttribute("aria-pressed", "true");
+
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Teams hub — create team validation and cancellation (Pass 17B)", () => {
+  test("client validation blocks submission; visibility changes send no request; every dismissal restores trigger focus", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 710 });
+    await authenticate(page);
+    const fixture = await installFixture(page, { authenticated: true });
+    await page.goto("/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const trigger = page.getByTestId("teams-hub-create");
+    const dialog = page.getByTestId("create-team-dialog");
+
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    // Mobile bottom-sheet layout: rounded top corners only.
+    const borderRadius = await dialog.evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+    expect(borderRadius).not.toBe("0px");
+    await expect(page.getByTestId("create-team-name")).toBeFocused();
+
+    await page.getByTestId("create-team-submit").click();
+    expect(fixture.createRequests.length).toBe(0);
+    await expect(page.getByText("Enter a team name.")).toBeVisible();
+    await expect(page.getByTestId("create-team-name")).toBeFocused();
+
+    await page.getByTestId("create-team-name").fill("Valid Crew Name");
+    await expect(page.getByText("15/100")).toBeVisible();
+
+    await page.getByTestId("create-team-visibility-private").click();
+    await page.getByTestId("create-team-visibility-public").click();
+    expect(fixture.createRequests.length).toBe(0);
+
+    await page.getByTestId("create-team-cancel").click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    // The mobile bottom-sheet dialog can cover most of a short viewport, so
+    // click the backdrop at a point guaranteed to be outside the panel
+    // (top-left corner) rather than its own bounding-box center.
+    await page.mouse.click(4, 4);
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    expect(fixture.createRequests.length).toBe(0);
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Teams hub — create team server error and retry (Pass 17B)", () => {
+  test("JSON server error keeps values, then a corrected retry succeeds", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      createStatus: 400,
+      createResponse: { error: "You already created a team with this name." },
+    });
+    await page.goto("/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByTestId("teams-hub-create").click();
+    const dialog = page.getByTestId("create-team-dialog");
+    await expect(dialog).toBeVisible();
+
+    await page.getByTestId("create-team-name").fill("Taken Name");
+    await page.getByTestId("create-team-description").fill("Description text.");
+    await page.getByTestId("create-team-visibility-private").click();
+
+    const teamRequestsBefore = fixture.teamRequestCount();
+    await page.getByTestId("create-team-submit").click();
+    await expect(dialog).toBeVisible();
+
+    const error = page.getByTestId("create-team-error");
+    await expect(error).toBeVisible();
+    await expect(error).toHaveAttribute("role", "alert");
+    await expect(error).toHaveText("You already created a team with this name.");
+    await expect(error).toBeFocused();
+
+    await expect(page.getByTestId("create-team-name")).toHaveValue("Taken Name");
+    await expect(page.getByTestId("create-team-description")).toHaveValue("Description text.");
+    await expect(page.getByTestId("create-team-visibility-private")).toBeChecked();
+
+    const submit = page.getByTestId("create-team-submit");
+    await expect(submit).toHaveText("Create Team");
+    await expect(submit).toBeEnabled();
+    expect(fixture.teamRequestCount()).toBe(teamRequestsBefore);
+
+    await page.getByTestId("create-team-name").fill("Available Name");
+
+    // Reinstall a fixture that now succeeds, for the retry.
+    const retryFixture = await installFixture(page, {
+      authenticated: true,
+      createResponse: { id: "available-name", name: "Available Name", description: "Description text.", isPublic: false, createdAt: "2026-02-02T00:00:00.000Z", members: [] },
+      teamPayloadAfterCreate: TEAMS_FIXTURE,
+    });
+    await submit.click();
+
+    await expect.poll(() => retryFixture.createRequests.length).toBe(1);
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => retryFixture.teamRequestCount()).toBeGreaterThan(0);
+    await expect(page).toHaveURL(/\/teams$/);
+
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe("Teams hub — create team plain-text error (Pass 17B)", () => {
+  test("plain-text server error displays exactly and preserves entered values", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticate(page);
+    const fixture = await installFixture(page, {
+      authenticated: true,
+      createStatus: 503,
+      createPlainTextError: "Service temporarily unavailable",
+    });
+    await page.goto("/teams", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    await page.getByTestId("teams-hub-create").click();
+    await page.getByTestId("create-team-name").fill("Plain Text Error Team");
+    const teamRequestsBefore = fixture.teamRequestCount();
+    await page.getByTestId("create-team-submit").click();
+
+    const error = page.getByTestId("create-team-error");
+    await expect(error).toHaveText("Service temporarily unavailable");
+    await expect(page.getByTestId("create-team-dialog")).toBeVisible();
+    await expect(page.getByTestId("create-team-name")).toHaveValue("Plain Text Error Team");
+    await expect(page.getByTestId("create-team-submit")).toBeEnabled();
+    expect(fixture.teamRequestCount()).toBe(teamRequestsBefore);
+
     await expectNoHorizontalOverflow(page);
   });
 });
