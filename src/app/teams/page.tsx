@@ -30,6 +30,22 @@ export default function TeamsPage() {
   const retryInFlightRef = useRef(false);
   const invitationRequestSeqRef = useRef(0);
   const invitationAbortRef = useRef<AbortController | null>(null);
+  // undefined = authentication has not resolved for the first time yet;
+  // null = the last resolved identity was anonymous; otherwise the last
+  // resolved authenticated visitor's normalized email.
+  const lastIdentityRef = useRef<string | null | undefined>(undefined);
+
+  const invalidateTeamsRequest = useCallback(() => {
+    teamsRequestSeqRef.current += 1;
+    teamsAbortRef.current?.abort();
+    teamsAbortRef.current = null;
+  }, []);
+
+  const invalidateInvitationRequest = useCallback(() => {
+    invitationRequestSeqRef.current += 1;
+    invitationAbortRef.current?.abort();
+    invitationAbortRef.current = null;
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -104,17 +120,64 @@ export default function TeamsPage() {
     }
   }, []);
 
+  // A visitor is only actively authenticated when NextAuth has resolved to
+  // "authenticated" AND a non-empty session email is present — retained
+  // session data while status is still "loading" (e.g. mid session-refresh)
+  // must never be treated as active authentication.
+  const authenticatedEmail =
+    status === "authenticated" && typeof session?.user?.email === "string" && session.user.email.trim()
+      ? session.user.email.trim().toLowerCase()
+      : null;
+
   useEffect(() => {
-    if (status === "loading") return;
-    void loadTeams();
-    if (session?.user?.email) {
-      void loadInvitationCount();
-    } else {
+    if (status === "loading") {
+      // Authentication is uncertain — invalidate any in-flight requests so
+      // a late response from before the refresh cannot apply, and hide
+      // every authenticated-only surface until the session resolves again.
+      invalidateTeamsRequest();
+      invalidateInvitationRequest();
+      setInvitationCount(0);
+      setShowCreateModal(false);
+      setShowInvitations(false);
+      return;
+    }
+
+    const currentIdentity = authenticatedEmail;
+    const previousIdentity = lastIdentityRef.current;
+    const isFirstResolution = previousIdentity === undefined;
+    const identityChanged = !isFirstResolution && currentIdentity !== previousIdentity;
+
+    // Default to My Teams only on the very first resolution or when a
+    // genuinely different identity (including anonymous) becomes active —
+    // a same-identity refresh (e.g. authenticated A -> loading -> A) must
+    // preserve whatever view the visitor already had selected.
+    if (isFirstResolution || identityChanged) {
+      setViewMode(currentIdentity ? "mine" : "public");
+    }
+
+    if (identityChanged) {
+      // Moving to a different identity (a new account, or losing/gaining
+      // authentication) must not leak the previous identity's open modals
+      // or invitation count into the new one — clear the count immediately
+      // rather than waiting for the new identity's request to resolve.
+      setShowCreateModal(false);
+      setShowInvitations(false);
+      invalidateInvitationRequest();
       setInvitationCount(0);
     }
-    setViewMode(session?.user?.email ? "mine" : "public");
+
+    lastIdentityRef.current = currentIdentity;
+
+    void loadTeams();
+
+    if (currentIdentity) {
+      void loadInvitationCount();
+    } else {
+      invalidateInvitationRequest();
+      setInvitationCount(0);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, session?.user?.email]);
+  }, [status, authenticatedEmail]);
 
   const retryLoadTeams = useCallback(async () => {
     if (retryInFlightRef.current) return;
@@ -128,10 +191,17 @@ export default function TeamsPage() {
     }
   }, [loadTeams]);
 
-  const isAuthenticated = !!session?.user?.email;
+  const isAuthenticated = authenticatedEmail !== null;
   const sessionUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
 
-  const effectiveLoadStatus = teamsLoadStatus === "ready" ? "ready" : teamsLoadStatus === "error" ? "error" : "loading";
+  const effectiveLoadStatus =
+    status === "loading"
+      ? "loading"
+      : teamsLoadStatus === "ready"
+        ? "ready"
+        : teamsLoadStatus === "error"
+          ? "error"
+          : "loading";
 
   return (
     <div className="min-h-screen" style={{ background: "var(--pw-bg-base)", paddingTop: "calc(56px + env(safe-area-inset-top, 0px))" }}>
@@ -147,21 +217,30 @@ export default function TeamsPage() {
             retrying={retrying}
             onRetry={() => void retryLoadTeams()}
             invitationCount={invitationCount}
-            onOpenInvitations={() => setShowInvitations(true)}
-            onOpenCreateTeam={() => setShowCreateModal(true)}
+            onOpenInvitations={() => {
+              if (isAuthenticated && invitationCount > 0) setShowInvitations(true);
+            }}
+            onOpenCreateTeam={() => {
+              if (isAuthenticated) setShowCreateModal(true);
+            }}
           />
         </div>
       </PageContainer>
 
       <PendingInvitations
-        isOpen={showInvitations}
+        isOpen={isAuthenticated && showInvitations}
         onClose={() => {
           setShowInvitations(false);
-          void loadInvitationCount();
+          if (isAuthenticated) {
+            void loadInvitationCount();
+          } else {
+            invalidateInvitationRequest();
+            setInvitationCount(0);
+          }
         }}
       />
 
-      {showCreateModal && (
+      {isAuthenticated && showCreateModal && (
         <CreateTeamModal
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
