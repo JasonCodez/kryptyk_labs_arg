@@ -24,6 +24,20 @@ export function hasGoogleOAuthConfiguration(env: NodeJS.ProcessEnv = process.env
   return Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim());
 }
 
+export function normalizeGoogleProfileImage(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 // Google's own profile display name is not unique across users, while this
 // project's User.name column is a unique field — mapping Google's `name`
 // directly into it would let two different Google accounts with the same
@@ -39,7 +53,7 @@ export function mapGoogleProfile(profile: GoogleProfile) {
   }
 
   const email = typeof profile.email === "string" ? profile.email.trim().toLowerCase() : "";
-  const picture = typeof profile.picture === "string" && profile.picture.trim() ? profile.picture : null;
+  const picture = normalizeGoogleProfileImage(profile.picture);
   const verified = profile.email_verified === true;
 
   return {

@@ -4,7 +4,42 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { getProviders, signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { getAnonId, clearPendingRewards } from "@/lib/gridlockAnon";
+
+interface GoogleInitiationOptions {
+  mountedRef: { current: boolean };
+  inFlightRef: { current: boolean };
+  setConnecting: (value: boolean) => void;
+  setError: (value: string) => void;
+  start: () => Promise<unknown>;
+}
+
+export async function initiateGoogleSignUp({
+  mountedRef,
+  inFlightRef,
+  setConnecting,
+  setError,
+  start,
+}: GoogleInitiationOptions) {
+  if (!mountedRef.current || inFlightRef.current) return;
+
+  inFlightRef.current = true;
+  setConnecting(true);
+  setError("");
+
+  try {
+    await start();
+    // A resolved initiation starts browser navigation. Keep the guard and
+    // pending state active until this page unmounts.
+  } catch {
+    if (!mountedRef.current) return;
+
+    inFlightRef.current = false;
+    setConnecting(false);
+    setError("Google sign-up could not be started. Please try again.");
+  }
+}
 
 const TOS_SECTIONS = [
   { title: "1. Acceptance of Terms", body: `By creating an account or using PuzzleWarz (the "Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not access or use the Service. These Terms apply to all visitors, users, and others who access the Service.` },
@@ -42,6 +77,14 @@ function RegisterForm() {
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
   const googleInFlightRef = useRef(false);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     // Get referral code from URL params
@@ -70,18 +113,14 @@ function RegisterForm() {
   }, []);
 
   async function handleGoogleSignUp() {
-    if (googleInFlightRef.current) return;
-    googleInFlightRef.current = true;
-    setGoogleConnecting(true);
-    try {
-      // Referral-code rewards are not applied to the Google OAuth path in
-      // this pass — only the existing email/password registration flow
-      // reads/claims referralCode.
-      await signIn("google", { callbackUrl: "/dashboard" });
-    } finally {
-      googleInFlightRef.current = false;
-      setGoogleConnecting(false);
-    }
+    await initiateGoogleSignUp({
+      mountedRef,
+      inFlightRef: googleInFlightRef,
+      setConnecting: setGoogleConnecting,
+      setError,
+      // Referral rewards remain exclusive to Credentials registration.
+      start: () => signIn("google", { callbackUrl: "/dashboard" }),
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -213,20 +252,22 @@ function RegisterForm() {
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
                     width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
-                    background: "#fff", color: "#1f1f1f", border: "1px solid rgba(255,255,255,0.15)",
+                    background: "#FFFFFF", color: "#1F1F1F", border: "1px solid #747775",
                     fontWeight: 700, fontSize: 14, cursor: googleConnecting ? "not-allowed" : "pointer",
                     opacity: googleConnecting ? 0.7 : 1, marginBottom: 12,
                   }}
                 >
                   <span
                     aria-hidden="true"
-                    style={{
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      width: 18, height: 18, borderRadius: 4, background: "#4285F4",
-                      color: "#fff", fontSize: 12, fontWeight: 800, lineHeight: 1,
-                    }}
+                    style={{ display: "inline-block", position: "relative", width: 20, height: 20, overflow: "hidden", flexShrink: 0 }}
                   >
-                    G
+                    <Image
+                      src="/images/google-g-logo.svg"
+                      alt=""
+                      width={40}
+                      height={40}
+                      style={{ position: "absolute", left: -10, top: -10, width: 40, height: 40 }}
+                    />
                   </span>
                   <span>{googleConnecting ? "Connecting to Google…" : "Sign up with Google"}</span>
                 </button>

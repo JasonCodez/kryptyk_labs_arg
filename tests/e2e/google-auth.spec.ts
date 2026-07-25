@@ -54,14 +54,15 @@ function providersPayload(includeGoogle: boolean) {
 interface AuthFixtureOptions {
   includeGoogle?: boolean;
   holdGoogleSignin?: boolean;
+  abortGoogleSignin?: boolean;
 }
 
 // Fully intercepts every NextAuth endpoint these pages touch — no request
 // ever reaches Google, and no credentials are ever sent anywhere real.
 async function installAuthFixture(page: Page, options: AuthFixtureOptions = {}) {
   const includeGoogle = options.includeGoogle ?? true;
-  const googleSigninRequests: Array<{ method: string }> = [];
-  const credentialsCallbackRequests: Array<{ method: string }> = [];
+  const googleSigninRequests: Array<{ method: string; postData: string | null }> = [];
+  const credentialsCallbackRequests: Array<{ method: string; postData: string | null }> = [];
   const heldGoogleSignin: Route[] = [];
 
   await page.route("**/api/auth/session", (route) => fulfill(route, {}));
@@ -69,19 +70,30 @@ async function installAuthFixture(page: Page, options: AuthFixtureOptions = {}) 
   await page.route("**/api/auth/providers", (route) => fulfill(route, providersPayload(includeGoogle)));
 
   await page.route("**/api/auth/signin/google", async (route) => {
-    googleSigninRequests.push({ method: route.request().method() });
+    googleSigninRequests.push({
+      method: route.request().method(),
+      postData: route.request().postData(),
+    });
+    if (options.abortGoogleSignin) {
+      await route.abort("failed");
+      return;
+    }
     if (options.holdGoogleSignin) {
       heldGoogleSignin.push(route);
       return;
     }
-    // Never actually reaches Google — redirected to a harmless same-origin URL.
-    await route.fulfill({ status: 302, headers: { Location: "/auth/signin?google-init=1" } });
+    // Model the JSON response consumed by next-auth/react before it assigns
+    // the returned destination to window.location.href.
+    await fulfill(route, { url: "/auth/signin?google-init=1" });
   });
 
   await page.route("**/api/auth/callback/google", (route) => fulfill(route, {}));
 
   await page.route("**/api/auth/callback/credentials", (route) => {
-    credentialsCallbackRequests.push({ method: route.request().method() });
+    credentialsCallbackRequests.push({
+      method: route.request().method(),
+      postData: route.request().postData(),
+    });
     return fulfill(route, { url: "/auth/signin" });
   });
 
@@ -90,7 +102,7 @@ async function installAuthFixture(page: Page, options: AuthFixtureOptions = {}) 
     credentialsCallbackRequests,
     releaseGoogleSignin: async () => {
       for (const route of heldGoogleSignin.splice(0)) {
-        await route.fulfill({ status: 302, headers: { Location: "/auth/signin?google-init=1" } });
+        await fulfill(route, { url: "/auth/signin?google-init=1" });
       }
     },
   };
@@ -129,6 +141,10 @@ test.describe("Google auth — provider present", () => {
     await expect(page.getByText("or continue with email")).toBeVisible();
 
     await googleButton.click();
+    await expect(page).toHaveURL(/\/auth\/signin\?google-init=1$/);
+    expect(fixture.googleSigninRequests).toHaveLength(1);
+    expect(fixture.googleSigninRequests[0].method).toBe("POST");
+    expect(fixture.googleSigninRequests[0].postData).toContain("callbackUrl=%2Fdashboard");
     // The click must never also submit the Credentials form.
     expect(fixture.credentialsCallbackRequests.length).toBe(0);
 
@@ -144,6 +160,13 @@ test.describe("Google auth — provider present", () => {
     await expect(page.getByText("or create an account with email")).toBeVisible();
     await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
     await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
+
+    await signUpButton.click();
+    await expect(page).toHaveURL(/\/auth\/signin\?google-init=1$/);
+    expect(fixture.googleSigninRequests).toHaveLength(2);
+    expect(fixture.googleSigninRequests[1].method).toBe("POST");
+    expect(fixture.googleSigninRequests[1].postData).toContain("callbackUrl=%2Fdashboard");
+    expect(fixture.credentialsCallbackRequests).toHaveLength(0);
 
     await expectNoHorizontalOverflow(page);
   });
@@ -186,6 +209,44 @@ test.describe("Google auth — duplicate invocation", () => {
     await expect(page.getByPlaceholder("••••••••")).toBeEditable();
 
     await fixture.releaseGoogleSignin();
+  });
+});
+
+test.describe("Google auth — initiation failure", () => {
+  test("sign-in reports failure, releases the guard, and permits one retry", async ({ page }) => {
+    const fixture = await installAuthFixture(page, { abortGoogleSignin: true });
+    await page.goto("/auth/signin", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const button = page.getByTestId("google-signin-button");
+    await expect(button).toBeVisible();
+    await button.click();
+    await expect(page.getByText("Google sign-in could not be started. Please try again.")).toBeVisible();
+    await expect(button).toHaveText("Continue with Google");
+    await expect(button).toBeEnabled();
+    expect(fixture.googleSigninRequests).toHaveLength(1);
+
+    await button.click();
+    await expect.poll(() => fixture.googleSigninRequests.length).toBe(2);
+    expect(fixture.credentialsCallbackRequests).toHaveLength(0);
+  });
+
+  test("registration reports failure, releases the guard, and permits one retry", async ({ page }) => {
+    const fixture = await installAuthFixture(page, { abortGoogleSignin: true });
+    await page.goto("/auth/register", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    const button = page.getByTestId("google-signup-button");
+    await expect(button).toBeVisible();
+    await button.click();
+    await expect(page.getByText("Google sign-up could not be started. Please try again.")).toBeVisible();
+    await expect(button).toHaveText("Sign up with Google");
+    await expect(button).toBeEnabled();
+    expect(fixture.googleSigninRequests).toHaveLength(1);
+
+    await button.click();
+    await expect.poll(() => fixture.googleSigninRequests.length).toBe(2);
+    expect(fixture.credentialsCallbackRequests).toHaveLength(0);
   });
 });
 

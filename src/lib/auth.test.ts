@@ -166,6 +166,26 @@ describe("mapGoogleProfile", () => {
     mapGoogleProfile(profile as never);
     expect(profile).toEqual(snapshot);
   });
+
+  it.each([
+    ["non-string", 123],
+    ["blank", "   "],
+    ["invalid", "not a url"],
+    ["relative", "/avatar.png"],
+    ["javascript", "javascript:alert(1)"],
+    ["data", "data:image/png;base64,AA=="],
+    ["http", "http://example.test/avatar.png"],
+  ])("rejects a %s profile image", async (_label, value) => {
+    const { normalizeGoogleProfileImage } = await import("./auth");
+    expect(normalizeGoogleProfileImage(value)).toBeNull();
+  });
+
+  it("trims and preserves a valid HTTPS profile image URL", async () => {
+    const { normalizeGoogleProfileImage } = await import("./auth");
+    expect(normalizeGoogleProfileImage("  https://example.test/avatar.png?size=96  ")).toBe(
+      "https://example.test/avatar.png?size=96"
+    );
+  });
 });
 
 describe("signIn callback — beta access", () => {
@@ -295,6 +315,65 @@ describe("signIn callback — beta access", () => {
   });
 });
 
+describe("createUser event — new-user beta persistence", () => {
+  function callCreateUser(mod: Awaited<ReturnType<typeof importAuthWithEnv>>, user: unknown) {
+    return mod.authOptions.events!.createUser!({ user } as never);
+  }
+
+  it("normalizes an allowlisted email and updates only betaApproved using the new user ID", async () => {
+    const mod = await importAuthWithEnv({
+      BETA_ONLY_MODE: "true",
+      BETA_ALLOWLIST_EMAILS: "person@example.test",
+    });
+
+    await callCreateUser(mod, {
+      id: "new-google-user",
+      email: "  Person@Example.TEST  ",
+      role: "admin",
+      name: "Do not write",
+      password: "do-not-write",
+    });
+
+    expect(mod.mockPrisma.user.update).toHaveBeenCalledTimes(1);
+    expect(mod.mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "new-google-user" },
+      data: { betaApproved: true },
+    });
+  });
+
+  it.each([
+    ["nonallowlisted", { id: "u1", email: "other@example.test" }],
+    ["missing", { id: "u2" }],
+    ["blank", { id: "u3", email: "   " }],
+  ])("performs no update for a %s email", async (_label, user) => {
+    const mod = await importAuthWithEnv({
+      BETA_ONLY_MODE: "true",
+      BETA_ALLOWLIST_EMAILS: "person@example.test",
+    });
+    await callCreateUser(mod, user);
+    expect(mod.mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("contains and reports a Prisma failure without throwing", async () => {
+    const mod = await importAuthWithEnv({
+      BETA_ONLY_MODE: "true",
+      BETA_ALLOWLIST_EMAILS: "person@example.test",
+    });
+    const failure = new Error("database unavailable");
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    mod.mockPrisma.user.update.mockRejectedValue(failure);
+
+    await expect(
+      callCreateUser(mod, { id: "new-google-user", email: "person@example.test" })
+    ).resolves.toBeUndefined();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Failed to persist beta approval for new OAuth user:",
+      failure
+    );
+    consoleSpy.mockRestore();
+  });
+});
+
 describe("jwt callback — database hydration", () => {
   function callJwt(mod: Awaited<ReturnType<typeof importAuthWithEnv>>, args: { token: Record<string, unknown>; user?: unknown }) {
     const jwtCb = mod.authOptions.callbacks!.jwt!;
@@ -378,5 +457,117 @@ describe("account-linking guardrail", () => {
 
   it("39. source does not enable automatic email linking", () => {
     expect(SOURCE).not.toMatch(/allowDangerousEmailAccountLinking\s*:\s*true/);
+  });
+});
+
+describe("Google initiation helpers", () => {
+  it.each([
+    ["sign-in", async () => (await import("../app/auth/signin/page")).initiateGoogleSignIn],
+    ["registration", async () => (await import("../app/auth/register/page")).initiateGoogleSignUp],
+  ] as const)(
+    "%s keeps pending state and the guard after a resolved initiation",
+    async (_label, loadInitiate) => {
+      const initiate = (await loadInitiate()) as (options: {
+        mountedRef: { current: boolean };
+        inFlightRef: { current: boolean };
+        setConnecting: (value: boolean) => void;
+        setError: (value: string) => void;
+        start: () => Promise<unknown>;
+      }) => Promise<void>;
+      const mountedRef = { current: true };
+      const inFlightRef = { current: false };
+      const setConnecting = jest.fn();
+      const setError = jest.fn();
+      const start = jest.fn().mockResolvedValue(undefined);
+      const options = { mountedRef, inFlightRef, setConnecting, setError, start };
+
+      await initiate(options);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(inFlightRef.current).toBe(true);
+      expect(setConnecting).toHaveBeenLastCalledWith(true);
+
+      await initiate(options);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(setConnecting).not.toHaveBeenCalledWith(false);
+    }
+  );
+
+  it.each([
+    ["sign-in", async () => (await import("../app/auth/signin/page")).initiateGoogleSignIn],
+    ["registration", async () => (await import("../app/auth/register/page")).initiateGoogleSignUp],
+  ] as const)(
+    "%s retained invocation after unmount is a no-op",
+    async (_label, loadInitiate) => {
+      const initiate = (await loadInitiate()) as (options: {
+        mountedRef: { current: boolean };
+        inFlightRef: { current: boolean };
+        setConnecting: (value: boolean) => void;
+        setError: (value: string) => void;
+        start: () => Promise<unknown>;
+      }) => Promise<void>;
+      const setConnecting = jest.fn();
+      const setError = jest.fn();
+      const start = jest.fn().mockResolvedValue(undefined);
+
+      await expect(
+        initiate({
+          mountedRef: { current: false },
+          inFlightRef: { current: false },
+          setConnecting,
+          setError,
+          start,
+        })
+      ).resolves.toBeUndefined();
+      expect(start).not.toHaveBeenCalled();
+      expect(setConnecting).not.toHaveBeenCalled();
+      expect(setError).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe("Google branding source guardrails", () => {
+  const fs = require("fs") as typeof import("fs");
+  const path = require("path") as typeof import("path");
+  const childProcess = require("child_process") as typeof import("child_process");
+  const repositoryRoot = path.join(__dirname, "../..");
+  const signInSource = fs.readFileSync(path.join(repositoryRoot, "src/app/auth/signin/page.tsx"), "utf8");
+  const registerSource = fs.readFileSync(path.join(repositoryRoot, "src/app/auth/register/page.tsx"), "utf8");
+  const svg = fs.readFileSync(path.join(repositoryRoot, "public/images/google-g-logo.svg"), "utf8");
+  const pageSources = `${signInSource}\n${registerSource}`;
+
+  it("uses the official local asset on both pages with no fake text or blue-square G", () => {
+    expect(signInSource).toContain('src="/images/google-g-logo.svg"');
+    expect(registerSource).toContain('src="/images/google-g-logo.svg"');
+    expect(pageSources).not.toMatch(/>\s*G\s*</);
+    expect(pageSources).not.toContain("#4285F4");
+  });
+
+  it("keeps the SVG script-free, self-contained, font-free, and multicolor", () => {
+    expect(svg).not.toMatch(/<script\b/i);
+    expect(svg).not.toMatch(/\b(?:href|xlink:href|src)\s*=\s*["']https?:/i);
+    expect(svg).not.toMatch(/@font-face|font-family|\.(?:ttf|otf|woff2?)\b/i);
+    const colors = new Set(svg.match(/#[0-9A-Fa-f]{6}\b/g) ?? []);
+    expect(colors.size).toBeGreaterThan(1);
+  });
+
+  it("adds no Google font file and no third-party icon dependency", () => {
+    const changedAndUntracked = [
+      childProcess.execFileSync("git", ["diff", "--name-only", "ae543794225fae36b7060d5102d76cb728836ee5"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }),
+      childProcess.execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }),
+    ].join("\n");
+    expect(changedAndUntracked).not.toMatch(/\.(?:ttf|otf|woff2?)\b/i);
+
+    const dependencyDiff = childProcess.execFileSync(
+      "git",
+      ["diff", "ae543794225fae36b7060d5102d76cb728836ee5", "--", "package.json", "package-lock.json"],
+      { cwd: repositoryRoot, encoding: "utf8" }
+    );
+    expect(dependencyDiff).toBe("");
   });
 });

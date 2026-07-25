@@ -4,6 +4,41 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { getProviders, signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
+
+interface GoogleInitiationOptions {
+  mountedRef: { current: boolean };
+  inFlightRef: { current: boolean };
+  setConnecting: (value: boolean) => void;
+  setError: (value: string) => void;
+  start: () => Promise<unknown>;
+}
+
+export async function initiateGoogleSignIn({
+  mountedRef,
+  inFlightRef,
+  setConnecting,
+  setError,
+  start,
+}: GoogleInitiationOptions) {
+  if (!mountedRef.current || inFlightRef.current) return;
+
+  inFlightRef.current = true;
+  setConnecting(true);
+  setError("");
+
+  try {
+    await start();
+    // A resolved initiation starts browser navigation. Keep the guard and
+    // pending state active until this page unmounts.
+  } catch {
+    if (!mountedRef.current) return;
+
+    inFlightRef.current = false;
+    setConnecting(false);
+    setError("Google sign-in could not be started. Please try again.");
+  }
+}
 
 function SignInForm() {
   const router = useRouter();
@@ -20,9 +55,14 @@ function SignInForm() {
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
   const googleInFlightRef = useRef(false);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
+    mountedRef.current = true;
     setMounted(true);
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // Only show the Google action when NextAuth actually has the provider
@@ -45,20 +85,15 @@ function SignInForm() {
   }, []);
 
   async function handleGoogleSignIn() {
-    if (googleInFlightRef.current) return;
-    googleInFlightRef.current = true;
-    setGoogleConnecting(true);
-    try {
-      // Beta mode still lands on the normal dashboard once the signIn
-      // callback in src/lib/auth.ts approves the account — there is no
-      // separate beta callback destination.
-      await signIn("google", { callbackUrl: "/dashboard" });
-    } finally {
-      // Reached only if the redirect itself failed to start; a successful
-      // call navigates the browser away before this ever runs.
-      googleInFlightRef.current = false;
-      setGoogleConnecting(false);
-    }
+    await initiateGoogleSignIn({
+      mountedRef,
+      inFlightRef: googleInFlightRef,
+      setConnecting: setGoogleConnecting,
+      setError,
+      // Beta mode still lands on the normal dashboard once auth.ts approves
+      // the account; there is no separate beta callback destination.
+      start: () => signIn("google", { callbackUrl: "/dashboard" }),
+    });
   }
 
   // Only redirect if session exists, not explicitly logging out, and mounted
@@ -195,20 +230,22 @@ function SignInForm() {
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
                     width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
-                    background: "#fff", color: "#1f1f1f", border: "1px solid rgba(255,255,255,0.15)",
+                    background: "#FFFFFF", color: "#1F1F1F", border: "1px solid #747775",
                     fontWeight: 700, fontSize: 14, cursor: googleConnecting ? "not-allowed" : "pointer",
                     opacity: googleConnecting ? 0.7 : 1, marginBottom: 20,
                   }}
                 >
                   <span
                     aria-hidden="true"
-                    style={{
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      width: 18, height: 18, borderRadius: 4, background: "#4285F4",
-                      color: "#fff", fontSize: 12, fontWeight: 800, lineHeight: 1,
-                    }}
+                    style={{ display: "inline-block", position: "relative", width: 20, height: 20, overflow: "hidden", flexShrink: 0 }}
                   >
-                    G
+                    <Image
+                      src="/images/google-g-logo.svg"
+                      alt=""
+                      width={40}
+                      height={40}
+                      style={{ position: "absolute", left: -10, top: -10, width: 40, height: 40 }}
+                    />
                   </span>
                   <span>{googleConnecting ? "Connecting to Google…" : "Continue with Google"}</span>
                 </button>
