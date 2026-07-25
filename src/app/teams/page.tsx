@@ -34,6 +34,16 @@ export default function TeamsPage() {
   // null = the last resolved identity was anonymous; otherwise the last
   // resolved authenticated visitor's normalized email.
   const lastIdentityRef = useRef<string | null | undefined>(undefined);
+  // Updated synchronously every render (not only inside the effect) so a
+  // callback retained from an older, since-stale render always reads the
+  // identity that is actually active right now rather than a captured one.
+  const activeIdentityRef = useRef<string | null>(null);
+  const invitationCountRef = useRef(0);
+  // Which identity opened each authenticated-only surface, so a stale
+  // success/close callback from a different identity can be told apart from
+  // a legitimate one for the currently active identity.
+  const createModalIdentityRef = useRef<string | null>(null);
+  const invitationsPanelIdentityRef = useRef<string | null>(null);
 
   const invalidateTeamsRequest = useCallback(() => {
     teamsRequestSeqRef.current += 1;
@@ -129,6 +139,12 @@ export default function TeamsPage() {
       ? session.user.email.trim().toLowerCase()
       : null;
 
+  // Synchronous, not effect-deferred: a callback captured by an earlier
+  // render must observe the identity/count as of the render in which it is
+  // actually invoked, not the one that created it.
+  activeIdentityRef.current = authenticatedEmail;
+  invitationCountRef.current = invitationCount;
+
   useEffect(() => {
     if (status === "loading") {
       // Authentication is uncertain — invalidate any in-flight requests so
@@ -139,6 +155,8 @@ export default function TeamsPage() {
       setInvitationCount(0);
       setShowCreateModal(false);
       setShowInvitations(false);
+      createModalIdentityRef.current = null;
+      invitationsPanelIdentityRef.current = null;
       return;
     }
 
@@ -162,6 +180,8 @@ export default function TeamsPage() {
       // rather than waiting for the new identity's request to resolve.
       setShowCreateModal(false);
       setShowInvitations(false);
+      createModalIdentityRef.current = null;
+      invitationsPanelIdentityRef.current = null;
       invalidateInvitationRequest();
       setInvitationCount(0);
     }
@@ -191,6 +211,70 @@ export default function TeamsPage() {
     }
   }, [loadTeams]);
 
+  // Every callback below is a stable function identity (empty deps), and
+  // each reads activeIdentityRef/invitationCountRef at call time rather than
+  // closing over the render that created it — a copy retained from an
+  // earlier, now-stale render must always defer to whichever identity is
+  // actually active when it eventually runs.
+  const handleOpenCreateTeam = useCallback(() => {
+    const identity = activeIdentityRef.current;
+    if (!identity) return;
+    createModalIdentityRef.current = identity;
+    setShowCreateModal(true);
+  }, []);
+
+  const handleOpenInvitations = useCallback(() => {
+    const identity = activeIdentityRef.current;
+    if (!identity) return;
+    if (invitationCountRef.current <= 0) return;
+    invitationsPanelIdentityRef.current = identity;
+    setShowInvitations(true);
+  }, []);
+
+  const handleCloseCreateTeam = useCallback(() => {
+    createModalIdentityRef.current = null;
+    setShowCreateModal(false);
+  }, []);
+
+  const handleCreateTeamSuccess = useCallback(() => {
+    const openedFor = createModalIdentityRef.current;
+    createModalIdentityRef.current = null;
+    setShowCreateModal(false);
+
+    // The account that opened Create Team must still be the active one for
+    // its success to reload Teams — a request begun under a since-replaced
+    // identity (logout, session refresh, a different account) must not
+    // reload data that identity no longer owns.
+    if (!openedFor || activeIdentityRef.current !== openedFor) return;
+
+    void loadTeams();
+  }, [loadTeams]);
+
+  const handleCloseInvitations = useCallback(() => {
+    const openedFor = invitationsPanelIdentityRef.current;
+    invitationsPanelIdentityRef.current = null;
+    setShowInvitations(false);
+
+    const currentIdentity = activeIdentityRef.current;
+
+    if (openedFor && currentIdentity === openedFor) {
+      void loadInvitationCount();
+      return;
+    }
+
+    if (!currentIdentity) {
+      // Anonymous (or loading): no request, and make sure nothing is left
+      // in flight for the identity that used to be active.
+      invalidateInvitationRequest();
+      setInvitationCount(0);
+      return;
+    }
+
+    // A different authenticated identity is now active — its own invitation
+    // request (if any) is already correctly scoped; a stale close from the
+    // previous identity must not touch it.
+  }, [invalidateInvitationRequest, loadInvitationCount]);
+
   const isAuthenticated = authenticatedEmail !== null;
   const sessionUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
 
@@ -217,36 +301,21 @@ export default function TeamsPage() {
             retrying={retrying}
             onRetry={() => void retryLoadTeams()}
             invitationCount={invitationCount}
-            onOpenInvitations={() => {
-              if (isAuthenticated && invitationCount > 0) setShowInvitations(true);
-            }}
-            onOpenCreateTeam={() => {
-              if (isAuthenticated) setShowCreateModal(true);
-            }}
+            onOpenInvitations={handleOpenInvitations}
+            onOpenCreateTeam={handleOpenCreateTeam}
           />
         </div>
       </PageContainer>
 
       <PendingInvitations
         isOpen={isAuthenticated && showInvitations}
-        onClose={() => {
-          setShowInvitations(false);
-          if (isAuthenticated) {
-            void loadInvitationCount();
-          } else {
-            invalidateInvitationRequest();
-            setInvitationCount(0);
-          }
-        }}
+        onClose={handleCloseInvitations}
       />
 
       {isAuthenticated && showCreateModal && (
         <CreateTeamModal
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={() => {
-            setShowCreateModal(false);
-            void loadTeams();
-          }}
+          onClose={handleCloseCreateTeam}
+          onSuccess={handleCreateTeamSuccess}
         />
       )}
     </div>
