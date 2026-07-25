@@ -260,6 +260,35 @@ describe("TeamMemberRemovalDialog — interaction", () => {
 
     document.body.removeChild(trigger);
   });
+
+  it("dialog container has tabIndex=\"-1\"", () => {
+    render(<TeamMemberRemovalDialog {...makeDialogProps()} />);
+    expect(screen.getByTestId("team-member-removal-dialog").getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("Tab from Remove wraps to Cancel", () => {
+    render(<TeamMemberRemovalDialog {...makeDialogProps()} />);
+    screen.getByTestId("team-member-removal-confirm").focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-cancel"));
+  });
+
+  it("Shift+Tab from Cancel wraps to Remove", () => {
+    render(<TeamMemberRemovalDialog {...makeDialogProps()} />);
+    screen.getByTestId("team-member-removal-cancel").focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-confirm"));
+  });
+
+  it("focus outside the dialog is redirected inside while open", () => {
+    const outside = document.createElement("button");
+    outside.textContent = "Outside";
+    document.body.appendChild(outside);
+    render(<TeamMemberRemovalDialog {...makeDialogProps()} />);
+    outside.focus();
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-cancel"));
+    document.body.removeChild(outside);
+  });
 });
 
 describe("TeamMemberRemovalDialog — pending state", () => {
@@ -312,6 +341,37 @@ describe("TeamMemberRemovalDialog — pending state", () => {
     render(<TeamMemberRemovalDialog {...makeDialogProps({ pending: true })} />);
     expect(screen.getByTestId("team-member-removal-cancel").className).toMatch(/min-h-11/);
     expect(screen.getByTestId("team-member-removal-confirm").className).toMatch(/min-h-11/);
+  });
+
+  it("when pending begins, focus moves to the dialog container", () => {
+    const { rerender } = render(<TeamMemberRemovalDialog {...makeDialogProps({ pending: false })} />);
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-cancel"));
+    rerender(<TeamMemberRemovalDialog {...makeDialogProps({ pending: true })} />);
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-dialog"));
+  });
+
+  it("Tab during pending remains on the dialog container", () => {
+    render(<TeamMemberRemovalDialog {...makeDialogProps({ pending: true })} />);
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-dialog"));
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-dialog"));
+  });
+
+  it("Shift+Tab during pending remains on the dialog container", () => {
+    render(<TeamMemberRemovalDialog {...makeDialogProps({ pending: true })} />);
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-dialog"));
+  });
+
+  it("an outside button cannot receive focus through the dialog's Tab handling", () => {
+    const outside = document.createElement("button");
+    outside.textContent = "Outside";
+    document.body.appendChild(outside);
+    render(<TeamMemberRemovalDialog {...makeDialogProps({ pending: true })} />);
+    outside.focus();
+    expect(document.activeElement).not.toBe(outside);
+    expect(document.activeElement).toBe(screen.getByTestId("team-member-removal-dialog"));
+    document.body.removeChild(outside);
   });
 });
 

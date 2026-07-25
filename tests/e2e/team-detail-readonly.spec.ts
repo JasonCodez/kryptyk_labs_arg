@@ -667,6 +667,21 @@ test.describe("Team Detail — admin member removal (Pass 16B.3.1)", () => {
     await expect(page.getByTestId("team-member-remove-u5")).toBeDisabled();
     await expect(page.getByTestId("team-member-remove-u6")).toBeDisabled();
 
+    // Keyboard focus is fully contained inside the dialog while pending —
+    // the underlying Team actions (including Leave Team) must be
+    // unreachable via Tab/Shift+Tab.
+    await expect(dialog).toBeFocused();
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Tab");
+      await expect(dialog).toBeFocused();
+    }
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("Shift+Tab");
+      await expect(dialog).toBeFocused();
+    }
+    await expect(page.getByRole("button", { name: "Leave Team" })).not.toBeFocused();
+    await expect(page.getByText(`Are you sure you want to leave the team`)).toHaveCount(0);
+
     // Repeated confirmation cannot create another request.
     await page.getByTestId("team-member-removal-confirm").click({ force: true });
     expect(fixture.memberRemovalRequests.length).toBe(1);

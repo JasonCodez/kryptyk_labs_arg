@@ -78,7 +78,9 @@ export default function TeamMemberRemovalDialog({
   onCancel,
   onConfirm,
 }: TeamMemberRemovalDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<Element | null>(null);
 
   const open = isOpen && member !== null;
@@ -96,14 +98,83 @@ export default function TeamMemberRemovalDialog({
     triggerRef.current = null;
   }, [open]);
 
+  // While a removal is pending, both buttons are disabled — move focus to
+  // the dialog container itself so a modal keyboard user never loses their
+  // place, and so Tab has somewhere safe to stay pinned to below.
   useEffect(() => {
-    if (!open || pending) return undefined;
+    if (open && pending) {
+      dialogRef.current?.focus();
+    }
+  }, [open, pending]);
+
+  // Full keyboard focus containment: Escape/Tab/Shift+Tab all stay local to
+  // the dialog. While pending, Tab is fully suppressed (no enabled controls
+  // to move between) so focus can never reach the underlying page — e.g. the
+  // Leave Team control — until the removal settles.
+  useEffect(() => {
+    if (!open) return undefined;
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        if (!pending) onCancel();
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      if (pending) {
+        e.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const focusable = [cancelRef.current, confirmRef.current].filter(
+        (el): el is HTMLButtonElement => el !== null && !el.disabled
+      );
+      if (focusable.length === 0) {
+        e.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+
+      if (e.shiftKey) {
+        if (active === first || !focusable.includes(active as HTMLButtonElement)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !focusable.includes(active as HTMLButtonElement)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, pending, onCancel]);
+
+  // Redirect focus back inside the dialog if it ever ends up outside it
+  // (e.g. a programmatic .focus() call on an underlying page control).
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const onFocusIn = (e: FocusEvent) => {
+      const dialogEl = dialogRef.current;
+      if (!dialogEl) return;
+      const target = e.target as Node | null;
+      if (target && dialogEl.contains(target)) return;
+      if (pending) {
+        dialogEl.focus();
+      } else {
+        (cancelRef.current ?? dialogEl).focus();
+      }
+    };
+
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, [open, pending]);
 
   if (!open || !member) return null;
 
@@ -122,13 +193,15 @@ export default function TeamMemberRemovalDialog({
         }}
       />
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="team-member-removal-dialog-heading"
         aria-describedby="team-member-removal-dialog-description"
         aria-busy={pending}
         data-testid="team-member-removal-dialog"
-        className="relative w-full rounded-2xl border p-5 pw-pop-in sm:p-6"
+        className="relative w-full rounded-2xl border p-5 pw-pop-in sm:p-6 focus:outline-none"
         style={{
           maxWidth: "min(92vw, 420px)",
           backgroundColor: theme.cardBg,
@@ -161,6 +234,7 @@ export default function TeamMemberRemovalDialog({
             Cancel
           </button>
           <button
+            ref={confirmRef}
             type="button"
             data-testid="team-member-removal-confirm"
             disabled={pending}

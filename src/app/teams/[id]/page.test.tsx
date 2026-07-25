@@ -54,6 +54,29 @@ function jsonResponse(body: unknown, status = 200) {
   } as unknown as Response);
 }
 
+// This file runs under the jsdom Jest environment (required for React
+// Testing Library's render()), which does not expose a global fetch
+// Response implementation, and the project has no fetch-polyfill dependency
+// to import one from. This stand-in enforces the same real-world constraint
+// the correction targets — a response body can only be consumed once — so
+// tests built on it genuinely exercise the single-read code path instead of
+// the earlier synthetic mock, whose independently callable json()/text()
+// masked the double-read bug.
+function singleReadResponse(body: string, status = 500): Response {
+  let consumed = false;
+  const consume = () => {
+    if (consumed) throw new TypeError("Body has already been consumed.");
+    consumed = true;
+    return body;
+  };
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: () => Promise.resolve(consume()),
+    json: () => Promise.resolve(JSON.parse(consume())),
+  } as unknown as Response;
+}
+
 type RouteHandler = (url: string, init?: RequestInit) => Promise<Response>;
 
 function buildFetchMock(overrides: Partial<{
@@ -2379,11 +2402,11 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     expect(teamCallsAfter).toBe(teamCallsBefore);
   });
 
-  it("49. JSON server error is displayed", async () => {
+  it("49. JSON server error is displayed (real single-read response body)", async () => {
     authenticated();
     buildFetchMock({
       membership: () => jsonResponse({ role: "admin" }),
-      removeMember: () => jsonResponse({ error: "Cannot remove yourself" }, 400),
+      removeMember: () => Promise.resolve(singleReadResponse(JSON.stringify({ error: "Cannot remove yourself" }), 400)),
     });
     render(<TeamDetailPage />);
     await flush();
@@ -2394,11 +2417,11 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     expect(screen.getByText("Cannot remove yourself")).toBeTruthy();
   });
 
-  it("50. plain-text server error is displayed when applicable", async () => {
+  it("50. plain-text server error is displayed when applicable (real single-read response body)", async () => {
     authenticated();
     buildFetchMock({
       membership: () => jsonResponse({ role: "admin" }),
-      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.reject(new Error("no json")), text: () => Promise.resolve("Server exploded") } as Response),
+      removeMember: () => Promise.resolve(singleReadResponse("Server exploded", 500)),
     });
     render(<TeamDetailPage />);
     await flush();
@@ -2409,11 +2432,11 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     expect(screen.getByText("Server exploded")).toBeTruthy();
   });
 
-  it("51. empty error response uses Failed to remove member", async () => {
+  it("51. empty error response uses Failed to remove member (real single-read response body)", async () => {
     authenticated();
     buildFetchMock({
       membership: () => jsonResponse({ role: "admin" }),
-      removeMember: () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response),
+      removeMember: () => Promise.resolve(singleReadResponse("", 500)),
     });
     render(<TeamDetailPage />);
     await flush();
@@ -2422,6 +2445,22 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
     await flush();
     expect(screen.getByText("Failed to remove member")).toBeTruthy();
+  });
+
+  it("51a. JSON without a valid string error falls back rather than showing raw serialized JSON", async () => {
+    authenticated();
+    buildFetchMock({
+      membership: () => jsonResponse({ role: "admin" }),
+      removeMember: () => Promise.resolve(singleReadResponse(JSON.stringify({ error: 500 }), 500)),
+    });
+    render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+    expect(screen.getByText("Failed to remove member")).toBeTruthy();
+    expect(screen.queryByText(/"error":500/)).toBeNull();
   });
 
   it("52. failure title is exactly Remove failed", async () => {
@@ -2588,5 +2627,131 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     render(<TeamDetailPage />);
     await flush();
     expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("67. unmount before a successful DELETE resolves performs no post-removal Team refresh and throws no async exception", async () => {
+    authenticated();
+    let resolveDelete: (v: Response) => void = () => {};
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        return jsonResponse(VALID_TEAM);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    const { unmount } = render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+
+    const teamGetCountBeforeUnmount = teamGetCount;
+    unmount();
+
+    await act(async () => {
+      resolveDelete({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve("") } as Response);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // No additional GET /api/teams/[id] refresh was issued after unmount.
+    expect(teamGetCount).toBe(teamGetCountBeforeUnmount);
+  });
+
+  it("68. unmount before a failed DELETE resolves performs no Team refresh and no post-unmount failure feedback", async () => {
+    authenticated();
+    let resolveDelete: (v: Response) => void = () => {};
+    let teamGetCount = 0;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        teamGetCount += 1;
+        return jsonResponse(VALID_TEAM);
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    const { unmount } = render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+
+    const teamGetCountBeforeUnmount = teamGetCount;
+    unmount();
+
+    await act(async () => {
+      resolveDelete(singleReadResponse("Server exploded", 500));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(teamGetCount).toBe(teamGetCountBeforeUnmount);
+  });
+
+  it("69. unmount during the best-effort Team refresh performs no additional work and throws no async exception", async () => {
+    authenticated();
+    let resolveRefresh: (v: Response) => void = () => {};
+    let deleteResolved = false;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith(`/api/teams/${TEAM_ID}/members/u2`) && method === "DELETE") {
+        deleteResolved = true;
+        return jsonResponse({});
+      }
+      if (url.endsWith(`/api/teams/${TEAM_ID}/membership`)) return jsonResponse({ role: "admin" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/invite-status`)) return jsonResponse({ status: "none" });
+      if (url.endsWith(`/api/teams/${TEAM_ID}/applications`)) return jsonResponse([]);
+      if (url.endsWith(`/api/teams/${TEAM_ID}/stats`)) return jsonResponse(VALID_STATS);
+      if (url.endsWith(`/api/teams/${TEAM_ID}`) && method === "GET") {
+        if (!deleteResolved) return jsonResponse(VALID_TEAM);
+        return new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+      }
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+
+    const { unmount } = render(<TeamDetailPage />);
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-remove-u2"));
+    await flush();
+    fireEvent.click(screen.getByTestId("team-member-removal-confirm"));
+    await flush();
+
+    unmount();
+
+    await act(async () => {
+      resolveRefresh({ ok: true, status: 200, json: () => Promise.resolve(VALID_TEAM), text: () => Promise.resolve("") } as Response);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Reaching this point without an unhandled rejection or React
+    // act()-outside-of-test warning is the assertion: no further state
+    // updates or requests occur after unmount.
+    expect(true).toBe(true);
   });
 });

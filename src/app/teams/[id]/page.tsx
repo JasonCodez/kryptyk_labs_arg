@@ -95,6 +95,33 @@ function normalizeTeamPayload(value: unknown): Team | null {
   };
 }
 
+// A Fetch response body can only be consumed once, so this reads it exactly
+// once as text and then attempts JSON parsing locally — calling both
+// res.json() and res.text() on the same real Response is not reliable.
+async function readMemberRemovalError(response: Response): Promise<string> {
+  const raw = await response.text().catch(() => "");
+  const trimmed = raw.trim();
+
+  if (!trimmed) {
+    return "Failed to remove member";
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const error = (parsed as Record<string, unknown>).error;
+      if (typeof error === "string" && error.trim()) {
+        return error.trim();
+      }
+    }
+
+    return "Failed to remove member";
+  } catch {
+    return trimmed;
+  }
+}
+
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--pw-brand-primary)]";
 
@@ -676,16 +703,17 @@ export default function TeamDetailPage() {
     memberRemovalInFlightRef.current = true;
     setMemberRemovalPending(true);
     const displayName = getRemovalMemberDisplayName(target);
+    const isMounted = () => mountedRef.current;
     try {
       const res = await fetch(`/api/teams/${teamId}/members/${target.user.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       });
+      if (!isMounted()) return;
       if (!res.ok) {
-        let body: any = null;
-        try { body = await res.json(); } catch { /* ignore */ }
-        const txt = (typeof body?.error === "string" && body.error.trim()) || (await res.text().catch(() => null)) || "Failed to remove member";
-        throw new Error(txt);
+        const message = await readMemberRemovalError(res);
+        if (!isMounted()) return;
+        throw new Error(message);
       }
       setTeam((prev) => (prev ? { ...prev, members: prev.members.filter((m) => m.user.id !== target.user.id) } : prev));
       // Best-effort only: the removal itself already succeeded above, so a
@@ -693,13 +721,17 @@ export default function TeamDetailPage() {
       // removal into a reported failure.
       try {
         const t = await fetch(`/api/teams/${teamId}`);
+        if (!isMounted()) return;
         if (t.ok) {
-          const normalized = normalizeTeamPayload(await t.json());
+          const refreshedPayload = await t.json();
+          if (!isMounted()) return;
+          const normalized = normalizeTeamPayload(refreshedPayload);
           if (normalized) setTeam(normalized);
         }
       } catch {
         // Ignore — removal already succeeded.
       }
+      if (!isMounted()) return;
       setMemberRemovalTarget(null);
       setModalTitle('Member removed');
       setModalMessage(`${displayName} was removed from the team.`);
@@ -707,6 +739,7 @@ export default function TeamDetailPage() {
       setModalOpen(true);
     } catch (err) {
       console.error(err);
+      if (!isMounted()) return;
       setMemberRemovalTarget(null);
       setModalTitle('Remove failed');
       setModalMessage((err as any)?.message || 'Failed to remove member');
