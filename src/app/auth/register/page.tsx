@@ -41,6 +41,38 @@ export async function initiateGoogleSignUp({
   }
 }
 
+// Shares the exact same shape as GoogleInitiationOptions — both social
+// helpers are always called with the SAME inFlightRef instance (see
+// oauthInFlightRef below) so Google and Facebook can never both be in
+// flight at once.
+type SocialInitiationOptions = GoogleInitiationOptions;
+
+export async function initiateFacebookSignUp({
+  mountedRef,
+  inFlightRef,
+  setConnecting,
+  setError,
+  start,
+}: SocialInitiationOptions) {
+  if (!mountedRef.current || inFlightRef.current) return;
+
+  inFlightRef.current = true;
+  setConnecting(true);
+  setError("");
+
+  try {
+    await start();
+    // A resolved initiation starts browser navigation. Keep the guard and
+    // pending state active until this page unmounts.
+  } catch {
+    if (!mountedRef.current) return;
+
+    inFlightRef.current = false;
+    setConnecting(false);
+    setError("Facebook sign-up could not be started. Please try again.");
+  }
+}
+
 const TOS_SECTIONS = [
   { title: "1. Acceptance of Terms", body: `By creating an account or using PuzzleWarz (the "Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not access or use the Service. These Terms apply to all visitors, users, and others who access the Service.` },
   { title: "2. Eligibility", body: `You must be at least 13 years old to use the Service. By registering, you represent and warrant that you meet this age requirement. If you are under 18, you confirm that a parent or legal guardian has reviewed and agreed to these Terms on your behalf.` },
@@ -75,8 +107,12 @@ function RegisterForm() {
   const [emailOptIn, setEmailOptIn] = useState(false);
   const [honeypot, setHoneypot] = useState("");
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [facebookAvailable, setFacebookAvailable] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
-  const googleInFlightRef = useRef(false);
+  const [facebookConnecting, setFacebookConnecting] = useState(false);
+  // Shared by both social providers so the user can never start Google and
+  // Facebook OAuth at the same time.
+  const oauthInFlightRef = useRef(false);
   const mountedRef = useRef(false);
 
   useEffect(() => {
@@ -94,18 +130,21 @@ function RegisterForm() {
     }
   }, [searchParams]);
 
-  // Only show the Google action when NextAuth actually has the provider
-  // registered — never assume availability from a public env var.
+  // Only show a social action when NextAuth actually has that provider
+  // registered — never assume availability from a public env var. On
+  // discovery failure, hide both social actions safely.
   useEffect(() => {
     let cancelled = false;
     getProviders()
       .then((discovered) => {
         if (cancelled) return;
         setGoogleAvailable(Boolean(discovered?.google));
+        setFacebookAvailable(Boolean(discovered?.facebook));
       })
       .catch(() => {
         if (cancelled) return;
         setGoogleAvailable(false);
+        setFacebookAvailable(false);
       });
     return () => {
       cancelled = true;
@@ -115,11 +154,22 @@ function RegisterForm() {
   async function handleGoogleSignUp() {
     await initiateGoogleSignUp({
       mountedRef,
-      inFlightRef: googleInFlightRef,
+      inFlightRef: oauthInFlightRef,
       setConnecting: setGoogleConnecting,
       setError,
       // Referral rewards remain exclusive to Credentials registration.
       start: () => signIn("google", { callbackUrl: "/dashboard" }),
+    });
+  }
+
+  async function handleFacebookSignUp() {
+    await initiateFacebookSignUp({
+      mountedRef,
+      inFlightRef: oauthInFlightRef,
+      setConnecting: setFacebookConnecting,
+      setError,
+      // Referral rewards remain exclusive to Credentials registration.
+      start: () => signIn("facebook", { callbackUrl: "/dashboard" }),
     });
   }
 
@@ -242,37 +292,78 @@ function RegisterForm() {
               </div>
             )}
 
-            {googleAvailable && (
+            {(googleAvailable || facebookAvailable) && (
               <>
-                <button
-                  type="button"
-                  data-testid="google-signup-button"
-                  onClick={handleGoogleSignUp}
-                  disabled={googleConnecting}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                    width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
-                    background: "#FFFFFF", color: "#1F1F1F", border: "1px solid #747775",
-                    fontWeight: 700, fontSize: 14, cursor: googleConnecting ? "not-allowed" : "pointer",
-                    opacity: googleConnecting ? 0.7 : 1, marginBottom: 12,
-                  }}
-                >
-                  <Image
-                    src="/images/google-g-logo.svg"
-                    alt=""
-                    aria-hidden="true"
-                    width={18}
-                    height={18}
-                    style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
-                  />
-                  <span>{googleConnecting ? "Connecting to Google…" : "Sign up with Google"}</span>
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
+                  {googleAvailable && (
+                    <button
+                      type="button"
+                      data-testid="google-signup-button"
+                      onClick={handleGoogleSignUp}
+                      disabled={googleConnecting || facebookConnecting}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                        width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
+                        background: "#FFFFFF", color: "#1F1F1F", border: "1px solid #747775",
+                        fontWeight: 700, fontSize: 14, cursor: (googleConnecting || facebookConnecting) ? "not-allowed" : "pointer",
+                        opacity: (googleConnecting || facebookConnecting) ? 0.7 : 1,
+                      }}
+                    >
+                      <Image
+                        src="/images/google-g-logo.svg"
+                        alt=""
+                        aria-hidden="true"
+                        width={18}
+                        height={18}
+                        style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
+                      />
+                      <span>{googleConnecting ? "Connecting to Google…" : "Sign up with Google"}</span>
+                    </button>
+                  )}
+
+                  {facebookAvailable && (
+                    <button
+                      type="button"
+                      data-testid="facebook-signup-button"
+                      onClick={handleFacebookSignUp}
+                      disabled={googleConnecting || facebookConnecting}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                        width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
+                        background: "#1877F2", color: "#FFFFFF", border: "none",
+                        fontWeight: 700, fontSize: 14, cursor: (googleConnecting || facebookConnecting) ? "not-allowed" : "pointer",
+                        opacity: (googleConnecting || facebookConnecting) ? 0.7 : 1,
+                      }}
+                    >
+                      <Image
+                        src="/images/facebook-f-logo.svg"
+                        alt=""
+                        aria-hidden="true"
+                        width={18}
+                        height={18}
+                        style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
+                      />
+                      <span>{facebookConnecting ? "Connecting to Facebook…" : "Sign up with Facebook"}</span>
+                    </button>
+                  )}
+                </div>
 
                 <p style={{ fontSize: 12, color: "#6B7280", marginBottom: 20, lineHeight: 1.5 }}>
-                  By continuing with Google, you agree to the PuzzleWarz{" "}
-                  <Link href="/terms" style={{ color: "#3891A6", fontWeight: 600 }}>Terms of Service</Link>{" "}
-                  and{" "}
-                  <Link href="/privacy" style={{ color: "#3891A6", fontWeight: 600 }}>Privacy Policy</Link>.
+                  {googleAvailable && facebookAvailable ? (
+                    <>
+                      By continuing with Google or Facebook, you agree to the PuzzleWarz{" "}
+                      <Link href="/terms" style={{ color: "#3891A6", fontWeight: 600 }}>Terms of Service</Link>{" "}
+                      and{" "}
+                      <Link href="/privacy" style={{ color: "#3891A6", fontWeight: 600 }}>Privacy Policy</Link>.
+                    </>
+                  ) : (
+                    <>
+                      By continuing with a social account, you agree to the PuzzleWarz{" "}
+                      <Link href="/terms" style={{ color: "#3891A6", fontWeight: 600 }}>Terms of Service</Link>{" "}
+                      and{" "}
+                      <Link href="/privacy" style={{ color: "#3891A6", fontWeight: 600 }}>Privacy Policy</Link>.
+                    </>
+                  )}
                 </p>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
