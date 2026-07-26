@@ -30,6 +30,56 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
 }
 
+async function expectGoogleLogoRendersCleanly(
+  page: Page,
+  button: ReturnType<Page["getByTestId"]>
+) {
+  const logo = button.locator("img[src*='google-g-logo']");
+  await expect(logo).toHaveCount(1);
+  await expect(logo).toBeVisible();
+
+  const buttonBox = await button.boundingBox();
+  const logoBox = await logo.boundingBox();
+  expect(buttonBox).not.toBeNull();
+  expect(logoBox).not.toBeNull();
+
+  expect(logoBox!.width).toBeGreaterThanOrEqual(16);
+  expect(logoBox!.width).toBeLessThanOrEqual(20);
+  expect(logoBox!.height).toBeGreaterThanOrEqual(16);
+  expect(logoBox!.height).toBeLessThanOrEqual(20);
+
+  // The logo must be fully contained inside the button — no cropping ancestor
+  // is hiding part of a larger image outside the visible bounds.
+  expect(logoBox!.x).toBeGreaterThanOrEqual(buttonBox!.x - 1);
+  expect(logoBox!.y).toBeGreaterThanOrEqual(buttonBox!.y - 1);
+  expect(logoBox!.x + logoBox!.width).toBeLessThanOrEqual(buttonBox!.x + buttonBox!.width + 1);
+  expect(logoBox!.y + logoBox!.height).toBeLessThanOrEqual(buttonBox!.y + buttonBox!.height + 1);
+
+  const layout = await logo.evaluate((el, buttonTestId) => {
+    const style = getComputedStyle(el as HTMLElement);
+    const buttonEl = (el as HTMLElement).closest(`[data-testid="${buttonTestId}"]`);
+    let node: HTMLElement | null = (el as HTMLElement).parentElement;
+    let ancestorClips = false;
+    while (node && node !== buttonEl) {
+      const nodeStyle = getComputedStyle(node);
+      if (nodeStyle.overflow !== "visible" && nodeStyle.overflow !== "") {
+        ancestorClips = true;
+      }
+      node = node.parentElement;
+    }
+    return {
+      position: style.position,
+      left: style.left,
+      top: style.top,
+      ancestorClips,
+    };
+  }, await button.getAttribute("data-testid"));
+  expect(layout.position).not.toBe("absolute");
+  expect(layout.left.startsWith("-")).toBe(false);
+  expect(layout.top.startsWith("-")).toBe(false);
+  expect(layout.ancestorClips).toBe(false);
+}
+
 function providersPayload(includeGoogle: boolean) {
   const credentials = {
     id: "credentials",
@@ -139,6 +189,7 @@ test.describe("Google auth — provider present", () => {
     const box = await googleButton.boundingBox();
     expect(box!.height).toBeGreaterThanOrEqual(43.9);
     await expect(page.getByText("or continue with email")).toBeVisible();
+    await expectGoogleLogoRendersCleanly(page, googleButton);
 
     await googleButton.click();
     await expect(page).toHaveURL(/\/auth\/signin\?google-init=1$/);
@@ -158,6 +209,7 @@ test.describe("Google auth — provider present", () => {
     const signUpBox = await signUpButton.boundingBox();
     expect(signUpBox!.height).toBeGreaterThanOrEqual(43.9);
     await expect(page.getByText("or create an account with email")).toBeVisible();
+    await expectGoogleLogoRendersCleanly(page, signUpButton);
     await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
     await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
 
@@ -183,6 +235,30 @@ test.describe("Google auth — provider present", () => {
     await dismissCookieBanner(page);
     await expect(page.getByTestId("google-signup-button")).toBeVisible();
     await expectNoHorizontalOverflow(page);
+  });
+
+  test("Google logo asset is a clean, transparent, G-only SVG", async ({ page }) => {
+    await installAuthFixture(page, { includeGoogle: true });
+    await page.goto("/auth/signin", { waitUntil: "domcontentloaded" });
+
+    const response = await page.request.get("/images/google-g-logo.svg");
+    expect(response.ok()).toBe(true);
+
+    const svg = await response.text();
+    expect(svg).toContain("viewBox");
+    for (const color of ["#4285F4", "#34A853", "#FBBC05", "#EA4335"]) {
+      expect(svg).toContain(color);
+    }
+
+    expect(svg).not.toContain("<foreignObject");
+    expect(svg).not.toContain("<filter");
+    expect(svg).not.toContain("<mask");
+    expect(svg).not.toContain("fill=\"white\"");
+    expect(svg).not.toContain("fill=\"#fff");
+    expect(svg.toLowerCase()).not.toContain("figma");
+    // The xmlns declaration is not a network reference; only flag actual
+    // http(s) links elsewhere in the markup (e.g. href/src attributes).
+    expect(svg.replace(/xmlns(:\w+)?="https?:\/\/[^"]*"/g, "")).not.toMatch(/https?:\/\//);
   });
 });
 

@@ -235,18 +235,14 @@ function SignInForm() {
                     opacity: googleConnecting ? 0.7 : 1, marginBottom: 20,
                   }}
                 >
-                  <span
+                  <Image
+                    src="/images/google-g-logo.svg"
+                    alt=""
                     aria-hidden="true"
-                    style={{ display: "inline-block", position: "relative", width: 20, height: 20, overflow: "hidden", flexShrink: 0 }}
-                  >
-                    <Image
-                      src="/images/google-g-logo.svg"
-                      alt=""
-                      width={40}
-                      height={40}
-                      style={{ position: "absolute", left: -10, top: -10, width: 40, height: 40 }}
-                    />
-                  </span>
+                    width={18}
+                    height={18}
+                    style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
+                  />
                   <span>{googleConnecting ? "Connecting to Google…" : "Continue with Google"}</span>
                 </button>
 
