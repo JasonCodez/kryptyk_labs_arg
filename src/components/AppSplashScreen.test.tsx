@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { StrictMode } from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import AppSplashScreen from "./AppSplashScreen";
 import { APP_LAUNCH_VERSION, APP_LAUNCH_VERSION_KEY } from "@/lib/appLaunch";
@@ -301,6 +302,58 @@ describe("AppSplashScreen — bootstrap safety release", () => {
     // handoff) — the point is the bootstrap's OWN forced-skip timer didn't
     // fire and stomp over the component's own control of the attribute.
     expect(document.documentElement.dataset.pwLaunch).toBe("pending");
+  });
+});
+
+describe("AppSplashScreen — React Strict Mode visibility", () => {
+  it("setup-cleanup-setup reasserts pending so the overlay is never left stuck hidden, and true unmount still sets skip", () => {
+    setUrl("/", "?source=pwa");
+
+    // 1-3: the pre-paint bootstrap runs first, exactly as it would in the
+    // real document, and sets the eligible launch state.
+    runBootstrapScript();
+    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
+
+    // 4: React Strict Mode double-invokes this component's mount effects
+    // (setup, cleanup, setup) synchronously as part of this render call.
+    const { unmount } = render(
+      <StrictMode>
+        <AppSplashScreen />
+      </StrictMode>
+    );
+
+    // 5: the interim cleanup's markLaunchSkipped() would have left this on
+    // "skip" without the fix — the second (real) setup must reassert
+    // "pending" for this eligible launch.
+    expect(document.documentElement.dataset.pwLaunch).toBe("pending");
+
+    // 6: the splash overlay exists.
+    const overlay = screen.getByTestId("app-launch-sequence");
+    expect(overlay).toBeTruthy();
+
+    // 7: jsdom has no real CSS cascade/layout engine, so getComputedStyle
+    // here cannot reflect the `html[data-pw-launch="pending"]
+    // [data-pw-launch-root] { display: flex !important; }` rule the way a
+    // real browser would (Playwright's visibility assertion covers that).
+    // What IS deterministically verifiable in this environment is the exact
+    // contract that rule depends on: the attribute is "pending" (just
+    // asserted above) and the rule itself is present, unmodified, in the
+    // component's own emitted <style> tag.
+    const styleTag = Array.from(document.querySelectorAll("style")).find((el) =>
+      el.textContent?.includes("data-pw-launch-root")
+    );
+    expect(styleTag?.textContent).toContain(
+      'html[data-pw-launch="pending"] [data-pw-launch-root] { display: flex !important; }'
+    );
+
+    // 8: the sequence still reaches "playing" normally afterward.
+    completeHandoff();
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-stage")).toBe("playing");
+
+    // 9: a true final unmount (not Strict Mode's simulated one) still sets
+    // "skip" — cleanup behavior for a genuine navigate-away is unchanged.
+    unmount();
+    expect(document.documentElement.dataset.pwLaunch).toBe("skip");
   });
 });
 

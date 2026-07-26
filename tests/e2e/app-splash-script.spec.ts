@@ -91,7 +91,7 @@ test.describe("App splash bootstrap — initial HTML", () => {
 });
 
 test.describe("App splash bootstrap — browser execution", () => {
-  test("eligible /?source=pwa launch: script runs pre-hydration, overlay appears, no React warning", async ({ page }) => {
+  test("eligible /?source=pwa launch is visibly displayed and produces no React script warning", async ({ page }) => {
     const messages = collectConsoleMessages(page);
     await installLaunchAttributeRecorder(page);
 
@@ -116,22 +116,28 @@ test.describe("App splash bootstrap — browser execution", () => {
     expect(history[0]).toBe("pending");
     expect(history[0]).not.toBeNull();
 
-    // Confirms the overlay actually renders (mode !== "none") rather than
-    // checking CSS visibility: the overlay's on-screen display is gated by a
-    // `html[data-pw-launch="pending"]` CSS rule wholly owned by
-    // AppSplashScreen/appLaunch.ts (unrelated to and untouched by this
-    // bootstrap-relocation change), and React's dev-only Strict Mode
-    // double-invoke of effects can independently flip that attribute in
-    // `next dev` regardless of where the bootstrap script lives — reproduced
-    // identically against an unmodified checkout, and confirmed absent in a
-    // production build. Attachment plus stage progression is the correct,
-    // change-scoped regression signal here.
+    // The overlay must actually be visible on screen — not merely attached.
+    // AppSplashScreen's hydration effect reasserts data-pw-launch="pending"
+    // for an eligible launch specifically so that React Strict Mode's
+    // dev-only setup-cleanup-setup cycle can't leave the
+    // `html[data-pw-launch="pending"] [data-pw-launch-root] { display: flex
+    // !important; }` CSS gate closed.
     const overlay = page.getByTestId("app-launch-sequence");
-    await expect(overlay).toBeAttached({ timeout: SCRIPT_APPEAR_TIMEOUT });
+    await expect(overlay).toBeVisible({ timeout: SCRIPT_APPEAR_TIMEOUT });
+
+    const display = await overlay.evaluate((el) => getComputedStyle(el).display);
+    expect(display).not.toBe("none");
+    expect(display).toBe("flex");
+
+    // Captured immediately after visibility is confirmed, before the normal
+    // playback sequence later flips the attribute to "skip" on completion.
+    const pwLaunchWhileVisible = await page.evaluate(() => document.documentElement.dataset.pwLaunch);
+    expect(pwLaunchWhileVisible).toBe("pending");
 
     // The sequence must progress out of its initial "resolving" React state
-    // (set only before hydration's layout effect runs).
-    await expect(overlay).not.toHaveAttribute("data-launch-stage", "resolving", { timeout: SCRIPT_APPEAR_TIMEOUT });
+    // (set only before hydration's layout effect runs) into an active stage.
+    const stage = await overlay.getAttribute("data-launch-stage");
+    expect(["handoff", "playing"]).toContain(stage);
 
     assertNoScriptWarnings(messages);
   });

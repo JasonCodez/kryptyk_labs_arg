@@ -189,6 +189,22 @@ function markLaunchSkipped() {
   }
 }
 
+// Idempotently reasserts "pending" once hydration has itself resolved an
+// eligible launch. Needed because React Strict Mode's dev-only
+// setup-cleanup-setup cycle runs EFFECT A's cleanup (which calls
+// markLaunchSkipped, above) between the two setups — without this, the
+// second (real) setup would leave the attribute stuck on "skip" even though
+// the overlay's own stage/mode state correctly resolved to an active
+// launch, and the CSS that gates the overlay's visibility on
+// html[data-pw-launch="pending"] would keep it hidden.
+function markLaunchPending() {
+  try {
+    document.documentElement.dataset.pwLaunch = "pending";
+  } catch {
+    // ignore
+  }
+}
+
 type BootstrapWindow = Window & { __PW_APP_LAUNCH_BOOTSTRAP_TIMEOUT__?: ReturnType<typeof setTimeout> };
 
 // Clears the no-hydration failsafe timer armed by the pre-paint bootstrap
@@ -226,7 +242,10 @@ export default function AppSplashScreen() {
 
   // EFFECT A — resolve eligibility once, before the browser's next paint
   // after hydration (useLayoutEffect, not useEffect), and arm the overall
-  // handoff-wait failsafe.
+  // handoff-wait failsafe. For an eligible launch, this also idempotently
+  // reasserts data-pw-launch="pending" (see markLaunchPending) so that React
+  // Strict Mode's dev-only setup-cleanup-setup cycle can never leave the
+  // overlay stuck hidden behind the interim cleanup's markLaunchSkipped call.
   useLayoutEffect(() => {
     clearBootstrapFailsafe();
 
@@ -252,6 +271,11 @@ export default function AppSplashScreen() {
       return;
     }
 
+    // Reassert "pending" now that hydration has itself confirmed an
+    // eligible launch — see markLaunchPending's own comment for why this is
+    // required (Strict Mode's dev-only double-invoke of this effect can
+    // have left the attribute on "skip" via the interim cleanup below).
+    markLaunchPending();
     setMode(resolved);
     setStage("handoff");
 
