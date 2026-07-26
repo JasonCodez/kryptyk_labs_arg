@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAllowedDisplayName } from '@/lib/display-name-validator';
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    const userId = (session?.user as { id?: string } | undefined)?.id;
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -28,9 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
     }
 
-    // Check whether the user already changed their display name once
-    const currentUser = await (prisma.user as any).findUnique({ where: { email: session.user.email }, select: { id: true, nameChanged: true } });
-    if (currentUser && currentUser.nameChanged) {
+    // Look up by the authenticated user's ID, never the request body, so a
+    // caller can only ever rename themself.
+    const currentUser = await (prisma.user as any).findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, nameChanged: true },
+    });
+
+    if (!currentUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const hadDisplayName = typeof currentUser.name === "string" && currentUser.name.trim().length > 0;
+
+    // A missing display name (new OAuth signups) must always be settable —
+    // that first assignment is onboarding, not "the one later rename".
+    if (hadDisplayName && currentUser.nameChanged) {
       return NextResponse.json({ error: "Display name may only be changed once" }, { status: 403 });
     }
 
@@ -46,8 +61,8 @@ export async function POST(request: NextRequest) {
           equals: trimmedName,
           mode: 'insensitive',
         },
-        email: {
-          not: session.user.email,
+        id: {
+          not: userId,
         },
       },
     });
@@ -56,21 +71,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "This display name is already taken" }, { status: 409 });
     }
 
-    // Update user name and mark as changed so they cannot edit again
-    const updatedUser = await (prisma.user as any).update({
-      where: { email: session.user.email },
-      data: { name: trimmedName, nameChanged: true },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        nameChanged: true,
-      },
-    });
+    let updatedUser: { id: string; name: string | null; nameChanged: boolean };
+    try {
+      updatedUser = await (prisma.user as any).update({
+        where: { id: userId },
+        data: { name: trimmedName, nameChanged: hadDisplayName },
+        select: {
+          id: true,
+          name: true,
+          nameChanged: true,
+        },
+      });
+    } catch (updateError) {
+      // Two concurrent requests can both pass the uniqueness check above and
+      // then race on the unique column itself — surface that safely instead
+      // of leaking the underlying database error.
+      if (updateError instanceof Prisma.PrismaClientKnownRequestError && updateError.code === "P2002") {
+        return NextResponse.json({ error: "This display name is already taken" }, { status: 409 });
+      }
+      throw updateError;
+    }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      user: updatedUser 
+      user: updatedUser,
     });
   } catch (error) {
     console.error("Error updating name:", error);

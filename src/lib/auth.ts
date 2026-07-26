@@ -24,6 +24,15 @@ export function hasGoogleOAuthConfiguration(env: NodeJS.ProcessEnv = process.env
   return Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim());
 }
 
+// A missing display name must always resolve to `null`, never to an empty
+// string or whitespace, so downstream checks (`typeof name !== "string"`)
+// can treat "no name yet" as a single reliable shape.
+function normalizeTrustedName(name: string | null | undefined): string | null {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function normalizeGoogleProfileImage(value: unknown): string | null {
   if (typeof value !== "string") return null;
 
@@ -268,25 +277,25 @@ export const authOptions: NextAuthOptions = {
       // the adapter has actually created it.
       return isBetaAllowlistedEmail(email);
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (typeof token.email === "string" && token.email) {
         token.email = token.email.trim().toLowerCase();
       }
 
       if (user) {
         const signedInUser = user as { id?: string };
-        let dbUser: { id: string; role: string; betaApproved: boolean } | null = null;
+        let dbUser: { id: string; name: string | null; role: string; betaApproved: boolean } | null = null;
 
         try {
           if (typeof signedInUser.id === "string" && signedInUser.id) {
             dbUser = await prisma.user.findUnique({
               where: { id: signedInUser.id },
-              select: { id: true, role: true, betaApproved: true },
+              select: { id: true, name: true, role: true, betaApproved: true },
             });
           } else if (typeof token.email === "string" && token.email) {
             dbUser = await prisma.user.findUnique({
               where: { email: token.email },
-              select: { id: true, role: true, betaApproved: true },
+              select: { id: true, name: true, role: true, betaApproved: true },
             });
           }
         } catch (err) {
@@ -294,8 +303,44 @@ export const authOptions: NextAuthOptions = {
         }
 
         token.id = dbUser?.id ?? signedInUser.id;
+        token.name = normalizeTrustedName(dbUser?.name);
         token.role = dbUser?.role ?? "user";
         token.betaApproved = dbUser?.betaApproved === true;
+      }
+
+      // A client calls useSession().update() once it believes onboarding
+      // finished. The client never supplies trusted data here — whatever it
+      // passed to update() (the `session` argument) is intentionally
+      // ignored, and the trusted name is reloaded straight from Prisma so a
+      // client cannot self-report a name and skip the completion page.
+      if (trigger === "update") {
+        const tokenId = typeof token.id === "string" ? token.id : "";
+        const tokenEmail = typeof token.email === "string" ? token.email : "";
+
+        try {
+          let dbUser: { id: string; name: string | null; role: string; betaApproved: boolean } | null = null;
+
+          if (tokenId) {
+            dbUser = await prisma.user.findUnique({
+              where: { id: tokenId },
+              select: { id: true, name: true, role: true, betaApproved: true },
+            });
+          } else if (tokenEmail) {
+            dbUser = await prisma.user.findUnique({
+              where: { email: tokenEmail },
+              select: { id: true, name: true, role: true, betaApproved: true },
+            });
+          }
+
+          if (dbUser) {
+            token.id = dbUser.id;
+            token.name = normalizeTrustedName(dbUser.name);
+            token.role = dbUser.role;
+            token.betaApproved = dbUser.betaApproved === true;
+          }
+        } catch (err) {
+          console.error("Failed to refresh session token from database:", err);
+        }
       }
 
       return token;
@@ -306,10 +351,12 @@ export const authOptions: NextAuthOptions = {
           id?: string;
           role?: string;
           betaApproved?: boolean;
+          name?: string | null;
         };
         sessionUser.id = token.id as string;
         sessionUser.role = typeof token.role === "string" ? token.role : "user";
         sessionUser.betaApproved = token.betaApproved === true;
+        sessionUser.name = normalizeTrustedName(typeof token.name === "string" ? token.name : null);
       }
       return session;
     },

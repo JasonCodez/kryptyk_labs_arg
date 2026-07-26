@@ -2,6 +2,7 @@
 "use client";
 import { SessionProvider } from "next-auth/react";
 import dynamic from "next/dynamic";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AchievementNotification from "@/components/AchievementNotification";
 import SlotMachineModal from "@/components/puzzle/SlotMachineModal";
@@ -11,6 +12,8 @@ import { useAchievementModalStore } from "@/lib/achievement-modal-store";
 import { useModalQueueStore } from "@/lib/modal-queue-store";
 import { useSlotModalStore } from "@/lib/slot-modal-store";
 import TeamLobbyInviteModalProvider from "@/components/teams/TeamLobbyInviteModalProvider";
+
+const COMPLETE_PROFILE_PATH = "/auth/complete-profile";
 
 const AppChrome = dynamic(() => import("@/components/app-shell/AppChrome"), { ssr: false });
 
@@ -278,15 +281,45 @@ function AuthenticatedEffects() {
   return <TeamLobbyInviteModalProvider />;
 }
 
+// New Google OAuth users are intentionally created with no display name
+// (see mapGoogleProfile in src/lib/auth.ts). Rather than letting a nameless
+// user reach the dashboard, teams, or any other surface that renders their
+// (missing) name to other players, this gate holds back all normal
+// application content and sends them to the mandatory naming step first.
+function ProfileCompletionGate({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const missingDisplayName =
+    typeof session?.user?.name !== "string" || session.user.name.trim().length === 0;
+
+  const needsRedirect = status === "authenticated" && missingDisplayName && pathname !== COMPLETE_PROFILE_PATH;
+
+  useEffect(() => {
+    if (needsRedirect) {
+      router.replace(COMPLETE_PROFILE_PATH);
+    }
+  }, [needsRedirect, router]);
+
+  if (needsRedirect) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <PwaRegistration />
-      <AppChrome />
-      <GlobalAchievementModal />
-      <GlobalSlotMachineModal />
-      <AuthenticatedEffects />
-      {children}
+      <ProfileCompletionGate>
+        <AppChrome />
+        <GlobalAchievementModal />
+        <GlobalSlotMachineModal />
+        <AuthenticatedEffects />
+        {children}
+      </ProfileCompletionGate>
     </SessionProvider>
   );
 }

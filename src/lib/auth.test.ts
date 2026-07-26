@@ -402,7 +402,7 @@ describe("jwt callback — database hydration", () => {
     await callJwt(mod, { token: { email: "  Person@Example.TEST  " }, user: {} });
     expect(mod.mockPrisma.user.findUnique).toHaveBeenCalledWith({
       where: { email: "person@example.test" },
-      select: { id: true, role: true, betaApproved: true },
+      select: { id: true, name: true, role: true, betaApproved: true },
     });
   });
 
@@ -445,6 +445,132 @@ describe("jwt callback — database hydration", () => {
   it("does not throw when no user record can be resolved at all", async () => {
     const mod = await importAuthWithEnv({});
     await expect(callJwt(mod, { token: {}, user: { id: undefined } })).resolves.toBeDefined();
+  });
+});
+
+describe("jwt callback — session update trigger", () => {
+  function callJwt(
+    mod: Awaited<ReturnType<typeof importAuthWithEnv>>,
+    args: { token: Record<string, unknown>; trigger?: string; session?: unknown }
+  ) {
+    const jwtCb = mod.authOptions.callbacks!.jwt!;
+    return jwtCb(args as never);
+  }
+
+  it("40. reloads the user by token ID first when an ID is present", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({
+      id: "db-user-9",
+      name: "ExistingName",
+      role: "user",
+      betaApproved: false,
+    });
+    await callJwt(mod, { token: { id: "db-user-9", email: "person@example.test" }, trigger: "update" });
+    expect(mod.mockPrisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "db-user-9" },
+      select: { id: true, name: true, role: true, betaApproved: true },
+    });
+  });
+
+  it("41. normalized email fallback is only used when no token ID exists", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({
+      id: "db-user-9",
+      name: "ExistingName",
+      role: "user",
+      betaApproved: false,
+    });
+    await callJwt(mod, { token: { email: "  Person@Example.TEST  " }, trigger: "update" });
+    expect(mod.mockPrisma.user.findUnique).toHaveBeenCalledWith({
+      where: { email: "person@example.test" },
+      select: { id: true, name: true, role: true, betaApproved: true },
+    });
+  });
+
+  it("42. the trusted database name replaces a null token name", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({
+      id: "u1",
+      name: "ChosenName",
+      role: "user",
+      betaApproved: false,
+    });
+    const token = await callJwt(mod, { token: { id: "u1", name: null }, trigger: "update" });
+    expect(token.name).toBe("ChosenName");
+  });
+
+  it("43. a blank database name becomes null", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({ id: "u1", name: "   ", role: "user", betaApproved: false });
+    const token = await callJwt(mod, { token: { id: "u1", name: "leftover" }, trigger: "update" });
+    expect(token.name).toBeNull();
+  });
+
+  it("44. client-provided session update data cannot inject a name", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({ id: "u1", name: null, role: "user", betaApproved: false });
+    const token = await callJwt(mod, {
+      token: { id: "u1", name: null },
+      trigger: "update",
+      session: { user: { name: "InjectedName" } },
+    });
+    expect(token.name).toBeNull();
+    expect(token.name).not.toBe("InjectedName");
+  });
+
+  it("45. existing role and beta status hydration remains correct on update", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({ id: "u1", name: "Name", role: "admin", betaApproved: true });
+    const token = await callJwt(mod, { token: { id: "u1" }, trigger: "update" });
+    expect(token.role).toBe("admin");
+    expect(token.betaApproved).toBe(true);
+  });
+
+  it("46. a Prisma failure during update is contained and preserves the existing token", async () => {
+    const mod = await importAuthWithEnv({});
+    const failure = new Error("database unavailable");
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    mod.mockPrisma.user.findUnique.mockRejectedValue(failure);
+
+    const token = await callJwt(mod, {
+      token: { id: "u1", name: "PreservedName", role: "user", betaApproved: false },
+      trigger: "update",
+    });
+
+    expect(token.name).toBe("PreservedName");
+    expect(token.role).toBe("user");
+    expect(token.betaApproved).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("47. session callback exposes the trusted JWT name", async () => {
+    const mod = await importAuthWithEnv({});
+    const sessionCb = mod.authOptions.callbacks!.session!;
+    const session = await sessionCb({
+      session: { user: {} },
+      token: { id: "u1", name: "TrustedName", role: "user", betaApproved: false },
+    } as never);
+    expect((session.user as { name?: string | null }).name).toBe("TrustedName");
+  });
+
+  it("48. session callback exposes null when the JWT name is blank", async () => {
+    const mod = await importAuthWithEnv({});
+    const sessionCb = mod.authOptions.callbacks!.session!;
+    const session = await sessionCb({
+      session: { user: {} },
+      token: { id: "u1", name: "   ", role: "user", betaApproved: false },
+    } as never);
+    expect((session.user as { name?: string | null }).name).toBeNull();
+  });
+
+  it("49. Google tokens remain absent after an update-trigger refresh", async () => {
+    const mod = await importAuthWithEnv({});
+    mod.mockPrisma.user.findUnique.mockResolvedValue({ id: "u1", name: "Name", role: "user", betaApproved: false });
+    const token = await callJwt(mod, { token: { id: "u1" }, trigger: "update" });
+    expect(token).not.toHaveProperty("accessToken");
+    expect(token).not.toHaveProperty("refreshToken");
+    expect(token).not.toHaveProperty("id_token");
   });
 });
 
