@@ -279,16 +279,6 @@ function AuthenticatedEffects() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // Ensure next-auth client always fetches from the current origin.
-  // This avoids CLIENT_FETCH_ERROR when NEXTAUTH_URL is set to a different host
-  // (e.g. production) or when accessing dev via a LAN IP.
-  if (typeof window !== 'undefined') {
-    const w = window as unknown as { __NEXTAUTH?: Record<string, unknown> };
-    w.__NEXTAUTH = w.__NEXTAUTH || {};
-    w.__NEXTAUTH.baseUrl = window.location.origin;
-    w.__NEXTAUTH.basePath = (w.__NEXTAUTH.basePath as string) || '/api/auth';
-  }
-
   return (
     <SessionProvider>
       <PwaRegistration />
