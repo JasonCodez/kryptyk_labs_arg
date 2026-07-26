@@ -65,6 +65,7 @@ interface FixtureOptions {
   updateNameStatus?: number;
   updateNameBody?: unknown;
   holdUpdateName?: boolean;
+  holdSession?: boolean;
 }
 
 // Fully intercepts every NextAuth and application API call this suite
@@ -83,6 +84,8 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
   const updateNameRequests: Array<{ method: string; postData: string | null }> = [];
   const forbiddenRequests: string[] = [];
   const held: Route[] = [];
+  const heldSession: Route[] = [];
+  let sessionRequestCount = 0;
 
   await page.route(/accounts\.google\.com|googleapis\.com/, async (route) => {
     forbiddenRequests.push(route.request().url());
@@ -120,7 +123,12 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
     }
 
     if (path === "/api/auth/session") {
+      sessionRequestCount += 1;
       if (!authenticated) return fulfill(route, {});
+      if (options.holdSession) {
+        heldSession.push(route);
+        return;
+      }
       // Both the initial GET and the POST issued by useSession().update()
       // resolve to the trusted, currently-persisted name — never anything
       // the client itself passed to update().
@@ -174,6 +182,13 @@ async function installFixture(page: Page, options: FixtureOptions = {}) {
         await fulfill(route, { success: true, user: { id: USER_ID, name, nameChanged: false } });
       }
     },
+    sessionRequestCount: () => sessionRequestCount,
+    heldSessionCount: () => heldSession.length,
+    releaseSession: async (body: unknown) => {
+      for (const route of heldSession.splice(0)) {
+        await fulfill(route, body);
+      }
+    },
   };
 }
 
@@ -190,6 +205,44 @@ test.describe("OAuth profile completion — mandatory redirect", () => {
     await page.waitForURL(/\/auth\/complete-profile$/);
     await expect(page.getByText(/Ready for another round/)).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Choose your display name" })).toBeVisible();
+  });
+
+  test("dashboard and AppChrome content stay suppressed while the initial session request is still pending", async ({ page }) => {
+    await authenticate(page, null);
+    const fixture = await installFixture(page, { initialName: null, holdSession: true });
+
+    await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+    await dismissCookieBanner(page);
+
+    // Wait for the client to actually issue (and this fixture to hold) the
+    // initial session fetch before asserting anything about that window.
+    await expect.poll(() => fixture.sessionRequestCount()).toBeGreaterThan(0);
+    expect(fixture.heldSessionCount()).toBeGreaterThan(0);
+
+    // While useSession() status is still "loading", repeatedly confirm that
+    // neither dashboard content, AppChrome navigation, nor the completion
+    // page's own heading has rendered — and that the browser hasn't yet
+    // navigated away from /dashboard.
+    for (let i = 0; i < 3; i += 1) {
+      await expect(page.getByText(/Ready for another round/)).toHaveCount(0);
+      await expect(page.getByRole("navigation")).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Choose your display name" })).toHaveCount(0);
+      await expect(page).toHaveURL(/\/dashboard$/);
+      await page.waitForTimeout(150);
+    }
+
+    // The session request must still be genuinely unresolved at this point —
+    // proving the assertions above covered the loading window, not a race.
+    expect(fixture.heldSessionCount()).toBeGreaterThan(0);
+
+    await fixture.releaseSession({
+      user: { id: USER_ID, name: null, email: USER_EMAIL, role: "user", betaApproved: true },
+      expires: "2099-01-01T00:00:00.000Z",
+    });
+
+    await page.waitForURL(/\/auth\/complete-profile$/);
+    await expect(page.getByRole("heading", { name: "Choose your display name" })).toBeVisible();
+    await expect(page.getByText(/Ready for another round/)).toHaveCount(0);
   });
 
   test("a named authenticated user uses the dashboard normally, with no redirect to the completion page", async ({ page }) => {

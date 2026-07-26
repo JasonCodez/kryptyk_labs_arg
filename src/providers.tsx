@@ -302,7 +302,11 @@ function ProfileCompletionGate({ children }: { children: React.ReactNode }) {
     }
   }, [needsRedirect, router]);
 
-  if (needsRedirect) {
+  // Whether a still-loading session belongs to a nameless user isn't known
+  // yet, so normal application content (including the completion page's own
+  // route children) must stay suppressed until status resolves — otherwise
+  // the dashboard/AppChrome can flash before the redirect is even decided.
+  if (status === "loading" || needsRedirect) {
     return null;
   }
 
