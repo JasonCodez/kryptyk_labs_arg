@@ -1,8 +1,9 @@
 /** @jest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import AppSplashScreen, { BOOTSTRAP_SCRIPT } from "./AppSplashScreen";
+import AppSplashScreen from "./AppSplashScreen";
 import { APP_LAUNCH_VERSION, APP_LAUNCH_VERSION_KEY } from "@/lib/appLaunch";
+import { APP_LAUNCH_BOOTSTRAP_SCRIPT } from "@/lib/appLaunchBootstrap";
 
 const NATIVE_HANDOFF_BUFFER_MS = 700;
 const MAX_HANDOFF_WAIT_MS = 5000;
@@ -75,7 +76,7 @@ function completeHandoff() {
 }
 
 function runBootstrapScript() {
-  new Function(BOOTSTRAP_SCRIPT)();
+  new Function(APP_LAUNCH_BOOTSTRAP_SCRIPT)();
 }
 
 beforeEach(() => {
@@ -431,6 +432,27 @@ describe("AppSplashScreen — HTML attribute cleanup", () => {
     setUrl("/", "");
     render(<AppSplashScreen />);
     expect(document.documentElement.dataset.pwLaunch).toBe("skip");
+  });
+});
+
+describe("AppSplashScreen — no client-rendered script", () => {
+  it("renders no script element and triggers no React script-tag warning", () => {
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      render(<AppSplashScreen />);
+
+      const overlay = screen.getByTestId("app-launch-sequence");
+      expect(overlay.querySelectorAll("script").length).toBe(0);
+      expect(document.querySelectorAll("#pw-launch-bootstrap").length).toBe(0);
+
+      const offendingCall = consoleErrorSpy.mock.calls.find((args) =>
+        args.some((arg) => typeof arg === "string" && arg.includes("Encountered a script tag while rendering React component"))
+      );
+      expect(offendingCall).toBeUndefined();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
 

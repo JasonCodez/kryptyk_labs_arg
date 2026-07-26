@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Kalam, Baloo_2, Nunito } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/providers";
 import CookieBanner from "@/components/CookieBanner";
 import JuiceClickLayer from "@/components/juice/JuiceClickLayer";
+import { APP_LAUNCH_BOOTSTRAP_SCRIPT } from "@/lib/appLaunchBootstrap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -159,6 +161,17 @@ export default function RootLayout({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        {/* Pre-paint launch-eligibility bootstrap for AppSplashScreen — see
+            src/lib/appLaunchBootstrap.ts. Rendered via next/script with
+            strategy="beforeInteractive" so Next.js injects it into the
+            initial document and it runs before hydration. */}
+        <Script
+          id="pw-launch-bootstrap"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: APP_LAUNCH_BOOTSTRAP_SCRIPT,
+          }}
         />
       </head>
       <body

@@ -14,8 +14,10 @@ import { APP_LAUNCH_VERSION, APP_LAUNCH_VERSION_KEY, resolveAppLaunchMode, type 
  * Scoped entirely to the homepage by virtue of only ever being rendered from
  * HomeClient — there is no server-known "is this a launch" signal (the
  * homepage route is static), so candidacy is decided entirely in the
- * browser, both by the pre-paint bootstrap script below and by this
- * component's own hydrated effect, using the exact same URL-only rule.
+ * browser, both by the pre-paint bootstrap script emitted from the root
+ * layout (src/app/layout.tsx, sourced from src/lib/appLaunchBootstrap.ts)
+ * and by this component's own hydrated effect, using the exact same
+ * URL-only rule.
  *
  * `display-mode: standalone` and `navigator.standalone` are deliberately NOT
  * used to gate eligibility — real installed-TWA testing showed that signal
@@ -189,6 +191,11 @@ function markLaunchSkipped() {
 
 type BootstrapWindow = Window & { __PW_APP_LAUNCH_BOOTSTRAP_TIMEOUT__?: ReturnType<typeof setTimeout> };
 
+// Clears the no-hydration failsafe timer armed by the pre-paint bootstrap
+// script that the root layout (src/app/layout.tsx) renders via next/script.
+// Called the moment this component's own hydration effect runs, so the
+// bootstrap's forced-skip timer never fires and stomps over this
+// component's own control of the attribute.
 function clearBootstrapFailsafe() {
   try {
     const timeoutId = (window as BootstrapWindow).__PW_APP_LAUNCH_BOOTSTRAP_TIMEOUT__;
@@ -197,23 +204,6 @@ function clearBootstrapFailsafe() {
     // ignore
   }
 }
-
-// Inline, synchronous pre-paint bootstrap: written into the initial HTML
-// stream so it executes (and blocks parsing) before the rest of the document
-// is parsed or painted. It only ever writes one narrowly-scoped attribute —
-// no fetch, no auth, no session/local storage read, no display-mode check —
-// so an eligible URL shows the overlay's static first frame immediately
-// instead of the homepage flashing through first.
-//
-// Also arms an 8-second no-hydration failsafe: if the React component never
-// takes over (a JS failure, a slow/broken bundle), the player must not stay
-// trapped behind the static logo forever. AppSplashScreen clears this timer
-// itself the moment its own hydration effect runs.
-//
-// Exported (test-only use) so its exact behavior can be unit-tested directly
-// by evaluating the string, rather than only trusting a description of what
-// it's supposed to do.
-export const BOOTSTRAP_SCRIPT = `(function(){try{var candidate=false;try{candidate=window.location.pathname==='/'&&new URLSearchParams(window.location.search).get('source')==='pwa';}catch(e){}document.documentElement.dataset.pwLaunch=candidate?'pending':'skip';if(candidate){window.__PW_APP_LAUNCH_BOOTSTRAP_TIMEOUT__=setTimeout(function(){try{document.documentElement.dataset.pwLaunch='skip';}catch(e){}},8000);}}catch(e){try{document.documentElement.dataset.pwLaunch='skip';}catch(e2){}}})();`;
 
 export default function AppSplashScreen() {
   const reducedMotion = useAppReducedMotion();
@@ -414,7 +404,10 @@ export default function AppSplashScreen() {
   }, [mode, stage]);
 
   // Definitively ineligible, or the sequence has fully completed/failsafed —
-  // remove the whole overlay, script included, from the DOM.
+  // remove the whole overlay from the DOM. The pre-paint bootstrap script
+  // itself is not owned by this component and remains in the document head
+  // (rendered by src/app/layout.tsx), unaffected by this component's mount
+  // state.
   if (mode === "none" || stage === "finished") return null;
 
   const resolvedMode: AppLaunchMode = mode ?? "compact";
@@ -432,10 +425,6 @@ export default function AppSplashScreen() {
 
   return (
     <>
-      {/* Pre-paint bootstrap: always emitted (this component only ever
-          mounts on the homepage) — decides "pending" vs "skip" itself,
-          entirely client-side and URL-only, before hydration. */}
-      <script id="pw-launch-bootstrap" dangerouslySetInnerHTML={{ __html: BOOTSTRAP_SCRIPT }} />
       <style>{`
         html[data-pw-launch="pending"] [data-pw-launch-root] { display: flex !important; }
         @keyframes pw-launch-sweep {
