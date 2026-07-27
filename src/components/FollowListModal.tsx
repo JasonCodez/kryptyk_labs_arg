@@ -5,12 +5,78 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import type { ThemeConfig } from "@/lib/profileThemes";
 
-interface FollowListUser {
+export interface FollowListUser {
   id: string;
   name: string | null;
   image: string | null;
   isSelf: boolean;
   isFollowing: boolean;
+}
+
+export interface FollowListPayload {
+  users: FollowListUser[];
+  nextCursor: string | null;
+}
+
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function normalizeFollowListUser(value: unknown): FollowListUser | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { id, name, image, isSelf, isFollowing } = value;
+
+  if (
+    !isNonBlankString(id) ||
+    !isStringOrNull(name) ||
+    !isStringOrNull(image) ||
+    typeof isSelf !== "boolean" ||
+    typeof isFollowing !== "boolean"
+  ) {
+    return null;
+  }
+
+  return { id, name, image, isSelf, isFollowing };
+}
+
+export function normalizeFollowListPayload(value: unknown): FollowListPayload | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { users, nextCursor } = value;
+
+  if (!Array.isArray(users)) {
+    return null;
+  }
+
+  if (!isStringOrNull(nextCursor)) {
+    return null;
+  }
+
+  const normalizedCursor = isNonBlankString(nextCursor) ? nextCursor : null;
+
+  const normalizedUsers = users
+    .map(normalizeFollowListUser)
+    .filter((user): user is FollowListUser => user !== null);
+
+  return { users: normalizedUsers, nextCursor: normalizedCursor };
+}
+
+export function getFollowListDisplayName(user: Pick<FollowListUser, "name">): string {
+  const name = typeof user.name === "string" ? user.name.trim() : "";
+  return name || "Player";
 }
 
 export default function FollowListModal({
@@ -41,7 +107,12 @@ export default function FollowListModal({
     const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
     const res = await fetch(`/api/users/${userId}/${type}${query}`, { credentials: "same-origin" });
     if (!res.ok) throw new Error("Failed to load");
-    return res.json() as Promise<{ users: FollowListUser[]; nextCursor: string | null }>;
+    const data = await res.json();
+    const normalized = normalizeFollowListPayload(data);
+    if (!normalized) {
+      throw new Error("Failed to load");
+    }
+    return normalized;
   }, [userId, type]);
 
   useEffect(() => {
@@ -126,7 +197,9 @@ export default function FollowListModal({
               </p>
             ) : (
               <div className="space-y-1">
-                {users.map((u) => (
+                {users.map((u) => {
+                  const displayName = getFollowListDisplayName(u);
+                  return (
                   <div key={u.id} className="flex items-center gap-3 px-2 py-2 rounded-lg">
                     <Link
                       href={`/profile/${u.id}`}
@@ -137,7 +210,7 @@ export default function FollowListModal({
                         {u.image ? (
                           <img
                             src={u.image}
-                            alt={u.name ?? "Player"}
+                            alt={displayName}
                             className="w-full h-full object-cover"
                             onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = "/images/default-avatar.svg"; }}
                           />
@@ -145,7 +218,7 @@ export default function FollowListModal({
                           <span className="text-base">👤</span>
                         )}
                       </div>
-                      <span className="text-sm font-semibold text-white truncate">{u.name || "Player"}</span>
+                      <span className="text-sm font-semibold text-white truncate">{displayName}</span>
                     </Link>
                     {isAuthenticated && !u.isSelf && (
                       <button
@@ -160,7 +233,8 @@ export default function FollowListModal({
                       </button>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {nextCursor && (
                   <button
                     onClick={handleLoadMore}
