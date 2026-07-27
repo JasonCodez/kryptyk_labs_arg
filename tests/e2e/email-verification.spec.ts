@@ -111,6 +111,45 @@ test.describe("Verify-sent — initial state", () => {
   });
 });
 
+test.describe("Verify-sent — masking never exposes the complete local part", () => {
+  for (const testCase of [
+    { email: "a@example.test", masked: "****@example.test" },
+    { email: "ab@example.test", masked: "a****@example.test" },
+    { email: "abc@example.test", masked: "ab****@example.test" },
+    { email: "player@example.test", masked: "pl****@example.test" },
+  ]) {
+    test(`${testCase.email} never exposes its complete local part`, async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 710 });
+      const resend = await installResendFixture(page, { hold: true });
+
+      await page.goto(`/auth/verify-sent?email=${encodeURIComponent(testCase.email)}`, { waitUntil: "domcontentloaded" });
+
+      await expect(page.getByText(testCase.masked, { exact: true })).toBeVisible();
+
+      const visibleText = await page.locator("body").innerText();
+      expect(visibleText).not.toContain(testCase.email);
+
+      // Guard against the specific prior defect: for very short local
+      // parts, a match on the exact expected masked string alone wouldn't
+      // catch a regression back to "reveal everything, then mask" — e.g.
+      // "a****@example.test" does not contain "a@example.test", so that
+      // absence check alone is not proof. Explicitly rule out the
+      // one-character-too-much variants for the two shortest cases.
+      if (testCase.email === "a@example.test") {
+        expect(visibleText).not.toContain("a****@example.test");
+      }
+      if (testCase.email === "ab@example.test") {
+        expect(visibleText).not.toContain("ab****@example.test");
+      }
+
+      await expect(page.getByTestId("verify-sent-resend-button")).toBeVisible();
+      expect(resend.requests).toHaveLength(0);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+      await expectNoHorizontalOverflow(page);
+    });
+  }
+});
+
 test.describe("Verify-sent — missing email", () => {
   test("unavailable state appears, no resend button, correct links, no request", async ({ page }) => {
     const resend = await installResendFixture(page);

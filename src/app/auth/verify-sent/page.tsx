@@ -37,13 +37,23 @@ function normalizeVerificationEmail(raw: string | null): string | null {
   return trimmed;
 }
 
-// Shows the domain and at most the first two local-part characters — never
-// the full local part, and never rendered at all for an invalid email.
+// Shows the domain and at most the first two local-part characters — but
+// never all of them: at least one real local-part character always stays
+// hidden, even for very short local parts, so the visible prefix is never
+// the complete original local part. Never rendered at all for an invalid
+// email.
 function maskEmailForDisplay(normalizedEmail: string): string {
   const atIndex = normalizedEmail.indexOf("@");
   const local = normalizedEmail.slice(0, atIndex);
   const domain = normalizedEmail.slice(atIndex + 1);
-  const visible = local.slice(0, Math.min(2, local.length));
+
+  const visible =
+    local.length <= 1
+      ? ""
+      : local.length === 2
+        ? local.slice(0, 1)
+        : local.slice(0, 2);
+
   return `${visible}****@${domain}`;
 }
 
