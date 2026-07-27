@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, Trophy, Users, Heart } from "lucide-react";
+import { Search, Heart } from "lucide-react";
 
 interface PlayerProfile {
   id: string;
-  name: string;
-  email: string;
-  image: string;
-  isPremium?: boolean;
+  name: string | null;
+  image: string | null;
+  isPremium: boolean;
   createdAt: string;
   stats: {
     puzzlesSolved: number;
@@ -18,6 +17,58 @@ interface PlayerProfile {
     teamsCount: number;
     followers: number;
   };
+}
+
+function toSafeCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getPlayerDisplayName(player: PlayerProfile): string {
+  const normalizedName =
+    typeof player.name === "string" ? player.name.trim() : "";
+
+  return normalizedName || "Anonymous";
+}
+
+// Validates and rebuilds a single player row from only the public fields the
+// page actually uses — never spreads the raw object, so an unexpected
+// private field the API should never send can never be retained in state.
+function normalizePlayerProfile(value: unknown): PlayerProfile | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+
+  if (typeof v.id !== "string" || !v.id.trim()) return null;
+  if (typeof v.name !== "string" && v.name !== null) return null;
+  if (typeof v.image !== "string" && v.image !== null) return null;
+  if (typeof v.createdAt !== "string") return null;
+  if (typeof v.stats !== "object" || v.stats === null || Array.isArray(v.stats)) return null;
+
+  const stats = v.stats as Record<string, unknown>;
+
+  return {
+    id: v.id,
+    name: v.name,
+    image: v.image,
+    isPremium: v.isPremium === true,
+    createdAt: v.createdAt,
+    stats: {
+      puzzlesSolved: toSafeCount(stats.puzzlesSolved),
+      totalPoints: toSafeCount(stats.totalPoints),
+      achievementsCount: toSafeCount(stats.achievementsCount),
+      teamsCount: toSafeCount(stats.teamsCount),
+      followers: toSafeCount(stats.followers),
+    },
+  };
+}
+
+function normalizePlayersResponse(value: unknown): PlayerProfile[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+  const users = (value as Record<string, unknown>).users;
+  if (!Array.isArray(users)) return [];
+
+  return users
+    .map(normalizePlayerProfile)
+    .filter((player): player is PlayerProfile => player !== null);
 }
 
 export default function PlayersPage() {
@@ -42,8 +93,11 @@ export default function PlayersPage() {
       });
 
       const response = await fetch(`/api/users?${params}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch players");
+      }
       const data = await response.json();
-      setPlayers(data.users);
+      setPlayers(normalizePlayersResponse(data));
       setSkip(0);
     } catch (error) {
       console.error("Failed to fetch players:", error);
@@ -63,8 +117,12 @@ export default function PlayersPage() {
       });
 
       const response = await fetch(`/api/users?${params}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch players");
+      }
       const data = await response.json();
-      setPlayers((prev) => [...prev, ...data.users]);
+      const nextPlayers = normalizePlayersResponse(data);
+      setPlayers((previous) => [...previous, ...nextPlayers]);
       setSkip((prev) => prev + 20);
     } catch (error) {
       console.error("Failed to load more players:", error);
@@ -94,7 +152,8 @@ export default function PlayersPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search players by name or email..."
+              placeholder="Search players by name..."
+              aria-label="Search players by name"
               className="w-full pl-12 pr-4 py-3 rounded-lg text-white placeholder-gray-500"
               style={{
                 backgroundColor: 'rgba(56, 145, 166, 0.1)',
@@ -145,118 +204,117 @@ export default function PlayersPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {players.map((player) => (
-                <Link key={player.id} href={`/profile/${player.id}`}>
-                  <div
-                    className="h-full border rounded-lg p-6 hover:shadow-lg transition-all cursor-pointer group"
-                    style={{
-                      backgroundColor: 'rgba(56, 145, 166, 0.1)',
-                      borderColor: '#3891A6',
-                    }}
-                  >
-                    <div className="flex items-center gap-4 mb-4">
-                      {player.image ? (
-                        <img
-                          src={player.image}
-                          alt={player.name}
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                      ) : (
+              {players.map((player) => {
+                const displayName = getPlayerDisplayName(player);
+                return (
+                  <Link key={player.id} href={`/profile/${player.id}`}>
+                    <div
+                      className="h-full border rounded-lg p-6 hover:shadow-lg transition-all cursor-pointer group"
+                      style={{
+                        backgroundColor: 'rgba(56, 145, 166, 0.1)',
+                        borderColor: '#3891A6',
+                      }}
+                    >
+                      <div className="flex items-center gap-4 mb-4">
+                        {player.image ? (
+                          <img
+                            src={player.image}
+                            alt={`${displayName} avatar`}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="w-12 h-12 rounded-full flex items-center justify-center text-xl"
+                            style={{ backgroundColor: 'rgba(56, 145, 166, 0.3)' }}
+                            role="img"
+                            aria-label={`${displayName} avatar`}
+                          >
+                            👤
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-white truncate group-hover:opacity-80">
+                            {displayName}{player.isPremium ? " 💎" : ""}
+                          </h3>
+                        </div>
+                      </div>
+
+                      {/* Stats */}
+                      <div className="grid grid-cols-2 gap-3 mb-4">
                         <div
-                          className="w-12 h-12 rounded-full flex items-center justify-center text-xl"
-                          style={{ backgroundColor: 'rgba(56, 145, 166, 0.3)' }}
+                          className="rounded p-2"
+                          style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
                         >
-                          👤
+                          <p
+                            style={{ color: '#DDDBF1' }}
+                            className="text-xs mb-1"
+                          >
+                            Puzzles
+                          </p>
+                          <p className="font-bold text-white">
+                            {player.stats.puzzlesSolved}
+                          </p>
                         </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-white truncate group-hover:opacity-80">
-                          {player.name || "Anonymous"}{player.isPremium ? " 💎" : ""}
-                        </h3>
-                        <p
-                          style={{ color: '#DDDBF1' }}
-                          className="text-xs truncate"
+                        <div
+                          className="rounded p-2"
+                          style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
                         >
-                          {player.email}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div
-                        className="rounded p-2"
-                        style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
-                      >
-                        <p
-                          style={{ color: '#DDDBF1' }}
-                          className="text-xs mb-1"
+                          <p
+                            style={{ color: '#DDDBF1' }}
+                            className="text-xs mb-1"
+                          >
+                            Points
+                          </p>
+                          <p className="font-bold" style={{ color: '#FDE74C' }}>
+                            {player.stats.totalPoints}
+                          </p>
+                        </div>
+                        <div
+                          className="rounded p-2"
+                          style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
                         >
-                          Puzzles
-                        </p>
-                        <p className="font-bold text-white">
-                          {player.stats.puzzlesSolved}
-                        </p>
-                      </div>
-                      <div
-                        className="rounded p-2"
-                        style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
-                      >
-                        <p
-                          style={{ color: '#DDDBF1' }}
-                          className="text-xs mb-1"
+                          <p
+                            style={{ color: '#DDDBF1' }}
+                            className="text-xs mb-1"
+                          >
+                            Achievements
+                          </p>
+                          <p className="font-bold text-white">
+                            {player.stats.achievementsCount}
+                          </p>
+                        </div>
+                        <div
+                          className="rounded p-2"
+                          style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
                         >
-                          Points
-                        </p>
-                        <p className="font-bold" style={{ color: '#FDE74C' }}>
-                          {player.stats.totalPoints}
-                        </p>
-                      </div>
-                      <div
-                        className="rounded p-2"
-                        style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
-                      >
-                        <p
-                          style={{ color: '#DDDBF1' }}
-                          className="text-xs mb-1"
-                        >
-                          Achievements
-                        </p>
-                        <p className="font-bold text-white">
-                          {player.stats.achievementsCount}
-                        </p>
-                      </div>
-                      <div
-                        className="rounded p-2"
-                        style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
-                      >
-                        <p
-                          style={{ color: '#DDDBF1' }}
-                          className="text-xs mb-1"
-                        >
-                          Teams
-                        </p>
-                        <p className="font-bold text-white">
-                          {player.stats.teamsCount}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Social */}
-                    <div className="flex items-center justify-between pt-4 border-t" style={{ borderTopColor: 'rgba(56, 145, 166, 0.3)' }}>
-                      <div className="flex items-center gap-4 text-sm">
-                        <div className="flex items-center gap-1" style={{ color: '#EF4444' }}>
-                          <Heart className="w-4 h-4" />
-                          {player.stats.followers}
+                          <p
+                            style={{ color: '#DDDBF1' }}
+                            className="text-xs mb-1"
+                          >
+                            Teams
+                          </p>
+                          <p className="font-bold text-white">
+                            {player.stats.teamsCount}
+                          </p>
                         </div>
                       </div>
-                      <span style={{ color: '#FDE74C' }} className="group-hover:opacity-80 transition-colors">
-                        View →
-                      </span>
+
+                      {/* Social */}
+                      <div className="flex items-center justify-between pt-4 border-t" style={{ borderTopColor: 'rgba(56, 145, 166, 0.3)' }}>
+                        <div className="flex items-center gap-4 text-sm">
+                          <div className="flex items-center gap-1" style={{ color: '#EF4444' }}>
+                            <Heart className="w-4 h-4" />
+                            {player.stats.followers}
+                          </div>
+                        </div>
+                        <span style={{ color: '#FDE74C' }} className="group-hover:opacity-80 transition-colors">
+                          View →
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
 
             {/* Load More */}
