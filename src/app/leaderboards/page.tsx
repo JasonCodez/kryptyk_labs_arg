@@ -45,6 +45,113 @@ interface RewardTier {
   xp: number;
 }
 
+// ── Following leaderboard payload allowlist ─────────────────────────────
+
+export interface FollowingLeaderboardEntry {
+  userId: string;
+  userName: string | null;
+  userImage: string | null;
+  activeFlair: string;
+  isPremium: boolean;
+  totalPoints: number;
+  puzzlesSolved: number;
+  rank: number;
+  isCurrentUser: boolean;
+}
+
+export interface FollowingLeaderboardPayload {
+  entries: FollowingLeaderboardEntry[];
+  userRank: FollowingLeaderboardEntry | null;
+  followingCount: number;
+}
+
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export function normalizeFollowingLeaderboardEntry(value: unknown): FollowingLeaderboardEntry | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { userId, userName, userImage, activeFlair, isPremium, totalPoints, puzzlesSolved, rank, isCurrentUser } =
+    value;
+
+  if (!isNonBlankString(userId)) return null;
+  if (!isStringOrNull(userName)) return null;
+  if (!isStringOrNull(userImage)) return null;
+  if (typeof activeFlair !== "string") return null;
+  if (!isFiniteNumber(totalPoints)) return null;
+  if (!isFiniteNumber(puzzlesSolved) || puzzlesSolved < 0 || !Number.isInteger(puzzlesSolved)) return null;
+  if (!isFiniteNumber(rank) || rank < 1 || !Number.isInteger(rank)) return null;
+
+  // The server always sets these two flags explicitly as real booleans, and
+  // the page independently re-derives the authoritative isCurrentUser value
+  // from the viewer's own session ID wherever it matters for display — so a
+  // missing/non-boolean flag here defaults to "false" rather than dropping
+  // an otherwise-valid row.
+  const safeIsPremium = typeof isPremium === "boolean" ? isPremium : false;
+  const safeIsCurrentUser = typeof isCurrentUser === "boolean" ? isCurrentUser : false;
+
+  return {
+    userId,
+    userName,
+    userImage,
+    activeFlair,
+    isPremium: safeIsPremium,
+    totalPoints,
+    puzzlesSolved,
+    rank,
+    isCurrentUser: safeIsCurrentUser,
+  };
+}
+
+export function normalizeFollowingLeaderboardPayload(value: unknown): FollowingLeaderboardPayload | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { entries, userRank, followingCount } = value;
+
+  if (!Array.isArray(entries)) {
+    return null;
+  }
+
+  if (!isFiniteNumber(followingCount) || followingCount < 0 || !Number.isInteger(followingCount)) {
+    return null;
+  }
+
+  let normalizedUserRank: FollowingLeaderboardEntry | null = null;
+  if (userRank !== null) {
+    normalizedUserRank = normalizeFollowingLeaderboardEntry(userRank);
+    if (!normalizedUserRank) {
+      return null;
+    }
+  }
+
+  const normalizedEntries = entries
+    .map(normalizeFollowingLeaderboardEntry)
+    .filter((entry): entry is FollowingLeaderboardEntry => entry !== null);
+
+  return {
+    entries: normalizedEntries,
+    userRank: normalizedUserRank,
+    followingCount,
+  };
+}
+
 export function formatCountdown(endsAt: string, nowMs = Date.now()): string {
   const end = new Date(endsAt).getTime();
   if (!Number.isFinite(end)) return "Schedule unavailable";
@@ -260,9 +367,18 @@ export default function LeaderboardsPage() {
         if (!response.ok) throw new Error("request-failed");
         const data = await response.json();
         if (!shouldApply()) return;
-        setEntries(Array.isArray(data.entries) ? data.entries : []);
-        setUserRank(data.userRank ?? null);
-        if (tab === "following") setFollowingCount(typeof data.followingCount === "number" ? data.followingCount : 0);
+        if (tab === "following") {
+          const normalized = normalizeFollowingLeaderboardPayload(data);
+          if (!normalized) {
+            throw new Error("request-failed");
+          }
+          setEntries(normalized.entries);
+          setUserRank(normalized.userRank);
+          setFollowingCount(normalized.followingCount);
+        } else {
+          setEntries(Array.isArray(data.entries) ? data.entries : []);
+          setUserRank(data.userRank ?? null);
+        }
       }
       if (!shouldApply()) return;
       setLoadStatusSynced("ready");

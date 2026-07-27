@@ -1,7 +1,13 @@
 /** @jest-environment jsdom */
 import { StrictMode } from "react";
 import { act, render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
-import LeaderboardsPage, { formatCountdown, getCountdownUrgency } from "./page";
+import LeaderboardsPage, {
+  formatCountdown,
+  getCountdownUrgency,
+  normalizeFollowingLeaderboardEntry,
+  normalizeFollowingLeaderboardPayload,
+  type FollowingLeaderboardEntry,
+} from "./page";
 
 const mockUseSession = jest.fn();
 const mockPush = jest.fn();
@@ -928,7 +934,7 @@ describe("Leaderboards page — production-shaped Following empty state", () => 
 
   it("renders Following entries normally once followingCount is greater than 0", async () => {
     authenticate();
-    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2, isCurrentUser: false }];
     global.fetch = jest.fn((_url: string) => jsonResponse({
       entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1,
     })) as unknown as typeof fetch;
@@ -1160,7 +1166,7 @@ describe("Leaderboards page — Pass 14 rankings integration", () => {
 
   it("Following statistics use exact returned entries", async () => {
     authenticate();
-    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2, isCurrentUser: false }];
     global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1 })) as unknown as typeof fetch;
     render(<LeaderboardsPage />);
     await flush();
@@ -1197,7 +1203,7 @@ describe("Leaderboards page — Pass 14 rankings integration", () => {
 
   it("Following count greater than zero renders the list", async () => {
     authenticate();
-    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2, isCurrentUser: false }];
     global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1 })) as unknown as typeof fetch;
     render(<LeaderboardsPage />);
     await flush();
@@ -1208,7 +1214,7 @@ describe("Leaderboards page — Pass 14 rankings integration", () => {
 
   it("Following count greater than zero renders statistics", async () => {
     authenticate();
-    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2 }];
+    const entries = [FOLLOWING_SELF_ENTRY, { ...GLOBAL_ENTRY, userId: "u9", userName: "Zed", rank: 2, isCurrentUser: false }];
     global.fetch = jest.fn((_url: string) => jsonResponse({ entries, userRank: FOLLOWING_SELF_ENTRY, followingCount: 1 })) as unknown as typeof fetch;
     render(<LeaderboardsPage />);
     await flush();
@@ -1354,5 +1360,346 @@ describe("formatCountdown / getCountdownUrgency", () => {
     expect(getCountdownUrgency(new Date(now + 72 * 3600_000).toISOString(), now)).toBe("normal");
     expect(getCountdownUrgency(new Date(now + 24 * 3600_000).toISOString(), now)).toBe("warning");
     expect(getCountdownUrgency(new Date(now + 3 * 3600_000).toISOString(), now)).toBe("critical");
+  });
+});
+
+// ── Following leaderboard payload normalization (Pass 25C4) ────────────────
+
+const FOLLOWING_VALID_ENTRY: FollowingLeaderboardEntry = {
+  userId: "player-2",
+  userName: "Alpha Player",
+  userImage: null,
+  activeFlair: "none",
+  isPremium: false,
+  totalPoints: 250,
+  puzzlesSolved: 5,
+  rank: 1,
+  isCurrentUser: false,
+};
+
+const FOLLOWING_VALID_PAYLOAD = {
+  entries: [FOLLOWING_VALID_ENTRY],
+  userRank: null,
+  followingCount: 1,
+};
+
+describe("normalizeFollowingLeaderboardEntry", () => {
+  test("non-object value returns null", () => {
+    expect(normalizeFollowingLeaderboardEntry("nope")).toBeNull();
+    expect(normalizeFollowingLeaderboardEntry(null)).toBeNull();
+    expect(normalizeFollowingLeaderboardEntry([FOLLOWING_VALID_ENTRY])).toBeNull();
+  });
+
+  test("valid entry normalizes correctly", () => {
+    expect(normalizeFollowingLeaderboardEntry(FOLLOWING_VALID_ENTRY)).toEqual(FOLLOWING_VALID_ENTRY);
+  });
+
+  test("blank userId is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, userId: "" })).toBeNull();
+  });
+
+  test("invalid userName is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, userName: 42 })).toBeNull();
+  });
+
+  test("invalid userImage is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, userImage: 42 })).toBeNull();
+  });
+
+  test("invalid activeFlair is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, activeFlair: null })).toBeNull();
+  });
+
+  test("non-boolean or missing isPremium defaults to false instead of dropping the row", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, isPremium: "yes" })).toEqual({
+      ...FOLLOWING_VALID_ENTRY,
+      isPremium: false,
+    });
+    const { isPremium: _omit, ...withoutFlag } = FOLLOWING_VALID_ENTRY;
+    expect(normalizeFollowingLeaderboardEntry(withoutFlag)).toEqual({
+      ...FOLLOWING_VALID_ENTRY,
+      isPremium: false,
+    });
+  });
+
+  test("invalid totalPoints is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, totalPoints: "10" })).toBeNull();
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, totalPoints: Infinity })).toBeNull();
+  });
+
+  test("invalid puzzlesSolved is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, puzzlesSolved: -1 })).toBeNull();
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, puzzlesSolved: 1.5 })).toBeNull();
+  });
+
+  test("invalid rank is dropped", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, rank: 0 })).toBeNull();
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, rank: 1.5 })).toBeNull();
+  });
+
+  test("non-boolean or missing isCurrentUser defaults to false instead of dropping the row", () => {
+    expect(normalizeFollowingLeaderboardEntry({ ...FOLLOWING_VALID_ENTRY, isCurrentUser: 1 })).toEqual({
+      ...FOLLOWING_VALID_ENTRY,
+      isCurrentUser: false,
+    });
+    const { isCurrentUser: _omit, ...withoutFlag } = FOLLOWING_VALID_ENTRY;
+    expect(normalizeFollowingLeaderboardEntry(withoutFlag)).toEqual({
+      ...FOLLOWING_VALID_ENTRY,
+      isCurrentUser: false,
+    });
+  });
+
+  test("unknown private fields do not survive", () => {
+    const contaminated = {
+      ...FOLLOWING_VALID_ENTRY,
+      email: "leaked.private@example.test",
+      purchasedPoints: 999,
+      role: "admin",
+      isHidden: false,
+      isBot: false,
+    };
+    const result = normalizeFollowingLeaderboardEntry(contaminated);
+    expect(result).toEqual(FOLLOWING_VALID_ENTRY);
+    expect(JSON.stringify(result)).not.toMatch(/private@example\.test|purchasedPoints|role|isHidden|isBot/);
+  });
+});
+
+describe("normalizeFollowingLeaderboardPayload", () => {
+  test("non-object top-level value returns null", () => {
+    expect(normalizeFollowingLeaderboardPayload("nope")).toBeNull();
+    expect(normalizeFollowingLeaderboardPayload(null)).toBeNull();
+    expect(normalizeFollowingLeaderboardPayload(undefined)).toBeNull();
+  });
+
+  test("array top-level value returns null", () => {
+    expect(normalizeFollowingLeaderboardPayload([FOLLOWING_VALID_PAYLOAD])).toBeNull();
+  });
+
+  test("missing or non-array entries returns null", () => {
+    expect(normalizeFollowingLeaderboardPayload({ userRank: null, followingCount: 0 })).toBeNull();
+    expect(normalizeFollowingLeaderboardPayload({ entries: "nope", userRank: null, followingCount: 0 })).toBeNull();
+  });
+
+  test("invalid following count returns null", () => {
+    expect(normalizeFollowingLeaderboardPayload({ ...FOLLOWING_VALID_PAYLOAD, followingCount: "1" })).toBeNull();
+  });
+
+  test("negative following count returns null", () => {
+    expect(normalizeFollowingLeaderboardPayload({ ...FOLLOWING_VALID_PAYLOAD, followingCount: -1 })).toBeNull();
+  });
+
+  test("non-integer following count returns null", () => {
+    expect(normalizeFollowingLeaderboardPayload({ ...FOLLOWING_VALID_PAYLOAD, followingCount: 1.5 })).toBeNull();
+  });
+
+  test("invalid non-null userRank rejects the entire payload", () => {
+    expect(
+      normalizeFollowingLeaderboardPayload({ ...FOLLOWING_VALID_PAYLOAD, userRank: { bad: true } })
+    ).toBeNull();
+  });
+
+  test("malformed entries are dropped while valid order is preserved", () => {
+    const second = { ...FOLLOWING_VALID_ENTRY, userId: "player-3", rank: 2 };
+    const result = normalizeFollowingLeaderboardPayload({
+      entries: [null, "invalid", FOLLOWING_VALID_ENTRY, { bad: true }, second],
+      userRank: null,
+      followingCount: 2,
+    });
+    expect(result?.entries.map((e) => e.userId)).toEqual(["player-2", "player-3"]);
+  });
+
+  test("input objects are not mutated", () => {
+    const original = JSON.parse(JSON.stringify(FOLLOWING_VALID_PAYLOAD));
+    normalizeFollowingLeaderboardPayload(FOLLOWING_VALID_PAYLOAD);
+    expect(FOLLOWING_VALID_PAYLOAD).toEqual(original);
+  });
+
+  test("valid payload normalizes correctly", () => {
+    expect(normalizeFollowingLeaderboardPayload(FOLLOWING_VALID_PAYLOAD)).toEqual(FOLLOWING_VALID_PAYLOAD);
+  });
+
+  test("privacy: unexpected private fields at every depth do not survive", () => {
+    const contaminated = {
+      email: "root.private@example.test",
+      accountId: "root-account-private",
+      entries: [
+        {
+          ...FOLLOWING_VALID_ENTRY,
+          email: "entry.private@example.test",
+          purchasedPoints: 999,
+          role: "admin",
+          isHidden: false,
+          isBot: false,
+          provider: "credentials",
+          token: "secret-token",
+          nested: { email: "nested.private@example.test" },
+        },
+      ],
+      userRank: {
+        ...FOLLOWING_VALID_ENTRY,
+        userId: "me",
+        isCurrentUser: true,
+        email: "rank.private@example.test",
+        purchasedPoints: 500,
+      },
+      followingCount: 1,
+    };
+
+    const result = normalizeFollowingLeaderboardPayload(contaminated);
+    expect(result?.entries).toEqual([FOLLOWING_VALID_ENTRY]);
+    expect(result?.userRank).toEqual({ ...FOLLOWING_VALID_ENTRY, userId: "me", isCurrentUser: true });
+    expect(Object.keys(result!)).toEqual(["entries", "userRank", "followingCount"]);
+    expect(JSON.stringify(result)).not.toMatch(/private@example\.test|root-account|purchasedPoints|"role"|"provider"|"token"/);
+  });
+});
+
+describe("Leaderboards page — Following tab payload hardening (Pass 25C4)", () => {
+  it("renders a contaminated but valid Following payload without leaking private fields", async () => {
+    authenticate();
+    const contaminatedPayload = {
+      entries: [
+        FOLLOWING_VALID_ENTRY,
+        { ...FOLLOWING_VALID_ENTRY, userId: "me", userName: "Me", rank: 2, isCurrentUser: true },
+      ],
+      userRank: { ...FOLLOWING_VALID_ENTRY, userId: "me", userName: "Me", rank: 2, isCurrentUser: true },
+      followingCount: 1,
+      email: "root.private@example.test",
+    };
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/following") return jsonResponse(contaminatedPayload);
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+    expect(screen.getByText("#2")).toBeTruthy();
+    expect(screen.getByText("Following 1 player")).toBeTruthy();
+    expect(screen.queryByText(/private@example\.test/)).toBeNull();
+    expect(screen.getByText("Your Following Rank")).toBeTruthy();
+  });
+
+  it("shows the existing error panel for a malformed top-level Following payload", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/following") return jsonResponse({ notTheRightShape: true, email: "leak.private@example.test" });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+
+    expect(screen.getByText("We couldn’t load this leaderboard")).toBeTruthy();
+    expect(screen.queryByText(/leak\.private@example\.test/)).toBeNull();
+    expect(screen.queryByText(/notTheRightShape/)).toBeNull();
+  });
+
+  it("drops malformed entries inside an otherwise valid payload while staying ready", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/following") {
+        return jsonResponse({
+          entries: [FOLLOWING_VALID_ENTRY, { bad: true }, null, "invalid"],
+          userRank: null,
+          followingCount: 3,
+        });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+    expect(screen.queryByText("We couldn’t load this leaderboard")).toBeNull();
+    // followingCount uses the validated top-level value (3), not entries.length (1).
+    expect(screen.getByText("Following 3 players")).toBeTruthy();
+  });
+
+  it("rejects a malformed non-null userRank and shows the error panel", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/following") {
+        return jsonResponse({
+          entries: [FOLLOWING_VALID_ENTRY],
+          userRank: { totallyWrong: true },
+          followingCount: 1,
+        });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+
+    expect(screen.getByText("We couldn’t load this leaderboard")).toBeTruthy();
+  });
+
+  it("background refresh applies refreshed valid public values without leaking private fields", async () => {
+    authenticate();
+    let followingCall = 0;
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/following") {
+        followingCall += 1;
+        if (followingCall === 1) {
+          return jsonResponse({ entries: [FOLLOWING_VALID_ENTRY], userRank: null, followingCount: 1 });
+        }
+        return jsonResponse({
+          entries: [{ ...FOLLOWING_VALID_ENTRY, userName: "Alpha-Updated", email: "refresh.private@example.test" }],
+          userRank: null,
+          followingCount: 1,
+        });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Alpha-Updated")).toBeTruthy();
+    expect(screen.queryByText(/refresh\.private@example\.test/)).toBeNull();
+  });
+
+  it("a failed background refresh preserves previous rankings and shows the refresh warning", async () => {
+    authenticate();
+    let followingCall = 0;
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/following") {
+        followingCall += 1;
+        if (followingCall === 1) {
+          return jsonResponse({ entries: [FOLLOWING_VALID_ENTRY], userRank: null, followingCount: 1 });
+        }
+        return jsonResponse({ notTheRightShape: true, email: "malformed-refresh.private@example.test" });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+    expect(screen.getByText(/Couldn.t refresh just now/)).toBeTruthy();
+    expect(screen.queryByText(/malformed-refresh\.private@example\.test/)).toBeNull();
   });
 });
