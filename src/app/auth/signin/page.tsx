@@ -40,38 +40,6 @@ export async function initiateGoogleSignIn({
   }
 }
 
-// Shares the exact same shape as GoogleInitiationOptions — both social
-// helpers are always called with the SAME inFlightRef instance (see
-// oauthInFlightRef below) so Google and Facebook can never both be in
-// flight at once.
-type SocialInitiationOptions = GoogleInitiationOptions;
-
-export async function initiateFacebookSignIn({
-  mountedRef,
-  inFlightRef,
-  setConnecting,
-  setError,
-  start,
-}: SocialInitiationOptions) {
-  if (!mountedRef.current || inFlightRef.current) return;
-
-  inFlightRef.current = true;
-  setConnecting(true);
-  setError("");
-
-  try {
-    await start();
-    // A resolved initiation starts browser navigation. Keep the guard and
-    // pending state active until this page unmounts.
-  } catch {
-    if (!mountedRef.current) return;
-
-    inFlightRef.current = false;
-    setConnecting(false);
-    setError("Facebook sign-in could not be started. Please try again.");
-  }
-}
-
 function SignInForm() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -85,12 +53,8 @@ function SignInForm() {
   const isLoggedOut = searchParams.get("logout") === "true";
   const [mounted, setMounted] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
-  const [facebookAvailable, setFacebookAvailable] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
-  const [facebookConnecting, setFacebookConnecting] = useState(false);
-  // Shared by both social providers so the user can never start Google and
-  // Facebook OAuth at the same time.
-  const oauthInFlightRef = useRef(false);
+  const googleInFlightRef = useRef(false);
   const mountedRef = useRef(false);
 
   useEffect(() => {
@@ -101,22 +65,19 @@ function SignInForm() {
     };
   }, []);
 
-  // Only show a social action when NextAuth actually has that provider
-  // registered (i.e. its CLIENT_ID/SECRET are configured server-side) —
-  // never assume availability from a public env var. On discovery failure,
-  // hide both social actions safely.
+  // Only show the Google action when NextAuth actually has the provider
+  // registered (i.e. GOOGLE_CLIENT_ID/SECRET are configured server-side) —
+  // never assume availability from a public env var.
   useEffect(() => {
     let cancelled = false;
     getProviders()
       .then((discovered) => {
         if (cancelled) return;
         setGoogleAvailable(Boolean(discovered?.google));
-        setFacebookAvailable(Boolean(discovered?.facebook));
       })
       .catch(() => {
         if (cancelled) return;
         setGoogleAvailable(false);
-        setFacebookAvailable(false);
       });
     return () => {
       cancelled = true;
@@ -126,22 +87,12 @@ function SignInForm() {
   async function handleGoogleSignIn() {
     await initiateGoogleSignIn({
       mountedRef,
-      inFlightRef: oauthInFlightRef,
+      inFlightRef: googleInFlightRef,
       setConnecting: setGoogleConnecting,
       setError,
       // Beta mode still lands on the normal dashboard once auth.ts approves
       // the account; there is no separate beta callback destination.
       start: () => signIn("google", { callbackUrl: "/dashboard" }),
-    });
-  }
-
-  async function handleFacebookSignIn() {
-    await initiateFacebookSignIn({
-      mountedRef,
-      inFlightRef: oauthInFlightRef,
-      setConnecting: setFacebookConnecting,
-      setError,
-      start: () => signIn("facebook", { callbackUrl: "/dashboard" }),
     });
   }
 
@@ -269,61 +220,31 @@ function SignInForm() {
               </div>
             )}
 
-            {(googleAvailable || facebookAvailable) && (
+            {googleAvailable && (
               <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
-                  {googleAvailable && (
-                    <button
-                      type="button"
-                      data-testid="google-signin-button"
-                      onClick={handleGoogleSignIn}
-                      disabled={googleConnecting || facebookConnecting}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                        width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
-                        background: "#FFFFFF", color: "#1F1F1F", border: "1px solid #747775",
-                        fontWeight: 700, fontSize: 14, cursor: (googleConnecting || facebookConnecting) ? "not-allowed" : "pointer",
-                        opacity: (googleConnecting || facebookConnecting) ? 0.7 : 1,
-                      }}
-                    >
-                      <Image
-                        src="/images/google-g-logo.svg"
-                        alt=""
-                        aria-hidden="true"
-                        width={18}
-                        height={18}
-                        style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
-                      />
-                      <span>{googleConnecting ? "Connecting to Google…" : "Continue with Google"}</span>
-                    </button>
-                  )}
-
-                  {facebookAvailable && (
-                    <button
-                      type="button"
-                      data-testid="facebook-signin-button"
-                      onClick={handleFacebookSignIn}
-                      disabled={googleConnecting || facebookConnecting}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                        width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
-                        background: "#1877F2", color: "#FFFFFF", border: "none",
-                        fontWeight: 700, fontSize: 14, cursor: (googleConnecting || facebookConnecting) ? "not-allowed" : "pointer",
-                        opacity: (googleConnecting || facebookConnecting) ? 0.7 : 1,
-                      }}
-                    >
-                      <Image
-                        src="/images/facebook-f-logo.svg"
-                        alt=""
-                        aria-hidden="true"
-                        width={18}
-                        height={18}
-                        style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
-                      />
-                      <span>{facebookConnecting ? "Connecting to Facebook…" : "Continue with Facebook"}</span>
-                    </button>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  data-testid="google-signin-button"
+                  onClick={handleGoogleSignIn}
+                  disabled={googleConnecting}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                    width: "100%", minHeight: 44, padding: "12px 16px", borderRadius: 10,
+                    background: "#FFFFFF", color: "#1F1F1F", border: "1px solid #747775",
+                    fontWeight: 700, fontSize: 14, cursor: googleConnecting ? "not-allowed" : "pointer",
+                    opacity: googleConnecting ? 0.7 : 1, marginBottom: 20,
+                  }}
+                >
+                  <Image
+                    src="/images/google-g-logo.svg"
+                    alt=""
+                    aria-hidden="true"
+                    width={18}
+                    height={18}
+                    style={{ display: "block", width: 18, height: 18, flexShrink: 0 }}
+                  />
+                  <span>{googleConnecting ? "Connecting to Google…" : "Continue with Google"}</span>
+                </button>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
                   <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />

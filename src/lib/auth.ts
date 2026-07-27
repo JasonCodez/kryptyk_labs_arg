@@ -2,7 +2,6 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GitHubProvider from "next-auth/providers/github";
 import GoogleProvider, { type GoogleProfile } from "next-auth/providers/google";
-import FacebookProvider, { type FacebookProfile } from "next-auth/providers/facebook";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
@@ -23,13 +22,6 @@ const requireEmailVerification =
 // otherwise silently register a broken provider.
 export function hasGoogleOAuthConfiguration(env: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim());
-}
-
-// Facebook is only registered as a provider once both server-side variables
-// are actually present — mirrors hasGoogleOAuthConfiguration above. Never
-// read from a public (NEXT_PUBLIC_*) env var here.
-export function hasFacebookOAuthConfiguration(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.FACEBOOK_CLIENT_ID?.trim() && env.FACEBOOK_CLIENT_SECRET?.trim());
 }
 
 // A missing display name must always resolve to `null`, never to an empty
@@ -79,44 +71,6 @@ export function mapGoogleProfile(profile: GoogleProfile) {
     name: null,
     image: picture,
     emailVerified: verified ? new Date() : null,
-  };
-}
-
-// The installed Facebook provider's profile shape nests the picture URL
-// several levels deep (`picture.data.url`) and is only loosely typed
-// (FacebookProfile extends Record<string, any>), so every level is read
-// defensively before being passed through the same HTTPS-only validation
-// used for Google — no separate, weaker validation path for Facebook.
-export function normalizeFacebookProfileImage(profile: FacebookProfile): string | null {
-  const url = profile?.picture?.data?.url;
-  return normalizeGoogleProfileImage(url);
-}
-
-// Mirrors mapGoogleProfile's reasoning: Facebook's own display name is not
-// unique across users and must never be written into this project's unique
-// User.name column, so a brand-new Facebook user always gets `name: null`
-// and goes through the same mandatory profile-completion flow as a new
-// Google user. `id: profile.id` (Facebook's own stable account ID) is used
-// so NextAuth links the Account row by Facebook's own ID — never a random
-// ID, and never the email itself. Facebook has no equivalent of Google's
-// `email_verified` signal, so `emailVerified` is left `null` here; the
-// signIn callback below only requires a nonblank email for Facebook, and
-// never claims Facebook supplied a verified-email guarantee it did not.
-export function mapFacebookProfile(profile: FacebookProfile) {
-  const accountId = typeof profile.id === "string" ? profile.id.trim() : "";
-  if (!accountId) {
-    throw new Error("Facebook profile is missing an account identifier.");
-  }
-
-  const email = typeof profile.email === "string" ? profile.email.trim().toLowerCase() : "";
-  const picture = normalizeFacebookProfileImage(profile);
-
-  return {
-    id: accountId,
-    email,
-    name: null,
-    image: picture,
-    emailVerified: null,
   };
 }
 
@@ -201,16 +155,6 @@ if (hasGoogleOAuthConfiguration()) {
   );
 }
 
-if (hasFacebookOAuthConfiguration()) {
-  providers.push(
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_CLIENT_ID!.trim(),
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!.trim(),
-      profile: mapFacebookProfile,
-    })
-  );
-}
-
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: {
@@ -263,10 +207,9 @@ export const authOptions: NextAuthOptions = {
     },
     // Fires once, immediately after the adapter persists a brand-new OAuth
     // user (Credentials sign-up goes through /api/auth/register instead and
-    // never reaches this event). A first-time allowlisted Google or Facebook
-    // sign-in is approved by the signIn callback below before the row even
-    // exists, so this is where that approval actually gets written to the
-    // new row.
+    // never reaches this event). A first-time allowlisted Google sign-in is
+    // approved by the signIn callback below before the row even exists, so
+    // this is where that approval actually gets written to the new row.
     async createUser({ user }) {
       const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
       if (!email || !isBetaAllowlistedEmail(email)) return;
@@ -285,29 +228,16 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       // Credentials access control already happened inside authorize()
       // above; do not re-check or duplicate it here.
-      const oauthProvider = account?.provider;
-      if (oauthProvider !== "google" && oauthProvider !== "facebook") {
+      if (account?.provider !== "google") {
         return true;
       }
 
+      const googleProfile = profile as GoogleProfile | undefined;
       const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+      const verified = googleProfile?.email_verified === true;
 
-      if (oauthProvider === "google") {
-        // Google alone supplies a verified-email signal — this requirement
-        // must never be weakened or extended to a provider that doesn't
-        // actually make the same guarantee.
-        const googleProfile = profile as GoogleProfile | undefined;
-        const verified = googleProfile?.email_verified === true;
-        if (!email || !verified) {
-          return false;
-        }
-      } else {
-        // Facebook has no equivalent verified-email signal — only a
-        // nonblank email is required. Never treat this as equivalent to
-        // Google's email_verified guarantee.
-        if (!email) {
-          return false;
-        }
+      if (!email || !verified) {
+        return false;
       }
 
       if (!BETA_ONLY_MODE) {
@@ -321,7 +251,7 @@ export const authOptions: NextAuthOptions = {
           select: { role: true, betaApproved: true },
         });
       } catch (err) {
-        console.error("Failed to look up existing user during OAuth sign-in:", err);
+        console.error("Failed to look up existing user during Google sign-in:", err);
         return false;
       }
 
@@ -334,7 +264,7 @@ export const authOptions: NextAuthOptions = {
                 data: { betaApproved: true },
               });
             } catch (err) {
-              console.error("Failed to persist beta approval for existing OAuth user:", err);
+              console.error("Failed to persist beta approval for existing Google user:", err);
             }
           }
           return true;
@@ -342,9 +272,9 @@ export const authOptions: NextAuthOptions = {
         return false;
       }
 
-      // Brand-new OAuth user (Google or Facebook): allow only when
-      // allowlisted. The resulting row's betaApproved flag is set by the
-      // createUser event above, once the adapter has actually created it.
+      // Brand-new Google user: allow only when allowlisted. The resulting
+      // row's betaApproved flag is set by the createUser event above, once
+      // the adapter has actually created it.
       return isBetaAllowlistedEmail(email);
     },
     async jwt({ token, user, trigger }) {

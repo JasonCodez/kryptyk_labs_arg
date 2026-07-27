@@ -112,24 +112,12 @@ interface AuthFixtureOptions {
 async function installAuthFixture(page: Page, options: AuthFixtureOptions = {}) {
   const includeGoogle = options.includeGoogle ?? true;
   const googleSigninRequests: Array<{ method: string; postData: string | null }> = [];
-  const facebookSigninRequests: Array<{ method: string; postData: string | null }> = [];
   const credentialsCallbackRequests: Array<{ method: string; postData: string | null }> = [];
   const heldGoogleSignin: Route[] = [];
 
   await page.route("**/api/auth/session", (route) => fulfill(route, {}));
   await page.route("**/api/auth/csrf", (route) => fulfill(route, { csrfToken: "test-csrf-token" }));
   await page.route("**/api/auth/providers", (route) => fulfill(route, providersPayload(includeGoogle)));
-
-  // Provider discovery never returns Facebook in these Google-focused tests,
-  // so no Facebook button should ever render or POST here — tracked so
-  // tests can assert zero Facebook requests occurred.
-  await page.route("**/api/auth/signin/facebook", async (route) => {
-    facebookSigninRequests.push({
-      method: route.request().method(),
-      postData: route.request().postData(),
-    });
-    await fulfill(route, { url: "/auth/signin?facebook-init=1" });
-  });
 
   await page.route("**/api/auth/signin/google", async (route) => {
     googleSigninRequests.push({
@@ -161,7 +149,6 @@ async function installAuthFixture(page: Page, options: AuthFixtureOptions = {}) 
 
   return {
     googleSigninRequests,
-    facebookSigninRequests,
     credentialsCallbackRequests,
     releaseGoogleSignin: async () => {
       for (const route of heldGoogleSignin.splice(0)) {
@@ -203,8 +190,6 @@ test.describe("Google auth — provider present", () => {
     expect(box!.height).toBeGreaterThanOrEqual(43.9);
     await expect(page.getByText("or continue with email")).toBeVisible();
     await expectGoogleLogoRendersCleanly(page, googleButton);
-    // Provider discovery in this fixture never includes Facebook.
-    await expect(page.getByTestId("facebook-signin-button")).toHaveCount(0);
 
     await googleButton.click();
     await expect(page).toHaveURL(/\/auth\/signin\?google-init=1$/);
@@ -213,7 +198,6 @@ test.describe("Google auth — provider present", () => {
     expect(fixture.googleSigninRequests[0].postData).toContain("callbackUrl=%2Fdashboard");
     // The click must never also submit the Credentials form.
     expect(fixture.credentialsCallbackRequests.length).toBe(0);
-    expect(fixture.facebookSigninRequests).toHaveLength(0);
 
     await expectNoHorizontalOverflow(page);
 
@@ -228,7 +212,6 @@ test.describe("Google auth — provider present", () => {
     await expectGoogleLogoRendersCleanly(page, signUpButton);
     await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
     await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
-    await expect(page.getByTestId("facebook-signup-button")).toHaveCount(0);
 
     await signUpButton.click();
     await expect(page).toHaveURL(/\/auth\/signin\?google-init=1$/);
@@ -236,7 +219,6 @@ test.describe("Google auth — provider present", () => {
     expect(fixture.googleSigninRequests[1].method).toBe("POST");
     expect(fixture.googleSigninRequests[1].postData).toContain("callbackUrl=%2Fdashboard");
     expect(fixture.credentialsCallbackRequests).toHaveLength(0);
-    expect(fixture.facebookSigninRequests).toHaveLength(0);
 
     await expectNoHorizontalOverflow(page);
   });
@@ -352,23 +334,23 @@ test.describe("Google auth — error page", () => {
     await page.goto("/auth/error?error=OAuthAccountNotLinked", { waitUntil: "domcontentloaded" });
     await dismissCookieBanner(page);
     await expect(page.getByTestId("auth-error-message")).toHaveText(
-      "An account already exists with this email. Sign in using the method you originally used. Account linking will be added from Account Settings in a later pass."
+      "An account already exists with this email. Sign in with your email and password first. Google account linking will be added from Account Settings in a later pass."
     );
 
     await page.goto("/auth/error?error=AccessDenied", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("auth-error-message")).toHaveText("This social account is not currently approved for PuzzleWarz access.");
+    await expect(page.getByTestId("auth-error-message")).toHaveText("This Google account is not currently approved for PuzzleWarz access.");
 
     await page.goto("/auth/error?error=Configuration", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("auth-error-message")).toHaveText(
-      "Social sign-in is temporarily unavailable. Please use email and password or try again later."
+      "Google sign-in is temporarily unavailable. Please use email and password or try again later."
     );
 
     await page.goto("/auth/error?error=SomeTotallyUnknownCode", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("auth-error-message")).toHaveText("Social sign-in could not be completed. Please try again.");
+    await expect(page.getByTestId("auth-error-message")).toHaveText("Google sign-in could not be completed. Please try again.");
 
     // Arbitrary query content must never be rendered directly.
     await page.goto("/auth/error?error=%3Cscript%3Ealert(1)%3C%2Fscript%3E", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("auth-error-message")).toHaveText("Social sign-in could not be completed. Please try again.");
+    await expect(page.getByTestId("auth-error-message")).toHaveText("Google sign-in could not be completed. Please try again.");
     await expect(page.locator("script:has-text('alert(1)')")).toHaveCount(0);
 
     await page.getByRole("link", { name: "Back to sign in" }).click();

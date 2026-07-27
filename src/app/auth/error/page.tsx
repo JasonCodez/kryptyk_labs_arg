@@ -7,18 +7,14 @@ import Link from "next/link";
 // A fixed message per known NextAuth error code — the raw `error` query
 // value is never rendered directly, so an attacker cannot inject arbitrary
 // text (or a misleading link) into this page via the URL.
-//
-// Provider-neutral: the error code alone does not reliably identify whether
-// Google or Facebook initiated the flow, so these messages never name a
-// specific provider.
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   OAuthAccountNotLinked:
-    "An account already exists with this email. Sign in using the method you originally used. Account linking will be added from Account Settings in a later pass.",
-  AccessDenied: "This social account is not currently approved for PuzzleWarz access.",
-  OAuthSignin: "Social sign-in could not be completed. Please try again.",
-  OAuthCallback: "Social sign-in could not be completed. Please try again.",
-  Configuration: "Social sign-in is temporarily unavailable. Please use email and password or try again later.",
-  Default: "Social sign-in could not be completed. Please try again.",
+    "An account already exists with this email. Sign in with your email and password first. Google account linking will be added from Account Settings in a later pass.",
+  AccessDenied: "This Google account is not currently approved for PuzzleWarz access.",
+  OAuthSignin: "Google sign-in could not be completed. Please try again.",
+  OAuthCallback: "Google sign-in could not be completed. Please try again.",
+  Configuration: "Google sign-in is temporarily unavailable. Please use email and password or try again later.",
+  Default: "Google sign-in could not be completed. Please try again.",
 };
 
 export function getAuthErrorMessage(code: string | null | undefined): string {
