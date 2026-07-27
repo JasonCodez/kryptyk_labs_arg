@@ -6,28 +6,126 @@ import { z } from "zod";
 import { validateSameOrigin } from "@/lib/requestSecurity";
 
 // GET user's pending invitations
+
+interface InvitationQueryRow {
+  id: string;
+  teamId: string;
+  status: string;
+  expiresAt: Date | string;
+  createdAt: Date | string;
+  team: {
+    id: string;
+    name: string;
+    description: string | null;
+    members: Array<{
+      id: string;
+      user: {
+        id: string;
+        name: string | null;
+        image: string | null;
+      } | null;
+    }>;
+  };
+}
+
+interface SafePendingInvitation {
+  id: string;
+  teamId: string;
+  status: string;
+  expiresAt: Date | string;
+  createdAt: Date | string;
+  team: {
+    id: string;
+    name: string;
+    description: string | null;
+    members: Array<{
+      id: string;
+      user: {
+        id: string;
+        name: string | null;
+        image: string | null;
+      };
+    }>;
+  };
+}
+
+function hasSafeMemberUser(
+  member: InvitationQueryRow["team"]["members"][number]
+): member is InvitationQueryRow["team"]["members"][number] & {
+  user: { id: string; name: string | null; image: string | null };
+} {
+  return (
+    !!member &&
+    typeof member.id === "string" &&
+    !!member.user &&
+    typeof member.user.id === "string"
+  );
+}
+
+function serializePendingInvitation(
+  invitation: InvitationQueryRow
+): SafePendingInvitation {
+  return {
+    id: invitation.id,
+    teamId: invitation.teamId,
+    status: invitation.status,
+    expiresAt: invitation.expiresAt,
+    createdAt: invitation.createdAt,
+    team: {
+      id: invitation.team.id,
+      name: invitation.team.name,
+      description: invitation.team.description,
+      members: invitation.team.members
+        .filter(hasSafeMemberUser)
+        .map((member) => ({
+          id: member.id,
+          user: {
+            id: member.user.id,
+            name: member.user.name,
+            image: member.user.image,
+          },
+        })),
+    },
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+
+    const sessionUserId = (session?.user as { id?: unknown } | undefined)?.id;
+    let requesterUserId =
+      typeof sessionUserId === "string" && sessionUserId.trim()
+        ? sessionUserId.trim()
+        : null;
+
+    const sessionEmail =
+      typeof session?.user?.email === "string" ? session.user.email.trim() : "";
+
+    if (!requesterUserId && !sessionEmail) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
+    if (!requesterUserId) {
+      const requester = await prisma.user.findUnique({
+        where: { email: sessionEmail },
+        select: { id: true },
+      });
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      if (!requester) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      requesterUserId = requester.id;
     }
 
     const invitations = await prisma.teamInvite.findMany({
       where: {
-        userId: user.id,
+        userId: requesterUserId,
         status: "pending",
         // Applications are stored as teamInvite rows where invitedBy === userId.
         // Only show leader-sent invites in the invitations tray.
-        NOT: { invitedBy: user.id },
+        NOT: { invitedBy: requesterUserId },
       },
       include: {
         team: {
@@ -49,18 +147,15 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        user: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(invitations);
+    return NextResponse.json(
+      (invitations as unknown as InvitationQueryRow[]).map(
+        serializePendingInvitation
+      )
+    );
   } catch (error) {
     console.error("Failed to fetch invitations:", error);
     return NextResponse.json(

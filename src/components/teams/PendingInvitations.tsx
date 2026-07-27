@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { format, formatDistance } from "date-fns";
 import { Mail, CheckCircle, X, Clock, Users } from "lucide-react";
 
-interface TeamInvitation {
+export interface TeamInvitation {
   id: string;
   teamId: string;
   status: string;
@@ -13,16 +13,119 @@ interface TeamInvitation {
   team: {
     id: string;
     name: string;
-    description?: string;
+    description: string | null;
     members: Array<{
       id: string;
       user: {
         id: string;
-        name?: string;
-        image?: string;
+        name: string | null;
+        image: string | null;
       };
     }>;
   };
+}
+
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isValidDateString(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(new Date(value).getTime());
+}
+
+function normalizeTeamMember(
+  value: unknown
+): TeamInvitation["team"]["members"][number] | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { id, user } = value;
+
+  if (!isNonBlankString(id) || !isNonArrayObject(user)) {
+    return null;
+  }
+
+  const { id: userId, name, image } = user;
+
+  if (!isNonBlankString(userId) || !isStringOrNull(name) || !isStringOrNull(image)) {
+    return null;
+  }
+
+  return {
+    id,
+    user: {
+      id: userId,
+      name,
+      image,
+    },
+  };
+}
+
+function normalizeTeamInvitation(value: unknown): TeamInvitation | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { id, teamId, status, expiresAt, createdAt, team } = value;
+
+  if (
+    !isNonBlankString(id) ||
+    !isNonBlankString(teamId) ||
+    typeof status !== "string" ||
+    !isValidDateString(expiresAt) ||
+    !isValidDateString(createdAt) ||
+    !isNonArrayObject(team)
+  ) {
+    return null;
+  }
+
+  const { id: tId, name, description, members } = team;
+
+  if (
+    !isNonBlankString(tId) ||
+    typeof name !== "string" ||
+    !isStringOrNull(description) ||
+    !Array.isArray(members)
+  ) {
+    return null;
+  }
+
+  const safeMembers = members
+    .map(normalizeTeamMember)
+    .filter((member): member is TeamInvitation["team"]["members"][number] => member !== null);
+
+  return {
+    id,
+    teamId,
+    status,
+    expiresAt,
+    createdAt,
+    team: {
+      id: tId,
+      name,
+      description,
+      members: safeMembers,
+    },
+  };
+}
+
+export function normalizePendingInvitations(value: unknown): TeamInvitation[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(normalizeTeamInvitation)
+    .filter((invitation): invitation is TeamInvitation => invitation !== null);
 }
 
 interface PendingInvitationsProps {
@@ -48,8 +151,13 @@ export default function PendingInvitations({
     setLoading(true);
     try {
       const response = await fetch("/api/teams/invitations");
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch invitations");
+      }
+
       const data = await response.json();
-      setInvitations(Array.isArray(data) ? data : []);
+      setInvitations(normalizePendingInvitations(data));
     } catch (error) {
       console.error("Failed to fetch invitations:", error);
       setInvitations([]);
@@ -71,8 +179,8 @@ export default function PendingInvitations({
       });
 
       if (response.ok) {
-        setInvitations(
-          invitations.filter((inv) => inv.id !== invitationId)
+        setInvitations((current) =>
+          current.filter((inv) => inv.id !== invitationId)
         );
         // Refresh the list
         await fetchInvitations();

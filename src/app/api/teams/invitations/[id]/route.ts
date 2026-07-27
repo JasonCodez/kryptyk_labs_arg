@@ -11,6 +11,15 @@ const ActionSchema = z.object({
   action: z.enum(["accept", "decline"]),
 });
 
+function getJoiningPlayerDisplayName(value: unknown): string {
+  if (typeof value !== "string") {
+    return "A player";
+  }
+
+  const trimmed = value.trim();
+  return trimmed || "A player";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const sameOriginError = validateSameOrigin(request);
@@ -19,16 +28,31 @@ export async function POST(request: NextRequest) {
     }
 
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+
+    const sessionUserId = (session?.user as { id?: unknown } | undefined)?.id;
+    let requesterUserId =
+      typeof sessionUserId === "string" && sessionUserId.trim()
+        ? sessionUserId.trim()
+        : null;
+
+    const sessionEmail =
+      typeof session?.user?.email === "string" ? session.user.email.trim() : "";
+
+    if (!requesterUserId && !sessionEmail) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
+    if (!requesterUserId) {
+      const requester = await prisma.user.findUnique({
+        where: { email: sessionEmail },
+        select: { id: true },
+      });
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      if (!requester) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      requesterUserId = requester.id;
     }
 
     const body = await request.json();
@@ -47,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify invitation is for this user
-    if (invitation.userId !== user.id) {
+    if (invitation.userId !== requesterUserId) {
       return NextResponse.json(
         { error: "This invitation is not for you" },
         { status: 403 }
@@ -75,7 +99,7 @@ export async function POST(request: NextRequest) {
       // Check if already a member
       const existingMember = await prisma.teamMember.findUnique({
         where: {
-          teamId_userId: { teamId: invitation.teamId, userId: user.id },
+          teamId_userId: { teamId: invitation.teamId, userId: requesterUserId },
         },
       });
 
@@ -95,7 +119,7 @@ export async function POST(request: NextRequest) {
       await prisma.teamMember.create({
         data: {
           teamId: invitation.teamId,
-          userId: user.id,
+          userId: requesterUserId,
           role: "member",
         },
       });
@@ -112,13 +136,17 @@ export async function POST(request: NextRequest) {
       });
 
       if (team) {
+        const joiningPlayerDisplayName = getJoiningPlayerDisplayName(
+          session?.user?.name
+        );
+
         await notifyTeamUpdate(
           teamMembers.map((m: { userId: string }) => m.userId),
           {
             teamId: invitation.teamId,
             teamName: team.name,
             updateTitle: "New Team Member",
-            updateMessage: `${user.name || user.email} has joined the team!`,
+            updateMessage: `${joiningPlayerDisplayName} has joined the team!`,
           }
         );
       }
