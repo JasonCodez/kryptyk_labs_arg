@@ -4,6 +4,15 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { validateSameOrigin } from "@/lib/requestSecurity";
 
+function getFollowerDisplayName(value: unknown): string {
+  if (typeof value !== "string") {
+    return "A player";
+  }
+
+  const trimmed = value.trim();
+  return trimmed || "A player";
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -16,22 +25,37 @@ export async function POST(
 
     const { id } = await params;
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+
+    const sessionUserId = (session?.user as { id?: unknown } | undefined)?.id;
+    let requesterUserId =
+      typeof sessionUserId === "string" && sessionUserId.trim()
+        ? sessionUserId.trim()
+        : null;
+
+    const sessionEmail =
+      typeof session?.user?.email === "string" ? session.user.email.trim() : "";
+
+    if (!requesterUserId && !sessionEmail) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const currentUser = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
+    if (!requesterUserId) {
+      const requester = await prisma.user.findUnique({
+        where: { email: sessionEmail },
+        select: { id: true },
+      });
 
-    if (!currentUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      if (!requester) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      requesterUserId = requester.id;
     }
 
     const targetUserId = id;
 
     // Can't follow yourself
-    if (currentUser.id === targetUserId) {
+    if (requesterUserId === targetUserId) {
       return NextResponse.json(
         { error: "Cannot follow yourself" },
         { status: 400 }
@@ -41,6 +65,7 @@ export async function POST(
     // Check if target user exists
     const targetUser = await prisma.user.findUnique({
       where: { id: targetUserId },
+      select: { id: true },
     });
 
     if (!targetUser) {
@@ -57,21 +82,22 @@ export async function POST(
       // Create follow relationship
       await prisma.follow.create({
         data: {
-          followerId: currentUser.id,
+          followerId: requesterUserId,
           followingId: targetUserId,
         },
       });
 
       // Send notification to the followed user
       try {
+        const followerDisplayName = getFollowerDisplayName(session?.user?.name);
         const { createNotification } = await import("@/lib/notification-service");
         await createNotification({
           userId: targetUserId,
           type: "system",
           title: "New Follower!",
-          message: `${currentUser.name || currentUser.email || "Someone"} started following you!`,
+          message: `${followerDisplayName} started following you!`,
           icon: "👥",
-          relatedId: currentUser.id,
+          relatedId: requesterUserId,
         });
       } catch (e) {
         console.error("Failed to send follow notification:", e);
@@ -83,7 +109,7 @@ export async function POST(
       await prisma.follow.delete({
         where: {
           followerId_followingId: {
-            followerId: currentUser.id,
+            followerId: requesterUserId,
             followingId: targetUserId,
           },
         },
