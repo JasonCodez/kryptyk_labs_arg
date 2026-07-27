@@ -190,39 +190,70 @@ describe("GET /api/users/[id]/followers", () => {
     expect(JSON.stringify(body)).not.toMatch(/"role"|"provider"|"token"|"userId"|"invitedBy"/);
   });
 
-  test("unexpected hidden row is dropped as defense in depth", async () => {
-    mockedGetServerSession.mockResolvedValueOnce(null);
-    mockedPrisma.follow.findMany.mockResolvedValueOnce([
-      followRow({ id: "follow-row-1", follower: { id: "follower-1", name: "Visible", image: null } }),
-      followRow({
-        id: "follow-row-2",
-        follower: { id: "follower-2", name: "Hidden", image: null, isHidden: true },
-      }),
-    ]);
+  test("unexpected hidden row is dropped as defense in depth and excluded from the viewer-following query", async () => {
+    mockedGetServerSession.mockResolvedValueOnce({ user: { id: "viewer-1" } } as any);
+    mockedPrisma.follow.findMany
+      .mockResolvedValueOnce([
+        followRow({ id: "follow-row-1", follower: { id: "follower-visible", name: "Visible", image: null } }),
+        followRow({
+          id: "follow-row-2",
+          follower: { id: "follower-hidden", name: "Hidden", image: null, isHidden: true },
+        }),
+      ])
+      .mockResolvedValueOnce([]);
 
     const response = await GET(buildRequest(), context());
     const body = await response.json();
 
-    expect(body.users.map((u: { id: string }) => u.id)).toEqual(["follower-1"]);
+    expect(body.users.map((u: { id: string }) => u.id)).toEqual(["follower-visible"]);
+
+    const viewerFollowCall = mockedPrisma.follow.findMany.mock.calls[1][0];
+    expect(viewerFollowCall.where.followingId.in).toEqual(["follower-visible"]);
+    expect(viewerFollowCall.where.followingId.in).not.toContain("follower-hidden");
   });
 
-  test("malformed rows are dropped while valid rows are preserved in order", async () => {
-    mockedGetServerSession.mockResolvedValueOnce(null);
-    mockedPrisma.follow.findMany.mockResolvedValueOnce([
-      null,
-      "invalid",
-      { id: "follow-row-missing", follower: null },
-      { id: "follow-row-blank-id", follower: { id: "", name: "Blank", image: null } },
-      { id: "follow-row-bad-name", follower: { id: "f-bad-name", name: 42, image: null } },
-      { id: "follow-row-bad-image", follower: { id: "f-bad-image", name: "Name", image: 42 } },
-      { id: "follow-row-1", follower: { id: "follower-1", name: "First", image: null } },
-      { id: "follow-row-2", follower: { id: "follower-2", name: "Second", image: null } },
-    ]);
+  test("malformed rows are dropped while valid rows are preserved in order, and excluded from the viewer-following query", async () => {
+    mockedGetServerSession.mockResolvedValueOnce({ user: { id: "viewer-1" } } as any);
+    mockedPrisma.follow.findMany
+      .mockResolvedValueOnce([
+        null,
+        "invalid",
+        { id: "follow-row-missing", follower: null },
+        { id: "follow-row-blank-id", follower: { id: "", name: "Blank", image: null } },
+        { id: "follow-row-bad-name", follower: { id: "f-bad-name", name: 42, image: null } },
+        { id: "follow-row-bad-image", follower: { id: "f-bad-image", name: "Name", image: 42 } },
+        { id: "follow-row-1", follower: { id: "follower-1", name: "First", image: null } },
+        { id: "follow-row-2", follower: { id: "follower-2", name: "Second", image: null } },
+      ])
+      .mockResolvedValueOnce([]);
 
     const response = await GET(buildRequest(), context());
     const body = await response.json();
 
     expect(body.users.map((u: { id: string }) => u.id)).toEqual(["follower-1", "follower-2"]);
+
+    const viewerFollowCall = mockedPrisma.follow.findMany.mock.calls[1][0];
+    expect(viewerFollowCall.where.followingId.in).toEqual(["follower-1", "follower-2"]);
+    expect(viewerFollowCall.where.followingId.in).not.toEqual(
+      expect.arrayContaining(["f-bad-name", "f-bad-image", ""])
+    );
+  });
+
+  test("no viewer-following query runs when every row is malformed or hidden", async () => {
+    mockedGetServerSession.mockResolvedValueOnce({ user: { id: "viewer-1" } } as any);
+    mockedPrisma.follow.findMany.mockResolvedValueOnce([
+      null,
+      { id: "follow-row-missing", follower: null },
+      { id: "follow-row-blank-id", follower: { id: "", name: "Blank", image: null } },
+      { id: "follow-row-hidden", follower: { id: "follower-hidden", name: "Hidden", image: null, isHidden: true } },
+    ]);
+
+    const response = await GET(buildRequest(), context());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.users).toEqual([]);
+    expect(mockedPrisma.follow.findMany).toHaveBeenCalledTimes(1);
   });
 
   test("pagination returns exactly 30 users and the expected cursor", async () => {

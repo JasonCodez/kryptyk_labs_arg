@@ -14,6 +14,12 @@ interface PublicFollowListUser {
   isFollowing: boolean;
 }
 
+interface SafeFollowListIdentity {
+  id: string;
+  name: string | null;
+  image: string | null;
+}
+
 function isNonArrayObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -26,11 +32,7 @@ function isStringOrNull(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-function serializeFollowListUser(
-  value: unknown,
-  viewerId: string | null,
-  viewerFollowingSet: Set<string>
-): PublicFollowListUser | null {
+function normalizeFollowListIdentity(value: unknown): SafeFollowListIdentity | null {
   if (!isNonArrayObject(value)) {
     return null;
   }
@@ -42,21 +44,15 @@ function serializeFollowListUser(
 
   const { id, name, image, isHidden } = following;
 
-  if (!isNonBlankString(id) || !isStringOrNull(name) || !isStringOrNull(image)) {
-    return null;
-  }
-
   if (isHidden === true) {
     return null;
   }
 
-  return {
-    id,
-    name,
-    image: normalizeUserImageUrl(image),
-    isSelf: viewerId === id,
-    isFollowing: viewerFollowingSet.has(id),
-  };
+  if (!isNonBlankString(id) || !isStringOrNull(name) || !isStringOrNull(image)) {
+    return null;
+  }
+
+  return { id, name, image };
 }
 
 export async function GET(
@@ -107,9 +103,11 @@ export async function GET(
     const hasMore = rows.length > PAGE_SIZE;
     const page = rows.slice(0, PAGE_SIZE);
 
-    const visibleUserIds = page
-      .map((row) => (isNonArrayObject(row) && isNonArrayObject(row.following) ? row.following.id : null))
-      .filter((id): id is string => isNonBlankString(id));
+    const safePageUsers = page
+      .map(normalizeFollowListIdentity)
+      .filter((user): user is SafeFollowListIdentity => user !== null);
+
+    const visibleUserIds = safePageUsers.map((user) => user.id);
 
     let viewerFollowingSet = new Set<string>();
     if (viewerId && visibleUserIds.length > 0) {
@@ -123,9 +121,13 @@ export async function GET(
       viewerFollowingSet = new Set(viewerFollows.map((f) => f.followingId));
     }
 
-    const users = page
-      .map((row) => serializeFollowListUser(row, viewerId, viewerFollowingSet))
-      .filter((user): user is PublicFollowListUser => user !== null);
+    const users: PublicFollowListUser[] = safePageUsers.map((user) => ({
+      id: user.id,
+      name: user.name,
+      image: normalizeUserImageUrl(user.image),
+      isSelf: viewerId === user.id,
+      isFollowing: viewerFollowingSet.has(user.id),
+    }));
 
     return NextResponse.json({
       users,
