@@ -1942,12 +1942,15 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     expect(screen.queryByTestId("team-member-remove-me")).toBeNull();
   });
 
-  it("9. session email matching hides self-removal", async () => {
+  it("9. a coincidentally matching email alone does not hide self-removal", async () => {
+    // The client no longer carries member emails at all, so self-detection
+    // is ID-only: a session with a different ID must not hide another
+    // member's removal control, even if an unrelated email happens to match.
     mockUseSession.mockReturnValue({ status: "authenticated", data: { user: { id: "different-id", email: "me@example.test" } } });
     buildFetchMock({ membership: () => jsonResponse({ role: "admin" }) });
     render(<TeamDetailPage />);
     await flush();
-    expect(screen.queryByTestId("team-member-remove-me")).toBeNull();
+    expect(screen.queryByTestId("team-member-remove-me")).not.toBeNull();
   });
 
   it("10. empty member ID receives no removal control", async () => {
@@ -1972,7 +1975,10 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     expect(screen.getByText("Are you sure you want to remove Bob from the team?")).toBeTruthy();
   });
 
-  it("13. email fallback appears when the name is absent", async () => {
+  it("13. Member fallback appears when the name is absent (email is no longer part of the client contract)", async () => {
+    // The client no longer retains a member email field at all (privacy
+    // fix), so an absent name now falls straight through to the "Member"
+    // fallback rather than a since-removed email fallback.
     authenticated();
     buildFetchMock({
       membership: () => jsonResponse({ role: "admin" }),
@@ -1982,7 +1988,8 @@ describe("Team Detail page — member removal (Pass 16B.3.1)", () => {
     await flush();
     fireEvent.click(screen.getByTestId("team-member-remove-u2"));
     await flush();
-    expect(screen.getByText("Are you sure you want to remove bob@example.test from the team?")).toBeTruthy();
+    expect(screen.getByText("Are you sure you want to remove Member from the team?")).toBeTruthy();
+    expect(screen.queryByText(/bob@example\.test/)).toBeNull();
   });
 
   it("14. Member fallback appears when both are absent", async () => {

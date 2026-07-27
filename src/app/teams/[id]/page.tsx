@@ -34,7 +34,6 @@ interface TeamMember {
   user: {
     id: string;
     name: string | null;
-    email: string | null | undefined;
     image: string | null;
   };
   role: string;
@@ -62,7 +61,6 @@ function isTeamMember(value: unknown): value is TeamMember {
     typeof u.id === "string" &&
     (typeof u.name === "string" || u.name === null) &&
     (typeof u.image === "string" || u.image === null) &&
-    (typeof u.email === "string" || u.email === null || u.email === undefined) &&
     typeof m.role === "string"
   );
 }
@@ -91,7 +89,16 @@ function normalizeTeamPayload(value: unknown): Team | null {
     isPublic: v.isPublic,
     activeTheme: typeof v.activeTheme === "string" && v.activeTheme.trim() ? v.activeTheme : "default",
     createdAt: typeof v.createdAt === "string" ? v.createdAt : null,
-    members: v.members.filter(isTeamMember),
+    members: v.members
+      .filter(isTeamMember)
+      .map((member) => ({
+        ...member,
+        user: {
+          id: member.user.id,
+          name: member.user.name,
+          image: member.user.image,
+        },
+      })),
   };
 }
 
@@ -837,9 +844,7 @@ export default function TeamDetailPage() {
     const memberId = member.user.id?.trim();
     if (!memberId) return null;
     const sessionUserId = (session?.user as { id?: string } | undefined)?.id?.trim();
-    const sessionEmail = session?.user?.email?.trim().toLowerCase();
-    const memberEmail = member.user.email?.trim().toLowerCase();
-    const isSelf = (!!sessionUserId && sessionUserId === memberId) || (!!sessionEmail && !!memberEmail && sessionEmail === memberEmail);
+    const isSelf = !!sessionUserId && sessionUserId === memberId;
     if (isSelf) return null;
     return (
       <TeamMemberRemoveButton
