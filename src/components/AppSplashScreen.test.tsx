@@ -406,20 +406,19 @@ describe("AppSplashScreen — full sequence", () => {
   });
 });
 
-describe("AppSplashScreen — compact sequence", () => {
-  it("skips tile assembly, still shows spinner + rotating message, and exits within the compact hard maximum", () => {
+describe("AppSplashScreen — repeat-visit stored version no longer downgrades the sequence", () => {
+  it("a stored version matching the current one still plays the full tile-assembly sequence, not a leaner repeat-visit one", () => {
     setStoredVersion(APP_LAUNCH_VERSION);
     render(<AppSplashScreen />);
     completeHandoff();
 
     const overlay = screen.getByTestId("app-launch-sequence");
-    expect(overlay.getAttribute("data-launch-mode")).toBe("compact");
-    expect(screen.queryByTestId("app-launch-tiles")).toBeNull();
+    expect(overlay.getAttribute("data-launch-mode")).toBe("full");
+    expect(screen.getByTestId("app-launch-tiles")).toBeTruthy();
     expect(screen.getByTestId("app-launch-logo")).toBeTruthy();
-    expect(screen.queryByTestId("app-launch-segments")).toBeNull();
 
     act(() => {
-      jest.advanceTimersByTime(400);
+      jest.advanceTimersByTime(800);
     });
     expect(screen.getByTestId("app-launch-spinner")).toBeTruthy();
     expect(screen.getByTestId("app-launch-message")).toBeTruthy();
@@ -455,7 +454,7 @@ describe("AppSplashScreen — reduced-motion sequence", () => {
 });
 
 describe("AppSplashScreen — local-storage failure", () => {
-  it("falls back to compact mode, never full, and never throws", () => {
+  it("still plays the full sequence and never throws", () => {
     const getSpy = jest.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) => {
       if (key === APP_LAUNCH_VERSION_KEY) throw new Error("local storage unavailable");
       return null;
@@ -463,7 +462,7 @@ describe("AppSplashScreen — local-storage failure", () => {
 
     expect(() => render(<AppSplashScreen />)).not.toThrow();
     completeHandoff();
-    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-mode")).toBe("compact");
+    expect(screen.getByTestId("app-launch-sequence").getAttribute("data-launch-mode")).toBe("full");
 
     getSpy.mockRestore();
   });

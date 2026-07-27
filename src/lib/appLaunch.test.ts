@@ -21,8 +21,8 @@ describe("resolveAppLaunchMode", () => {
     expect(resolveAppLaunchMode({ ...BASE, reducedMotion: true })).toBe("reduced");
   });
 
-  it("local storage unavailable returns compact", () => {
-    expect(resolveAppLaunchMode({ ...BASE, localStorageAvailable: false })).toBe("compact");
+  it("local storage unavailable still returns full — storage state no longer changes the mode", () => {
+    expect(resolveAppLaunchMode({ ...BASE, localStorageAvailable: false })).toBe("full");
   });
 
   it("missing stored version returns full", () => {
@@ -33,8 +33,8 @@ describe("resolveAppLaunchMode", () => {
     expect(resolveAppLaunchMode({ ...BASE, storedVersion: "1" })).toBe("full");
   });
 
-  it('stored version "2" returns compact', () => {
-    expect(resolveAppLaunchMode({ ...BASE, storedVersion: APP_LAUNCH_VERSION })).toBe("compact");
+  it("a stored version matching the current one still returns full — every eligible launch gets the full sequence, not just the first", () => {
+    expect(resolveAppLaunchMode({ ...BASE, storedVersion: APP_LAUNCH_VERSION })).toBe("full");
     expect(APP_LAUNCH_VERSION).toBe("2");
   });
 

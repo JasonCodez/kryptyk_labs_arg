@@ -22,11 +22,16 @@ export interface AppLaunchInputs {
   reducedMotion: boolean;
 }
 
+// storedVersion/localStorageAvailable remain part of AppLaunchInputs (and are
+// still read/persisted by AppSplashScreen) but no longer affect the decision
+// below — every eligible launch now gets the full tile-assembly animation,
+// not just the first one per device. "compact" is kept as a valid
+// AppLaunchMode (and AppSplashScreen still knows how to render it) purely so
+// that mode isn't a breaking type change if a leaner repeat-visit mode is
+// reintroduced later; resolveAppLaunchMode itself never produces it anymore.
 export function resolveAppLaunchMode({
   launchCandidate,
   alreadyPlayedInDocument,
-  storedVersion,
-  localStorageAvailable,
   reducedMotion,
 }: AppLaunchInputs): AppLaunchMode {
   if (!launchCandidate) return "none";
@@ -35,9 +40,5 @@ export function resolveAppLaunchMode({
   // "has this app launch already been shown."
   if (alreadyPlayedInDocument) return "none";
   if (reducedMotion) return "reduced";
-  // A storage failure must fail open to the safe compact presentation, never
-  // to "full" (which would wrongly assume a first-time visitor).
-  if (!localStorageAvailable) return "compact";
-  if (storedVersion !== APP_LAUNCH_VERSION) return "full";
-  return "compact";
+  return "full";
 }

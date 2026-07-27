@@ -134,8 +134,8 @@ export default function HomeClient() {
 
       {/* ── Footer ── */}
       <PageContainer as="footer" size="content" className="py-10" style={{ borderTop: "1px solid var(--pw-border-subtle)" }} data-testid="home-footer-container">
-        <div className="flex flex-wrap justify-between items-start gap-8 mb-6">
-          <div>
+        <div className="flex flex-wrap justify-center sm:justify-between items-center sm:items-start text-center sm:text-left gap-8 mb-6">
+          <div className="flex flex-col items-center sm:items-start">
             <div className="inline-flex items-center gap-2 mb-2">
               <img src="/images/puzzle_warz_logo.png" alt="PuzzleWarz" className="h-7 w-auto" />
               {/* Wordmark = trophy gold, the brand's reward/identity role. */}
@@ -145,14 +145,14 @@ export default function HomeClient() {
               Daily puzzles first. Full catalog right behind them.
             </p>
           </div>
-          <div className="flex gap-10 flex-wrap text-sm">
-            <div className="flex flex-col gap-2.5">
+          <div className="flex gap-10 flex-wrap justify-center sm:justify-start text-sm">
+            <div className="flex flex-col items-center sm:items-start gap-2.5">
               <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-text-secondary)" }}>Play</p>
               {[["Daily Puzzles", "/daily"], ["Puzzle Library", "/puzzles"], ["Leaderboards", "/leaderboards"], ["Warz Battles", competeHref]].map(([label, href]) => (
                 <Link key={label} href={href} className="transition-colors hover:text-white" style={{ color: "var(--pw-text-secondary)" }}>{label}</Link>
               ))}
             </div>
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col items-center sm:items-start gap-2.5">
               <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--pw-text-secondary)" }}>Account</p>
               {[["Sign Up Free", "/auth/register"], ["Sign In", "/auth/signin"], ["Profile", "/profile"]].map(([label, href]) => (
                 <Link key={label} href={href} className="transition-colors hover:text-white" style={{ color: "var(--pw-text-secondary)" }}>{label}</Link>
@@ -160,7 +160,7 @@ export default function HomeClient() {
             </div>
           </div>
         </div>
-        <div className="pt-4 flex flex-wrap justify-between items-center gap-2" style={{ borderTop: "1px solid var(--pw-border-subtle)" }}>
+        <div className="pt-4 flex flex-wrap justify-center sm:justify-between items-center text-center gap-2" style={{ borderTop: "1px solid var(--pw-border-subtle)" }}>
           <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>&copy; 2026 PuzzleWarz &middot; All rights reserved</p>
           <p className="text-xs" style={{ color: "var(--pw-text-muted)" }}>Start fast. Stay sharp. Finish strong.</p>
         </div>
