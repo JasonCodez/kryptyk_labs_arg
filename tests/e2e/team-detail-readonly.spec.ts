@@ -538,7 +538,10 @@ test.describe("Team Detail — admin applications management (Pass 16B.2)", () =
     expect(rowIds).toBe(2);
     const rowTexts = await panel.locator("[data-testid^='team-application-row-']").allTextContents();
     expect(rowTexts[0]).toContain("First Applicant");
-    expect(rowTexts[1]).toContain("second@example.test"); // name fallback: null name -> email
+    // Applicant emails are no longer part of the client contract, so a null
+    // name falls through to the "Applicant" fallback rather than the email.
+    expect(rowTexts[1]).toContain("Applicant");
+    expect(rowTexts[1]).not.toContain("second@example.test");
 
     // Dates render without "Invalid Date".
     expect(rowTexts.join(" ")).not.toMatch(/Invalid Date/);

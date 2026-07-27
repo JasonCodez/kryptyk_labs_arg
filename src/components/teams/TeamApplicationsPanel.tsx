@@ -11,7 +11,6 @@ export interface TeamApplication {
   user: {
     id: string | null;
     name: string | null;
-    email: string | null;
     image: string | null;
   } | null;
 }
@@ -54,7 +53,6 @@ function normalizeApplicationUser(value: unknown): TeamApplication["user"] {
   return {
     id,
     name: normalizeDisplayString(v.name),
-    email: normalizeDisplayString(v.email),
     image: normalizeDisplayString(v.image),
   };
 }
@@ -80,10 +78,7 @@ export function normalizeTeamApplications(value: unknown): TeamApplication[] {
 
 export function getApplicationDisplayName(application: TeamApplication): string {
   const name = application.user?.name;
-  if (isNonEmptyString(name)) return name.trim();
-  const email = application.user?.email;
-  if (isNonEmptyString(email)) return email.trim();
-  return "Applicant";
+  return isNonEmptyString(name) ? name.trim() : "Applicant";
 }
 
 export function formatApplicationDate(createdAt: string | null): string {

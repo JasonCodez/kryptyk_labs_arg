@@ -18,7 +18,7 @@ function makeApplication(overrides: Partial<TeamApplication> = {}): TeamApplicat
   return {
     id: "app-1",
     createdAt: "2026-01-14T12:00:00.000Z",
-    user: { id: "u1", name: "Jane Applicant", email: "jane@example.test", image: null },
+    user: { id: "u1", name: "Jane Applicant", image: null },
     ...overrides,
   };
 }
@@ -84,7 +84,7 @@ describe("normalizeTeamApplications", () => {
   });
 
   it("input objects are not mutated", () => {
-    const entry = { id: "a", createdAt: null, user: { id: "u", name: "  Bob  ", email: null, image: null } };
+    const entry = { id: "a", createdAt: null, user: { id: "u", name: "  Bob  ", image: null } };
     const input = [entry];
     normalizeTeamApplications(input);
     expect(entry.user!.name).toBe("  Bob  ");
@@ -98,16 +98,16 @@ describe("normalizeTeamApplications", () => {
 
   it("valid user fields normalize correctly", () => {
     const result = normalizeTeamApplications([
-      { id: "a", createdAt: null, user: { id: "u1", name: "  Jane  ", email: " jane@test.test ", image: " http://x/y.png " } },
+      { id: "a", createdAt: null, user: { id: "u1", name: "  Jane  ", image: " http://x/y.png " } },
     ])[0]!;
-    expect(result.user).toEqual({ id: "u1", name: "Jane", email: "jane@test.test", image: "http://x/y.png" });
+    expect(result.user).toEqual({ id: "u1", name: "Jane", image: "http://x/y.png" });
   });
 
   it("empty user display strings normalize to null", () => {
     const result = normalizeTeamApplications([
-      { id: "a", createdAt: null, user: { id: "u1", name: "   ", email: "", image: "" } },
+      { id: "a", createdAt: null, user: { id: "u1", name: "   ", image: "" } },
     ])[0]!;
-    expect(result.user).toEqual({ id: "u1", name: null, email: null, image: null });
+    expect(result.user).toEqual({ id: "u1", name: null, image: null });
   });
 
   it("malformed date becomes null", () => {
@@ -128,19 +128,74 @@ describe("normalizeTeamApplications", () => {
     expect(result.map((a) => a.id)).toEqual(["first", "second"]);
     expect(result[1]!.createdAt).toBeNull();
   });
+
+  describe("privacy: unexpected email fields are discarded", () => {
+    it("an injected email property does not survive normalization", () => {
+      const input = [
+        {
+          id: "app-1",
+          createdAt: null,
+          user: {
+            id: "user-1",
+            name: "Alpha Applicant",
+            email: "alpha.private@example.test",
+            image: null,
+          },
+        },
+      ];
+
+      const normalized = normalizeTeamApplications(input);
+
+      expect(normalized).toEqual([
+        {
+          id: "app-1",
+          createdAt: null,
+          user: {
+            id: "user-1",
+            name: "Alpha Applicant",
+            image: null,
+          },
+        },
+      ]);
+      expect(JSON.stringify(normalized)).not.toContain("alpha.private@example.test");
+    });
+
+    it("a nameless applicant with an injected email normalizes to a null name, not the email", () => {
+      const input = [
+        {
+          id: "app-2",
+          createdAt: null,
+          user: {
+            id: "user-2",
+            name: null,
+            email: "nameless.private@example.test",
+            image: null,
+          },
+        },
+      ];
+
+      const normalized = normalizeTeamApplications(input);
+
+      expect(normalized[0]!.user).toEqual({ id: "user-2", name: null, image: null });
+      expect(JSON.stringify(normalized)).not.toContain("nameless.private@example.test");
+    });
+  });
 });
 
 describe("getApplicationDisplayName", () => {
-  it("name is preferred over email", () => {
-    expect(getApplicationDisplayName(makeApplication({ user: { id: "u", name: "Jane", email: "jane@test.test", image: null } }))).toBe("Jane");
+  it("name is preferred when present", () => {
+    expect(getApplicationDisplayName(makeApplication({ user: { id: "u", name: "Jane", image: null } }))).toBe("Jane");
   });
 
-  it("email is used when name is absent", () => {
-    expect(getApplicationDisplayName(makeApplication({ user: { id: "u", name: null, email: "jane@test.test", image: null } }))).toBe("jane@test.test");
+  it("Applicant is used when name is absent", () => {
+    expect(getApplicationDisplayName(makeApplication({ user: { id: "u", name: null, image: null } }))).toBe("Applicant");
   });
 
-  it("Applicant is used when both are absent", () => {
-    expect(getApplicationDisplayName(makeApplication({ user: { id: "u", name: null, email: null, image: null } }))).toBe("Applicant");
+  it("Applicant is used when name is blank", () => {
+    expect(getApplicationDisplayName(makeApplication({ user: { id: "u", name: "   ", image: null } }))).toBe("Applicant");
+  });
+
+  it("Applicant is used when user is missing", () => {
     expect(getApplicationDisplayName(makeApplication({ user: null }))).toBe("Applicant");
   });
 });
@@ -206,7 +261,7 @@ describe("TeamApplicationsPanel — panel states", () => {
 
 describe("TeamApplicationsPanel — populated behavior", () => {
   it("applications render in supplied order", () => {
-    const apps = [makeApplication({ id: "first" }), makeApplication({ id: "second", user: { id: "u2", name: "Bob", email: null, image: null } })];
+    const apps = [makeApplication({ id: "first" }), makeApplication({ id: "second", user: { id: "u2", name: "Bob", image: null } })];
     render(<TeamApplicationsPanel {...makeProps({ applications: apps })} />);
     const rows = screen.getAllByText(/Jane Applicant|Bob/);
     expect(rows.map((r) => r.textContent)).toEqual(["Jane Applicant", "Bob"]);
@@ -214,7 +269,7 @@ describe("TeamApplicationsPanel — populated behavior", () => {
 
   it("long applicant names remain present", () => {
     const longName = "Longname Featherstonehaugh-Wallingford-Smythe";
-    render(<TeamApplicationsPanel {...makeProps({ applications: [makeApplication({ user: { id: "u", name: longName, email: null, image: null } })] })} />);
+    render(<TeamApplicationsPanel {...makeProps({ applications: [makeApplication({ user: { id: "u", name: longName, image: null } })] })} />);
     expect(screen.getByText(longName)).toBeTruthy();
   });
 
@@ -224,7 +279,7 @@ describe("TeamApplicationsPanel — populated behavior", () => {
   });
 
   it("missing image renders a non-emoji fallback", () => {
-    const { container } = render(<TeamApplicationsPanel {...makeProps({ applications: [makeApplication({ user: { id: "u", name: "Jane", email: null, image: null } })] })} />);
+    const { container } = render(<TeamApplicationsPanel {...makeProps({ applications: [makeApplication({ user: { id: "u", name: "Jane", image: null } })] })} />);
     expect(container.querySelector("img")).toBeNull();
     const bodyText = container.textContent ?? "";
     expect(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(bodyText)).toBe(false);
@@ -293,7 +348,7 @@ describe("TeamApplicationsPanel — pending behavior", () => {
   });
 
   it("all action controls are disabled while one request is pending", () => {
-    const apps = [makeApplication({ id: "app-1" }), makeApplication({ id: "app-2", user: { id: "u2", name: "Bob", email: null, image: null } })];
+    const apps = [makeApplication({ id: "app-1" }), makeApplication({ id: "app-2", user: { id: "u2", name: "Bob", image: null } })];
     render(<TeamApplicationsPanel {...makeProps({ applications: apps, pendingAction: { applicationId: "app-1", action: "approve" } })} />);
     expect((screen.getByTestId("team-application-approve-app-1") as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId("team-application-deny-app-1") as HTMLButtonElement).disabled).toBe(true);
@@ -309,7 +364,7 @@ describe("TeamApplicationsPanel — pending behavior", () => {
   });
 
   it("pending state preserves application order", () => {
-    const apps = [makeApplication({ id: "app-1" }), makeApplication({ id: "app-2", user: { id: "u2", name: "Bob", email: null, image: null } })];
+    const apps = [makeApplication({ id: "app-1" }), makeApplication({ id: "app-2", user: { id: "u2", name: "Bob", image: null } })];
     render(<TeamApplicationsPanel {...makeProps({ applications: apps, pendingAction: { applicationId: "app-1", action: "approve" } })} />);
     const names = screen.getAllByText(/Jane Applicant|Bob/).map((el) => el.textContent);
     expect(names).toEqual(["Jane Applicant", "Bob"]);
@@ -339,5 +394,51 @@ describe("TeamApplicationsPanel — purity", () => {
     render(<TeamApplicationsPanel {...makeProps({ applications: apps })} />);
     fireEvent.click(screen.getByTestId("team-application-approve-app-1"));
     expect(apps).toEqual(snapshot);
+  });
+});
+
+describe("TeamApplicationsPanel — privacy", () => {
+  it("source file contains no email reference", () => {
+    expect(SOURCE).not.toMatch(/email/i);
+  });
+
+  it("an applicant's private email never renders even if present on normalized raw input", () => {
+    const normalized = normalizeTeamApplications([
+      {
+        id: "app-1",
+        createdAt: null,
+        user: {
+          id: "user-1",
+          name: "Alpha Applicant",
+          email: "alpha.private@example.test",
+          image: null,
+        },
+      },
+    ]);
+
+    const { container } = render(<TeamApplicationsPanel {...makeProps({ applications: normalized })} />);
+
+    expect(screen.getByText("Alpha Applicant")).toBeTruthy();
+    expect(container.textContent ?? "").not.toContain("alpha.private@example.test");
+  });
+
+  it("a nameless applicant with a private email renders Applicant, never the email", () => {
+    const normalized = normalizeTeamApplications([
+      {
+        id: "app-2",
+        createdAt: null,
+        user: {
+          id: "user-2",
+          name: null,
+          email: "nameless.private@example.test",
+          image: null,
+        },
+      },
+    ]);
+
+    const { container } = render(<TeamApplicationsPanel {...makeProps({ applications: normalized })} />);
+
+    expect(screen.getByText("Applicant")).toBeTruthy();
+    expect(container.textContent ?? "").not.toContain("nameless.private@example.test");
   });
 });
