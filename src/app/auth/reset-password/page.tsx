@@ -4,6 +4,24 @@ import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
+// Restricted to the reset API's own known token-rejection wording, on HTTP
+// 400 only — deliberately narrow so a password-validation 400, a 429 rate
+// limit, a 500, or any other/unknown safe message never gets misclassified
+// as a bad reset link.
+function isResetTokenRejection(status: number, message: unknown): boolean {
+  if (status !== 400 || typeof message !== "string") {
+    return false;
+  }
+
+  const normalized = message.trim().toLowerCase();
+
+  return (
+    normalized === "invalid token" ||
+    normalized.includes("invalid or expired reset link") ||
+    normalized.includes("reset link has expired")
+  );
+}
+
 const RP_STYLE = `
   @keyframes rp-orb1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(40px,-30px) scale(1.08)} }
   @keyframes rp-orb2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-50px,40px) scale(0.94)} }
@@ -59,8 +77,13 @@ function ResetPasswordForm() {
         setStatus("success");
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || "Failed to reset password. The link may have expired.");
-        setTokenRejectedByApi(true);
+        const apiMessage =
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error
+            : "Failed to reset password. The link may have expired.";
+
+        setError(apiMessage);
+        setTokenRejectedByApi(isResetTokenRejection(res.status, data?.error));
         setStatus("error");
       }
     } catch {

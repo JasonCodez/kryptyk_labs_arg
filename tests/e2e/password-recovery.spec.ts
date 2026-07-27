@@ -50,16 +50,36 @@ async function installForgotPasswordFixture(page: Page, options: ForgotPasswordF
   };
 }
 
+interface ResetResponseSpec {
+  status: number;
+  body?: unknown;
+  /** When set, fulfills with this exact (possibly non-JSON) string instead of JSON.stringify(body) — used to simulate a malformed response. */
+  raw?: string;
+}
+
 interface ResetPasswordFixtureOptions {
   status?: number;
   body?: unknown;
+  raw?: string;
   abort?: boolean;
   hold?: boolean;
+  /** When set, each successive request consumes the next entry; once exhausted, the last entry repeats. Used for retry-state regression tests. */
+  sequence?: ResetResponseSpec[];
+}
+
+async function fulfillResetResponse(route: Route, spec: ResetResponseSpec) {
+  if (typeof spec.raw === "string") {
+    await route.fulfill({ status: spec.status, contentType: "application/json", body: spec.raw });
+    return;
+  }
+  await fulfill(route, spec.body ?? { success: true }, spec.status);
 }
 
 async function installResetPasswordFixture(page: Page, options: ResetPasswordFixtureOptions = {}) {
   const requests: Array<{ method: string; postData: string | null }> = [];
   const held: Route[] = [];
+  const sequence = options.sequence ? [...options.sequence] : null;
+  const defaultSpec: ResetResponseSpec = { status: options.status ?? 200, body: options.body, raw: options.raw };
 
   await page.route("**/api/auth/reset-password", async (route) => {
     requests.push({ method: route.request().method(), postData: route.request().postData() });
@@ -71,14 +91,16 @@ async function installResetPasswordFixture(page: Page, options: ResetPasswordFix
       held.push(route);
       return;
     }
-    await fulfill(route, options.body ?? { success: true }, options.status ?? 200);
+    const spec = sequence && sequence.length > 0 ? sequence.shift()! : defaultSpec;
+    await fulfillResetResponse(route, spec);
   });
 
   return {
     requests,
     release: async () => {
       for (const route of held.splice(0)) {
-        await fulfill(route, options.body ?? { success: true }, options.status ?? 200);
+        const spec = sequence && sequence.length > 0 ? sequence.shift()! : defaultSpec;
+        await fulfillResetResponse(route, spec);
       }
     },
   };
@@ -299,10 +321,10 @@ test.describe("Reset password — successful reset", () => {
 });
 
 test.describe("Reset password — expired or invalid token", () => {
-  test("safe error in an alert, no raw token rendered, request-new-link visible, form stays usable", async ({ page }) => {
+  test("known invalid-token response shows safe error, request-new-link, no raw token, usable form", async ({ page }) => {
     const fixture = await installResetPasswordFixture(page, {
       status: 400,
-      body: { error: "The reset link is invalid or has expired." },
+      body: { error: "Invalid or expired reset link" },
     });
     await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
 
@@ -311,7 +333,7 @@ test.describe("Reset password — expired or invalid token", () => {
     await page.getByTestId("reset-password-submit").click();
 
     const alert = page.getByTestId("reset-password-error");
-    await expect(alert).toContainText("The reset link is invalid or has expired.");
+    await expect(alert).toContainText("Invalid or expired reset link");
     // See the visible-rendered-text note in the "valid token initial state"
     // test above — the raw HTML source necessarily contains the token as
     // part of Next.js's own useSearchParams() hydration payload.
@@ -325,10 +347,123 @@ test.describe("Reset password — expired or invalid token", () => {
     await expect(page.getByTestId("reset-password-form")).toBeVisible();
     expect(fixture.requests).toHaveLength(1);
   });
+
+  test("known expired-token response shows the request-new-link action", async ({ page }) => {
+    const fixture = await installResetPasswordFixture(page, {
+      status: 400,
+      body: { error: "This reset link has expired. Please request a new one." },
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-error")).toContainText(
+      "This reset link has expired. Please request a new one."
+    );
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveAttribute(
+      "href",
+      "/auth/forgot-password"
+    );
+    await expect(page.getByTestId("reset-password-form")).toBeVisible();
+    expect(fixture.requests).toHaveLength(1);
+  });
+});
+
+test.describe("Reset password — non-token API errors", () => {
+  test("rate-limit 429 shows the exact safe error, no request-new-link, usable form", async ({ page }) => {
+    const fixture = await installResetPasswordFixture(page, {
+      status: 429,
+      body: { error: "Too many attempts. Please try again later." },
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-error")).toHaveText("Too many attempts. Please try again later.");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+    await expect(page.getByTestId("reset-password-form")).toBeVisible();
+    expect(fixture.requests).toHaveLength(1);
+  });
+
+  test("server error 500 shows the exact safe error, no request-new-link, usable form", async ({ page }) => {
+    const fixture = await installResetPasswordFixture(page, {
+      status: 500,
+      body: { error: "An error occurred. Please try again." },
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-error")).toHaveText("An error occurred. Please try again.");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+    await expect(page.getByTestId("reset-password-form")).toBeVisible();
+    expect(fixture.requests).toHaveLength(1);
+  });
+
+  test("password-validation 400 from the API shows the error with no request-new-link", async ({ page }) => {
+    // Simulated directly — client-side validation normally prevents this,
+    // but the classifier must still not misread a 400 as a token failure.
+    const fixture = await installResetPasswordFixture(page, {
+      status: 400,
+      body: { error: "Password must be at least 8 characters" },
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-error")).toHaveText("Password must be at least 8 characters");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+    await expect(page.getByTestId("reset-password-form")).toBeVisible();
+    expect(fixture.requests).toHaveLength(1);
+  });
+
+  test("unknown 400 message does not show the request-new-link action", async ({ page }) => {
+    const fixture = await installResetPasswordFixture(page, {
+      status: 400,
+      body: { error: "Unable to complete this request." },
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-error")).toHaveText("Unable to complete this request.");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+    await expect(page.getByTestId("reset-password-form")).toBeVisible();
+    expect(fixture.requests).toHaveLength(1);
+  });
+
+  test("malformed (non-JSON) error response falls back to the safe message with no request-new-link", async ({ page }) => {
+    const fixture = await installResetPasswordFixture(page, {
+      status: 500,
+      raw: "Internal Server Error — not JSON",
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-error")).toHaveText(
+      "Failed to reset password. The link may have expired."
+    );
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+    await expect(page.getByTestId("reset-password-form")).toBeVisible();
+    expect(fixture.requests).toHaveLength(1);
+  });
 });
 
 test.describe("Reset password — network failure", () => {
-  test("shows the generic network error in an alert", async ({ page }) => {
+  test("shows the generic network error in an alert, with no request-new-link action", async ({ page }) => {
     await installResetPasswordFixture(page, { abort: true });
     await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
 
@@ -337,6 +472,34 @@ test.describe("Reset password — network failure", () => {
     await page.getByTestId("reset-password-submit").click();
 
     await expect(page.getByTestId("reset-password-error")).toHaveText("An error occurred. Please try again.");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+  });
+});
+
+test.describe("Reset password — retry clears stale token classification", () => {
+  test("a known invalid-token error followed by a 429 retry clears the request-new-link action", async ({ page }) => {
+    const fixture = await installResetPasswordFixture(page, {
+      sequence: [
+        { status: 400, body: { error: "Invalid token" } },
+        { status: 429, body: { error: "Too many attempts. Please try again later." } },
+      ],
+    });
+    await page.goto("/auth/reset-password?token=test-token", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("New password", { exact: true }).fill("brandNewPassword1");
+    await page.getByLabel("Confirm new password").fill("brandNewPassword1");
+    const submit = page.getByTestId("reset-password-submit");
+    await submit.click();
+
+    await expect(page.getByTestId("reset-password-error")).toContainText("Invalid token");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toBeVisible();
+
+    // Retry the still-visible form.
+    await submit.click();
+
+    await expect(page.getByTestId("reset-password-error")).toHaveText("Too many attempts. Please try again later.");
+    await expect(page.getByRole("link", { name: "Request a new reset link" })).toHaveCount(0);
+    expect(fixture.requests).toHaveLength(2);
   });
 });
 
