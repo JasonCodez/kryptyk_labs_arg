@@ -327,15 +327,32 @@ function NavSection({ group }: { group: NavGroup }) {
   );
 }
 
+interface DashboardNavigationHubProps {
+  /**
+   * "full" (default) is byte-for-byte the original behavior: all four
+   * groups, two-column responsive grid. "starter" is used by New-Player
+   * Focus Mode — it selects the existing "Play" group only, from the same
+   * GROUPS data (no alternate copies of any destination), in a single
+   * column at every viewport.
+   */
+  mode?: "full" | "starter";
+}
+
 /**
  * Mobile-first grouped navigation hub replacing the old eleven equal-sized
- * "Navigate" cards. Purely presentational and prop-free — every destination,
- * copy string, and tour ID is fixed data owned by this component.
+ * "Navigate" cards. Purely presentational — every destination, copy string,
+ * and tour ID is fixed data owned by this component.
  */
-export default function DashboardNavigationHub() {
+export default function DashboardNavigationHub({ mode = "full" }: DashboardNavigationHubProps) {
+  const groups = mode === "starter" ? GROUPS.filter((group) => group.heading === "Play") : GROUPS;
+
   return (
-    <nav aria-label="Dashboard navigation" className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {GROUPS.map((group) => (
+    <nav
+      aria-label={mode === "starter" ? "Starter dashboard navigation" : "Dashboard navigation"}
+      data-testid={mode === "starter" ? "dashboard-navigation-starter" : "dashboard-navigation-full"}
+      className={mode === "starter" ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 md:grid-cols-2 gap-4"}
+    >
+      {groups.map((group) => (
         <NavSection key={group.heading} group={group} />
       ))}
     </nav>
