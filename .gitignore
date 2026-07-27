@@ -57,3 +57,4 @@ sendgrid.env
 next-env.d.ts
 
 /src/generated/prisma
+/.mcp.json

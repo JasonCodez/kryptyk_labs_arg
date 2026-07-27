@@ -4,9 +4,9 @@
  * the decision logic can be unit-tested without jsdom.
  */
 
-// Bumped so a real phone that already silently persisted version "1" during
-// the invisible-behind-the-native-splash failure receives the corrected
-// sequence in full at least once after this fix ships.
+// Bumped so devices that previously persisted version "1" move onto the
+// corrected launch-sequence version. The resolver now plays the full sequence
+// on every eligible document launch rather than only once per stored version.
 export const APP_LAUNCH_VERSION = "2";
 
 export const APP_LAUNCH_VERSION_KEY = "pw_app_launch_version";
