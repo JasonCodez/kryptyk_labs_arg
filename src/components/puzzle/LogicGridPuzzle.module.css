@@ -1,0 +1,743 @@
+/* Logic Grid — premium mobile-first deduction game presentation. */
+
+.wrapper {
+  color: var(--pw-text-primary);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.loadError {
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--pw-error-text);
+  background: color-mix(in srgb, var(--pw-error-text) 8%, var(--pw-surface-1));
+  color: var(--pw-text-primary);
+}
+
+.solvedBanner {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-success);
+  background: color-mix(in srgb, var(--pw-success) 12%, var(--pw-surface-1));
+  color: var(--pw-text-primary);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.intro {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--pw-brand-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--pw-brand-primary) 6%, var(--pw-surface-1));
+  color: var(--pw-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Top status area ─────────────────────────────────────────────── */
+
+.topBar {
+  border-radius: 12px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-1);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topBarHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pw-brand-primary);
+}
+
+.factCount {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pw-text-primary);
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progressTrack {
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--pw-surface-2);
+  overflow: hidden;
+  border: 1px solid var(--pw-border-default);
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--pw-brand-primary);
+  transition: width 250ms ease;
+}
+
+.progressPercentLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pw-text-secondary);
+  white-space: nowrap;
+}
+
+.statsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.timeStat {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pw-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.historyControls {
+  display: flex;
+  gap: 8px;
+}
+
+.iconButton {
+  min-height: 40px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-2);
+  color: var(--pw-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 150ms ease, transform 120ms ease;
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.iconButton:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--pw-brand-primary);
+  outline-offset: 2px;
+}
+
+.instructionHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pw-text-muted);
+}
+
+.milestoneAnchor {
+  position: relative;
+  min-height: 0;
+}
+
+.milestoneMessage {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pw-gold);
+  animation: logicGridFadeIn 300ms ease both;
+}
+
+.chainLiveRegion {
+  min-height: 0;
+}
+
+.chainMessage {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pw-brand-primary);
+  line-height: 1.4;
+  animation: logicGridFadeIn 250ms ease both;
+}
+
+@keyframes logicGridFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Mobile tab bar ───────────────────────────────────────────────── */
+
+.tabBar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-1);
+}
+
+.tab {
+  flex: 1 1 0;
+  min-height: 44px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--pw-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--pw-brand-primary);
+  outline-offset: 2px;
+}
+
+.tabActive {
+  background: var(--pw-brand-primary);
+  color: var(--pw-bg-base);
+}
+
+/* ── Layout ───────────────────────────────────────────────────────── */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pw-text-muted);
+}
+
+/* ── Clue deck ────────────────────────────────────────────────────── */
+
+.clueDeckHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.clueReviewCount {
+  margin: 0;
+  font-size: 11px;
+  color: var(--pw-text-muted);
+}
+
+.clueList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clueCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-1);
+  cursor: pointer;
+  transition: opacity 150ms ease, border-color 150ms ease;
+}
+
+.clueCardResolved {
+  opacity: 0.55;
+}
+
+.clueCheckbox {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  margin-top: 2px;
+  accent-color: var(--pw-brand-primary);
+  cursor: pointer;
+}
+
+.clueBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.clueNumber {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pw-brand-primary);
+}
+
+.clueText {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--pw-text-primary);
+}
+
+.clueCardResolved .clueText {
+  text-decoration: line-through;
+}
+
+.clueResolvedTag {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pw-success);
+}
+
+/* ── Deduction grid ───────────────────────────────────────────────── */
+
+.gridBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gridBlock {
+  border-radius: 12px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-1);
+  overflow: hidden;
+}
+
+.gridScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.gridInner {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.gridRow {
+  display: flex;
+}
+
+.gridCorner {
+  width: 110px;
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--pw-surface-1);
+}
+
+.categoryHeaderCell {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 8px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pw-brand-primary);
+  border-bottom: 1px solid var(--pw-border-default);
+  border-left: 1px solid var(--pw-border-default);
+}
+
+.rowCategoryLabel {
+  width: 110px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pw-gold);
+  display: flex;
+  align-items: center;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--pw-surface-1);
+  border-bottom: 1px solid var(--pw-border-default);
+}
+
+.entryHeaderCell {
+  width: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 4px 2px 6px;
+  font-size: 10px;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--pw-text-secondary);
+  border-bottom: 1px solid var(--pw-border-default);
+  border-left: 1px solid var(--pw-border-default);
+  height: 62px;
+  overflow-wrap: anywhere;
+}
+
+.rowLabelCell {
+  width: 110px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--pw-surface-1);
+  border-bottom: 1px solid var(--pw-border-default);
+}
+
+.rowLabelText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--pw-border-default);
+  border-bottom: 1px solid var(--pw-border-default);
+  border-top: none;
+  border-left: none;
+  background: transparent;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 120ms ease, transform 80ms ease;
+  color: var(--pw-text-muted);
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--pw-brand-primary);
+  outline-offset: -2px;
+  z-index: 1;
+  position: relative;
+}
+
+.cell:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.cell_unknown {
+  color: var(--pw-text-muted);
+}
+
+.cell_impossible {
+  color: var(--pw-text-secondary);
+  background: color-mix(in srgb, var(--pw-text-secondary) 6%, transparent);
+}
+
+.cell_confirmed {
+  color: var(--pw-success);
+  background: color-mix(in srgb, var(--pw-success) 14%, transparent);
+}
+
+/* ── Submission feedback / submit ─────────────────────────────────── */
+
+.feedbackArea {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.errorBanner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-error-text);
+  background: color-mix(in srgb, var(--pw-error-text) 10%, var(--pw-surface-1));
+  font-size: 13px;
+  color: var(--pw-text-primary);
+}
+
+.errorBannerTitle {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.errorBanner p {
+  margin: 0;
+}
+
+.submitButton {
+  min-height: 48px;
+  width: 100%;
+  padding: 0 24px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--pw-bg-base);
+  background: var(--pw-gold);
+  border: 1px solid var(--pw-gold);
+  cursor: pointer;
+  transition: opacity 150ms ease, transform 120ms ease;
+}
+
+.submitButton:disabled {
+  color: var(--pw-text-muted);
+  background: var(--pw-surface-2);
+  border-color: var(--pw-border-default);
+  cursor: not-allowed;
+}
+
+.submitButton:not(:disabled):active {
+  transform: scale(0.99);
+}
+
+.submitButton:focus-visible {
+  outline: 2px solid var(--pw-brand-primary);
+  outline-offset: 2px;
+}
+
+/* ── Case board ───────────────────────────────────────────────────── */
+
+.caseFactCount {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pw-text-secondary);
+}
+
+.caseEmpty {
+  margin: 0;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--pw-border-default);
+  color: var(--pw-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.caseRows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.caseRow {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-1);
+}
+
+.casePrimaryName {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--pw-text-primary);
+}
+
+.caseFact {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pw-text-secondary);
+  line-height: 1.6;
+}
+
+.caseFact strong {
+  color: var(--pw-text-primary);
+}
+
+/* ── Completion overlay ───────────────────────────────────────────── */
+
+.completionOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pw-bg-base) 82%, transparent);
+  backdrop-filter: blur(3px);
+  padding: 16px;
+}
+
+.completionCard {
+  position: relative;
+  padding: 32px 36px;
+  border-radius: 16px;
+  border: 1px solid var(--pw-success);
+  background: var(--pw-surface-1);
+  text-align: center;
+  box-shadow: 0 0 60px color-mix(in srgb, var(--pw-success) 25%, transparent);
+  animation: logicGridCompletionIn 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes logicGridCompletionIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.completionCheck {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.completionTitle {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--pw-text-primary);
+}
+
+.completionSubtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--pw-text-secondary);
+}
+
+.completionStats {
+  margin-top: 16px;
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pw-text-secondary);
+}
+
+.completionSparkleAnchor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .progressFill,
+  .iconButton,
+  .cell,
+  .submitButton,
+  .tab {
+    transition: none !important;
+  }
+  .milestoneMessage,
+  .chainMessage,
+  .completionCard {
+    animation: none !important;
+  }
+}
+
+:global(html[data-reduce-animations="true"]) .progressFill,
+:global(html[data-reduce-animations="true"]) .iconButton,
+:global(html[data-reduce-animations="true"]) .cell,
+:global(html[data-reduce-animations="true"]) .submitButton,
+:global(html[data-reduce-animations="true"]) .tab {
+  transition: none !important;
+}
+
+:global(html[data-reduce-animations="true"]) .milestoneMessage,
+:global(html[data-reduce-animations="true"]) .chainMessage,
+:global(html[data-reduce-animations="true"]) .completionCard {
+  animation: none !important;
+}
+
+/* ── Desktop three-column layout ──────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  .tabBar {
+    display: none;
+  }
+
+  /* At desktop widths, all three panels are rendered without the `hidden` attribute
+     (controlled in JS via a matchMedia check) — see LogicGridPuzzle.tsx. The native
+     `hidden` attribute's `display: none` is applied by the browser as a UA-important
+     rule that no author stylesheet can override, so it cannot be undone here in CSS. */
+
+  .layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .panelClues {
+    flex: 0 0 280px;
+    max-width: 280px;
+  }
+
+  .panelGrid {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .panelCase {
+    flex: 0 0 280px;
+    max-width: 280px;
+  }
+
+  .submitButton {
+    width: auto;
+    align-self: flex-start;
+    padding: 0 32px;
+  }
+}

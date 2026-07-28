@@ -1,10 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   validateLogicGridPuzzleData,
   type LogicGridCategoryNormalized,
 } from "@/lib/logicGridCore";
+import {
+  applyLogicGridCellMark,
+  deriveLogicGridState,
+  getLogicGridCellKey,
+  getNextLogicGridCellMark,
+  normalizeLogicGridCellMarks,
+  type LogicGridCellMark,
+  type LogicGridCellMarks,
+} from "@/lib/logicGridGame";
+import { juice } from "@/lib/juice";
+import { AnimatedCheck, SparkleBurst, confettiBurstAt } from "@/components/juice/particles";
+import styles from "./LogicGridPuzzle.module.css";
 
 interface LogicGridPuzzleProps {
   puzzleId: string;
@@ -13,27 +25,47 @@ interface LogicGridPuzzleProps {
   onSolved: (elapsedSeconds?: number) => void;
 }
 
-type CellMark = "check" | "cross";
-type CellMarks = Record<string, CellMark>;
-
-const CARD_BG = "rgba(255,255,255,0.03)";
-const BORDER = "rgba(255,255,255,0.1)";
-const TEAL = "#3891A6";
-const GOLD = "#FDE74C";
-const SUCCESS = "#38D399";
-const DANGER = "#EF4444";
-const MUTED = "#8b8b95";
-const TEXT = "#F5F5F5";
-
-/** Canonical cell key: the category earlier in `categories` is always first. */
-function cellKey(catIdA: string, entryA: string, catIdB: string, entryB: string): string {
-  return `${catIdA}::${entryA}::${catIdB}::${entryB}`;
+interface HistoryState {
+  past: LogicGridCellMarks[];
+  present: LogicGridCellMarks;
+  future: LogicGridCellMarks[];
 }
 
-function nextMark(current: CellMark | undefined): CellMark | undefined {
-  if (current === undefined) return "check";
-  if (current === "check") return "cross";
-  return undefined;
+const MAX_HISTORY = 100;
+const AUTOSAVE_DELAY_MS = 800;
+const CHAIN_MESSAGE_MS = 1500;
+const MILESTONE_MESSAGE_MS = 2500;
+const COMPLETION_HANDOFF_MS = 1800;
+
+const MILESTONE_COPY: Record<number, string> = {
+  25: "Case progress: 25%",
+  50: "Half the case mapped",
+  75: "The final connections are forming",
+  100: "Grid complete — ready to submit",
+};
+
+type MobileTab = "clues" | "grid" | "case";
+
+function formatElapsed(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(Number.isFinite(totalSeconds) ? totalSeconds : 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  const mm = hours > 0 ? String(minutes).padStart(2, "0") : String(minutes);
+  const ss = String(seconds).padStart(2, "0");
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function cellStateLabel(mark: LogicGridCellMark | undefined): "unknown" | "impossible" | "confirmed" {
+  if (mark === "check") return "confirmed";
+  if (mark === "cross") return "impossible";
+  return "unknown";
+}
+
+function cellGlyph(mark: LogicGridCellMark | undefined): string {
+  if (mark === "check") return "✓";
+  if (mark === "cross") return "✕";
+  return "·";
 }
 
 export default function LogicGridPuzzle({
@@ -47,36 +79,66 @@ export default function LogicGridPuzzle({
     [logicGridData]
   );
 
-  const [cellMarks, setCellMarks] = useState<CellMarks>({});
-  const [crossedClues, setCrossedClues] = useState<Set<number>>(new Set());
+  const categories: LogicGridCategoryNormalized[] = validation.normalized?.categories ?? [];
+  const clues: string[] = validation.normalized?.clues ?? [];
+  const intro: string = validation.normalized?.intro ?? "";
+
+  const [history, setHistory] = useState<HistoryState>({ past: [], present: {}, future: [] });
+  const [resolvedClues, setResolvedClues] = useState<Set<number>>(new Set());
   const [solved, setSolved] = useState(alreadySolved);
   const [submitting, setSubmitting] = useState(false);
-  const [mismatchedCategories, setMismatchedCategories] = useState<string[]>([]);
-  const [showCelebration, setShowCelebration] = useState(false);
+  const [mismatchedCategories, setMismatchedCategories] = useState<string[] | null>(null);
+  const [requestFailed, setRequestFailed] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
+  const [showCompletion, setShowCompletion] = useState(false);
+  const [activeTab, setActiveTab] = useState<MobileTab>("grid");
+  const [chainCount, setChainCount] = useState<number | null>(null);
+  const [milestoneMessage, setMilestoneMessage] = useState<string | null>(null);
+  const [sparkleTrigger, setSparkleTrigger] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(!alreadySolved);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
 
   const hydratedRef = useRef(false);
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef<number>(Date.now());
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chainTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const milestoneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const milestonesReachedRef = useRef<Set<number>>(new Set());
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Hydrate saved scratch-grid state on mount.
+  const cellMarks = history.present;
+
+  const derivedState = useMemo(
+    () => deriveLogicGridState(categories, cellMarks),
+    [categories, cellMarks]
+  );
+
+  // Hydrate saved scratch-grid state on mount. Does not create an Undo entry, does not fire
+  // juice effects, and does not fire milestone messaging.
   useEffect(() => {
+    if (!validation.valid) return;
     let cancelled = false;
     fetch(`/api/puzzles/${puzzleId}/logic-grid`, { credentials: "same-origin" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (cancelled || !data) return;
-        setCellMarks((data.cellMarks ?? {}) as CellMarks);
+        if (cancelled) return;
+        const safeMarks = normalizeLogicGridCellMarks(data?.cellMarks, categories);
+        setHistory({ past: [], present: safeMarks, future: [] });
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setHistory({ past: [], present: {}, future: [] });
+      })
       .finally(() => {
-        hydratedRef.current = true;
+        if (!cancelled) hydratedRef.current = true;
       });
     return () => {
       cancelled = true;
     };
-  }, [puzzleId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puzzleId, validation.valid]);
 
-  // Debounced autosave of scratch state.
+  // Debounced autosave of scratch state (Undo/Redo changes flow through this too).
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -87,256 +149,479 @@ export default function LogicGridPuzzle({
         credentials: "same-origin",
         body: JSON.stringify({ cellMarks }),
       }).catch(() => {});
-    }, 800);
+    }, AUTOSAVE_DELAY_MS);
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [cellMarks, puzzleId]);
 
-  if (!validation.valid || !validation.normalized) {
-    return (
-      <div
-        style={{
-          padding: 24,
-          borderRadius: 12,
-          border: `1px solid ${DANGER}55`,
-          background: `${DANGER}0a`,
-          color: TEXT,
-        }}
-      >
-        Invalid logic grid puzzle data.
-      </div>
-    );
-  }
+  // Elapsed timer — starts on mount with valid data, stops after a correct solve, never
+  // runs when already solved.
+  useEffect(() => {
+    if (!validation.valid || !timerRunning) return;
+    const id = setInterval(() => {
+      setElapsedSeconds(Math.round((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [validation.valid, timerRunning]);
 
-  const { intro, categories, clues } = validation.normalized;
-  const primary = categories[0];
-  const others = categories.slice(1);
+  useEffect(() => {
+    return () => {
+      if (chainTimeoutRef.current) clearTimeout(chainTimeoutRef.current);
+      if (milestoneTimeoutRef.current) clearTimeout(milestoneTimeoutRef.current);
+    };
+  }, []);
 
-  // Derive the final answer straight from the primary-vs-other block's ✓ marks.
-  const derivedAnswer: Record<string, Record<string, string>> = {};
-  let isComplete = true;
-  for (const primaryEntry of primary.entries) {
-    const row: Record<string, string> = {};
-    for (const other of others) {
-      const checked = other.entries.filter(
-        (entry) => cellMarks[cellKey(primary.id, primaryEntry, other.id, entry)] === "check"
-      );
-      if (checked.length === 1) {
-        row[other.id] = checked[0];
-      } else {
-        isComplete = false;
+  // The desktop three-column layout must show all three panels regardless of the mobile
+  // tab selection. Browsers apply the `hidden` attribute's `display: none` as a UA-important
+  // rule that no author stylesheet (even with !important) can override, so the panels'
+  // `hidden` attribute itself must be conditioned on viewport width here in JS rather than
+  // overridden in CSS.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktopLayout(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const triggerChainMessage = useCallback((count: number) => {
+    setChainCount(count);
+    if (chainTimeoutRef.current) clearTimeout(chainTimeoutRef.current);
+    chainTimeoutRef.current = setTimeout(() => setChainCount(null), CHAIN_MESSAGE_MS);
+  }, []);
+
+  const checkMilestones = useCallback((beforePercent: number, afterPercent: number) => {
+    for (const threshold of [25, 50, 75, 100]) {
+      if (afterPercent >= threshold && beforePercent < threshold && !milestonesReachedRef.current.has(threshold)) {
+        milestonesReachedRef.current.add(threshold);
+        if (threshold !== 100) juice.unlock();
+        setMilestoneMessage(MILESTONE_COPY[threshold]);
+        setSparkleTrigger((s) => s + 1);
+        if (milestoneTimeoutRef.current) clearTimeout(milestoneTimeoutRef.current);
+        milestoneTimeoutRef.current = setTimeout(() => setMilestoneMessage(null), MILESTONE_MESSAGE_MS);
       }
     }
-    derivedAnswer[primaryEntry] = row;
-  }
+  }, []);
 
-  function setMark(catIdA: string, entryA: string, catIdB: string, entryB: string, mark: CellMark | undefined) {
-    setCellMarks((prev) => {
-      const next = { ...prev };
-      const key = cellKey(catIdA, entryA, catIdB, entryB);
-      if (mark === undefined) {
-        delete next[key];
+  const handleCellActivate = useCallback(
+    (catIdA: string, entryA: string, catIdB: string, entryB: string) => {
+      if (solved || submitting) return;
+      const key = getLogicGridCellKey(categories, catIdA, entryA, catIdB, entryB);
+      if (!key) return;
+
+      const current = history.present[key];
+      const next = getNextLogicGridCellMark(current);
+      const result = applyLogicGridCellMark(categories, history.present, catIdA, entryA, catIdB, entryB, next);
+      if (result.changedKeys.length === 0) return;
+
+      const prevPresent = history.present;
+      const beforePercent = derivedState.progressPercent;
+
+      setHistory({
+        past: [...history.past, prevPresent].slice(-MAX_HISTORY),
+        present: result.marks,
+        future: [],
+      });
+
+      if (next === "check") {
+        juice.pop();
+        if (result.autoEliminatedCount > 0) {
+          triggerChainMessage(result.autoEliminatedCount);
+        }
       } else {
-        next[key] = mark;
+        juice.tick();
       }
 
-      // Setting a check clears every other cell in this cell's row/column, within this pair only.
-      if (mark === "check") {
-        for (const other of categoriesByIdEntries(categories, catIdB)?.entries ?? []) {
-          if (other === entryB) continue;
-          const k = cellKey(catIdA, entryA, catIdB, other);
-          if (next[k] !== "check") next[k] = "cross";
-        }
-        for (const other of categoriesByIdEntries(categories, catIdA)?.entries ?? []) {
-          if (other === entryA) continue;
-          const k = cellKey(catIdA, other, catIdB, entryB);
-          if (next[k] !== "check") next[k] = "cross";
-        }
-      }
+      const afterPercent = deriveLogicGridState(categories, result.marks).progressPercent;
+      checkMilestones(beforePercent, afterPercent);
+    },
+    [categories, history, solved, submitting, derivedState.progressPercent, checkMilestones, triggerChainMessage]
+  );
 
-      return next;
-    });
-  }
-
-  function handleCellClick(catIdA: string, entryA: string, catIdB: string, entryB: string) {
+  const handleUndo = useCallback(() => {
     if (solved) return;
-    const key = cellKey(catIdA, entryA, catIdB, entryB);
-    setMark(catIdA, entryA, catIdB, entryB, nextMark(cellMarks[key]));
+    setHistory((h) => {
+      if (h.past.length === 0) return h;
+      const prev = h.past[h.past.length - 1];
+      return { past: h.past.slice(0, -1), present: prev, future: [h.present, ...h.future] };
+    });
+  }, [solved]);
+
+  const handleRedo = useCallback(() => {
+    if (solved) return;
+    setHistory((h) => {
+      if (h.future.length === 0) return h;
+      const next = h.future[0];
+      return { past: [...h.past, h.present].slice(-MAX_HISTORY), present: next, future: h.future.slice(1) };
+    });
+  }, [solved]);
+
+  const canUndo = history.past.length > 0 && !solved;
+  const canRedo = history.future.length > 0 && !solved;
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement;
+    const isEditable =
+      target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    if (isEditable) return;
+
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+
+    const key = e.key.toLowerCase();
+    if (key === "z" && e.shiftKey) {
+      e.preventDefault();
+      handleRedo();
+    } else if (key === "z") {
+      e.preventDefault();
+      handleUndo();
+    } else if (key === "y") {
+      e.preventDefault();
+      handleRedo();
+    }
   }
 
   function toggleClue(index: number) {
-    setCrossedClues((prev) => {
+    setResolvedClues((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
       return next;
     });
+    juice.tick();
   }
 
   async function handleSubmit() {
-    if (!isComplete || submitting || solved) return;
+    if (!derivedState.complete || submitting || solved) return;
     setSubmitting(true);
-    setMismatchedCategories([]);
+    setMismatchedCategories(null);
+    setRequestFailed(false);
     try {
       const res = await fetch(`/api/puzzles/${puzzleId}/logic-grid`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ answer: derivedAnswer }),
+        body: JSON.stringify({ answer: derivedState.answer }),
       });
-      const data = await res.json();
-      if (!res.ok) return;
+
+      let data: { correct?: boolean; mismatchedCategories?: string[] } | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || !data) {
+        setRequestFailed(true);
+        setShakeKey((k) => k + 1);
+        juice.error();
+        return;
+      }
 
       if (data.correct) {
+        const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
+        setTimerRunning(false);
+        setElapsedSeconds(elapsed);
         setSolved(true);
-        setShowCelebration(true);
-        const elapsedSeconds = Math.round((Date.now() - startTimeRef.current) / 1000);
+        juice.reward();
+        confettiBurstAt(submitButtonRef.current);
+        setShowCompletion(true);
         setTimeout(() => {
-          setShowCelebration(false);
-          onSolved(elapsedSeconds);
-        }, 1800);
+          setShowCompletion(false);
+          onSolved(elapsed);
+        }, COMPLETION_HANDOFF_MS);
       } else {
-        setMismatchedCategories((data.mismatchedCategories ?? []) as string[]);
+        setMismatchedCategories(data.mismatchedCategories ?? []);
+        setShakeKey((k) => k + 1);
+        juice.error();
       }
     } catch {
-      // network hiccup — leave the grid as-is, the player can retry
+      setRequestFailed(true);
+      setShakeKey((k) => k + 1);
+      juice.error();
     } finally {
       setSubmitting(false);
     }
   }
 
-  const mismatchedNames = mismatchedCategories
-    .map((id) => categories.find((c) => c.id === id)?.name)
-    .filter(Boolean);
+  if (!validation.valid || !validation.normalized) {
+    return (
+      <div className={styles.loadError} role="alert">
+        This logic case could not be loaded.
+      </div>
+    );
+  }
 
-  // One reusable block per row-category: k=0 is the primary-vs-everyone block, k=1..N-2 are the
-  // staircase blocks among the remaining non-primary categories.
   const blocks = categories.slice(0, -1).map((rowCategory, k) => ({
     rowCategory,
     colCategories: categories.slice(k + 1),
   }));
 
+  const mismatchedNames = (mismatchedCategories ?? [])
+    .map((id) => categories.find((c) => c.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
+
+  const visibleCaseRows = derivedState.caseRows.filter((row) => row.facts.length > 0);
+
+  const submitLabel = submitting
+    ? "Checking…"
+    : derivedState.complete
+    ? "Submit Solution"
+    : "Confirm every relationship to submit";
+
   return (
-    <div style={{ color: TEXT, position: "relative" }}>
-      {showCelebration && <LogicGridCelebration />}
+    <div className={styles.wrapper} onKeyDown={handleKeyDown}>
+      {showCompletion && (
+        <div className={styles.completionOverlay} role="dialog" aria-modal="true" aria-label="Case solved">
+          <div className={styles.completionCard}>
+            <div className={styles.completionCheck}>
+              <AnimatedCheck size={48} />
+            </div>
+            <p className={styles.completionTitle}>CASE SOLVED</p>
+            <p className={styles.completionSubtitle}>Every connection accounted for.</p>
+            <div className={styles.completionStats}>
+              <span>Time {formatElapsed(elapsedSeconds)}</span>
+              <span>{derivedState.confirmedFacts} facts confirmed</span>
+            </div>
+            <div className={styles.completionSparkleAnchor}>
+              <SparkleBurst trigger={1} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {solved && (
-        <div
-          className="mb-6 p-4 rounded-lg border"
-          style={{ backgroundColor: `${SUCCESS}1a`, borderColor: SUCCESS, color: TEXT }}
-        >
+        <div className={styles.solvedBanner} role="status">
           🧠 You already solved this case!
         </div>
       )}
 
-      {intro && (
-        <div
-          style={{
-            padding: "18px 20px",
-            borderRadius: 12,
-            border: `1px solid ${TEAL}45`,
-            background: `linear-gradient(135deg, rgba(56,145,166,0.08), rgba(0,0,0,0.2))`,
-            marginBottom: 20,
-            position: "relative",
-          }}
-        >
-          <div style={{ position: "absolute", top: 8, left: 8, width: 14, height: 14, borderTop: `2px solid ${TEAL}80`, borderLeft: `2px solid ${TEAL}80` }} />
-          <div style={{ position: "absolute", bottom: 8, right: 8, width: 14, height: 14, borderBottom: `2px solid ${TEAL}80`, borderRight: `2px solid ${TEAL}80` }} />
-          <p style={{ fontSize: 13, lineHeight: 1.6, color: "#d6d6da", margin: 0 }}>{intro}</p>
-        </div>
-      )}
+      {intro && <p className={styles.intro}>{intro}</p>}
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Clue list */}
-        <div style={{ flex: "0 0 auto", width: "100%", maxWidth: 340 }}>
-          <div style={{ borderRadius: 12, border: `1px solid ${BORDER}`, background: CARD_BG, padding: 16 }}>
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED, marginBottom: 12 }}>
-              Clues
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {clues.map((clue, i) => {
-                const crossed = crossedClues.has(i);
-                return (
-                  <label
-                    key={i}
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      alignItems: "flex-start",
-                      cursor: "pointer",
-                      opacity: crossed ? 0.45 : 1,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={crossed}
-                      onChange={() => toggleClue(i)}
-                      style={{ marginTop: 3, accentColor: TEAL }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 13,
-                        lineHeight: 1.5,
-                        textDecoration: crossed ? "line-through" : "none",
-                      }}
-                    >
-                      {i + 1}. {clue}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
+      {/* Top status area */}
+      <div className={styles.topBar}>
+        <div className={styles.topBarHeading}>
+          <p className={styles.eyebrow}>Logic Case</p>
+          <p className={styles.factCount}>
+            {derivedState.confirmedFacts} of {derivedState.totalFacts} facts confirmed
+          </p>
+        </div>
+
+        <div className={styles.progressRow}>
+          <div
+            className={styles.progressTrack}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={derivedState.progressPercent}
+            aria-label="Case progress"
+          >
+            <div className={styles.progressFill} style={{ width: `${derivedState.progressPercent}%` }} />
+          </div>
+          <span className={styles.progressPercentLabel}>{derivedState.progressPercent}% solved</span>
+        </div>
+
+        <div className={styles.statsRow}>
+          <span className={styles.timeStat}>Time {formatElapsed(elapsedSeconds)}</span>
+          <div className={styles.historyControls}>
+            <button
+              type="button"
+              className={styles.iconButton}
+              onClick={handleUndo}
+              disabled={!canUndo}
+              aria-label="Undo"
+              title="Undo (Ctrl/Cmd+Z)"
+            >
+              ↶ Undo
+            </button>
+            <button
+              type="button"
+              className={styles.iconButton}
+              onClick={handleRedo}
+              disabled={!canRedo}
+              aria-label="Redo"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+            >
+              ↷ Redo
+            </button>
           </div>
         </div>
 
-        {/* Elimination grid */}
-        <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 20 }}>
-          {blocks.map(({ rowCategory, colCategories }) => (
-            <CategoryGridBlock
-              key={rowCategory.id}
-              rowCategory={rowCategory}
-              colCategories={colCategories}
-              cellMarks={cellMarks}
-              onCellClick={handleCellClick}
-              disabled={solved}
-            />
-          ))}
+        <p className={styles.instructionHint}>Tap: ✕ → ✓ → clear</p>
 
-          {mismatchedNames.length > 0 && (
-            <div
-              style={{
-                padding: "12px 16px",
-                borderRadius: 10,
-                border: `1px solid ${DANGER}55`,
-                background: `${DANGER}0f`,
-                fontSize: 13,
-              }}
-            >
-              Not quite — double-check your work on: <strong>{mismatchedNames.join(", ")}</strong>
-            </div>
+        <div className={styles.milestoneAnchor}>
+          {milestoneMessage && (
+            <p className={styles.milestoneMessage} role="status">
+              {milestoneMessage}
+            </p>
           )}
+          <SparkleBurst trigger={sparkleTrigger} />
+        </div>
+
+        <div aria-live="polite" className={styles.chainLiveRegion}>
+          {chainCount !== null && (
+            <p className={styles.chainMessage}>
+              Deduction chain
+              <br />
+              {chainCount} possibilities eliminated
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile tab control */}
+      <div className={styles.tabBar} role="tablist" aria-label="Logic case panels">
+        {(
+          [
+            ["clues", "Clues"],
+            ["grid", "Grid"],
+            ["case", "Case Board"],
+          ] as const
+        ).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            id={`logic-grid-tab-${tab}`}
+            aria-selected={activeTab === tab}
+            aria-controls={`logic-grid-panel-${tab}`}
+            className={activeTab === tab ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+            onClick={() => setActiveTab(tab)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.layout}>
+        {/* Clue deck */}
+        <div
+          id="logic-grid-panel-clues"
+          role="tabpanel"
+          aria-labelledby="logic-grid-tab-clues"
+          hidden={!isDesktopLayout && activeTab !== "clues"}
+          data-active={activeTab === "clues"}
+          className={`${styles.panel} ${styles.panelClues}`}
+        >
+          <div className={styles.clueDeckHeader}>
+            <p className={styles.panelTitle}>Clues</p>
+            <p className={styles.clueReviewCount}>
+              {resolvedClues.size} of {clues.length} clues reviewed
+            </p>
+          </div>
+          <div className={styles.clueList}>
+            {clues.map((clue, i) => {
+              const resolved = resolvedClues.has(i);
+              return (
+                <label
+                  key={i}
+                  className={resolved ? `${styles.clueCard} ${styles.clueCardResolved}` : styles.clueCard}
+                >
+                  <input
+                    type="checkbox"
+                    checked={resolved}
+                    onChange={() => toggleClue(i)}
+                    className={styles.clueCheckbox}
+                    aria-label={`Mark clue ${i + 1} as reviewed`}
+                  />
+                  <span className={styles.clueBody}>
+                    <span className={styles.clueNumber}>{i + 1}</span>
+                    <span className={styles.clueText}>{clue}</span>
+                    {resolved && <span className={styles.clueResolvedTag}>Resolved</span>}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Deduction grid */}
+        <div
+          id="logic-grid-panel-grid"
+          role="tabpanel"
+          aria-labelledby="logic-grid-tab-grid"
+          hidden={!isDesktopLayout && activeTab !== "grid"}
+          data-active={activeTab === "grid"}
+          className={`${styles.panel} ${styles.panelGrid}`}
+        >
+          <div className={styles.gridBlocks}>
+            {blocks.map(({ rowCategory, colCategories }) => (
+              <CategoryGridBlock
+                key={rowCategory.id}
+                categories={categories}
+                rowCategory={rowCategory}
+                colCategories={colCategories}
+                cellMarks={cellMarks}
+                onCellActivate={handleCellActivate}
+                disabled={solved}
+              />
+            ))}
+          </div>
+
+          <div key={shakeKey} className={shakeKey > 0 ? `${styles.feedbackArea} pw-shake` : styles.feedbackArea}>
+            {mismatchedNames.length > 0 && (
+              <div className={styles.errorBanner} role="alert">
+                <p className={styles.errorBannerTitle}>Not quite yet.</p>
+                <p>
+                  Review your connections for: <strong>{mismatchedNames.join(", ")}</strong>
+                </p>
+              </div>
+            )}
+            {requestFailed && (
+              <div className={styles.errorBanner} role="alert">
+                <p className={styles.errorBannerTitle}>The solution could not be checked.</p>
+                <p>Your grid is safe—try again.</p>
+              </div>
+            )}
+          </div>
 
           {!solved && (
             <button
               type="button"
+              ref={submitButtonRef}
               onClick={handleSubmit}
-              disabled={!isComplete || submitting}
-              style={{
-                alignSelf: "flex-start",
-                padding: "12px 28px",
-                borderRadius: 10,
-                fontWeight: 700,
-                fontSize: 14,
-                color: isComplete ? "#0a0a0a" : MUTED,
-                backgroundColor: isComplete ? GOLD : "rgba(255,255,255,0.06)",
-                border: `1px solid ${isComplete ? GOLD : BORDER}`,
-                cursor: isComplete && !submitting ? "pointer" : "not-allowed",
-                transition: "all 0.2s",
-              }}
+              disabled={!derivedState.complete || submitting}
+              className={styles.submitButton}
             >
-              {submitting ? "Checking…" : isComplete ? "Submit Solution" : "Complete the grid above to submit"}
+              {submitLabel}
             </button>
+          )}
+        </div>
+
+        {/* Case board */}
+        <div
+          id="logic-grid-panel-case"
+          role="tabpanel"
+          aria-labelledby="logic-grid-tab-case"
+          hidden={!isDesktopLayout && activeTab !== "case"}
+          data-active={activeTab === "case"}
+          className={`${styles.panel} ${styles.panelCase}`}
+        >
+          <p className={styles.panelTitle}>Case Board</p>
+          <p aria-live="polite" className={styles.caseFactCount}>
+            {derivedState.confirmedFacts} confirmed fact{derivedState.confirmedFacts === 1 ? "" : "s"}
+          </p>
+          {visibleCaseRows.length === 0 ? (
+            <p className={styles.caseEmpty}>
+              No confirmed facts yet.
+              <br />
+              Place a ✓ in the grid to begin building the case.
+            </p>
+          ) : (
+            <div className={styles.caseRows}>
+              {visibleCaseRows.map((row) => (
+                <div key={row.primaryEntry} className={styles.caseRow}>
+                  <p className={styles.casePrimaryName}>{row.primaryEntry}</p>
+                  {row.facts.map((fact) => (
+                    <p key={fact.categoryId} className={styles.caseFact}>
+                      {fact.categoryName}: <strong>{fact.value}</strong>
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -344,65 +629,33 @@ export default function LogicGridPuzzle({
   );
 }
 
-function categoriesByIdEntries(
-  categories: LogicGridCategoryNormalized[],
-  id: string
-): LogicGridCategoryNormalized | undefined {
-  return categories.find((c) => c.id === id);
-}
-
 function CategoryGridBlock({
+  categories,
   rowCategory,
   colCategories,
   cellMarks,
-  onCellClick,
+  onCellActivate,
   disabled,
 }: {
+  categories: LogicGridCategoryNormalized[];
   rowCategory: LogicGridCategoryNormalized;
   colCategories: LogicGridCategoryNormalized[];
-  cellMarks: CellMarks;
-  onCellClick: (catIdA: string, entryA: string, catIdB: string, entryB: string) => void;
+  cellMarks: LogicGridCellMarks;
+  onCellActivate: (catIdA: string, entryA: string, catIdB: string, entryB: string) => void;
   disabled: boolean;
 }) {
-  const cellSize = 40;
-  const headerColWidth = 120;
-
-  const cellStyle: CSSProperties = {
-    width: cellSize,
-    height: cellSize,
-    flexShrink: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRight: `1px solid ${BORDER}`,
-    borderBottom: `1px solid ${BORDER}`,
-    fontSize: 16,
-    userSelect: "none",
-  };
-
   return (
-    <div style={{ borderRadius: 12, border: `1px solid ${BORDER}`, background: CARD_BG, overflow: "hidden" }}>
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "inline-block", minWidth: "100%" }}>
+    <div className={styles.gridBlock}>
+      <div className={styles.gridScroll}>
+        <div className={styles.gridInner}>
           {/* Category group header row */}
-          <div style={{ display: "flex" }}>
-            <div style={{ width: headerColWidth, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: "#0c0c12" }} />
+          <div className={styles.gridRow}>
+            <div className={styles.gridCorner} />
             {colCategories.map((cat) => (
               <div
                 key={cat.id}
-                style={{
-                  width: cellSize * cat.entries.length,
-                  flexShrink: 0,
-                  textAlign: "center",
-                  padding: "8px 4px",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: TEAL,
-                  borderBottom: `1px solid ${BORDER}`,
-                  borderLeft: `1px solid ${BORDER}`,
-                }}
+                className={styles.categoryHeaderCell}
+                style={{ width: 44 * cat.entries.length }}
               >
                 {cat.name}
               </div>
@@ -410,50 +663,11 @@ function CategoryGridBlock({
           </div>
 
           {/* Entry header row */}
-          <div style={{ display: "flex" }}>
-            <div
-              style={{
-                width: headerColWidth,
-                flexShrink: 0,
-                padding: "6px 10px",
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: GOLD,
-                display: "flex",
-                alignItems: "center",
-                position: "sticky",
-                left: 0,
-                zIndex: 2,
-                background: "#0c0c12",
-                borderBottom: `1px solid ${BORDER}`,
-              }}
-            >
-              {rowCategory.name}
-            </div>
+          <div className={styles.gridRow}>
+            <div className={styles.rowCategoryLabel}>{rowCategory.name}</div>
             {colCategories.map((cat) =>
               cat.entries.map((entry) => (
-                <div
-                  key={`${cat.id}:${entry}`}
-                  style={{
-                    width: cellSize,
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "flex-end",
-                    justifyContent: "center",
-                    padding: "4px 2px 6px",
-                    fontSize: 10,
-                    lineHeight: 1.15,
-                    textAlign: "center",
-                    color: "#c8c8d0",
-                    borderBottom: `1px solid ${BORDER}`,
-                    borderLeft: `1px solid ${BORDER}`,
-                    writingMode: entry.length > 8 ? "vertical-rl" : undefined,
-                    height: 60,
-                  }}
-                  title={entry}
-                >
+                <div key={`${cat.id}:${entry}`} className={styles.entryHeaderCell} title={entry}>
                   {entry}
                 </div>
               ))
@@ -462,119 +676,34 @@ function CategoryGridBlock({
 
           {/* Body rows */}
           {rowCategory.entries.map((rowEntry) => (
-            <div key={rowEntry} style={{ display: "flex" }}>
-              <div
-                style={{
-                  width: headerColWidth,
-                  flexShrink: 0,
-                  padding: "0 10px",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  height: cellSize,
-                  position: "sticky",
-                  left: 0,
-                  zIndex: 1,
-                  background: "#0c0c12",
-                  borderBottom: `1px solid ${BORDER}`,
-                }}
-                title={rowEntry}
-              >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rowEntry}</span>
+            <div key={rowEntry} className={styles.gridRow}>
+              <div className={styles.rowLabelCell} title={rowEntry}>
+                <span className={styles.rowLabelText}>{rowEntry}</span>
               </div>
               {colCategories.map((cat) =>
                 cat.entries.map((colEntry) => {
-                  const key = cellKey(rowCategory.id, rowEntry, cat.id, colEntry);
-                  const mark = cellMarks[key];
+                  const key = getLogicGridCellKey(categories, rowCategory.id, rowEntry, cat.id, colEntry);
+                  const mark = key ? cellMarks[key] : undefined;
+                  const state = cellStateLabel(mark);
+                  const label = `${rowEntry} and ${colEntry}: ${state}`;
                   return (
-                    <div
-                      key={key}
-                      onClick={() => onCellClick(rowCategory.id, rowEntry, cat.id, colEntry)}
-                      style={{
-                        ...cellStyle,
-                        cursor: disabled ? "default" : "pointer",
-                        color: mark === "check" ? SUCCESS : mark === "cross" ? "#6b6b72" : "transparent",
-                        background: mark === "check" ? `${SUCCESS}14` : "transparent",
-                      }}
+                    <button
+                      key={key ?? `${cat.id}:${colEntry}`}
+                      type="button"
+                      className={`${styles.cell} ${styles[`cell_${state}`]}`}
+                      onClick={() => onCellActivate(rowCategory.id, rowEntry, cat.id, colEntry)}
+                      disabled={disabled}
+                      aria-label={label}
+                      title={label}
                     >
-                      {mark === "check" ? "✓" : mark === "cross" ? "✕" : "·"}
-                    </div>
+                      {cellGlyph(mark)}
+                    </button>
                   );
                 })
               )}
             </div>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-// Deterministic pseudo-random spread (coprime-multiplier offsets per index) rather than
-// Math.random() — computed once at module load so the celebration component stays pure
-// during render, while still looking scattered.
-const CONFETTI_COLORS = [SUCCESS, GOLD, TEAL, "#a78bfa"];
-const CONFETTI_PIECES = Array.from({ length: 40 }, (_, i) => ({
-  id: i,
-  left: (i * 47) % 100,
-  delay: ((i * 13) % 60) / 100,
-  duration: 1.4 + ((i * 29) % 120) / 100,
-  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-  size: 6 + ((i * 17) % 80) / 10,
-}));
-
-function LogicGridCelebration() {
-  const pieces = CONFETTI_PIECES;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 12500,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(2,2,2,0.75)",
-        backdropFilter: "blur(2px)",
-      }}
-    >
-      <style>{`
-        @keyframes lg-confetti-fall {
-          0%   { transform: translateY(-10px) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(420px) rotate(540deg); opacity: 0; }
-        }
-      `}</style>
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-        {pieces.map((p) => (
-          <div
-            key={p.id}
-            style={{
-              position: "absolute",
-              left: `${p.left}%`,
-              top: 0,
-              width: p.size,
-              height: p.size,
-              backgroundColor: p.color,
-              borderRadius: p.id % 2 === 0 ? "50%" : 2,
-              animation: `lg-confetti-fall ${p.duration}s ${p.delay}s ease-in forwards`,
-            }}
-          />
-        ))}
-      </div>
-      <div
-        style={{
-          padding: "32px 40px",
-          borderRadius: 16,
-          border: `1px solid ${SUCCESS}55`,
-          background: "#0c0c12",
-          textAlign: "center",
-          boxShadow: `0 0 60px ${SUCCESS}30`,
-        }}
-      >
-        <div style={{ fontSize: 40, marginBottom: 8 }}>🧠</div>
-        <p style={{ fontSize: 20, fontWeight: 800, color: TEXT, margin: 0 }}>Case Solved!</p>
       </div>
     </div>
   );
