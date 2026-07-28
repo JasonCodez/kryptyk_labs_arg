@@ -16,15 +16,100 @@ function resolveFlair(value: string | null | undefined): string {
   return FLAIR_EMOJI[value] ?? value; // already an emoji → pass through
 }
 
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+interface SafeGlobalLeaderboardUser {
+  id: string;
+  name: string | null;
+  image: string | null;
+  totalPoints: number;
+  purchasedPoints: number;
+  activeFlair: string | null;
+}
+
+function normalizeGlobalLeaderboardUser(value: unknown): SafeGlobalLeaderboardUser | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { id, name, image, totalPoints, purchasedPoints, activeFlair, isHidden, isBot, role } = value;
+
+  if (isHidden === true || isBot === true || role === "admin") {
+    return null;
+  }
+
+  if (!isNonBlankString(id)) {
+    return null;
+  }
+
+  if (!isStringOrNull(name) || !isStringOrNull(image)) {
+    return null;
+  }
+
+  if (typeof totalPoints !== "number" || !Number.isFinite(totalPoints)) {
+    return null;
+  }
+
+  if (typeof purchasedPoints !== "number" || !Number.isFinite(purchasedPoints)) {
+    return null;
+  }
+
+  if (!isStringOrNull(activeFlair)) {
+    return null;
+  }
+
+  return { id, name, image, totalPoints, purchasedPoints, activeFlair };
+}
+
+interface GlobalLeaderboardEntry {
+  userId: string;
+  userName: string | null;
+  userImage: string | null;
+  activeFlair: string;
+  isPremium: boolean;
+  puzzlesSolved: number;
+  totalPoints: number;
+  rank: number;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    const sessionUserId = (session?.user as { id?: unknown } | undefined)?.id;
+    let currentUserId: string | null =
+      typeof sessionUserId === "string" && sessionUserId.trim()
+        ? sessionUserId.trim()
+        : null;
+
+    const sessionEmail =
+      typeof session?.user?.email === "string" ? session.user.email.trim() : "";
+
+    if (!currentUserId && !sessionEmail) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!currentUserId) {
+      const currentUser = await prisma.user.findUnique({
+        where: { email: sessionEmail },
+        select: { id: true },
+      });
+
+      if (!currentUser) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      currentUserId = currentUser.id;
     }
 
     // Get all non-hidden, non-admin, non-bot users
@@ -33,29 +118,64 @@ export async function GET(request: NextRequest) {
       select: { id: true, name: true, image: true, totalPoints: true, purchasedPoints: true, activeFlair: true },
     });
 
-    const solvedCounts = users.length
+    const seenUserIds = new Set<string>();
+    const safeUsers = users
+      .map(normalizeGlobalLeaderboardUser)
+      .filter((user): user is SafeGlobalLeaderboardUser => user !== null)
+      .filter((user) => {
+        if (seenUserIds.has(user.id)) {
+          return false;
+        }
+        seenUserIds.add(user.id);
+        return true;
+      });
+
+    const safeUserIds = safeUsers.map((user) => user.id);
+    const safeUserIdSet = new Set(safeUserIds);
+
+    const solvedCounts = safeUserIds.length
       ? await prisma.userPuzzleProgress.groupBy({
           by: ["userId"],
           where: {
-            userId: { in: users.map((u) => u.id) },
+            userId: { in: safeUserIds },
             solved: true,
           },
           _count: { _all: true },
         })
       : [];
-    const solvedCountByUserId = new Map(solvedCounts.map((row) => [row.userId, row._count._all]));
 
-    // Batch-fetch premium season pass holders
-    const premiumPasses = await prisma.userSeasonPass.findMany({
-      where: { userId: { in: users.map((u) => u.id) }, isPremium: true },
-      select: { userId: true },
-    });
-    const premiumIds = new Set(premiumPasses.map((p) => p.userId));
+    const solvedCountByUserId = new Map<string, number>();
+    for (const row of solvedCounts) {
+      if (!isNonArrayObject(row)) continue;
+      const { userId, _count } = row as { userId?: unknown; _count?: unknown };
+      if (!isNonBlankString(userId) || !safeUserIdSet.has(userId)) continue;
+      if (!isNonArrayObject(_count)) continue;
+      const all = (_count as { _all?: unknown })._all;
+      if (typeof all !== "number" || !Number.isFinite(all) || all < 0 || !Number.isInteger(all)) continue;
+      solvedCountByUserId.set(userId, all);
+    }
+
+    // Batch-fetch premium season pass holders, limited to safe visible users.
+    const premiumPasses = safeUserIds.length
+      ? await prisma.userSeasonPass.findMany({
+          where: { userId: { in: safeUserIds }, isPremium: true },
+          select: { userId: true },
+        })
+      : [];
+
+    const premiumIds = new Set<string>();
+    for (const row of premiumPasses) {
+      if (!isNonArrayObject(row)) continue;
+      const { userId } = row as { userId?: unknown };
+      if (isNonBlankString(userId) && safeUserIdSet.has(userId)) {
+        premiumIds.add(userId);
+      }
+    }
 
     // earnedPoints = totalPoints - purchasedPoints so bought points never affect rank.
     // puzzlesSolved comes from solved progress records so spending points never lowers solve count.
-    const entries = users.map((user) => {
-      const earnedPoints = (user.totalPoints ?? 0) - (user.purchasedPoints ?? 0);
+    const entries: GlobalLeaderboardEntry[] = safeUsers.map((user) => {
+      const earnedPoints = user.totalPoints - user.purchasedPoints;
       const puzzlesSolved = solvedCountByUserId.get(user.id) ?? 0;
       return {
         userId: user.id,
@@ -73,16 +193,16 @@ export async function GET(request: NextRequest) {
     entries.sort((a, b) => b.totalPoints - a.totalPoints);
 
     // Re-rank after sorting
-    entries.forEach((entry: any, index: any) => {
+    entries.forEach((entry, index) => {
       entry.rank = index + 1;
     });
 
-    // Find user's rank by id (avoid revealing emails in API)
-    const userRank = entries.find((e: { userId: string }) => e.userId === (session.user as any)?.id) || null;
+    // Find the current player's rank from the entire safe ranked list, not just the top 100.
+    const userRank = entries.find((entry) => entry.userId === currentUserId) ?? null;
 
     return NextResponse.json({
       entries: entries.slice(0, 100), // Top 100
-      userRank: userRank || null,
+      userRank,
     });
   } catch (error) {
     console.error("Error fetching leaderboard:", error);

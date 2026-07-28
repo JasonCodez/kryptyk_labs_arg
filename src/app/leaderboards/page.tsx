@@ -152,6 +152,85 @@ export function normalizeFollowingLeaderboardPayload(value: unknown): FollowingL
   };
 }
 
+// ── Global leaderboard payload allowlist ────────────────────────────────
+
+export interface GlobalLeaderboardEntry {
+  userId: string;
+  userName: string | null;
+  userImage: string | null;
+  activeFlair: string;
+  isPremium: boolean;
+  totalPoints: number;
+  puzzlesSolved: number;
+  rank: number;
+}
+
+export interface GlobalLeaderboardPayload {
+  entries: GlobalLeaderboardEntry[];
+  userRank: GlobalLeaderboardEntry | null;
+}
+
+export function normalizeGlobalLeaderboardEntry(value: unknown): GlobalLeaderboardEntry | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { userId, userName, userImage, activeFlair, isPremium, totalPoints, puzzlesSolved, rank } = value;
+
+  if (!isNonBlankString(userId)) return null;
+  if (!isStringOrNull(userName)) return null;
+  if (!isStringOrNull(userImage)) return null;
+  if (typeof activeFlair !== "string") return null;
+  if (!isFiniteNumber(totalPoints)) return null;
+  if (!isFiniteNumber(puzzlesSolved) || puzzlesSolved < 0 || !Number.isInteger(puzzlesSolved)) return null;
+  if (!isFiniteNumber(rank) || rank < 1 || !Number.isInteger(rank)) return null;
+
+  // Existing frozen browser fixtures may omit isPremium from userRank; production
+  // always sends the real boolean, and isPremium isn't private account data, so a
+  // missing/non-boolean value defaults to false rather than dropping the row.
+  const safeIsPremium = typeof isPremium === "boolean" ? isPremium : false;
+
+  return {
+    userId,
+    userName,
+    userImage,
+    activeFlair,
+    isPremium: safeIsPremium,
+    totalPoints,
+    puzzlesSolved,
+    rank,
+  };
+}
+
+export function normalizeGlobalLeaderboardPayload(value: unknown): GlobalLeaderboardPayload | null {
+  if (!isNonArrayObject(value)) {
+    return null;
+  }
+
+  const { entries, userRank } = value;
+
+  if (!Array.isArray(entries)) {
+    return null;
+  }
+
+  let normalizedUserRank: GlobalLeaderboardEntry | null = null;
+  if (userRank !== null) {
+    normalizedUserRank = normalizeGlobalLeaderboardEntry(userRank);
+    if (!normalizedUserRank) {
+      return null;
+    }
+  }
+
+  const normalizedEntries = entries
+    .map(normalizeGlobalLeaderboardEntry)
+    .filter((entry): entry is GlobalLeaderboardEntry => entry !== null);
+
+  return {
+    entries: normalizedEntries,
+    userRank: normalizedUserRank,
+  };
+}
+
 export function formatCountdown(endsAt: string, nowMs = Date.now()): string {
   const end = new Date(endsAt).getTime();
   if (!Number.isFinite(end)) return "Schedule unavailable";
@@ -376,8 +455,12 @@ export default function LeaderboardsPage() {
           setUserRank(normalized.userRank);
           setFollowingCount(normalized.followingCount);
         } else {
-          setEntries(Array.isArray(data.entries) ? data.entries : []);
-          setUserRank(data.userRank ?? null);
+          const normalized = normalizeGlobalLeaderboardPayload(data);
+          if (!normalized) {
+            throw new Error("request-failed");
+          }
+          setEntries(normalized.entries);
+          setUserRank(normalized.userRank);
         }
       }
       if (!shouldApply()) return;

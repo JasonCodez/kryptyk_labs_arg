@@ -6,7 +6,10 @@ import LeaderboardsPage, {
   getCountdownUrgency,
   normalizeFollowingLeaderboardEntry,
   normalizeFollowingLeaderboardPayload,
+  normalizeGlobalLeaderboardEntry,
+  normalizeGlobalLeaderboardPayload,
   type FollowingLeaderboardEntry,
+  type GlobalLeaderboardEntry,
 } from "./page";
 
 const mockUseSession = jest.fn();
@@ -1054,14 +1057,18 @@ describe("Leaderboards page — Pass 14 rankings integration", () => {
     expect(screen.getByText("You")).toBeTruthy();
   });
 
-  it("honors API isCurrentUser as well", async () => {
+  it("does not honor a spoofed isCurrentUser flag on Global entries — only the authenticated session ID counts (Pass 25C5)", async () => {
+    // The Global contract intentionally excludes isCurrentUser (unlike Following),
+    // so an API response cannot claim an arbitrary row is "you" — current-user
+    // detection relies solely on matching the entry's userId to the session ID.
     authenticate();
     global.fetch = jest.fn((_url: string) => jsonResponse({
       entries: [{ ...GLOBAL_ENTRY, userId: "some-other-id", userName: "Weird", rank: 4, isCurrentUser: true }], userRank: null,
     })) as unknown as typeof fetch;
     render(<LeaderboardsPage />);
     await flush();
-    expect(screen.getByText("You")).toBeTruthy();
+    expect(screen.getByText("Weird")).toBeTruthy();
+    expect(screen.queryByText("You")).toBeNull();
   });
 
   it("Global top-three presentation appears", async () => {
@@ -1689,6 +1696,332 @@ describe("Leaderboards page — Following tab payload hardening (Pass 25C4)", ()
     render(<LeaderboardsPage />);
     await flush();
     fireEvent.click(screen.getByRole("tab", { name: /Following/ }));
+    await flush();
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+    expect(screen.getByText(/Couldn.t refresh just now/)).toBeTruthy();
+    expect(screen.queryByText(/malformed-refresh\.private@example\.test/)).toBeNull();
+  });
+});
+
+// ── Global leaderboard payload normalization (Pass 25C5) ───────────────────
+
+const GLOBAL_VALID_ENTRY: GlobalLeaderboardEntry = {
+  userId: "player-2",
+  userName: "Alpha Player",
+  userImage: null,
+  activeFlair: "none",
+  isPremium: false,
+  totalPoints: 250,
+  puzzlesSolved: 5,
+  rank: 1,
+};
+
+const GLOBAL_VALID_PAYLOAD = {
+  entries: [GLOBAL_VALID_ENTRY],
+  userRank: null,
+};
+
+describe("normalizeGlobalLeaderboardEntry", () => {
+  test("non-object value returns null", () => {
+    expect(normalizeGlobalLeaderboardEntry("nope")).toBeNull();
+    expect(normalizeGlobalLeaderboardEntry(null)).toBeNull();
+  });
+
+  test("array value returns null", () => {
+    expect(normalizeGlobalLeaderboardEntry([GLOBAL_VALID_ENTRY])).toBeNull();
+  });
+
+  test("valid entry normalizes correctly", () => {
+    expect(normalizeGlobalLeaderboardEntry(GLOBAL_VALID_ENTRY)).toEqual(GLOBAL_VALID_ENTRY);
+  });
+
+  test("blank userId is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, userId: "" })).toBeNull();
+  });
+
+  test("invalid userName is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, userName: 42 })).toBeNull();
+  });
+
+  test("invalid userImage is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, userImage: 42 })).toBeNull();
+  });
+
+  test("invalid activeFlair is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, activeFlair: null })).toBeNull();
+  });
+
+  test("invalid totalPoints is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, totalPoints: "10" })).toBeNull();
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, totalPoints: Infinity })).toBeNull();
+  });
+
+  test("negative puzzlesSolved is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, puzzlesSolved: -1 })).toBeNull();
+  });
+
+  test("non-integer puzzlesSolved is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, puzzlesSolved: 1.5 })).toBeNull();
+  });
+
+  test("invalid rank is dropped", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, rank: 0 })).toBeNull();
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, rank: 1.5 })).toBeNull();
+  });
+
+  test("missing isPremium defaults to false", () => {
+    const { isPremium: _omit, ...withoutFlag } = GLOBAL_VALID_ENTRY;
+    expect(normalizeGlobalLeaderboardEntry(withoutFlag)).toEqual({ ...GLOBAL_VALID_ENTRY, isPremium: false });
+  });
+
+  test("non-boolean isPremium defaults to false", () => {
+    expect(normalizeGlobalLeaderboardEntry({ ...GLOBAL_VALID_ENTRY, isPremium: "yes" })).toEqual({
+      ...GLOBAL_VALID_ENTRY,
+      isPremium: false,
+    });
+  });
+
+  test("input is not mutated", () => {
+    const original = JSON.parse(JSON.stringify(GLOBAL_VALID_ENTRY));
+    normalizeGlobalLeaderboardEntry(GLOBAL_VALID_ENTRY);
+    expect(GLOBAL_VALID_ENTRY).toEqual(original);
+  });
+
+  test("unknown private fields do not survive", () => {
+    const contaminated = {
+      ...GLOBAL_VALID_ENTRY,
+      email: "leaked.private@example.test",
+      purchasedPoints: 999,
+      role: "admin",
+      isHidden: false,
+      isBot: false,
+    };
+    const result = normalizeGlobalLeaderboardEntry(contaminated);
+    expect(result).toEqual(GLOBAL_VALID_ENTRY);
+    expect(JSON.stringify(result)).not.toMatch(/private@example\.test|purchasedPoints|role|isHidden|isBot/);
+  });
+});
+
+describe("normalizeGlobalLeaderboardPayload", () => {
+  test("non-object top-level value returns null", () => {
+    expect(normalizeGlobalLeaderboardPayload("nope")).toBeNull();
+    expect(normalizeGlobalLeaderboardPayload(null)).toBeNull();
+    expect(normalizeGlobalLeaderboardPayload(undefined)).toBeNull();
+  });
+
+  test("array top-level value returns null", () => {
+    expect(normalizeGlobalLeaderboardPayload([GLOBAL_VALID_PAYLOAD])).toBeNull();
+  });
+
+  test("missing entries returns null", () => {
+    expect(normalizeGlobalLeaderboardPayload({ userRank: null })).toBeNull();
+  });
+
+  test("non-array entries returns null", () => {
+    expect(normalizeGlobalLeaderboardPayload({ entries: "nope", userRank: null })).toBeNull();
+  });
+
+  test("invalid non-null userRank rejects the entire payload", () => {
+    expect(normalizeGlobalLeaderboardPayload({ ...GLOBAL_VALID_PAYLOAD, userRank: { bad: true } })).toBeNull();
+  });
+
+  test("malformed entries are dropped while valid order is preserved", () => {
+    const second = { ...GLOBAL_VALID_ENTRY, userId: "player-3", rank: 2 };
+    const result = normalizeGlobalLeaderboardPayload({
+      entries: [null, "invalid", GLOBAL_VALID_ENTRY, { bad: true }, second],
+      userRank: null,
+    });
+    expect(result?.entries.map((e) => e.userId)).toEqual(["player-2", "player-3"]);
+  });
+
+  test("valid userRank normalizes", () => {
+    const result = normalizeGlobalLeaderboardPayload({
+      entries: [GLOBAL_VALID_ENTRY],
+      userRank: GLOBAL_VALID_ENTRY,
+    });
+    expect(result?.userRank).toEqual(GLOBAL_VALID_ENTRY);
+  });
+
+  test("root unknown fields are discarded", () => {
+    const result = normalizeGlobalLeaderboardPayload({
+      ...GLOBAL_VALID_PAYLOAD,
+      email: "root.private@example.test",
+      accountId: "root-account-private",
+    });
+    expect(Object.keys(result!)).toEqual(["entries", "userRank"]);
+  });
+
+  test("valid payload normalizes correctly", () => {
+    expect(normalizeGlobalLeaderboardPayload(GLOBAL_VALID_PAYLOAD)).toEqual(GLOBAL_VALID_PAYLOAD);
+  });
+
+  test("privacy: unexpected private fields at every depth do not survive", () => {
+    const contaminated = {
+      email: "root.private@example.test",
+      accountId: "root-account-private",
+      entries: [
+        {
+          ...GLOBAL_VALID_ENTRY,
+          email: "entry.private@example.test",
+          purchasedPoints: 999,
+          role: "admin",
+          isHidden: false,
+          isBot: false,
+          provider: "credentials",
+          token: "secret-token",
+          nested: { email: "nested.private@example.test" },
+        },
+      ],
+      userRank: {
+        ...GLOBAL_VALID_ENTRY,
+        userId: "me",
+        email: "rank.private@example.test",
+        purchasedPoints: 500,
+      },
+    };
+
+    const result = normalizeGlobalLeaderboardPayload(contaminated);
+    expect(result?.entries).toEqual([GLOBAL_VALID_ENTRY]);
+    expect(result?.userRank).toEqual({ ...GLOBAL_VALID_ENTRY, userId: "me" });
+    expect(Object.keys(result!)).toEqual(["entries", "userRank"]);
+    expect(JSON.stringify(result)).not.toMatch(/private@example\.test|root-account|purchasedPoints|"role"|"provider"|"token"/);
+  });
+});
+
+describe("Leaderboards page — Global tab payload hardening (Pass 25C5)", () => {
+  it("renders a contaminated but valid Global payload without leaking private fields", async () => {
+    authenticate();
+    const contaminatedPayload = {
+      entries: [
+        GLOBAL_VALID_ENTRY,
+        { ...GLOBAL_VALID_ENTRY, userId: "me", userName: "Me", rank: 2, isPremium: true, activeFlair: "👑" },
+      ],
+      userRank: { ...GLOBAL_VALID_ENTRY, userId: "me", userName: "Me", rank: 2, isPremium: true, activeFlair: "👑" },
+      email: "root.private@example.test",
+      accountId: "root-account-private",
+    };
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") return jsonResponse(contaminatedPayload);
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+    expect(screen.getByText("Me")).toBeTruthy();
+    expect(screen.getByText("#2")).toBeTruthy();
+    expect(screen.getByText("Your Global Rank")).toBeTruthy();
+    // Earned points (250) and puzzle count (5 puzzles solved) for the valid entry.
+    expect(screen.getAllByText("250").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/5 puzzles solved/).length).toBeGreaterThan(0);
+    // Premium badge and flair for the second (contaminated but valid) entry.
+    expect(screen.getByText("Premium")).toBeTruthy();
+    expect(screen.getByText("👑")).toBeTruthy();
+    expect(screen.queryByText(/private@example\.test/)).toBeNull();
+    expect(screen.queryByText(/root-account/)).toBeNull();
+  });
+
+  it("shows the existing error panel for a malformed top-level Global payload", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") return jsonResponse({ notTheRightShape: true, email: "leak.private@example.test" });
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    expect(screen.getByText("We couldn’t load this leaderboard")).toBeTruthy();
+    expect(screen.queryByText(/leak\.private@example\.test/)).toBeNull();
+    expect(screen.queryByText(/notTheRightShape/)).toBeNull();
+  });
+
+  it("drops malformed entries inside an otherwise valid Global payload while staying ready", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") {
+        return jsonResponse({
+          entries: [GLOBAL_VALID_ENTRY, { bad: true }, null, "invalid"],
+          userRank: null,
+        });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+    expect(screen.queryByText("We couldn’t load this leaderboard")).toBeNull();
+  });
+
+  it("rejects a malformed non-null Global userRank and shows the error panel", async () => {
+    authenticate();
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") {
+        return jsonResponse({
+          entries: [GLOBAL_VALID_ENTRY],
+          userRank: { totallyWrong: true },
+        });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+
+    expect(screen.getByText("We couldn’t load this leaderboard")).toBeTruthy();
+  });
+
+  it("Global background refresh applies refreshed valid public values without leaking private fields", async () => {
+    authenticate();
+    let globalCall = 0;
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") {
+        globalCall += 1;
+        if (globalCall === 1) {
+          return jsonResponse({ entries: [GLOBAL_VALID_ENTRY], userRank: null });
+        }
+        return jsonResponse({
+          entries: [{ ...GLOBAL_VALID_ENTRY, userName: "Alpha-Updated", email: "refresh.private@example.test" }],
+          userRank: null,
+        });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
+    await flush();
+    expect(screen.getByText("Alpha Player")).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("puzzlewarz:puzzle-solved"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Alpha-Updated")).toBeTruthy();
+    expect(screen.queryByText(/refresh\.private@example\.test/)).toBeNull();
+  });
+
+  it("a failed Global background refresh preserves previous rankings and shows the refresh warning", async () => {
+    authenticate();
+    let globalCall = 0;
+    global.fetch = jest.fn((url: string) => {
+      if (url === "/api/leaderboards/global") {
+        globalCall += 1;
+        if (globalCall === 1) {
+          return jsonResponse({ entries: [GLOBAL_VALID_ENTRY], userRank: null });
+        }
+        return jsonResponse({ notTheRightShape: true, email: "malformed-refresh.private@example.test" });
+      }
+      return jsonResponse({ entries: [], userRank: null });
+    }) as unknown as typeof fetch;
+    render(<LeaderboardsPage />);
     await flush();
     expect(screen.getByText("Alpha Player")).toBeTruthy();
 
