@@ -98,6 +98,7 @@ export default function LogicGridPuzzle({
   const [timerRunning, setTimerRunning] = useState(!alreadySolved);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
+  const [hydrationReady, setHydrationReady] = useState(false);
 
   const hydratedRef = useRef(false);
   const startTimeRef = useRef<number>(Date.now());
@@ -106,6 +107,9 @@ export default function LogicGridPuzzle({
   const milestoneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const milestonesReachedRef = useRef<Set<number>>(new Set());
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
+  // True only immediately after a real player mutation (cell action, Undo, Redo) — the
+  // autosave effect consumes and clears this so hydration itself can never schedule a PATCH.
+  const autosavePendingRef = useRef(false);
 
   const cellMarks = history.present;
 
@@ -114,11 +118,27 @@ export default function LogicGridPuzzle({
     [categories, cellMarks]
   );
 
-  // Hydrate saved scratch-grid state on mount. Does not create an Undo entry, does not fire
-  // juice effects, and does not fire milestone messaging.
+  // Hydrate saved scratch-grid state for this puzzleId. Does not create an Undo entry, does
+  // not fire juice effects, does not fire milestone messaging, and — critically — must never
+  // by itself cause the autosave effect below to PATCH: a transient GET failure must never be
+  // followed by a PATCH that erases previously saved progress. `autosavePendingRef` (only ever
+  // set by a real player mutation) is what actually gates the PATCH, but resetting hydration
+  // readiness here also blocks interaction until this puzzle's own state has settled.
   useEffect(() => {
     if (!validation.valid) return;
     let cancelled = false;
+
+    hydratedRef.current = false;
+    setHydrationReady(false);
+    autosavePendingRef.current = false;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    // Reset immediately so a puzzleId change can never leave the previous puzzle's marks or
+    // Undo/Redo history visible (or PATCH-able) against the new puzzleId.
+    setHistory({ past: [], present: {}, future: [] });
+
     fetch(`/api/puzzles/${puzzleId}/logic-grid`, { credentials: "same-origin" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -130,7 +150,10 @@ export default function LogicGridPuzzle({
         if (!cancelled) setHistory({ past: [], present: {}, future: [] });
       })
       .finally(() => {
-        if (!cancelled) hydratedRef.current = true;
+        if (!cancelled) {
+          hydratedRef.current = true;
+          setHydrationReady(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -138,9 +161,12 @@ export default function LogicGridPuzzle({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puzzleId, validation.valid]);
 
-  // Debounced autosave of scratch state (Undo/Redo changes flow through this too).
+  // Debounced autosave of scratch state (Undo/Redo changes flow through this too). Only ever
+  // schedules a PATCH when a real player mutation set `autosavePendingRef` — hydration alone
+  // (successful, empty, malformed, or failed) can never trigger this.
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    if (!hydratedRef.current || !hydrationReady || !autosavePendingRef.current) return;
+    autosavePendingRef.current = false;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       fetch(`/api/puzzles/${puzzleId}/logic-grid`, {
@@ -153,7 +179,7 @@ export default function LogicGridPuzzle({
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [cellMarks, puzzleId]);
+  }, [cellMarks, puzzleId, hydrationReady]);
 
   // Elapsed timer — starts on mount with valid data, stops after a correct solve, never
   // runs when already solved.
@@ -207,7 +233,7 @@ export default function LogicGridPuzzle({
 
   const handleCellActivate = useCallback(
     (catIdA: string, entryA: string, catIdB: string, entryB: string) => {
-      if (solved || submitting) return;
+      if (!hydrationReady || solved || submitting) return;
       const key = getLogicGridCellKey(categories, catIdA, entryA, catIdB, entryB);
       if (!key) return;
 
@@ -219,6 +245,7 @@ export default function LogicGridPuzzle({
       const prevPresent = history.present;
       const beforePercent = derivedState.progressPercent;
 
+      autosavePendingRef.current = true;
       setHistory({
         past: [...history.past, prevPresent].slice(-MAX_HISTORY),
         present: result.marks,
@@ -227,7 +254,7 @@ export default function LogicGridPuzzle({
 
       if (next === "check") {
         juice.pop();
-        if (result.autoEliminatedCount > 0) {
+        if (result.autoEliminatedCount >= 2) {
           triggerChainMessage(result.autoEliminatedCount);
         }
       } else {
@@ -237,29 +264,33 @@ export default function LogicGridPuzzle({
       const afterPercent = deriveLogicGridState(categories, result.marks).progressPercent;
       checkMilestones(beforePercent, afterPercent);
     },
-    [categories, history, solved, submitting, derivedState.progressPercent, checkMilestones, triggerChainMessage]
+    [categories, history, solved, submitting, hydrationReady, derivedState.progressPercent, checkMilestones, triggerChainMessage]
   );
 
   const handleUndo = useCallback(() => {
-    if (solved) return;
-    setHistory((h) => {
-      if (h.past.length === 0) return h;
-      const prev = h.past[h.past.length - 1];
-      return { past: h.past.slice(0, -1), present: prev, future: [h.present, ...h.future] };
+    if (!hydrationReady || solved || history.past.length === 0) return;
+    const prev = history.past[history.past.length - 1];
+    autosavePendingRef.current = true;
+    setHistory({
+      past: history.past.slice(0, -1),
+      present: prev,
+      future: [history.present, ...history.future],
     });
-  }, [solved]);
+  }, [hydrationReady, solved, history]);
 
   const handleRedo = useCallback(() => {
-    if (solved) return;
-    setHistory((h) => {
-      if (h.future.length === 0) return h;
-      const next = h.future[0];
-      return { past: [...h.past, h.present].slice(-MAX_HISTORY), present: next, future: h.future.slice(1) };
+    if (!hydrationReady || solved || history.future.length === 0) return;
+    const next = history.future[0];
+    autosavePendingRef.current = true;
+    setHistory({
+      past: [...history.past, history.present].slice(-MAX_HISTORY),
+      present: next,
+      future: history.future.slice(1),
     });
-  }, [solved]);
+  }, [hydrationReady, solved, history]);
 
-  const canUndo = history.past.length > 0 && !solved;
-  const canRedo = history.future.length > 0 && !solved;
+  const canUndo = hydrationReady && history.past.length > 0 && !solved;
+  const canRedo = hydrationReady && history.future.length > 0 && !solved;
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
@@ -294,7 +325,7 @@ export default function LogicGridPuzzle({
   }
 
   async function handleSubmit() {
-    if (!derivedState.complete || submitting || solved) return;
+    if (!hydrationReady || !derivedState.complete || submitting || solved) return;
     setSubmitting(true);
     setMismatchedCategories(null);
     setRequestFailed(false);
@@ -555,7 +586,7 @@ export default function LogicGridPuzzle({
                 colCategories={colCategories}
                 cellMarks={cellMarks}
                 onCellActivate={handleCellActivate}
-                disabled={solved}
+                disabled={solved || !hydrationReady}
               />
             ))}
           </div>
@@ -582,7 +613,7 @@ export default function LogicGridPuzzle({
               type="button"
               ref={submitButtonRef}
               onClick={handleSubmit}
-              disabled={!derivedState.complete || submitting}
+              disabled={!derivedState.complete || submitting || !hydrationReady}
               className={styles.submitButton}
             >
               {submitLabel}

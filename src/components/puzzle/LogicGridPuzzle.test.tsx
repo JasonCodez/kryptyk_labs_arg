@@ -49,6 +49,13 @@ const LOGIC_CASE_DATA = {
 
 const INVALID_DATA = { categories: [], clues: [] };
 
+const FIXTURE_CATEGORIES = validateLogicGridPuzzleData(LOGIC_CASE_DATA, { requireSolution: false }).normalized!
+  .categories;
+
+function keyFor(catIdA: string, entryA: string, catIdB: string, entryB: string): string {
+  return getLogicGridCellKey(FIXTURE_CATEGORIES, catIdA, entryA, catIdB, entryB)!;
+}
+
 function buildCompleteMarks(): Record<string, "check"> {
   const { normalized } = validateLogicGridPuzzleData(LOGIC_CASE_DATA, { requireSolution: false });
   const categories = normalized!.categories;
@@ -112,6 +119,53 @@ function buildFetchMock(options: {
   });
   global.fetch = fn as unknown as typeof fetch;
   return { fn, calls };
+}
+
+/**
+ * A fetch mock whose GET responses are resolved on demand (keyed by the puzzleId embedded in
+ * the URL), for tests that need to observe pre-hydration state or control exactly when each
+ * puzzle's hydration settles. PATCH/POST resolve immediately unless overridden.
+ */
+function buildDeferredFetchMock() {
+  const calls: FetchCall[] = [];
+  const resolvers = new Map<string, (body: unknown) => void>();
+  const fn = jest.fn((url: RequestInfo | URL, init?: RequestInit) => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    const urlStr = String(url);
+    const call: FetchCall = {
+      url: urlStr,
+      method,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      credentials: init?.credentials as string | undefined,
+    };
+    calls.push(call);
+
+    if (method === "GET") {
+      return new Promise<Response>((resolve) => {
+        resolvers.set(urlStr, (body: unknown) => resolve(jsonResponseSync(body)));
+      });
+    }
+    if (method === "PATCH") return jsonResponse({ saved: true });
+    if (method === "POST") return jsonResponse({ correct: false, mismatchedCategories: [] });
+    return jsonResponse({});
+  });
+  global.fetch = fn as unknown as typeof fetch;
+
+  function jsonResponseSync(body: unknown): Response {
+    return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response;
+  }
+
+  return {
+    fn,
+    calls,
+    /** Resolves the GET whose URL contains `urlFragment` (e.g. a puzzleId) with `body`. */
+    resolveGet(urlFragment: string, body: unknown) {
+      const match = [...resolvers.keys()].find((u) => u.includes(urlFragment));
+      if (!match) throw new Error(`No pending GET found for fragment "${urlFragment}"`);
+      resolvers.get(match)!(body);
+      resolvers.delete(match);
+    },
+  };
 }
 
 async function flush() {
@@ -327,6 +381,53 @@ describe("LogicGridPuzzle — propagation and chain feedback", () => {
     await flush();
     fireEvent.click(cellButton("Maya", "Observatory"));
     expect(screen.queryByText(/possibilities eliminated/)).toBeNull();
+  });
+
+  it("exactly one new elimination does not show a chain message", async () => {
+    // Pre-cross 5 of the 6 row/column cells for the Maya/Observatory pairing via hydration,
+    // leaving exactly one (Theo/Observatory) to be newly eliminated by the check.
+    const preset: Record<string, "cross"> = {
+      [keyFor("person", "Maya", "room", "Library")]: "cross",
+      [keyFor("person", "Maya", "room", "Vault")]: "cross",
+      [keyFor("person", "Maya", "room", "Gallery")]: "cross",
+      [keyFor("person", "Jordan", "room", "Observatory")]: "cross",
+      [keyFor("person", "Lena", "room", "Observatory")]: "cross",
+    };
+    buildFetchMock({ getBody: { cellMarks: preset } });
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await flush();
+
+    expect(cellButton("Theo", "Observatory").getAttribute("aria-label")).toMatch(/unknown/);
+    fireEvent.click(cellButton("Maya", "Observatory")); // -> cross
+    fireEvent.click(cellButton("Maya", "Observatory")); // -> check (1 new elimination)
+
+    expect(cellButton("Theo", "Observatory").getAttribute("aria-label")).toMatch(/impossible/);
+    expect(screen.queryByText(/possibilities eliminated/)).toBeNull();
+  });
+
+  it("exactly two new eliminations show the chain message with the correct count", async () => {
+    // Pre-cross 4 of the 6 row/column cells, leaving Maya/Gallery and Theo/Observatory to be
+    // newly eliminated by the check.
+    const preset: Record<string, "cross"> = {
+      [keyFor("person", "Maya", "room", "Library")]: "cross",
+      [keyFor("person", "Maya", "room", "Vault")]: "cross",
+      [keyFor("person", "Jordan", "room", "Observatory")]: "cross",
+      [keyFor("person", "Lena", "room", "Observatory")]: "cross",
+    };
+    buildFetchMock({ getBody: { cellMarks: preset } });
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await flush();
+
+    fireEvent.click(cellButton("Maya", "Observatory")); // -> cross
+    fireEvent.click(cellButton("Maya", "Observatory")); // -> check (2 new eliminations)
+
+    expect(cellButton("Maya", "Gallery").getAttribute("aria-label")).toMatch(/impossible/);
+    expect(cellButton("Theo", "Observatory").getAttribute("aria-label")).toMatch(/impossible/);
+    expect(screen.getByText(/2 possibilities eliminated/)).toBeTruthy();
   });
 
   it("uses juice.pop() for a check action and juice.tick() for cross/clear", async () => {
@@ -551,6 +652,244 @@ describe("LogicGridPuzzle — autosave", () => {
     expect(patchCalls[0].url).toBe("/api/puzzles/p1/logic-grid");
     expect(patchCalls[0].credentials).toBe("same-origin");
     expect(Object.keys(patchCalls[0].body as object)).toEqual(["cellMarks"]);
+  });
+
+  it("Undo triggers its own autosave of the restored state", async () => {
+    jest.useFakeTimers();
+    const { calls } = buildFetchMock();
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    await act(async () => {
+      jest.advanceTimersByTime(900);
+    });
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await act(async () => {
+      jest.advanceTimersByTime(900);
+    });
+
+    const patchCalls = calls.filter((c) => c.method === "PATCH");
+    expect(patchCalls).toHaveLength(2);
+    expect(patchCalls[1].body).toEqual({ cellMarks: {} });
+  });
+
+  it("Redo triggers its own autosave of the reapplied state", async () => {
+    jest.useFakeTimers();
+    const { calls } = buildFetchMock();
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    await act(async () => {
+      jest.advanceTimersByTime(900);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await act(async () => {
+      jest.advanceTimersByTime(900);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await act(async () => {
+      jest.advanceTimersByTime(900);
+    });
+
+    const patchCalls = calls.filter((c) => c.method === "PATCH");
+    expect(patchCalls).toHaveLength(3);
+    expect(patchCalls[2].body).toEqual({
+      cellMarks: { [keyFor("person", "Maya", "room", "Observatory")]: "cross" },
+    });
+  });
+});
+
+describe("LogicGridPuzzle — hydration never autosaves by itself (regression for Pass 26A correction)", () => {
+  it("successful hydration with existing marks does not autosave", async () => {
+    jest.useFakeTimers();
+    const preset = { [keyFor("person", "Maya", "room", "Observatory")]: "check" as const };
+    const { calls } = buildFetchMock({ getBody: { cellMarks: preset } });
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/confirmed/);
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("empty successful hydration does not autosave", async () => {
+    jest.useFakeTimers();
+    const { calls } = buildFetchMock({ getBody: { cellMarks: {} } });
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("malformed hydration does not autosave and the grid safely starts empty", async () => {
+    jest.useFakeTimers();
+    const { calls } = buildFetchMock({
+      getBody: { cellMarks: { "not-a-real-key": "check", "person::Maya::room::Observatory": "maybe" } },
+    });
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/unknown/);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("rejected hydration does not autosave and the grid safely starts empty (mandatory: protects saved progress)", async () => {
+    jest.useFakeTimers();
+    const { calls } = buildFetchMock({ getReject: true });
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/unknown/);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+});
+
+describe("LogicGridPuzzle — interaction is disabled before hydration completes", () => {
+  it("disables cells, Undo, Redo, and Submit until the GET resolves, then enables them", async () => {
+    const { resolveGet } = buildDeferredFetchMock();
+    render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Redo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: /Confirm every relationship|Submit Solution/ }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+
+    // A click before hydration must not mutate marks.
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/unknown/);
+
+    await act(async () => {
+      resolveGet("p1", { cellMarks: {} });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(false);
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/impossible/);
+  });
+});
+
+describe("LogicGridPuzzle — puzzleId transition does not cross-save (regression for Pass 26A correction)", () => {
+  it("cancels a pending p1 autosave, never sends p1 marks to the p2 endpoint, and requires a fresh p2 move before autosaving", async () => {
+    jest.useFakeTimers();
+    const { calls, resolveGet } = buildDeferredFetchMock();
+
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    resolveGet("p1", { cellMarks: {} });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Start a p1 move; its 800ms debounce has not fired yet.
+    fireEvent.click(cellButton("Maya", "Observatory"));
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p2" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // p2 is not hydrated yet — the grid must stay disabled.
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+
+    // Even after well past the old debounce window, no PATCH for p1 may occur.
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(calls.filter((c) => c.method === "PATCH" && c.url.includes("/p1/"))).toHaveLength(0);
+
+    resolveGet("p2", { cellMarks: {} });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // p2 hydrated with its own (empty) marks — no leftover p1 mark, no Undo history.
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toBe("Maya and Observatory: unknown");
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
+
+    // Still no PATCH for p2 — hydration alone must not trigger one.
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(calls.filter((c) => c.method === "PATCH" && c.url.includes("/p2/"))).toHaveLength(0);
+
+    // Only a fresh p2 move schedules a p2 PATCH.
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    await act(async () => {
+      jest.advanceTimersByTime(900);
+    });
+    const p2Patches = calls.filter((c) => c.method === "PATCH" && c.url.includes("/p2/"));
+    expect(p2Patches).toHaveLength(1);
+    expect(p2Patches[0].body).toEqual({
+      cellMarks: { [keyFor("person", "Maya", "room", "Observatory")]: "cross" },
+    });
   });
 });
 
