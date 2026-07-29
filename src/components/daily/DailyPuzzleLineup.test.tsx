@@ -355,4 +355,24 @@ describe("DailyPuzzleLineup", () => {
     const links = gridLinks().filter((l) => HREFS.includes(l.getAttribute("href") || ""));
     expect(links.map((l) => l.getAttribute("href"))).toEqual(HREFS);
   });
+
+  it("43. a summary payload missing an entry does not crash — the missing key renders as not completed (regression)", () => {
+    // Simulates a malformed/partial `/api/daily/summary` response (the exact runtime
+    // shape that previously threw "Cannot read properties of undefined (reading
+    // 'completedToday')"), which the DailySummary type doesn't protect against at
+    // runtime since fetched JSON is untyped.
+    const full = summary({ crossword: entry({ completedToday: true }) });
+    const { jigsaw: _omit, ...incomplete } = full;
+    const malformed = incomplete as unknown as DailySummary;
+
+    expect(() => show({ summary: malformed })).not.toThrow();
+
+    // The missing entry's card still renders, defensively treated as not completed.
+    const jigsawCard = gridCard("/daily/jigsaw");
+    expect(jigsawCard).toBeTruthy();
+    expect(within(jigsawCard).getByText("Play")).toBeTruthy();
+
+    // The overall completed count only reflects entries that actually exist.
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("1");
+  });
 });

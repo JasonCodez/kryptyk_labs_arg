@@ -239,7 +239,7 @@ function getRecommendation(
   for (const puzzle of PUZZLES) {
     const entry = summary[puzzle.key];
     const accessible = !puzzle.signInRequired || isAuthenticated;
-    if (accessible && entry.available && !entry.completedToday) {
+    if (accessible && entry?.available && !entry.completedToday) {
       return { puzzle, entry };
     }
   }
@@ -252,7 +252,7 @@ function getRecommendation(
 export default function DailyPuzzleLineup({ summary, isAuthenticated, debriefCompleted }: DailyPuzzleLineupProps) {
   const reduceMotion = useAppReducedMotion();
 
-  const completedCount = PUZZLES.filter((p) => summary[p.key].completedToday).length + (debriefCompleted ? 1 : 0);
+  const completedCount = PUZZLES.filter((p) => summary[p.key]?.completedToday).length + (debriefCompleted ? 1 : 0);
   const totalChallenges = 6;
   const remainingCount = totalChallenges - completedCount;
   const completionPercentage = Math.round((completedCount / totalChallenges) * 100);
@@ -395,7 +395,7 @@ export default function DailyPuzzleLineup({ summary, isAuthenticated, debriefCom
               puzzle={puzzle}
               entry={entry}
               isAuthenticated={isAuthenticated}
-              completed={entry.completedToday}
+              completed={entry?.completedToday ?? false}
             />
           );
         })}
