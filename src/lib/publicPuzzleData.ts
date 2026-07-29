@@ -52,7 +52,9 @@ function sanitizeLogicGridData(rawData: Record<string, unknown>): Record<string,
 
   const logicGrid = validateLogicGridPuzzleData(rawData, { requireSolution: false });
   if (!logicGrid.valid || !logicGrid.normalized) {
-    return safeData;
+    // Fail closed: an invalid puzzle must never echo raw/partial clue data (which may carry
+    // contaminated structured-clue metadata) back to the client.
+    return { ...safeData, clues: [] };
   }
 
   return {

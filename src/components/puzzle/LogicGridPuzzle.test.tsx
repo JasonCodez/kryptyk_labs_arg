@@ -627,6 +627,146 @@ describe("LogicGridPuzzle — clue cards", () => {
   });
 });
 
+const STRUCTURED_LOGIC_CASE_DATA = {
+  intro: LOGIC_CASE_DATA.intro,
+  categories: LOGIC_CASE_DATA.categories,
+  clues: [
+    "Maya did not enter the Vault.",
+    {
+      id: "same-clue",
+      text: "The Library visitor arrived at 8:00.",
+      type: "same",
+      operands: [
+        { categoryId: "room", entry: "Library" },
+        { categoryId: "time", entry: "8:00" },
+      ],
+    },
+    {
+      text: "Jordan arrived immediately before the guest carrying the Red Journal.",
+      type: "immediatelyBefore",
+      orderedCategoryId: "time",
+      operands: [
+        { categoryId: "person", entry: "Jordan" },
+        { categoryId: "person", entry: "Theo" },
+      ],
+    },
+  ],
+};
+
+describe("LogicGridPuzzle — structured clues", () => {
+  it("renders structured clue text via clue.text, alongside legacy string clues", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={STRUCTURED_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    expect(screen.getByText("Maya did not enter the Vault.")).toBeTruthy();
+    expect(screen.getByText("The Library visitor arrived at 8:00.")).toBeTruthy();
+    expect(
+      screen.getByText("Jordan arrived immediately before the guest carrying the Red Journal.")
+    ).toBeTruthy();
+    expect(screen.getByText("0 of 3 clues reviewed")).toBeTruthy();
+  });
+
+  it("never displays clue type, operand, category, ordered-category, or id metadata", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={STRUCTURED_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    const panel = screen.getByRole("tabpanel");
+    for (const forbidden of ["same-clue", "immediatelyBefore", "orderedCategoryId", "categoryId", "operands"]) {
+      expect(within(panel).queryByText(new RegExp(forbidden))).toBeNull();
+    }
+  });
+
+  it("tracks reviewed state by clue id rather than index, surviving reorderable rendering", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={STRUCTURED_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    // Mark the second (structured "same") clue reviewed.
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText("1 of 3 clues reviewed")).toBeTruthy();
+    expect(checkboxes[0].checked).toBe(false);
+    expect(checkboxes[1].checked).toBe(true);
+    expect(checkboxes[2].checked).toBe(false);
+
+    // Toggling it back off restores the count without disturbing the others.
+    fireEvent.click(checkboxes[1]);
+    expect(screen.getByText("0 of 3 clues reviewed")).toBeTruthy();
+  });
+
+  it("preserves visible 1-based clue numbering and accessible labels for structured clues", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={STRUCTURED_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    expect(screen.getAllByLabelText(/Mark clue \d as reviewed/)).toHaveLength(3);
+    expect(screen.getByLabelText("Mark clue 1 as reviewed")).toBeTruthy();
+    expect(screen.getByLabelText("Mark clue 2 as reviewed")).toBeTruthy();
+    expect(screen.getByLabelText("Mark clue 3 as reviewed")).toBeTruthy();
+  });
+
+  it("clue review state remains local-only and does not affect progress or grid interaction", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={STRUCTURED_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    expect(screen.getByText("0 of 12 facts confirmed")).toBeTruthy();
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/impossible/);
+  });
+
+  it("renders a safe load error for a puzzle with a malformed structured clue rather than crashing", () => {
+    buildFetchMock();
+    const malformed = {
+      intro: LOGIC_CASE_DATA.intro,
+      categories: LOGIC_CASE_DATA.categories,
+      clues: [{ text: "Broken.", type: "same", operands: [{ categoryId: "person", entry: "Maya" }] }],
+    };
+    render(<LogicGridPuzzle puzzleId="p1" logicGridData={malformed} alreadySolved={false} onSolved={jest.fn()} />);
+    expect(screen.getByText("This logic case could not be loaded.")).toBeTruthy();
+  });
+});
+
 describe("LogicGridPuzzle — autosave", () => {
   it("does not PATCH before hydration, then debounces exactly one PATCH per move with the exact contract", async () => {
     jest.useFakeTimers();

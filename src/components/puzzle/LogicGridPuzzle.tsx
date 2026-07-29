@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import {
   validateLogicGridPuzzleData,
   type LogicGridCategoryNormalized,
+  type LogicGridClueNormalized,
 } from "@/lib/logicGridCore";
 import {
   applyLogicGridCellMark,
@@ -80,11 +81,11 @@ export default function LogicGridPuzzle({
   );
 
   const categories: LogicGridCategoryNormalized[] = validation.normalized?.categories ?? [];
-  const clues: string[] = validation.normalized?.clues ?? [];
+  const clues: LogicGridClueNormalized[] = validation.normalized?.clues ?? [];
   const intro: string = validation.normalized?.intro ?? "";
 
   const [history, setHistory] = useState<HistoryState>({ past: [], present: {}, future: [] });
-  const [resolvedClues, setResolvedClues] = useState<Set<number>>(new Set());
+  const [resolvedClues, setResolvedClues] = useState<Set<string>>(new Set());
   const [solved, setSolved] = useState(alreadySolved);
   const [submitting, setSubmitting] = useState(false);
   const [mismatchedCategories, setMismatchedCategories] = useState<string[] | null>(null);
@@ -314,11 +315,11 @@ export default function LogicGridPuzzle({
     }
   }
 
-  function toggleClue(index: number) {
+  function toggleClue(id: string) {
     setResolvedClues((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
     juice.tick();
@@ -544,22 +545,22 @@ export default function LogicGridPuzzle({
           </div>
           <div className={styles.clueList}>
             {clues.map((clue, i) => {
-              const resolved = resolvedClues.has(i);
+              const resolved = resolvedClues.has(clue.id);
               return (
                 <label
-                  key={i}
+                  key={clue.id}
                   className={resolved ? `${styles.clueCard} ${styles.clueCardResolved}` : styles.clueCard}
                 >
                   <input
                     type="checkbox"
                     checked={resolved}
-                    onChange={() => toggleClue(i)}
+                    onChange={() => toggleClue(clue.id)}
                     className={styles.clueCheckbox}
                     aria-label={`Mark clue ${i + 1} as reviewed`}
                   />
                   <span className={styles.clueBody}>
                     <span className={styles.clueNumber}>{i + 1}</span>
-                    <span className={styles.clueText}>{clue}</span>
+                    <span className={styles.clueText}>{clue.text}</span>
                     {resolved && <span className={styles.clueResolvedTag}>Resolved</span>}
                   </span>
                 </label>
