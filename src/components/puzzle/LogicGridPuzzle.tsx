@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   validateLogicGridPuzzleData,
   type LogicGridCategoryNormalized,
@@ -80,6 +80,15 @@ export default function LogicGridPuzzle({
   alreadySolved,
   onSolved,
 }: LogicGridPuzzleProps) {
+  // Component-instance-unique, DOM-safe prefix for generated clue element IDs. Authored
+  // structured-clue ids are only validated as trimmed nonblank strings (they may legally
+  // contain spaces or punctuation), so they are never safe to place directly into an `id` —
+  // especially `aria-controls`, where whitespace is interpreted as an ID-reference separator.
+  // `useId()` output is already namespaced per component instance (so two mounted Logic Grid
+  // puzzles never collide); it's sanitized here only as defense-in-depth.
+  const reactId = useId();
+  const domIdPrefix = reactId.replace(/[^A-Za-z0-9_-]/g, "") || "logic-grid";
+
   const validation = useMemo(
     () => validateLogicGridPuzzleData(logicGridData, { requireSolution: false }),
     [logicGridData]
@@ -166,11 +175,14 @@ export default function LogicGridPuzzle({
     setExpandedGuideId(null);
   }, [puzzleId]);
 
-  // Reveal the focused cell on mobile: after a supported clue is focused (and the Grid panel
-  // has become the active tab), bring its first primary cell into view within the grid's own
-  // local horizontal scroller. Never runs on mount, never runs for textOnly clues (no guide),
-  // never runs when focus is cleared.
+  // Reveal the focused cell on mobile/tablet only: after a supported clue is focused (and the
+  // Grid panel has become the active tab), bring its first primary cell into view within the
+  // grid's own local horizontal scroller. At desktop widths all three panels are already
+  // visible side by side, so scrolling would only reposition content unnecessarily — never
+  // runs there. Never runs on mount, never runs for textOnly clues (no guide), never runs when
+  // focus is cleared.
   useEffect(() => {
+    if (isDesktopLayout) return;
     if (!focusedClueId) return;
     const guide = clueGuides.get(focusedClueId);
     const targetKey = guide?.focus.primaryCellKeys[0];
@@ -186,7 +198,7 @@ export default function LogicGridPuzzle({
         break;
       }
     }
-  }, [focusedClueId, clueGuides]);
+  }, [focusedClueId, clueGuides, isDesktopLayout]);
 
   // Hydrate saved scratch-grid state for this puzzleId. Does not create an Undo entry, does
   // not fire juice effects, does not fire milestone messaging, and — critically — must never
@@ -648,8 +660,11 @@ export default function LogicGridPuzzle({
               const supported = guide !== null;
               const isFocused = focusedClueId === clue.id;
               const isExpanded = expandedGuideId === clue.id;
-              const checkboxId = `logic-grid-clue-checkbox-${clue.id}`;
-              const guideId = `logic-grid-clue-guide-${clue.id}`;
+              // Derived from the safe component prefix and the clue's one-based display
+              // position — never from raw authored `clue.id` (see the `domIdPrefix` comment
+              // above). Reviewed/focused state and React keys still use the real `clue.id`.
+              const checkboxId = `${domIdPrefix}-clue-${i + 1}-checkbox`;
+              const guideId = `${domIdPrefix}-clue-${i + 1}-guide`;
               const cardClassName = [
                 styles.clueCard,
                 resolved ? styles.clueCardResolved : "",

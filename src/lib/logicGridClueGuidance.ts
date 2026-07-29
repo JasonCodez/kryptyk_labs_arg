@@ -21,6 +21,10 @@ export interface LogicGridTeachingGuide {
   focus: LogicGridClueFocus;
 }
 
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function findCategory(
   categories: LogicGridCategoryNormalized[],
   id: string
@@ -34,14 +38,15 @@ function dedupe(values: string[]): string[] {
 
 /**
  * Canonical, order-independent key for a pair of categories: `earlierId::laterId`, where
- * "earlier" means earlier in `categories`. Returns null (never throws) for missing categories
- * or a category paired with itself.
+ * "earlier" means earlier in `categories`. Returns null (never throws) for a non-array
+ * `categories`, missing categories, or a category paired with itself.
  */
 export function getLogicGridCategoryPairKey(
   categories: LogicGridCategoryNormalized[],
   categoryIdA: string,
   categoryIdB: string
 ): string | null {
+  if (!Array.isArray(categories)) return null;
   if (categoryIdA === categoryIdB) return null;
 
   const catA = findCategory(categories, categoryIdA);
@@ -79,8 +84,10 @@ function buildSameOrNotSameGuide(
   categories: LogicGridCategoryNormalized[],
   clue: LogicGridClueNormalized
 ): LogicGridTeachingGuide | null {
+  if (clue.operands.length !== 2) return null;
   const [opA, opB] = clue.operands;
   if (!opA || !opB) return null;
+  if (opA.categoryId === opB.categoryId) return null;
 
   const catA = findCategory(categories, opA.categoryId);
   const catB = findCategory(categories, opB.categoryId);
@@ -134,13 +141,16 @@ function buildEitherOrGuide(
   categories: LogicGridCategoryNormalized[],
   clue: LogicGridClueNormalized
 ): LogicGridTeachingGuide | null {
+  if (clue.operands.length !== 3) return null;
   const [subject, altA, altB] = clue.operands;
   if (!subject || !altA || !altB) return null;
+  if (altA.categoryId !== altB.categoryId) return null;
+  if (subject.categoryId === altA.categoryId) return null;
+  if (altA.entry === altB.entry) return null;
 
   const subjectCategory = findCategory(categories, subject.categoryId);
   const altCategory = findCategory(categories, altA.categoryId);
   if (!subjectCategory || !altCategory) return null;
-  if (altA.categoryId !== altB.categoryId) return null;
   if (!subjectCategory.entries.includes(subject.entry)) return null;
   if (!altCategory.entries.includes(altA.entry) || !altCategory.entries.includes(altB.entry)) return null;
 
@@ -150,6 +160,7 @@ function buildEitherOrGuide(
   if (!pairKey || !primaryKeyA || !primaryKeyB) return null;
 
   const primaryCellKeys = dedupe([primaryKeyA, primaryKeyB]);
+  if (primaryCellKeys.length !== 2) return null;
   const allAcross = allCellKeysAcross(categories, subject.categoryId, subject.entry, altCategory.id);
   const contextCellKeys = dedupe(allAcross.filter((key) => !primaryCellKeys.includes(key)));
 
@@ -201,9 +212,11 @@ function buildOrderedGuide(
   categories: LogicGridCategoryNormalized[],
   clue: LogicGridClueNormalized
 ): LogicGridTeachingGuide | null {
+  if (clue.operands.length !== 2) return null;
   const [opA, opB] = clue.operands;
   if (!opA || !opB) return null;
-  if (!clue.orderedCategoryId) return null;
+  if (!isNonBlankString(clue.orderedCategoryId)) return null;
+  if (opA.categoryId === opB.categoryId && opA.entry === opB.entry) return null;
 
   const catA = findCategory(categories, opA.categoryId);
   const catB = findCategory(categories, opB.categoryId);
@@ -254,7 +267,9 @@ export function deriveLogicGridTeachingGuide(
   categories: LogicGridCategoryNormalized[],
   clue: LogicGridClueNormalized
 ): LogicGridTeachingGuide | null {
+  if (!Array.isArray(categories)) return null;
   if (!clue || typeof clue !== "object") return null;
+  if (!isNonBlankString(clue.id)) return null;
   if (!Array.isArray(clue.operands)) return null;
 
   switch (clue.type) {

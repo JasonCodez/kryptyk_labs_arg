@@ -452,3 +452,230 @@ describe("deriveLogicGridTeachingGuide — safety", () => {
     expect(CATEGORIES).toEqual(snapshot);
   });
 });
+
+// ── Pass 26B2 correction — runtime-safety hardening ────────────────────────
+
+const VALID_SAME_CLUE: LogicGridClueNormalized = {
+  id: "same-1",
+  text: "same",
+  type: "same",
+  operands: [
+    { categoryId: "room", entry: "Library" },
+    { categoryId: "time", entry: "8:00" },
+  ],
+};
+
+describe("category runtime safety", () => {
+  it("getLogicGridCategoryPairKey returns null for a non-array categories value", () => {
+    expect(getLogicGridCategoryPairKey(null as unknown as LogicGridCategoryNormalized[], "room", "time")).toBeNull();
+    expect(getLogicGridCategoryPairKey({} as unknown as LogicGridCategoryNormalized[], "room", "time")).toBeNull();
+  });
+
+  it("deriveLogicGridTeachingGuide returns null for a non-array categories value", () => {
+    expect(deriveLogicGridTeachingGuide(null as unknown as LogicGridCategoryNormalized[], VALID_SAME_CLUE)).toBeNull();
+    expect(deriveLogicGridTeachingGuide({} as unknown as LogicGridCategoryNormalized[], VALID_SAME_CLUE)).toBeNull();
+  });
+
+  it("neither call throws for a non-array categories value", () => {
+    expect(() =>
+      getLogicGridCategoryPairKey(null as unknown as LogicGridCategoryNormalized[], "room", "time")
+    ).not.toThrow();
+    expect(() =>
+      deriveLogicGridTeachingGuide({} as unknown as LogicGridCategoryNormalized[], VALID_SAME_CLUE)
+    ).not.toThrow();
+  });
+});
+
+describe("clue-id runtime safety", () => {
+  it("returns null for a missing clue id", () => {
+    const { id: _omit, ...rest } = VALID_SAME_CLUE;
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, rest as unknown as LogicGridClueNormalized)).toBeNull();
+  });
+
+  it("returns null for a non-string clue id", () => {
+    expect(
+      deriveLogicGridTeachingGuide(CATEGORIES, { ...VALID_SAME_CLUE, id: 42 } as unknown as LogicGridClueNormalized)
+    ).toBeNull();
+  });
+
+  it("returns null for a blank clue id", () => {
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, { ...VALID_SAME_CLUE, id: "   " })).toBeNull();
+  });
+});
+
+describe("same / notSame — hardened runtime validation", () => {
+  for (const type of ["same", "notSame"] as const) {
+    it(`${type}: two valid cross-category operands still work`, () => {
+      const guide = deriveLogicGridTeachingGuide(CATEGORIES, { ...VALID_SAME_CLUE, type });
+      expect(guide).not.toBeNull();
+    });
+
+    it(`${type}: a single operand returns null`, () => {
+      const clue = { ...VALID_SAME_CLUE, type, operands: [VALID_SAME_CLUE.operands[0]] };
+      expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+    });
+
+    it(`${type}: three operands returns null`, () => {
+      const clue = {
+        ...VALID_SAME_CLUE,
+        type,
+        operands: [...VALID_SAME_CLUE.operands, { categoryId: "person", entry: "Maya" }],
+      };
+      expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+    });
+
+    it(`${type}: same-category operands returns null`, () => {
+      const clue: LogicGridClueNormalized = {
+        ...VALID_SAME_CLUE,
+        type,
+        operands: [
+          { categoryId: "person", entry: "Maya" },
+          { categoryId: "person", entry: "Jordan" },
+        ],
+      };
+      expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+    });
+
+    it(`${type}: exact duplicate operands returns null`, () => {
+      const clue: LogicGridClueNormalized = {
+        ...VALID_SAME_CLUE,
+        type,
+        operands: [
+          { categoryId: "person", entry: "Maya" },
+          { categoryId: "person", entry: "Maya" },
+        ],
+      };
+      expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+    });
+  }
+});
+
+describe("eitherOr — hardened runtime validation", () => {
+  const VALID_EITHER: LogicGridClueNormalized = {
+    id: "either-1",
+    text: "either",
+    type: "eitherOr",
+    operands: [
+      { categoryId: "person", entry: "Maya" },
+      { categoryId: "object", entry: "Silver Key" },
+      { categoryId: "object", entry: "Red Journal" },
+    ],
+  };
+
+  it("a valid subject plus two alternatives still works", () => {
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, VALID_EITHER)).not.toBeNull();
+  });
+
+  it("duplicate alternative entries return null", () => {
+    const clue: LogicGridClueNormalized = {
+      ...VALID_EITHER,
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "object", entry: "Silver Key" },
+        { categoryId: "object", entry: "Silver Key" },
+      ],
+    };
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+  });
+
+  it("the subject using the alternatives' category returns null", () => {
+    const clue: LogicGridClueNormalized = {
+      ...VALID_EITHER,
+      operands: [
+        { categoryId: "object", entry: "Glass Eye" },
+        { categoryId: "object", entry: "Silver Key" },
+        { categoryId: "object", entry: "Red Journal" },
+      ],
+    };
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+  });
+
+  it("two operands return null", () => {
+    const clue: LogicGridClueNormalized = { ...VALID_EITHER, operands: VALID_EITHER.operands.slice(0, 2) };
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+  });
+
+  it("four operands return null", () => {
+    const clue: LogicGridClueNormalized = {
+      ...VALID_EITHER,
+      operands: [...VALID_EITHER.operands, { categoryId: "object", entry: "Glass Eye" }],
+    };
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+  });
+
+  it("different alternative categories return null", () => {
+    const clue: LogicGridClueNormalized = {
+      ...VALID_EITHER,
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "object", entry: "Silver Key" },
+        { categoryId: "room", entry: "Library" },
+      ],
+    };
+    expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+  });
+});
+
+describe("ordered clues — hardened runtime validation", () => {
+  for (const type of ["before", "after", "immediatelyBefore", "immediatelyAfter"] as const) {
+    const VALID_ORDERED_CROSS: LogicGridClueNormalized = {
+      id: "ordered-1",
+      text: "ordered",
+      type,
+      orderedCategoryId: "time",
+      operands: [
+        { categoryId: "person", entry: "Jordan" },
+        { categoryId: "object", entry: "Red Journal" },
+      ],
+    };
+    const VALID_ORDERED_SAME: LogicGridClueNormalized = {
+      ...VALID_ORDERED_CROSS,
+      operands: [
+        { categoryId: "person", entry: "Jordan" },
+        { categoryId: "person", entry: "Maya" },
+      ],
+    };
+
+    describe(type, () => {
+      it("valid cross-category operands still work", () => {
+        expect(deriveLogicGridTeachingGuide(CATEGORIES, VALID_ORDERED_CROSS)).not.toBeNull();
+      });
+
+      it("valid same-category, different-entry operands still work", () => {
+        expect(deriveLogicGridTeachingGuide(CATEGORIES, VALID_ORDERED_SAME)).not.toBeNull();
+      });
+
+      it("exact duplicate operands return null", () => {
+        const clue: LogicGridClueNormalized = {
+          ...VALID_ORDERED_CROSS,
+          operands: [
+            { categoryId: "person", entry: "Jordan" },
+            { categoryId: "person", entry: "Jordan" },
+          ],
+        };
+        expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+      });
+
+      it("a single operand returns null", () => {
+        const clue: LogicGridClueNormalized = {
+          ...VALID_ORDERED_CROSS,
+          operands: [VALID_ORDERED_CROSS.operands[0]],
+        };
+        expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+      });
+
+      it("three operands return null", () => {
+        const clue: LogicGridClueNormalized = {
+          ...VALID_ORDERED_CROSS,
+          operands: [...VALID_ORDERED_CROSS.operands, { categoryId: "room", entry: "Library" }],
+        };
+        expect(deriveLogicGridTeachingGuide(CATEGORIES, clue)).toBeNull();
+      });
+
+      it("a missing clue id returns null", () => {
+        const { id: _omit, ...rest } = VALID_ORDERED_CROSS;
+        expect(deriveLogicGridTeachingGuide(CATEGORIES, rest as unknown as LogicGridClueNormalized)).toBeNull();
+      });
+    });
+  }
+});

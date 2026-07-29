@@ -1795,3 +1795,227 @@ describe("LogicGridPuzzle — focus scrolling", () => {
     expect(() => fireEvent.click(focusButtonFor(2)!)).not.toThrow();
   });
 });
+
+// ── Pass 26B2 correction — safe DOM ids and desktop scroll suppression ────
+
+const SPECIAL_ID_LOGIC_CASE_DATA = {
+  intro: LOGIC_CASE_DATA.intro,
+  categories: LOGIC_CASE_DATA.categories,
+  clues: [
+    "Maya did not enter the Vault.",
+    {
+      id: "arrival clue: one",
+      text: "The Library visitor arrived at 8:00.",
+      type: "same",
+      operands: [
+        { categoryId: "room", entry: "Library" },
+        { categoryId: "time", entry: "8:00" },
+      ],
+    },
+    {
+      id: "object/clue two",
+      text: "Maya cannot have entered the Vault.",
+      type: "notSame",
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "room", entry: "Vault" },
+      ],
+    },
+  ],
+};
+
+function mockDesktopMatchMedia() {
+  window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
+describe("LogicGridPuzzle — safe DOM ids for authored clue ids containing unsafe characters", () => {
+  afterEach(() => {
+    // @ts-expect-error -- jsdom does not define matchMedia by default; restore that absence.
+    delete window.matchMedia;
+  });
+
+  it("generates whitespace-free checkbox and guide ids, with htmlFor/aria-controls matching exactly", async () => {
+    buildFetchMock();
+    const { container } = render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={SPECIAL_ID_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    for (const checkbox of checkboxes) {
+      expect(checkbox.id).not.toMatch(/\s/);
+      expect(checkbox.id).not.toContain("arrival clue");
+      expect(checkbox.id).not.toContain("object/clue");
+      const label = container.querySelector(`label[for="${checkbox.id}"]`);
+      expect(label).toBeTruthy();
+    }
+
+    fireEvent.click(explainButtonFor(2)!);
+    const explainBtn2 = explainButtonFor(2)!;
+    const controlsId2 = explainBtn2.getAttribute("aria-controls")!;
+    expect(controlsId2).not.toMatch(/\s/);
+    expect(controlsId2).not.toContain("arrival clue");
+    expect(document.getElementById(controlsId2)).toBeTruthy();
+
+    fireEvent.click(explainButtonFor(2)!);
+    fireEvent.click(explainButtonFor(3)!);
+    const explainBtn3 = explainButtonFor(3)!;
+    const controlsId3 = explainBtn3.getAttribute("aria-controls")!;
+    expect(controlsId3).not.toMatch(/\s/);
+    expect(controlsId3).not.toContain("object/clue");
+    expect(document.getElementById(controlsId3)).toBeTruthy();
+
+    // No duplicate DOM ids anywhere in the rendered tree.
+    const allIds = Array.from(container.querySelectorAll("[id]")).map((el) => el.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+
+  it("focus and review state still track the correct clue despite unsafe authored ids", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={SPECIAL_ID_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    fireEvent.click(checkboxes[1]);
+    expect(checkboxes[1].checked).toBe(true);
+    expect(checkboxes[0].checked).toBe(false);
+    expect(checkboxes[2].checked).toBe(false);
+    expect(screen.getByText("1 of 3 clues reviewed")).toBeTruthy();
+
+    fireEvent.click(focusButtonFor(3)!);
+    expect(focusDataAttr("Maya", "Vault")).toBe("primary");
+  });
+});
+
+describe("LogicGridPuzzle — multiple mounted instances never collide on DOM ids", () => {
+  afterEach(() => {
+    // @ts-expect-error -- restore jsdom's default (undefined) matchMedia.
+    delete window.matchMedia;
+  });
+
+  it("produces unique checkbox and guide ids across two simultaneously mounted puzzles", async () => {
+    buildFetchMock();
+    const { container } = render(
+      <>
+        <LogicGridPuzzle
+          puzzleId="instance-a"
+          logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+          alreadySolved={false}
+          onSolved={jest.fn()}
+        />
+        <LogicGridPuzzle
+          puzzleId="instance-b"
+          logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+          alreadySolved={false}
+          onSolved={jest.fn()}
+        />
+      </>
+    );
+    await flush();
+
+    const cluesTabs = screen.getAllByRole("tab", { name: "Clues" });
+    fireEvent.click(cluesTabs[0]);
+    fireEvent.click(cluesTabs[1]);
+
+    // Scoped to the ids this correction actually generates (per-clue checkbox/guide ids) —
+    // the component's pre-existing static tab/panel ids (from the frozen Pass 26A foundation)
+    // are out of scope for this correction and are not exercised by real usage, which never
+    // mounts two Logic Grid puzzles on the same page simultaneously.
+    const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    // 5 clues per instance, x2 instances.
+    expect(checkboxes).toHaveLength(10);
+    const checkboxIds = checkboxes.map((c) => c.id);
+    expect(new Set(checkboxIds).size).toBe(checkboxIds.length);
+
+    for (const checkbox of checkboxes) {
+      const label = container.querySelector(`label[for="${checkbox.id}"]`);
+      expect(label).toBeTruthy();
+    }
+
+    const explainButtons = screen.getAllByRole("button", { name: /^Explain clue 2$/, hidden: true });
+    expect(explainButtons).toHaveLength(2);
+    fireEvent.click(explainButtons[0]);
+    fireEvent.click(explainButtons[1]);
+    const controlsIds = explainButtons.map((b) => b.getAttribute("aria-controls"));
+    expect(controlsIds[0]).not.toBe(controlsIds[1]);
+    expect(document.getElementById(controlsIds[0]!)).toBeTruthy();
+    expect(document.getElementById(controlsIds[1]!)).toBeTruthy();
+  });
+});
+
+describe("LogicGridPuzzle — focus scrolling is mobile/tablet-only", () => {
+  afterEach(() => {
+    // @ts-expect-error -- restore jsdom's default (undefined) matchMedia.
+    delete window.matchMedia;
+  });
+
+  it("calls scrollIntoView exactly once at mobile widths (no matchMedia => defaults to mobile layout)", async () => {
+    const scrollMock = jest.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollMock;
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(2)!);
+    await flush();
+
+    expect(scrollMock).toHaveBeenCalledTimes(1);
+    expect(scrollMock).toHaveBeenCalledWith({ block: "nearest", inline: "center", behavior: "auto" });
+    delete (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  it("does not call scrollIntoView at desktop widths, while focus banner and grid attributes still apply", async () => {
+    mockDesktopMatchMedia();
+    const scrollMock = jest.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollMock;
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(focusButtonFor(2)!);
+    await flush();
+
+    expect(scrollMock).not.toHaveBeenCalled();
+    expect(document.getElementById("logic-grid-focus-banner")).toBeTruthy();
+    expect(focusDataAttr("Library", "8:00")).toBe("primary");
+
+    // All three panels remain rendered (no `hidden`) at desktop widths.
+    expect(screen.getByRole("tabpanel", { name: "Clues" }).hasAttribute("hidden")).toBe(false);
+    expect(screen.getByRole("tabpanel", { name: "Grid" }).hasAttribute("hidden")).toBe(false);
+    expect(screen.getByRole("tabpanel", { name: "Case Board" }).hasAttribute("hidden")).toBe(false);
+
+    delete (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+});
