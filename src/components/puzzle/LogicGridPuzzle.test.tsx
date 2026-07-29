@@ -647,7 +647,7 @@ const STRUCTURED_LOGIC_CASE_DATA = {
       orderedCategoryId: "time",
       operands: [
         { categoryId: "person", entry: "Jordan" },
-        { categoryId: "person", entry: "Theo" },
+        { categoryId: "object", entry: "Red Journal" },
       ],
     },
   ],

@@ -196,6 +196,28 @@ describe("validateLogicGridPuzzleData — structured clue general rules", () => 
     expect(result.error).toBe("Logic grid clue 1: invalid operand.");
   });
 
+  it("rejects an array used as a clue", () => {
+    const result = validateLogicGridPuzzleData(baseData({ clues: [["not", "a", "clue"]] }));
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Logic grid clue 1: invalid clue.");
+  });
+
+  it("rejects an array used as an operand", () => {
+    const result = validateLogicGridPuzzleData(
+      baseData({
+        clues: [
+          {
+            text: "Some clue.",
+            type: "same",
+            operands: [["person", "Maya"], { categoryId: "room", entry: "Library" }],
+          },
+        ],
+      })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Logic grid clue 1: invalid operand.");
+  });
+
   it("rejects duplicate operands within the same clue", () => {
     const result = validateLogicGridPuzzleData(
       baseData({
@@ -216,20 +238,21 @@ describe("validateLogicGridPuzzleData — structured clue general rules", () => 
     expect(result.error).toBe("Logic grid clue 1: operands must be unique.");
   });
 
-  it("rejects duplicate clue ids across the whole puzzle", () => {
+  it("rejects two explicit duplicate ids, blaming the later (colliding) clue", () => {
     const result = validateLogicGridPuzzleData(
       baseData({
         clues: [
-          { id: "dup", text: "First.", type: "textOnly", operands: [] },
-          { id: "dup", text: "Second.", type: "textOnly", operands: [] },
+          { id: "duplicate-marker-id", text: "First.", type: "textOnly", operands: [] },
+          { id: "duplicate-marker-id", text: "Second.", type: "textOnly", operands: [] },
         ],
       })
     );
     expect(result.valid).toBe(false);
-    expect(result.error).toBe("Logic grid clue ids must be unique.");
+    expect(result.error).toBe("Logic grid clue 2: id duplicates an earlier clue id.");
+    expect(result.error).not.toContain("duplicate-marker-id");
   });
 
-  it("rejects a default id colliding with an explicit id from another clue", () => {
+  it("rejects an explicit id colliding with a later legacy clue's generated id, blaming the later clue", () => {
     const result = validateLogicGridPuzzleData(
       baseData({
         clues: [
@@ -239,7 +262,17 @@ describe("validateLogicGridPuzzleData — structured clue general rules", () => 
       })
     );
     expect(result.valid).toBe(false);
-    expect(result.error).toBe("Logic grid clue ids must be unique.");
+    expect(result.error).toBe("Logic grid clue 2: id duplicates an earlier clue id.");
+  });
+
+  it("rejects a later explicit id colliding with an earlier legacy clue's generated id, blaming the later clue", () => {
+    const result = validateLogicGridPuzzleData(
+      baseData({
+        clues: ["First clue text.", { id: "clue-1", text: "Second.", type: "textOnly", operands: [] }],
+      })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Logic grid clue 2: id duplicates an earlier clue id.");
   });
 
   it("strips unknown fields from a structured clue", () => {
@@ -336,7 +369,38 @@ describe("validateLogicGridPuzzleData — same / notSame", () => {
 
 describe("validateLogicGridPuzzleData — ordered relationship types", () => {
   for (const type of ["before", "after", "immediatelyBefore", "immediatelyAfter"] as const) {
-    it(`accepts a valid ${type} clue`, () => {
+    it(`accepts a valid ${type} clue with cross-category operands`, () => {
+      // "Jordan arrived immediately before the guest carrying the Red Journal." — the two
+      // operands are a person and an object, compared along the "time" ordered category.
+      const result = validateLogicGridPuzzleData(
+        baseData({
+          clues: [
+            {
+              text: `${type} clue.`,
+              type,
+              orderedCategoryId: "time",
+              operands: [
+                { categoryId: "person", entry: "Jordan" },
+                { categoryId: "object", entry: "Red Journal" },
+              ],
+            },
+          ],
+        })
+      );
+      expect(result.valid).toBe(true);
+      expect(result.normalized!.clues[0]).toEqual({
+        id: "clue-1",
+        text: `${type} clue.`,
+        type,
+        orderedCategoryId: "time",
+        operands: [
+          { categoryId: "person", entry: "Jordan" },
+          { categoryId: "object", entry: "Red Journal" },
+        ],
+      });
+    });
+
+    it(`accepts a valid ${type} clue with same-category operands`, () => {
       const result = validateLogicGridPuzzleData(
         baseData({
           clues: [
@@ -384,47 +448,71 @@ describe("validateLogicGridPuzzleData — ordered relationship types", () => {
       expect(result.error).toBe("Logic grid clue 1: orderedCategoryId references an unknown category.");
     });
 
-    it(`rejects a ${type} clue whose operands span two different categories`, () => {
+    it(`rejects a ${type} clue with an unknown orderedCategoryId`, () => {
       const result = validateLogicGridPuzzleData(
         baseData({
           clues: [
             {
               text: `${type} clue.`,
               type,
-              orderedCategoryId: "time",
+              orderedCategoryId: "nope",
               operands: [
                 { categoryId: "person", entry: "Jordan" },
-                { categoryId: "room", entry: "Library" },
+                { categoryId: "person", entry: "Maya" },
               ],
             },
           ],
         })
       );
       expect(result.valid).toBe(false);
-      expect(result.error).toBe(`Logic grid clue 1: ${type} operands must be from the same category.`);
+      expect(result.error).toBe("Logic grid clue 1: orderedCategoryId references an unknown category.");
     });
 
-    it(`rejects a ${type} clue whose operands are from the ordered category itself`, () => {
+    it(`rejects a ${type} clue whose operand 1 belongs to the ordered category`, () => {
       const result = validateLogicGridPuzzleData(
         baseData({
           clues: [
             {
               text: `${type} clue.`,
               type,
-              orderedCategoryId: "time",
+              orderedCategoryId: "person",
               operands: [
-                { categoryId: "time", entry: "8:00" },
-                { categoryId: "time", entry: "8:30" },
+                { categoryId: "person", entry: "Jordan" },
+                { categoryId: "object", entry: "Red Journal" },
               ],
             },
           ],
         })
       );
       expect(result.valid).toBe(false);
-      expect(result.error).toBe(`Logic grid clue 1: ${type} operands cannot be from the ordered category.`);
+      expect(result.error).toBe(
+        `Logic grid clue 1: ordered operands cannot belong to the ordered category.`
+      );
     });
 
-    it(`rejects a ${type} clue whose two operands are the same entry`, () => {
+    it(`rejects a ${type} clue whose operand 2 belongs to the ordered category`, () => {
+      const result = validateLogicGridPuzzleData(
+        baseData({
+          clues: [
+            {
+              text: `${type} clue.`,
+              type,
+              orderedCategoryId: "object",
+              operands: [
+                { categoryId: "person", entry: "Jordan" },
+                { categoryId: "object", entry: "Red Journal" },
+              ],
+            },
+          ],
+        })
+      );
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe(
+        `Logic grid clue 1: ordered operands cannot belong to the ordered category.`
+      );
+    });
+
+    it(`rejects a ${type} clue whose two operands are an exact duplicate`, () => {
       const result = validateLogicGridPuzzleData(
         baseData({
           clues: [
@@ -441,8 +529,58 @@ describe("validateLogicGridPuzzleData — ordered relationship types", () => {
         })
       );
       expect(result.valid).toBe(false);
-      // Duplicate-operand detection fires before the entry-difference check for this type.
       expect(result.error).toBe("Logic grid clue 1: operands must be unique.");
+    });
+  }
+});
+
+describe("validateLogicGridPuzzleData — orderedCategoryId only applies to ordered types", () => {
+  const NON_ORDERED_FIXTURES: Record<string, Record<string, unknown>> = {
+    textOnly: { text: "Plain clue.", type: "textOnly", operands: [] },
+    same: {
+      text: "Same clue.",
+      type: "same",
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "room", entry: "Library" },
+      ],
+    },
+    notSame: {
+      text: "notSame clue.",
+      type: "notSame",
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "room", entry: "Library" },
+      ],
+    },
+    eitherOr: {
+      text: "eitherOr clue.",
+      type: "eitherOr",
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "object", entry: "Silver Key" },
+        { categoryId: "object", entry: "Red Journal" },
+      ],
+    },
+  };
+
+  for (const [type, fixture] of Object.entries(NON_ORDERED_FIXTURES)) {
+    it(`rejects a nonblank orderedCategoryId on a ${type} clue`, () => {
+      const result = validateLogicGridPuzzleData(
+        baseData({ clues: [{ ...fixture, orderedCategoryId: "time" }] })
+      );
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe(
+        "Logic grid clue 1: orderedCategoryId is only valid for ordered clue types."
+      );
+    });
+
+    it(`accepts and normalizes away a blank orderedCategoryId on a ${type} clue`, () => {
+      const result = validateLogicGridPuzzleData(
+        baseData({ clues: [{ ...fixture, orderedCategoryId: "   " }] })
+      );
+      expect(result.valid).toBe(true);
+      expect("orderedCategoryId" in result.normalized!.clues[0]).toBe(false);
     });
   }
 });

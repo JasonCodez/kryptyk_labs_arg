@@ -162,7 +162,7 @@ function normalizeClueOperand(
   categories: LogicGridCategoryNormalized[],
   clueNumber: number
 ): { operand?: LogicGridClueOperandNormalized; error?: string } {
-  if (!raw || typeof raw !== "object") {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { error: `Logic grid clue ${clueNumber}: invalid operand.` };
   }
   const payload = raw as LogicGridClueOperandInput;
@@ -187,11 +187,17 @@ function normalizeClueOperand(
  * legacy strings are the caller's responsibility to skip before calling this. Any other clue
  * must be a well-formed structured clue matching one of `LOGIC_GRID_CLUE_TYPES`; a malformed
  * structured clue is an error, never a silent downgrade to textOnly.
+ *
+ * `usedIds` accumulates every successfully-assigned clue id (explicit or generated) as clues are
+ * processed in source order, so a later clue whose id collides with an earlier one is reported
+ * against its own (the later, colliding) clue number — never the generic "ids must be unique"
+ * error, which can't say which clue caused the collision.
  */
 function normalizeClue(
   raw: unknown,
   index: number,
-  categories: LogicGridCategoryNormalized[]
+  categories: LogicGridCategoryNormalized[],
+  usedIds: Set<string>
 ): { clue?: LogicGridClueNormalized; error?: string } {
   const clueNumber = index + 1;
   const defaultId = `clue-${clueNumber}`;
@@ -201,10 +207,14 @@ function normalizeClue(
     if (!text) {
       return { error: `Logic grid clue ${clueNumber}: text is required.` };
     }
+    if (usedIds.has(defaultId)) {
+      return { error: `Logic grid clue ${clueNumber}: id duplicates an earlier clue id.` };
+    }
+    usedIds.add(defaultId);
     return { clue: { id: defaultId, text, type: "textOnly", operands: [] } };
   }
 
-  if (!raw || typeof raw !== "object") {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { error: `Logic grid clue ${clueNumber}: invalid clue.` };
   }
 
@@ -213,6 +223,9 @@ function normalizeClue(
   const id = payload.id === undefined || payload.id === null ? defaultId : normalizeText(payload.id);
   if (!id) {
     return { error: `Logic grid clue ${clueNumber}: id cannot be blank.` };
+  }
+  if (usedIds.has(id)) {
+    return { error: `Logic grid clue ${clueNumber}: id duplicates an earlier clue id.` };
   }
 
   const text = normalizeText(payload.text);
@@ -264,21 +277,25 @@ function normalizeClue(
 
   let orderedCategoryId: string | undefined;
   if (ORDERED_CLUE_TYPES.has(clueType)) {
+    // The ordered category is the dimension the two operands are compared along (e.g. "time") —
+    // the operands themselves may share a category (two people) or span two different categories
+    // (a person and an object), as long as neither operand IS the ordered category itself.
     orderedCategoryId = normalizeText(payload.orderedCategoryId);
     const orderedCategory = categories.find((c) => c.id === orderedCategoryId);
     if (!orderedCategory) {
       return { error: `Logic grid clue ${clueNumber}: orderedCategoryId references an unknown category.` };
     }
-    if (operands[0].categoryId !== operands[1].categoryId) {
-      return { error: `Logic grid clue ${clueNumber}: ${clueType} operands must be from the same category.` };
-    }
-    if (operands[0].categoryId === orderedCategoryId) {
+    if (operands.some((operand) => operand.categoryId === orderedCategoryId)) {
       return {
-        error: `Logic grid clue ${clueNumber}: ${clueType} operands cannot be from the ordered category.`,
+        error: `Logic grid clue ${clueNumber}: ordered operands cannot belong to the ordered category.`,
       };
     }
-    if (operands[0].entry === operands[1].entry) {
-      return { error: `Logic grid clue ${clueNumber}: ${clueType} operands must reference different entries.` };
+  } else {
+    const rawOrderedCategoryId = normalizeText(payload.orderedCategoryId);
+    if (rawOrderedCategoryId) {
+      return {
+        error: `Logic grid clue ${clueNumber}: orderedCategoryId is only valid for ordered clue types.`,
+      };
     }
   }
 
@@ -296,6 +313,8 @@ function normalizeClue(
       return { error: `Logic grid clue ${clueNumber}: eitherOr alternatives must reference different entries.` };
     }
   }
+
+  usedIds.add(id);
 
   const clue: LogicGridClueNormalized = { id, text, type: clueType, operands };
   if (orderedCategoryId) clue.orderedCategoryId = orderedCategoryId;
@@ -360,6 +379,7 @@ export function validateLogicGridPuzzleData(
   }
 
   const clues: LogicGridClueNormalized[] = [];
+  const usedClueIds = new Set<string>();
   for (let i = 0; i < payload.clues.length; i++) {
     const raw = payload.clues[i];
     // A blank legacy string clue is silently dropped, matching the prior behavior — it never
@@ -368,7 +388,7 @@ export function validateLogicGridPuzzleData(
     if (typeof raw === "string" && !normalizeText(raw)) {
       continue;
     }
-    const result = normalizeClue(raw, i, categories);
+    const result = normalizeClue(raw, i, categories, usedClueIds);
     if (!result.clue) {
       return { valid: false, error: result.error };
     }
@@ -377,11 +397,6 @@ export function validateLogicGridPuzzleData(
 
   if (clues.length === 0) {
     return { valid: false, error: "Logic grid requires at least one clue." };
-  }
-
-  const clueIds = new Set(clues.map((clue) => clue.id));
-  if (clueIds.size !== clues.length) {
-    return { valid: false, error: "Logic grid clue ids must be unique." };
   }
 
   const normalized: LogicGridNormalizedData = {
