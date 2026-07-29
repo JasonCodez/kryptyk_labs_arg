@@ -1232,3 +1232,566 @@ describe("LogicGridPuzzle — already solved", () => {
     expect(after).toBe(before);
   });
 });
+
+// ── Pass 26B2 — clue focus and teaching guide foundation ──────────────────
+
+const INSTRUCTIONAL_LOGIC_CASE_DATA = {
+  intro: LOGIC_CASE_DATA.intro,
+  categories: LOGIC_CASE_DATA.categories,
+  clues: [
+    "Maya did not enter the Vault.",
+    {
+      id: "same-clue",
+      text: "The Library visitor arrived at 8:00.",
+      type: "same",
+      operands: [
+        { categoryId: "room", entry: "Library" },
+        { categoryId: "time", entry: "8:00" },
+      ],
+    },
+    {
+      id: "notsame-clue",
+      text: "Maya cannot have entered the Vault.",
+      type: "notSame",
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "room", entry: "Vault" },
+      ],
+    },
+    {
+      id: "before-clue",
+      text: "Jordan arrived immediately before the guest carrying the Red Journal.",
+      type: "immediatelyBefore",
+      orderedCategoryId: "time",
+      operands: [
+        { categoryId: "person", entry: "Jordan" },
+        { categoryId: "object", entry: "Red Journal" },
+      ],
+    },
+    {
+      id: "either-clue",
+      text: "Maya carried the Silver Key or the Red Journal.",
+      type: "eitherOr",
+      operands: [
+        { categoryId: "person", entry: "Maya" },
+        { categoryId: "object", entry: "Silver Key" },
+        { categoryId: "object", entry: "Red Journal" },
+      ],
+    },
+  ],
+};
+
+// `hidden: true` because these buttons live in the Clues panel, which the Grid tab hides on
+// mobile — tests still need to read/click them (e.g. to check `aria-pressed` right after a
+// Focus click switched the active tab) regardless of which panel is currently visible.
+function focusButtonFor(clueNumber: number) {
+  return screen.queryByRole("button", {
+    name: new RegExp(`^(Focus clue ${clueNumber} in the grid|Clear grid focus for clue ${clueNumber})$`),
+    hidden: true,
+  });
+}
+
+function explainButtonFor(clueNumber: number) {
+  return screen.queryByRole("button", {
+    name: new RegExp(`^(Explain clue ${clueNumber}|Hide explanation for clue ${clueNumber})$`),
+    hidden: true,
+  });
+}
+
+function focusDataAttr(entryA: string, entryB: string): string | null {
+  return cellButton(entryA, entryB).getAttribute("data-clue-focus");
+}
+
+describe("LogicGridPuzzle — instructional clue guidance (Pass 26B2)", () => {
+  it("legacy textOnly clue has no Focus or Explain button, and the reviewed checkbox still works", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    expect(focusButtonFor(1)).toBeNull();
+    expect(explainButtonFor(1)).toBeNull();
+
+    const checkbox = screen.getAllByRole("checkbox")[0] as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    expect(screen.getByText("1 of 5 clues reviewed")).toBeTruthy();
+  });
+
+  it("clue cards are not labels; the checkbox has an explicit label; Focus/Explain do not toggle reviewed state", async () => {
+    buildFetchMock();
+    const { container } = render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    expect(container.querySelectorAll("label input[type=checkbox]").length).toBe(0);
+    const checkbox = screen.getAllByRole("checkbox")[1] as HTMLInputElement;
+    expect(checkbox.labels?.length).toBeGreaterThan(0);
+
+    fireEvent.click(explainButtonFor(2)!);
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(focusButtonFor(2)!);
+    expect(checkbox.checked).toBe(false);
+    expect(screen.getByText("0 of 5 clues reviewed")).toBeTruthy();
+  });
+
+  it("visible one-based clue numbering remains correct alongside instructional buttons", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    for (const n of [2, 3, 4, 5]) {
+      expect(focusButtonFor(n)).toBeTruthy();
+      expect(explainButtonFor(n)).toBeTruthy();
+    }
+  });
+});
+
+describe("LogicGridPuzzle — Focus grid behavior", () => {
+  it("toggles aria-pressed, switches the mobile tab to Grid, renders the banner, and marks the target cell as primary", async () => {
+    const { calls } = buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    const focusBtn = focusButtonFor(2)!;
+    expect(focusBtn.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(focusBtn);
+
+    expect(screen.getByRole("tab", { name: "Grid" }).getAttribute("aria-selected")).toBe("true");
+    const banner = document.getElementById("logic-grid-focus-banner");
+    expect(banner).toBeTruthy();
+    expect(within(banner as HTMLElement).getByText("Focused clue 2")).toBeTruthy();
+    expect(
+      within(banner as HTMLElement).getByText((INSTRUCTIONAL_LOGIC_CASE_DATA.clues[1] as { text: string }).text)
+    ).toBeTruthy();
+
+    expect(focusDataAttr("Library", "8:00")).toBe("primary");
+    expect(cellButton("Library", "8:00").getAttribute("aria-label")).toContain("highlighted for clue 2");
+    expect(focusDataAttr("Maya", "Observatory")).toBeNull();
+
+    expect(focusButtonFor(2)!.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear focus" }));
+    expect(document.getElementById("logic-grid-focus-banner")).toBeNull();
+    expect(focusDataAttr("Library", "8:00")).toBeNull();
+
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+    expect(calls.every((c) => !c.url.includes("consume-hint-token"))).toBe(true);
+  });
+
+  it("does not change grid marks, progress, or Undo availability", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(2)!);
+
+    expect(screen.getByText("0 of 12 facts confirmed")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(cellButton("Library", "8:00").getAttribute("aria-label")).toContain("unknown");
+  });
+
+  it("focusing a different clue replaces the previous focus", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    fireEvent.click(focusButtonFor(2)!); // same-clue
+    expect(focusDataAttr("Library", "8:00")).toBe("primary");
+
+    fireEvent.click(focusButtonFor(3)!); // notSame-clue
+    expect(focusDataAttr("Library", "8:00")).toBeNull();
+    expect(focusDataAttr("Maya", "Vault")).toBe("primary");
+
+    expect(focusButtonFor(2)!.getAttribute("aria-pressed")).toBe("false");
+    expect(focusButtonFor(3)!.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll("#logic-grid-focus-banner").length).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear focus" }));
+    expect(focusDataAttr("Maya", "Vault")).toBeNull();
+  });
+
+  it("same clue: exactly one primary cell and no context cells", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(2)!);
+
+    const primary = screen.getAllByRole("button").filter((el) => el.getAttribute("data-clue-focus") === "primary");
+    const context = screen.getAllByRole("button").filter((el) => el.getAttribute("data-clue-focus") === "context");
+    expect(primary).toHaveLength(1);
+    expect(context).toHaveLength(0);
+    expect(focusDataAttr("Library", "8:00")).toBe("primary");
+  });
+
+  it("notSame clue: exactly one primary cell, and no automatic cross is applied", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(3)!);
+
+    const primary = screen.getAllByRole("button").filter((el) => el.getAttribute("data-clue-focus") === "primary");
+    expect(primary).toHaveLength(1);
+    expect(focusDataAttr("Maya", "Vault")).toBe("primary");
+    expect(cellButton("Maya", "Vault").getAttribute("aria-label")).toContain("unknown");
+  });
+
+  it("eitherOr clue: exactly two primary cells and the remaining alternative-category cells are context", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(5)!);
+
+    expect(focusDataAttr("Maya", "Silver Key")).toBe("primary");
+    expect(focusDataAttr("Maya", "Red Journal")).toBe("primary");
+    expect(focusDataAttr("Maya", "Brass Compass")).toBe("context");
+    expect(focusDataAttr("Maya", "Glass Eye")).toBe("context");
+
+    const primary = screen.getAllByRole("button").filter((el) => el.getAttribute("data-clue-focus") === "primary");
+    const context = screen.getAllByRole("button").filter((el) => el.getAttribute("data-clue-focus") === "context");
+    expect(primary).toHaveLength(2);
+    expect(context).toHaveLength(2);
+
+    expect(screen.getByText("0 of 12 facts confirmed")).toBeTruthy();
+  });
+
+  it("cross-category ordered clue: every time cell for both operands is primary, and the direct operand pair is not focused", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(4)!);
+
+    for (const time of ["8:00", "8:30", "9:00", "9:30"]) {
+      expect(focusDataAttr("Jordan", time)).toBe("primary");
+      expect(focusDataAttr(time, "Red Journal")).toBe("primary");
+    }
+    expect(focusDataAttr("Jordan", "Red Journal")).toBeNull();
+
+    // The unrelated Rooms×ArrivalTimes pair headers must not be marked focused.
+    for (const el of screen.getAllByText("Rooms")) {
+      expect(el.className).not.toMatch(/categoryHeaderFocused/);
+    }
+  });
+});
+
+describe("LogicGridPuzzle — Explain clue behavior", () => {
+  it("toggles aria-expanded, renders the guide inside a role=note region referenced by aria-controls, and fires the right juice calls", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    const explainBtn = explainButtonFor(2)!;
+    expect(explainBtn.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(explainBtn);
+    expect(juiceMock.unlock).toHaveBeenCalledTimes(1);
+
+    const controlsId = explainButtonFor(2)!.getAttribute("aria-controls")!;
+    expect(explainButtonFor(2)!.getAttribute("aria-expanded")).toBe("true");
+    const panel = document.getElementById(controlsId)!;
+    expect(panel.getAttribute("role")).toBe("note");
+    expect(within(panel).getByText("Connect these entries")).toBeTruthy();
+    expect(within(panel).getByText("Library belongs with 8:00.")).toBeTruthy();
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide explanation for clue 2" }));
+    expect(juiceMock.tick).toHaveBeenCalled();
+    expect(document.getElementById(controlsId)).toBeNull();
+  });
+
+  it("opening a different clue's guide closes the previously open guide", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    fireEvent.click(explainButtonFor(2)!);
+    expect(explainButtonFor(2)!.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(explainButtonFor(3)!);
+    expect(explainButtonFor(2)!.getAttribute("aria-expanded")).toBe("false");
+    expect(explainButtonFor(3)!.getAttribute("aria-expanded")).toBe("true");
+
+    expect(document.querySelectorAll('[role="note"]').length).toBe(1);
+  });
+
+  it("notSame guide explains ✕, eitherOr guide explains keeping two choices open, ordered guide shows entry sequence and adjacency", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    fireEvent.click(explainButtonFor(3)!);
+    expect(screen.getByText(/Mark it ✕ to eliminate the relationship\./)).toBeTruthy();
+
+    fireEvent.click(explainButtonFor(3)!); // close before opening the next, since only one may be open
+    fireEvent.click(explainButtonFor(5)!);
+    expect(screen.getByText(/two strongly highlighted cells/)).toBeTruthy();
+
+    fireEvent.click(explainButtonFor(5)!);
+    fireEvent.click(explainButtonFor(4)!);
+    expect(screen.getByText(/8:00 → 8:30 → 9:00 → 9:30/)).toBeTruthy();
+    expect(screen.getByText(/positions must be adjacent/)).toBeTruthy();
+  });
+
+  it("does not display raw type names, category ids, cell keys, pair keys, or solution text as debug copy", async () => {
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(explainButtonFor(4)!);
+
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/\bimmediatelyBefore\b/);
+    expect(text).not.toContain("categoryId");
+    expect(text).not.toContain("orderedCategoryId");
+    expect(text).not.toContain("person::time");
+    expect(text).not.toContain("person::Jordan");
+  });
+});
+
+describe("LogicGridPuzzle — instructional actions never touch the network", () => {
+  it("Focus, Clear focus, Explain, and Hide guide never issue any request beyond the initial hydration GET", async () => {
+    const { calls } = buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    expect(calls).toHaveLength(1);
+
+    fireEvent.click(focusButtonFor(2)!);
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Clear focus" }));
+    // Focusing switched the mobile tab to Grid — return to Clues to reach the Explain button.
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(explainButtonFor(2)!);
+    await flush();
+    fireEvent.click(explainButtonFor(2)!);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("GET");
+    expect(calls.some((c) => c.url.includes("consume-hint-token"))).toBe(false);
+  });
+});
+
+describe("LogicGridPuzzle — instructional state resets on puzzleId transition", () => {
+  it("clears focus and closes the guide when the puzzle changes", async () => {
+    buildFetchMock();
+    const { rerender } = render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(2)!);
+    // Focusing switched the mobile tab to Grid — return to Clues to reach the Explain button.
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(explainButtonFor(2)!);
+    expect(document.getElementById("logic-grid-focus-banner")).toBeTruthy();
+
+    rerender(
+      <LogicGridPuzzle
+        puzzleId="p2"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+
+    expect(document.getElementById("logic-grid-focus-banner")).toBeNull();
+    expect(document.querySelectorAll('[role="note"]').length).toBe(0);
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    expect(focusButtonFor(2)!.getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("LogicGridPuzzle — focus scrolling", () => {
+  const originalScrollIntoView = (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown })
+    .scrollIntoView;
+
+  afterEach(() => {
+    if (originalScrollIntoView) {
+      window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView as () => void;
+    } else {
+      delete (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  it("calls scrollIntoView with block:nearest, inline:center, behavior:auto after focusing a supported clue", async () => {
+    const scrollMock = jest.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollMock;
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    expect(scrollMock).not.toHaveBeenCalled();
+    fireEvent.click(focusButtonFor(2)!);
+    await flush();
+
+    expect(scrollMock).toHaveBeenCalledWith({ block: "nearest", inline: "center", behavior: "auto" });
+  });
+
+  it("does not call scrollIntoView again when clearing focus", async () => {
+    const scrollMock = jest.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollMock;
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    fireEvent.click(focusButtonFor(2)!);
+    await flush();
+    const callsAfterFocus = scrollMock.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear focus" }));
+    await flush();
+    expect(scrollMock.mock.calls.length).toBe(callsAfterFocus);
+  });
+
+  it("does not throw when scrollIntoView is unavailable", async () => {
+    delete (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+    buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved={false}
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+    expect(() => fireEvent.click(focusButtonFor(2)!)).not.toThrow();
+  });
+});

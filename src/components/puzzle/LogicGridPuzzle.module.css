@@ -280,17 +280,28 @@
 
 .clueCard {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 10px;
   padding: 12px;
   border-radius: 10px;
   border: 1px solid var(--pw-border-default);
   background: var(--pw-surface-1);
-  cursor: pointer;
-  transition: opacity 150ms ease, border-color 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-.clueCardResolved {
+.clueCardFocused {
+  border-color: var(--pw-gold);
+  box-shadow: inset 0 0 0 1px var(--pw-gold);
+}
+
+.clueMain {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  transition: opacity 150ms ease;
+}
+
+.clueCardResolved .clueMain {
   opacity: 0.55;
 }
 
@@ -308,6 +319,7 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  cursor: pointer;
 }
 
 .clueNumber {
@@ -336,6 +348,150 @@
   color: var(--pw-success);
 }
 
+/* ── Clue instructional actions (Pass 26B2) ──────────────────────── */
+
+.clueActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clueActionButton {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-2);
+  color: var(--pw-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, transform 120ms ease;
+}
+
+.clueActionButton:hover {
+  border-color: var(--pw-brand-primary);
+}
+
+.clueActionButton:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.clueActionButton:focus-visible {
+  outline: 2px solid var(--pw-brand-primary);
+  outline-offset: 2px;
+}
+
+.clueActionButtonActive {
+  background: color-mix(in srgb, var(--pw-gold) 20%, var(--pw-surface-2));
+  border-color: var(--pw-gold);
+  color: var(--pw-gold);
+}
+
+.clueGuide {
+  border-radius: 8px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: logicGridFadeIn 200ms ease both;
+}
+
+.clueGuideEyebrow {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pw-text-muted);
+}
+
+.clueGuideHeading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pw-text-primary);
+}
+
+.clueGuideSummary {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--pw-text-secondary);
+}
+
+.clueGuideSteps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--pw-text-secondary);
+}
+
+.clueGuideSteps li {
+  padding-left: 2px;
+}
+
+/* ── Focused-clue grid banner (Pass 26B2) ────────────────────────── */
+
+.focusBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--pw-gold);
+  background: color-mix(in srgb, var(--pw-gold) 10%, var(--pw-surface-1));
+}
+
+.focusBannerLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.focusBannerLabel strong {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pw-gold);
+}
+
+.focusBannerText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pw-text-primary);
+}
+
+.clearFocusButton {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--pw-border-default);
+  background: var(--pw-surface-2);
+  color: var(--pw-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 150ms ease;
+}
+
+.clearFocusButton:focus-visible {
+  outline: 2px solid var(--pw-brand-primary);
+  outline-offset: 2px;
+}
+
 /* ── Deduction grid ───────────────────────────────────────────────── */
 
 .gridBlocks {
@@ -349,6 +505,10 @@
   border: 1px solid var(--pw-border-default);
   background: var(--pw-surface-1);
   overflow: hidden;
+}
+
+.gridBlockFocused {
+  border-color: color-mix(in srgb, var(--pw-gold) 45%, var(--pw-border-default));
 }
 
 .gridScroll {
@@ -387,6 +547,11 @@
   border-left: 1px solid var(--pw-border-default);
 }
 
+.categoryHeaderFocused {
+  color: var(--pw-gold);
+  background: color-mix(in srgb, var(--pw-gold) 12%, transparent);
+}
+
 .rowCategoryLabel {
   width: 110px;
   flex-shrink: 0;
@@ -420,6 +585,15 @@
   border-left: 1px solid var(--pw-border-default);
   height: 62px;
   overflow-wrap: anywhere;
+}
+
+.entryHeaderFocused {
+  color: var(--pw-gold);
+  background: color-mix(in srgb, var(--pw-gold) 12%, transparent);
+}
+
+.rowLabelFocused {
+  color: var(--pw-gold);
 }
 
 .rowLabelCell {
@@ -493,6 +667,18 @@
 .cell_confirmed {
   color: var(--pw-success);
   background: color-mix(in srgb, var(--pw-success) 14%, transparent);
+}
+
+/* Focus rings layer on top of the existing state color/background above — they never replace
+   the cell glyph or its unknown/impossible/confirmed color. */
+.cellFocusPrimary {
+  box-shadow: inset 0 0 0 2px var(--pw-gold);
+}
+
+.cellFocusContext {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pw-gold) 55%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--pw-gold) 55%, transparent);
+  outline-offset: -3px;
 }
 
 /* ── Submission feedback / submit ─────────────────────────────────── */
@@ -684,7 +870,8 @@
   }
   .milestoneMessage,
   .chainMessage,
-  .completionCard {
+  .completionCard,
+  .clueGuide {
     animation: none !important;
   }
 }
@@ -699,7 +886,8 @@
 
 :global(html[data-reduce-animations="true"]) .milestoneMessage,
 :global(html[data-reduce-animations="true"]) .chainMessage,
-:global(html[data-reduce-animations="true"]) .completionCard {
+:global(html[data-reduce-animations="true"]) .completionCard,
+:global(html[data-reduce-animations="true"]) .clueGuide {
   animation: none !important;
 }
 

@@ -15,6 +15,11 @@ import {
   type LogicGridCellMark,
   type LogicGridCellMarks,
 } from "@/lib/logicGridGame";
+import {
+  deriveLogicGridTeachingGuide,
+  getLogicGridCategoryPairKey,
+  type LogicGridTeachingGuide,
+} from "@/lib/logicGridClueGuidance";
 import { juice } from "@/lib/juice";
 import { AnimatedCheck, SparkleBurst, confettiBurstAt } from "@/components/juice/particles";
 import styles from "./LogicGridPuzzle.module.css";
@@ -86,6 +91,10 @@ export default function LogicGridPuzzle({
 
   const [history, setHistory] = useState<HistoryState>({ past: [], present: {}, future: [] });
   const [resolvedClues, setResolvedClues] = useState<Set<string>>(new Set());
+  // Free instructional state (Pass 26B2) — local-only, never autosaved, never sent to the
+  // server, never part of Undo/Redo. Reset whenever puzzleId changes.
+  const [focusedClueId, setFocusedClueId] = useState<string | null>(null);
+  const [expandedGuideId, setExpandedGuideId] = useState<string | null>(null);
   const [solved, setSolved] = useState(alreadySolved);
   const [submitting, setSubmitting] = useState(false);
   const [mismatchedCategories, setMismatchedCategories] = useState<string[] | null>(null);
@@ -108,6 +117,7 @@ export default function LogicGridPuzzle({
   const milestoneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const milestonesReachedRef = useRef<Set<number>>(new Set());
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
+  const gridPanelRef = useRef<HTMLDivElement | null>(null);
   // True only immediately after a real player mutation (cell action, Undo, Redo) — the
   // autosave effect consumes and clears this so hydration itself can never schedule a PATCH.
   const autosavePendingRef = useRef(false);
@@ -118,6 +128,65 @@ export default function LogicGridPuzzle({
     () => deriveLogicGridState(categories, cellMarks),
     [categories, cellMarks]
   );
+
+  // Free instructional clue guidance (Pass 26B2) — derived purely from each clue's own
+  // structured metadata via the pure helper module. `textOnly` clues (and any clue whose
+  // metadata doesn't cleanly resolve) simply have no entry in this map, i.e. no instructional
+  // actions are shown for them.
+  const clueGuides = useMemo(() => {
+    const map = new Map<string, LogicGridTeachingGuide>();
+    for (const clue of clues) {
+      const guide = deriveLogicGridTeachingGuide(categories, clue);
+      if (guide) map.set(clue.id, guide);
+    }
+    return map;
+  }, [categories, clues]);
+
+  const focusedGuide = focusedClueId ? clueGuides.get(focusedClueId) ?? null : null;
+  const focusedClueIndex = focusedClueId ? clues.findIndex((c) => c.id === focusedClueId) : -1;
+  const focusedClueText = focusedClueIndex >= 0 ? clues[focusedClueIndex].text : "";
+
+  const focusPairKeySet = useMemo(
+    () => new Set(focusedGuide?.focus.pairKeys ?? []),
+    [focusedGuide]
+  );
+  const focusPrimaryCellKeySet = useMemo(
+    () => new Set(focusedGuide?.focus.primaryCellKeys ?? []),
+    [focusedGuide]
+  );
+  const focusContextCellKeySet = useMemo(
+    () => new Set(focusedGuide?.focus.contextCellKeys ?? []),
+    [focusedGuide]
+  );
+
+  // Reset both instructional states whenever the puzzle itself changes — neither is tied to
+  // this puzzle's saved progress and neither should leak across a puzzleId transition.
+  useEffect(() => {
+    setFocusedClueId(null);
+    setExpandedGuideId(null);
+  }, [puzzleId]);
+
+  // Reveal the focused cell on mobile: after a supported clue is focused (and the Grid panel
+  // has become the active tab), bring its first primary cell into view within the grid's own
+  // local horizontal scroller. Never runs on mount, never runs for textOnly clues (no guide),
+  // never runs when focus is cleared.
+  useEffect(() => {
+    if (!focusedClueId) return;
+    const guide = clueGuides.get(focusedClueId);
+    const targetKey = guide?.focus.primaryCellKeys[0];
+    if (!targetKey) return;
+    const container = gridPanelRef.current;
+    if (!container) return;
+    const cells = container.querySelectorAll<HTMLElement>("[data-logic-cell-key]");
+    for (const cell of Array.from(cells)) {
+      if (cell.dataset.logicCellKey === targetKey) {
+        if (typeof cell.scrollIntoView === "function") {
+          cell.scrollIntoView({ block: "nearest", inline: "center", behavior: "auto" });
+        }
+        break;
+      }
+    }
+  }, [focusedClueId, clueGuides]);
 
   // Hydrate saved scratch-grid state for this puzzleId. Does not create an Undo entry, does
   // not fire juice effects, does not fire milestone messaging, and — critically — must never
@@ -323,6 +392,35 @@ export default function LogicGridPuzzle({
       return next;
     });
     juice.tick();
+  }
+
+  // Free instructional actions (Pass 26B2) — navigation/teaching only. Never applies a cell
+  // mark, never calls the server, never consumes a hint token, never affects progress.
+  function handleToggleClueFocus(clueId: string, isFocused: boolean) {
+    if (isFocused) {
+      setFocusedClueId(null);
+    } else {
+      setFocusedClueId(clueId);
+      // Only mobile/tablet actually shows a tab bar — desktop always renders all three panels
+      // regardless of `activeTab`, so switching this is harmless (and invisible) at desktop widths.
+      setActiveTab("grid");
+    }
+    juice.tick();
+  }
+
+  function handleClearClueFocus() {
+    setFocusedClueId(null);
+    juice.tick();
+  }
+
+  function handleToggleClueGuide(clueId: string, isExpanded: boolean) {
+    if (isExpanded) {
+      setExpandedGuideId(null);
+      juice.tick();
+    } else {
+      setExpandedGuideId(clueId);
+      juice.unlock();
+    }
   }
 
   async function handleSubmit() {
@@ -546,24 +644,85 @@ export default function LogicGridPuzzle({
           <div className={styles.clueList}>
             {clues.map((clue, i) => {
               const resolved = resolvedClues.has(clue.id);
+              const guide = clueGuides.get(clue.id) ?? null;
+              const supported = guide !== null;
+              const isFocused = focusedClueId === clue.id;
+              const isExpanded = expandedGuideId === clue.id;
+              const checkboxId = `logic-grid-clue-checkbox-${clue.id}`;
+              const guideId = `logic-grid-clue-guide-${clue.id}`;
+              const cardClassName = [
+                styles.clueCard,
+                resolved ? styles.clueCardResolved : "",
+                isFocused ? styles.clueCardFocused : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+
               return (
-                <label
-                  key={clue.id}
-                  className={resolved ? `${styles.clueCard} ${styles.clueCardResolved}` : styles.clueCard}
-                >
-                  <input
-                    type="checkbox"
-                    checked={resolved}
-                    onChange={() => toggleClue(clue.id)}
-                    className={styles.clueCheckbox}
-                    aria-label={`Mark clue ${i + 1} as reviewed`}
-                  />
-                  <span className={styles.clueBody}>
-                    <span className={styles.clueNumber}>{i + 1}</span>
-                    <span className={styles.clueText}>{clue.text}</span>
-                    {resolved && <span className={styles.clueResolvedTag}>Resolved</span>}
-                  </span>
-                </label>
+                <article key={clue.id} className={cardClassName}>
+                  <div className={styles.clueMain}>
+                    <input
+                      type="checkbox"
+                      id={checkboxId}
+                      checked={resolved}
+                      onChange={() => toggleClue(clue.id)}
+                      className={styles.clueCheckbox}
+                      aria-label={`Mark clue ${i + 1} as reviewed`}
+                    />
+                    <label htmlFor={checkboxId} className={styles.clueBody}>
+                      <span className={styles.clueNumber}>{i + 1}</span>
+                      <span className={styles.clueText}>{clue.text}</span>
+                      {resolved && <span className={styles.clueResolvedTag}>Resolved</span>}
+                    </label>
+                  </div>
+
+                  {supported && (
+                    <div className={styles.clueActions}>
+                      <button
+                        type="button"
+                        className={
+                          isFocused
+                            ? `${styles.clueActionButton} ${styles.clueActionButtonActive}`
+                            : styles.clueActionButton
+                        }
+                        aria-pressed={isFocused}
+                        aria-label={
+                          isFocused ? `Clear grid focus for clue ${i + 1}` : `Focus clue ${i + 1} in the grid`
+                        }
+                        onClick={() => handleToggleClueFocus(clue.id, isFocused)}
+                      >
+                        {isFocused ? "Clear focus" : "Focus grid"}
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          isExpanded
+                            ? `${styles.clueActionButton} ${styles.clueActionButtonActive}`
+                            : styles.clueActionButton
+                        }
+                        aria-expanded={isExpanded}
+                        aria-controls={guideId}
+                        aria-label={isExpanded ? `Hide explanation for clue ${i + 1}` : `Explain clue ${i + 1}`}
+                        onClick={() => handleToggleClueGuide(clue.id, isExpanded)}
+                      >
+                        {isExpanded ? "Hide guide" : "Explain clue"}
+                      </button>
+                    </div>
+                  )}
+
+                  {supported && isExpanded && guide && (
+                    <div id={guideId} role="note" className={styles.clueGuide}>
+                      <p className={styles.clueGuideEyebrow}>How to use this clue</p>
+                      <p className={styles.clueGuideHeading}>{guide.heading}</p>
+                      <p className={styles.clueGuideSummary}>{guide.summary}</p>
+                      <ol className={styles.clueGuideSteps}>
+                        {guide.steps.map((step, stepIndex) => (
+                          <li key={stepIndex}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </article>
               );
             })}
           </div>
@@ -577,7 +736,22 @@ export default function LogicGridPuzzle({
           hidden={!isDesktopLayout && activeTab !== "grid"}
           data-active={activeTab === "grid"}
           className={`${styles.panel} ${styles.panelGrid}`}
+          ref={gridPanelRef}
         >
+          {focusedClueId && focusedGuide && (
+            <div aria-live="polite">
+              <div id="logic-grid-focus-banner" className={styles.focusBanner}>
+                <div className={styles.focusBannerLabel}>
+                  <strong>Focused clue {focusedClueIndex + 1}</strong>
+                  <p className={styles.focusBannerText}>{focusedClueText}</p>
+                </div>
+                <button type="button" className={styles.clearFocusButton} onClick={handleClearClueFocus}>
+                  Clear focus
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className={styles.gridBlocks}>
             {blocks.map(({ rowCategory, colCategories }) => (
               <CategoryGridBlock
@@ -588,6 +762,10 @@ export default function LogicGridPuzzle({
                 cellMarks={cellMarks}
                 onCellActivate={handleCellActivate}
                 disabled={solved || !hydrationReady}
+                focusPairKeySet={focusPairKeySet}
+                focusPrimaryCellKeySet={focusPrimaryCellKeySet}
+                focusContextCellKeySet={focusContextCellKeySet}
+                focusedClueNumber={focusedClueIndex >= 0 ? focusedClueIndex + 1 : null}
               />
             ))}
           </div>
@@ -668,6 +846,10 @@ function CategoryGridBlock({
   cellMarks,
   onCellActivate,
   disabled,
+  focusPairKeySet,
+  focusPrimaryCellKeySet,
+  focusContextCellKeySet,
+  focusedClueNumber,
 }: {
   categories: LogicGridCategoryNormalized[];
   rowCategory: LogicGridCategoryNormalized;
@@ -675,18 +857,32 @@ function CategoryGridBlock({
   cellMarks: LogicGridCellMarks;
   onCellActivate: (catIdA: string, entryA: string, catIdB: string, entryB: string) => void;
   disabled: boolean;
+  focusPairKeySet: Set<string>;
+  focusPrimaryCellKeySet: Set<string>;
+  focusContextCellKeySet: Set<string>;
+  focusedClueNumber: number | null;
 }) {
+  const colCategoryFocus = colCategories.map((cat) => {
+    const pairKey = getLogicGridCategoryPairKey(categories, rowCategory.id, cat.id);
+    return pairKey !== null && focusPairKeySet.has(pairKey);
+  });
+  const blockHasFocus = colCategoryFocus.some(Boolean);
+
   return (
-    <div className={styles.gridBlock}>
+    <div className={blockHasFocus ? `${styles.gridBlock} ${styles.gridBlockFocused}` : styles.gridBlock}>
       <div className={styles.gridScroll}>
         <div className={styles.gridInner}>
           {/* Category group header row */}
           <div className={styles.gridRow}>
             <div className={styles.gridCorner} />
-            {colCategories.map((cat) => (
+            {colCategories.map((cat, catIndex) => (
               <div
                 key={cat.id}
-                className={styles.categoryHeaderCell}
+                className={
+                  colCategoryFocus[catIndex]
+                    ? `${styles.categoryHeaderCell} ${styles.categoryHeaderFocused}`
+                    : styles.categoryHeaderCell
+                }
                 style={{ width: 44 * cat.entries.length }}
               >
                 {cat.name}
@@ -697,9 +893,17 @@ function CategoryGridBlock({
           {/* Entry header row */}
           <div className={styles.gridRow}>
             <div className={styles.rowCategoryLabel}>{rowCategory.name}</div>
-            {colCategories.map((cat) =>
+            {colCategories.map((cat, catIndex) =>
               cat.entries.map((entry) => (
-                <div key={`${cat.id}:${entry}`} className={styles.entryHeaderCell} title={entry}>
+                <div
+                  key={`${cat.id}:${entry}`}
+                  className={
+                    colCategoryFocus[catIndex]
+                      ? `${styles.entryHeaderCell} ${styles.entryHeaderFocused}`
+                      : styles.entryHeaderCell
+                  }
+                  title={entry}
+                >
                   {entry}
                 </div>
               ))
@@ -707,34 +911,68 @@ function CategoryGridBlock({
           </div>
 
           {/* Body rows */}
-          {rowCategory.entries.map((rowEntry) => (
-            <div key={rowEntry} className={styles.gridRow}>
-              <div className={styles.rowLabelCell} title={rowEntry}>
-                <span className={styles.rowLabelText}>{rowEntry}</span>
+          {rowCategory.entries.map((rowEntry) => {
+            const rowKeys = colCategories.flatMap((cat) =>
+              cat.entries.map((colEntry) => getLogicGridCellKey(categories, rowCategory.id, rowEntry, cat.id, colEntry))
+            );
+            const rowHasFocus = rowKeys.some(
+              (k) => k !== null && (focusPrimaryCellKeySet.has(k) || focusContextCellKeySet.has(k))
+            );
+            return (
+              <div key={rowEntry} className={styles.gridRow}>
+                <div
+                  className={rowHasFocus ? `${styles.rowLabelCell} ${styles.rowLabelFocused}` : styles.rowLabelCell}
+                  title={rowEntry}
+                >
+                  <span className={styles.rowLabelText}>{rowEntry}</span>
+                </div>
+                {colCategories.map((cat) =>
+                  cat.entries.map((colEntry) => {
+                    const key = getLogicGridCellKey(categories, rowCategory.id, rowEntry, cat.id, colEntry);
+                    const mark = key ? cellMarks[key] : undefined;
+                    const state = cellStateLabel(mark);
+                    const isPrimary = key !== null && focusPrimaryCellKeySet.has(key);
+                    const isContext = !isPrimary && key !== null && focusContextCellKeySet.has(key);
+                    const focusKind: "primary" | "context" | undefined = isPrimary
+                      ? "primary"
+                      : isContext
+                      ? "context"
+                      : undefined;
+
+                    let label = `${rowEntry} and ${colEntry}: ${state}`;
+                    if (isPrimary) label += `, highlighted for clue ${focusedClueNumber}`;
+                    else if (isContext) label += `, related to clue ${focusedClueNumber}`;
+
+                    const cellClassName = [
+                      styles.cell,
+                      styles[`cell_${state}`],
+                      isPrimary ? styles.cellFocusPrimary : "",
+                      isContext ? styles.cellFocusContext : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
+
+                    return (
+                      <button
+                        key={key ?? `${cat.id}:${colEntry}`}
+                        type="button"
+                        className={cellClassName}
+                        onClick={() => onCellActivate(rowCategory.id, rowEntry, cat.id, colEntry)}
+                        disabled={disabled}
+                        aria-label={label}
+                        aria-describedby={focusKind ? "logic-grid-focus-banner" : undefined}
+                        data-logic-cell-key={key ?? undefined}
+                        data-clue-focus={focusKind}
+                        title={label}
+                      >
+                        {cellGlyph(mark)}
+                      </button>
+                    );
+                  })
+                )}
               </div>
-              {colCategories.map((cat) =>
-                cat.entries.map((colEntry) => {
-                  const key = getLogicGridCellKey(categories, rowCategory.id, rowEntry, cat.id, colEntry);
-                  const mark = key ? cellMarks[key] : undefined;
-                  const state = cellStateLabel(mark);
-                  const label = `${rowEntry} and ${colEntry}: ${state}`;
-                  return (
-                    <button
-                      key={key ?? `${cat.id}:${colEntry}`}
-                      type="button"
-                      className={`${styles.cell} ${styles[`cell_${state}`]}`}
-                      onClick={() => onCellActivate(rowCategory.id, rowEntry, cat.id, colEntry)}
-                      disabled={disabled}
-                      aria-label={label}
-                      title={label}
-                    >
-                      {cellGlyph(mark)}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
