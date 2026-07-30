@@ -10,6 +10,7 @@ import { getParasiteCodeData } from "@/lib/parasiteCode";
 import { getVaultPuzzleData } from "@/lib/vault";
 import { validateWordSearchPuzzleData } from "@/lib/wordSearchCore";
 import { validateCrosswordPuzzleData } from "@/lib/crosswordCore";
+import { LOGIC_GRID_PLACEHOLDER_ANSWER, validateLogicGridForPublication } from "@/lib/logicGridPublishing";
 
 type MultiPartInput = {
   title?: string;
@@ -279,6 +280,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Logic Grid puzzles must be proven — from their own structured clues alone, never by
+    // trusting the authored answer key — to have exactly one solution before any database
+    // record is created. Persist the normalized (not the raw, unchecked) payload.
+    if (puzzleType === 'logic_grid') {
+      const publication = validateLogicGridForPublication(puzzleData);
+      if (!publication.valid) {
+        return NextResponse.json({ error: publication.error }, { status: 400 });
+      }
+      puzzleData = publication.normalized;
+    }
+
     // Validate difficulty value
     // For sudoku puzzles, the canonical difficulty comes from sudokuDifficulty (set in the
     // generator), not the generic difficulty field which defaults to 'medium' in the form.
@@ -309,6 +321,7 @@ export async function POST(request: NextRequest) {
       debrief:       'The Debrief',
       cipher_clash:  'Cipher Clash',
       anagram_blitz_blitz: 'Anagram Blitz',
+      logic_grid:    'Logic Grid',
     };
     const resolvedCategory = CATEGORY_DISPLAY_NAMES[category] ?? category;
 
@@ -366,8 +379,15 @@ export async function POST(request: NextRequest) {
               isActive: typeof isActive === 'boolean' ? isActive : true,
               minTeamSize: 1,
             }
+        : puzzleType === 'logic_grid'
+          ? {
+              // Logic Grid records are only ever active because publication validation already
+              // passed above — an omitted flag still stages the record inactive by default,
+              // unlike every other specialty type here.
+              isActive: typeof isActive === 'boolean' ? isActive : false,
+            }
         : {}),
-      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'code_master' && puzzleType !== 'detective_case' && puzzleType !== 'crime_rpg' && puzzleType !== 'blackout' && puzzleType !== 'gridlock_file' && puzzleType !== 'debrief' && puzzleType !== 'parasite_code' && puzzleType !== 'crossword' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash' ? correctAnswer : undefined,
+      riddleAnswer: !isMultiPart && puzzleType !== 'sudoku' && puzzleType !== 'jigsaw' && puzzleType !== 'escape_room' && puzzleType !== 'jim_wyze_case' && puzzleType !== 'code_master' && puzzleType !== 'detective_case' && puzzleType !== 'crime_rpg' && puzzleType !== 'blackout' && puzzleType !== 'gridlock_file' && puzzleType !== 'debrief' && puzzleType !== 'parasite_code' && puzzleType !== 'crossword' && puzzleType !== 'vault' && puzzleType !== 'cipher_clash' && puzzleType !== 'logic_grid' ? correctAnswer : undefined,
       jigsaw:
         puzzleType === 'jigsaw'
           ? {
@@ -380,7 +400,7 @@ export async function POST(request: NextRequest) {
               },
             }
           : undefined,
-      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'jigsaw' || puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'parasite_code' || puzzleType === 'crossword' || puzzleType === 'cipher_clash' ? undefined : {
+      solutions: isMultiPart || puzzleType === 'sudoku' || puzzleType === 'jigsaw' || puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'parasite_code' || puzzleType === 'crossword' || puzzleType === 'cipher_clash' || puzzleType === 'logic_grid' ? undefined : {
         create: [
           {
             answer: correctAnswer,
@@ -424,7 +444,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     };
 
-    if ((puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'word_crack' || puzzleType === 'word_search' || puzzleType === 'anagram_blitz' || puzzleType === 'arg' || puzzleType === 'blackout' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'crossword' || puzzleType === 'vault' || puzzleType === 'parasite_code' || puzzleType === 'cipher_clash') && typeof puzzleData !== 'undefined') {
+    if ((puzzleType === 'escape_room' || puzzleType === 'jim_wyze_case' || puzzleType === 'code_master' || puzzleType === 'detective_case' || puzzleType === 'crime_rpg' || puzzleType === 'crack_safe' || puzzleType === 'word_crack' || puzzleType === 'word_search' || puzzleType === 'anagram_blitz' || puzzleType === 'arg' || puzzleType === 'blackout' || puzzleType === 'gridlock_file' || puzzleType === 'debrief' || puzzleType === 'crossword' || puzzleType === 'vault' || puzzleType === 'parasite_code' || puzzleType === 'cipher_clash' || puzzleType === 'logic_grid') && typeof puzzleData !== 'undefined') {
       createData.data = puzzleData;
     }
     // Persist jigsaw shape params (piece designer) into puzzle.data JSON
@@ -541,6 +561,25 @@ export async function POST(request: NextRequest) {
       createData.solutions = {
         create: [
           { answer: '__SUDOKU__', isCorrect: true, points: pointsReward || 100, ignoreCase: true, ignoreWhitespace: false },
+        ],
+      };
+    }
+
+    // Logic Grid puzzles are solved through the dedicated /api/puzzles/[id]/logic-grid route,
+    // not a text-answer submission — this placeholder row only carries the reward point value
+    // for the generic attempt_success -> awardSolveRewards() path. It must never leak the real
+    // per-guest solution (that lives only in Puzzle.data, already stripped for the public API by
+    // sanitizePublicPuzzleData / stripLogicGridSolution).
+    if (puzzleType === 'logic_grid') {
+      createData.solutions = {
+        create: [
+          {
+            answer: LOGIC_GRID_PLACEHOLDER_ANSWER,
+            isCorrect: true,
+            points: pointsReward || 100,
+            ignoreCase: true,
+            ignoreWhitespace: false,
+          },
         ],
       };
     }

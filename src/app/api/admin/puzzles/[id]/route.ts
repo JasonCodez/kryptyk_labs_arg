@@ -7,6 +7,7 @@ import { getParasiteCodeData } from "@/lib/parasiteCode";
 import { getVaultPuzzleData } from "@/lib/vault";
 import { validateWordSearchPuzzleData } from "@/lib/wordSearchCore";
 import { validateCrosswordPuzzleData } from "@/lib/crosswordCore";
+import { LOGIC_GRID_PLACEHOLDER_ANSWER, validateLogicGridForPublication } from "@/lib/logicGridPublishing";
 
 const toPositiveInt = (...values: unknown[]): number | undefined => {
   for (const raw of values) {
@@ -77,6 +78,18 @@ export async function PATCH(
   if (body.isActive && existing.puzzleType === 'gridlock_file' && !getGridlockFileData(existing.data)) {
     return NextResponse.json({ error: 'Fix Gridlock validation errors before publishing.' }, { status: 400 });
   }
+  // Activation must re-prove the stored data still has exactly one clue-derived solution
+  // matching its authored answer key — deactivation always remains available even when the
+  // stored data is malformed, since this guard only runs when body.isActive is true.
+  if (body.isActive && existing.puzzleType === 'logic_grid') {
+    const publication = validateLogicGridForPublication(existing.data);
+    if (!publication.valid) {
+      return NextResponse.json(
+        { error: `Fix Logic Grid publication errors before activating: ${publication.error}` },
+        { status: 400 }
+      );
+    }
+  }
 
   const updated = await prisma.puzzle.update({
     where: { id: puzzleId },
@@ -143,6 +156,7 @@ export async function PUT(
     code_master:    'Code Master',
     debrief:        'The Debrief',
     cipher_clash:   'Cipher Clash',
+    logic_grid:     'Logic Grid',
   };
   const resolvedCategory = category ? (CATEGORY_DISPLAY_NAMES[category] ?? category) : category;
 
@@ -164,7 +178,7 @@ export async function PUT(
       ? String(gridlockDifficulty).toLowerCase()
       : (difficulty && validDifficulties.includes(difficulty) ? difficulty : "medium");
 
-  const isSpecialType = ["sudoku", "jigsaw", "escape_room", "jim_wyze_case", "code_master", "detective_case", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "vault"].includes(puzzleType);
+  const isSpecialType = ["sudoku", "jigsaw", "escape_room", "jim_wyze_case", "code_master", "detective_case", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "vault", "logic_grid"].includes(puzzleType);
 
   if (puzzleType === 'gridlock_file') {
     const parsed = getGridlockFileData(puzzleData);
@@ -254,6 +268,17 @@ export async function PUT(
     );
   }
 
+  // Re-validate on every edit — the record must never end up with an edited, unproven clue
+  // set. Validation runs (and can fail) before the transaction starts, so a bad edit never
+  // partially updates the record.
+  if (puzzleType === 'logic_grid') {
+    const publication = validateLogicGridForPublication(puzzleData);
+    if (!publication.valid) {
+      return NextResponse.json({ error: publication.error }, { status: 400 });
+    }
+    puzzleData = publication.normalized;
+  }
+
   // Jigsaw grids must be square, from a fixed set of supported sizes — this update path had
   // no validation at all before (silently coerced with fallback defaults), unlike create.
   if (puzzleType === 'jigsaw') {
@@ -314,7 +339,13 @@ export async function PUT(
     if (!isSpecialType) {
       puzzleUpdateData.riddleAnswer = correctAnswer;
     }
-    if (["escape_room", "jim_wyze_case", "code_master", "detective_case", "crack_safe", "word_crack", "word_search", "anagram_blitz", "arg", "blackout", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "crossword", "cipher_clash"].includes(puzzleType) && puzzleData != null) {
+    if (puzzleType === 'logic_grid') {
+      // Logic Grid never used a text riddle answer — explicitly clear any stale value left
+      // over from before the puzzle was ever a Logic Grid (or from a mistaken edit), rather
+      // than silently leaving it in place.
+      puzzleUpdateData.riddleAnswer = null;
+    }
+    if (["escape_room", "jim_wyze_case", "code_master", "detective_case", "crack_safe", "word_crack", "word_search", "anagram_blitz", "arg", "blackout", "crime_rpg", "gridlock_file", "debrief", "parasite_code", "crossword", "cipher_clash", "logic_grid"].includes(puzzleType) && puzzleData != null) {
       puzzleUpdateData.data = puzzleData;
     }
     if (puzzleType === 'vault' && vaultData) {
@@ -427,6 +458,7 @@ export async function PUT(
     if (puzzleType === 'detective_case') await syncPlaceholderSolution('__DETECTIVE_CASE__');
     if (puzzleType === 'jim_wyze_case') await syncPlaceholderSolution('__JIM_WYZE_CASE__');
     if (puzzleType === 'crack_safe') await syncPlaceholderSolution('__CRACK_SAFE__');
+    if (puzzleType === 'logic_grid') await syncPlaceholderSolution(LOGIC_GRID_PLACEHOLDER_ANSWER);
 
     // 4. Update sudoku record if applicable
     if (puzzleType === "sudoku" && sudokuGrid && sudokuSolution) {
