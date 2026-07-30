@@ -89,6 +89,21 @@ export default function LogicGridPuzzle({
   const reactId = useId();
   const domIdPrefix = reactId.replace(/[^A-Za-z0-9_-]/g, "") || "logic-grid";
 
+  // Every accessibility ID this component owns (tabs, panels, the focus banner, and — further
+  // below — per-clue checkboxes/guides) is namespaced under `domIdPrefix` so two simultaneously
+  // mounted Logic Grid puzzles never produce colliding `id`/`aria-*` references.
+  const tabIds: Record<MobileTab, string> = {
+    clues: `${domIdPrefix}-tab-clues`,
+    grid: `${domIdPrefix}-tab-grid`,
+    case: `${domIdPrefix}-tab-case`,
+  };
+  const panelIds: Record<MobileTab, string> = {
+    clues: `${domIdPrefix}-panel-clues`,
+    grid: `${domIdPrefix}-panel-grid`,
+    case: `${domIdPrefix}-panel-case`,
+  };
+  const focusBannerId = `${domIdPrefix}-focus-banner`;
+
   const validation = useMemo(
     () => validateLogicGridPuzzleData(logicGridData, { requireSolution: false }),
     [logicGridData]
@@ -626,9 +641,9 @@ export default function LogicGridPuzzle({
             key={tab}
             type="button"
             role="tab"
-            id={`logic-grid-tab-${tab}`}
+            id={tabIds[tab]}
             aria-selected={activeTab === tab}
-            aria-controls={`logic-grid-panel-${tab}`}
+            aria-controls={panelIds[tab]}
             className={activeTab === tab ? `${styles.tab} ${styles.tabActive}` : styles.tab}
             onClick={() => setActiveTab(tab)}
           >
@@ -640,9 +655,9 @@ export default function LogicGridPuzzle({
       <div className={styles.layout}>
         {/* Clue deck */}
         <div
-          id="logic-grid-panel-clues"
+          id={panelIds.clues}
           role="tabpanel"
-          aria-labelledby="logic-grid-tab-clues"
+          aria-labelledby={tabIds.clues}
           hidden={!isDesktopLayout && activeTab !== "clues"}
           data-active={activeTab === "clues"}
           className={`${styles.panel} ${styles.panelClues}`}
@@ -745,9 +760,9 @@ export default function LogicGridPuzzle({
 
         {/* Deduction grid */}
         <div
-          id="logic-grid-panel-grid"
+          id={panelIds.grid}
           role="tabpanel"
-          aria-labelledby="logic-grid-tab-grid"
+          aria-labelledby={tabIds.grid}
           hidden={!isDesktopLayout && activeTab !== "grid"}
           data-active={activeTab === "grid"}
           className={`${styles.panel} ${styles.panelGrid}`}
@@ -755,7 +770,7 @@ export default function LogicGridPuzzle({
         >
           {focusedClueId && focusedGuide && (
             <div aria-live="polite">
-              <div id="logic-grid-focus-banner" className={styles.focusBanner}>
+              <div id={focusBannerId} className={styles.focusBanner}>
                 <div className={styles.focusBannerLabel}>
                   <strong>Focused clue {focusedClueIndex + 1}</strong>
                   <p className={styles.focusBannerText}>{focusedClueText}</p>
@@ -781,6 +796,7 @@ export default function LogicGridPuzzle({
                 focusPrimaryCellKeySet={focusPrimaryCellKeySet}
                 focusContextCellKeySet={focusContextCellKeySet}
                 focusedClueNumber={focusedClueIndex >= 0 ? focusedClueIndex + 1 : null}
+                focusBannerId={focusBannerId}
               />
             ))}
           </div>
@@ -817,9 +833,9 @@ export default function LogicGridPuzzle({
 
         {/* Case board */}
         <div
-          id="logic-grid-panel-case"
+          id={panelIds.case}
           role="tabpanel"
-          aria-labelledby="logic-grid-tab-case"
+          aria-labelledby={tabIds.case}
           hidden={!isDesktopLayout && activeTab !== "case"}
           data-active={activeTab === "case"}
           className={`${styles.panel} ${styles.panelCase}`}
@@ -865,6 +881,7 @@ function CategoryGridBlock({
   focusPrimaryCellKeySet,
   focusContextCellKeySet,
   focusedClueNumber,
+  focusBannerId,
 }: {
   categories: LogicGridCategoryNormalized[];
   rowCategory: LogicGridCategoryNormalized;
@@ -876,6 +893,7 @@ function CategoryGridBlock({
   focusPrimaryCellKeySet: Set<string>;
   focusContextCellKeySet: Set<string>;
   focusedClueNumber: number | null;
+  focusBannerId: string;
 }) {
   const colCategoryFocus = colCategories.map((cat) => {
     const pairKey = getLogicGridCategoryPairKey(categories, rowCategory.id, cat.id);
@@ -975,7 +993,7 @@ function CategoryGridBlock({
                         onClick={() => onCellActivate(rowCategory.id, rowEntry, cat.id, colEntry)}
                         disabled={disabled}
                         aria-label={label}
-                        aria-describedby={focusKind ? "logic-grid-focus-banner" : undefined}
+                        aria-describedby={focusKind ? focusBannerId : undefined}
                         data-logic-cell-key={key ?? undefined}
                         data-clue-focus={focusKind}
                         title={label}

@@ -292,7 +292,7 @@ describe("LogicGridPuzzle — tabs", () => {
     await flush();
     fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
     expect(screen.getByRole("tab", { name: "Clues" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tabpanel").id).toBe("logic-grid-panel-clues");
+    expect(screen.getByRole("tabpanel").id).toMatch(/-panel-clues$/);
   });
 
   it("Case Board tab can become selected", async () => {
@@ -1302,6 +1302,15 @@ function focusDataAttr(entryA: string, entryB: string): string | null {
   return cellButton(entryA, entryB).getAttribute("data-clue-focus");
 }
 
+// The focus-banner id is namespaced per component instance (`${domIdPrefix}-focus-banner`)
+// rather than a fixed static id, so tests locate it by suffix instead of an exact id.
+function getFocusBanner(scope: ParentNode = document): HTMLElement | null {
+  return scope.querySelector('[id$="-focus-banner"]');
+}
+function getFocusBanners(scope: ParentNode = document): HTMLElement[] {
+  return Array.from(scope.querySelectorAll('[id$="-focus-banner"]'));
+}
+
 describe("LogicGridPuzzle — instructional clue guidance (Pass 26B2)", () => {
   it("legacy textOnly clue has no Focus or Explain button, and the reviewed checkbox still works", async () => {
     buildFetchMock();
@@ -1388,7 +1397,7 @@ describe("LogicGridPuzzle — Focus grid behavior", () => {
     fireEvent.click(focusBtn);
 
     expect(screen.getByRole("tab", { name: "Grid" }).getAttribute("aria-selected")).toBe("true");
-    const banner = document.getElementById("logic-grid-focus-banner");
+    const banner = getFocusBanner();
     expect(banner).toBeTruthy();
     expect(within(banner as HTMLElement).getByText("Focused clue 2")).toBeTruthy();
     expect(
@@ -1402,7 +1411,7 @@ describe("LogicGridPuzzle — Focus grid behavior", () => {
     expect(focusButtonFor(2)!.getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Clear focus" }));
-    expect(document.getElementById("logic-grid-focus-banner")).toBeNull();
+    expect(getFocusBanner()).toBeNull();
     expect(focusDataAttr("Library", "8:00")).toBeNull();
 
     expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
@@ -1450,7 +1459,7 @@ describe("LogicGridPuzzle — Focus grid behavior", () => {
 
     expect(focusButtonFor(2)!.getAttribute("aria-pressed")).toBe("false");
     expect(focusButtonFor(3)!.getAttribute("aria-pressed")).toBe("true");
-    expect(document.querySelectorAll("#logic-grid-focus-banner").length).toBe(1);
+    expect(getFocusBanners()).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Clear focus" }));
     expect(focusDataAttr("Maya", "Vault")).toBeNull();
@@ -1703,7 +1712,7 @@ describe("LogicGridPuzzle — instructional state resets on puzzleId transition"
     // Focusing switched the mobile tab to Grid — return to Clues to reach the Explain button.
     fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
     fireEvent.click(explainButtonFor(2)!);
-    expect(document.getElementById("logic-grid-focus-banner")).toBeTruthy();
+    expect(getFocusBanner()).toBeTruthy();
 
     rerender(
       <LogicGridPuzzle
@@ -1715,7 +1724,7 @@ describe("LogicGridPuzzle — instructional state resets on puzzleId transition"
     );
     await flush();
 
-    expect(document.getElementById("logic-grid-focus-banner")).toBeNull();
+    expect(getFocusBanner()).toBeNull();
     expect(document.querySelectorAll('[role="note"]').length).toBe(0);
     fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
     expect(focusButtonFor(2)!.getAttribute("aria-pressed")).toBe("false");
@@ -1912,34 +1921,38 @@ describe("LogicGridPuzzle — multiple mounted instances never collide on DOM id
     delete window.matchMedia;
   });
 
-  it("produces unique checkbox and guide ids across two simultaneously mounted puzzles", async () => {
+  function renderTwoInstances() {
     buildFetchMock();
-    const { container } = render(
+    return render(
       <>
-        <LogicGridPuzzle
-          puzzleId="instance-a"
-          logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
-          alreadySolved={false}
-          onSolved={jest.fn()}
-        />
-        <LogicGridPuzzle
-          puzzleId="instance-b"
-          logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
-          alreadySolved={false}
-          onSolved={jest.fn()}
-        />
+        <div data-testid="wrapper-a">
+          <LogicGridPuzzle
+            puzzleId="instance-a"
+            logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+            alreadySolved={false}
+            onSolved={jest.fn()}
+          />
+        </div>
+        <div data-testid="wrapper-b">
+          <LogicGridPuzzle
+            puzzleId="instance-b"
+            logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+            alreadySolved={false}
+            onSolved={jest.fn()}
+          />
+        </div>
       </>
     );
+  }
+
+  it("every id in the rendered document is unique — no exclusions, including tabs/panels/focus banner", async () => {
+    const { container } = renderTwoInstances();
     await flush();
 
     const cluesTabs = screen.getAllByRole("tab", { name: "Clues" });
     fireEvent.click(cluesTabs[0]);
     fireEvent.click(cluesTabs[1]);
 
-    // Scoped to the ids this correction actually generates (per-clue checkbox/guide ids) —
-    // the component's pre-existing static tab/panel ids (from the frozen Pass 26A foundation)
-    // are out of scope for this correction and are not exercised by real usage, which never
-    // mounts two Logic Grid puzzles on the same page simultaneously.
     const checkboxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
     // 5 clues per instance, x2 instances.
     expect(checkboxes).toHaveLength(10);
@@ -1959,6 +1972,87 @@ describe("LogicGridPuzzle — multiple mounted instances never collide on DOM id
     expect(controlsIds[0]).not.toBe(controlsIds[1]);
     expect(document.getElementById(controlsIds[0]!)).toBeTruthy();
     expect(document.getElementById(controlsIds[1]!)).toBeTruthy();
+
+    const focusButtonsClue2 = screen.getAllByRole("button", { name: "Focus clue 2 in the grid", hidden: true });
+    expect(focusButtonsClue2).toHaveLength(2);
+    fireEvent.click(focusButtonsClue2[1]); // focuses within instance B's now-active Clues panel
+
+    // Every id anywhere in the rendered tree — tabs, panels, focus banner, checkboxes, guides —
+    // must be unique across both simultaneously mounted instances. No exclusions.
+    const allIds = Array.from(container.querySelectorAll("[id]")).map((el) => el.id);
+    expect(allIds.length).toBeGreaterThan(0);
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+
+  it("each instance's tabs control and are labelled by only its own panels", async () => {
+    renderTwoInstances();
+    await flush();
+
+    const wrapperA = screen.getByTestId("wrapper-a");
+    const wrapperB = screen.getByTestId("wrapper-b");
+
+    for (const wrapper of [wrapperA, wrapperB]) {
+      const scoped = within(wrapper);
+      for (const tabName of ["Clues", "Grid", "Case Board"] as const) {
+        const tab = scoped.getByRole("tab", { name: tabName });
+        const panelId = tab.getAttribute("aria-controls")!;
+        const panel = Array.from(wrapper.querySelectorAll<HTMLElement>('[role="tabpanel"]')).find(
+          (el) => el.id === panelId
+        );
+        expect(panel).toBeTruthy();
+        expect(panel!.id).toBe(panelId);
+        expect(panel!.getAttribute("aria-labelledby")).toBe(tab.id);
+        // The referenced panel must live inside this same wrapper, not the other instance's.
+        expect(wrapper.contains(panel ?? null)).toBe(true);
+      }
+    }
+
+    // Instance A's tab ids must never equal instance B's tab ids (and likewise for panels).
+    const tabIdsA = within(wrapperA)
+      .getAllByRole("tab", { hidden: true })
+      .map((t) => t.id);
+    const tabIdsB = within(wrapperB)
+      .getAllByRole("tab", { hidden: true })
+      .map((t) => t.id);
+    expect(tabIdsA.some((id) => tabIdsB.includes(id))).toBe(false);
+  });
+
+  it("each instance's focused cells reference only its own focus banner, and focus/clear are independent", async () => {
+    renderTwoInstances();
+    await flush();
+
+    const wrapperA = screen.getByTestId("wrapper-a");
+    const wrapperB = screen.getByTestId("wrapper-b");
+
+    fireEvent.click(within(wrapperA).getByRole("tab", { name: "Clues" }));
+    fireEvent.click(within(wrapperB).getByRole("tab", { name: "Clues" }));
+
+    const focusBtnA = within(wrapperA).getByRole("button", { name: "Focus clue 2 in the grid", hidden: true });
+    const focusBtnB = within(wrapperB).getByRole("button", { name: "Focus clue 2 in the grid", hidden: true });
+    fireEvent.click(focusBtnA);
+    fireEvent.click(focusBtnB);
+
+    const bannerA = getFocusBanner(wrapperA)!;
+    const bannerB = getFocusBanner(wrapperB)!;
+    expect(bannerA).toBeTruthy();
+    expect(bannerB).toBeTruthy();
+    expect(bannerA.id).not.toBe(bannerB.id);
+
+    const focusedCellsA = wrapperA.querySelectorAll('[data-clue-focus="primary"]');
+    const focusedCellsB = wrapperB.querySelectorAll('[data-clue-focus="primary"]');
+    expect(focusedCellsA.length).toBeGreaterThan(0);
+    expect(focusedCellsB.length).toBeGreaterThan(0);
+    for (const cell of Array.from(focusedCellsA)) {
+      expect(cell.getAttribute("aria-describedby")).toBe(bannerA.id);
+    }
+    for (const cell of Array.from(focusedCellsB)) {
+      expect(cell.getAttribute("aria-describedby")).toBe(bannerB.id);
+    }
+
+    // Clearing focus in instance A must not affect instance B.
+    fireEvent.click(within(wrapperA).getByRole("button", { name: "Clear focus" }));
+    expect(getFocusBanner(wrapperA)).toBeNull();
+    expect(getFocusBanner(wrapperB)).toBeTruthy();
   });
 });
 
@@ -2008,7 +2102,7 @@ describe("LogicGridPuzzle — focus scrolling is mobile/tablet-only", () => {
     await flush();
 
     expect(scrollMock).not.toHaveBeenCalled();
-    expect(document.getElementById("logic-grid-focus-banner")).toBeTruthy();
+    expect(getFocusBanner()).toBeTruthy();
     expect(focusDataAttr("Library", "8:00")).toBe("primary");
 
     // All three panels remain rendered (no `hidden`) at desktop widths.
