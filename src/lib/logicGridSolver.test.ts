@@ -700,3 +700,350 @@ describe("LogicGridUniquenessResult contract shape", () => {
     expect(result.secondSolution).toBeTruthy();
   });
 });
+
+// ── Pass 26C1 correction — entity-identity collision safety ────────────────
+
+// `artifact::code` / "A" and `artifact` / "code::A" are two distinct entities that both
+// serialized to the composite string key "artifact::code::A" under the old implementation.
+const COLLISION_CATEGORIES: LogicGridCategoryNormalized[] = [
+  { id: "person", name: "People", entries: ["Maya", "Jordan", "Lena", "Theo"] },
+  { id: "artifact::code", name: "Artifact Codes", entries: ["A", "B", "C", "D"] },
+  { id: "artifact", name: "Artifacts", entries: ["code::A", "code::B", "code::C", "code::D"] },
+  { id: "time", name: "Times", entries: ["1", "2", "3", "4"] },
+];
+
+const COLLISION_SOLUTION: LogicGridSolution = {
+  Maya: { "artifact::code": "A", artifact: "code::B", time: "1" },
+  Jordan: { "artifact::code": "B", artifact: "code::A", time: "2" },
+  Lena: { "artifact::code": "C", artifact: "code::C", time: "3" },
+  Theo: { "artifact::code": "D", artifact: "code::D", time: "4" },
+};
+
+describe("evaluateLogicGridClueAgainstSolution — entity-identity collision safety", () => {
+  it("each collision-prone operand resolves to its own correct primary row", () => {
+    // Maya owns both artifact::code/A and time/1 — a `same` clue between them must be true.
+    // Under the old concatenated-key implementation, artifact::code/A and artifact/code::A
+    // shared one Map entry, so this would have incorrectly resolved to Jordan and returned false.
+    const c = clue("same-collision", "same", [op("artifact::code", "A"), op("time", "1")]);
+    expect(evaluateLogicGridClueAgainstSolution(COLLISION_CATEGORIES, COLLISION_SOLUTION, c)).toBe(true);
+  });
+
+  it("a false same clue remains false", () => {
+    // artifact::code/A belongs to Maya, time/2 belongs to Jordan — must be false. Under the old
+    // implementation both operands collapsed to the same overwritten key (Jordan), making this
+    // incorrectly evaluate to true.
+    const c = clue("same-collision-false", "same", [op("artifact::code", "A"), op("time", "2")]);
+    expect(evaluateLogicGridClueAgainstSolution(COLLISION_CATEGORIES, COLLISION_SOLUTION, c)).toBe(false);
+  });
+
+  it("notSame remains correct across colliding keys", () => {
+    // artifact::code/A -> Maya, artifact/code::A -> Jordan: different rows, so notSame is true.
+    // Under the old implementation both operands resolved to the same (overwritten) row, making
+    // this incorrectly false.
+    const c = clue("notsame-collision", "notSame", [op("artifact::code", "A"), op("artifact", "code::A")]);
+    expect(evaluateLogicGridClueAgainstSolution(COLLISION_CATEGORIES, COLLISION_SOLUTION, c)).toBe(true);
+  });
+
+  it("ordered evaluation remains correct across colliding keys", () => {
+    // artifact::code/A -> Maya (time index 0), artifact/code::A -> Jordan (time index 1): Maya
+    // before Jordan along time is true. Under the old implementation both operands resolved to
+    // the same row, making this incorrectly false (an item is never before itself).
+    const c = clue(
+      "before-collision",
+      "before",
+      [op("artifact::code", "A"), op("artifact", "code::A")],
+      "time"
+    );
+    expect(evaluateLogicGridClueAgainstSolution(COLLISION_CATEGORIES, COLLISION_SOLUTION, c)).toBe(true);
+  });
+
+  it("reversing operand order does not change a symmetric clue's result", () => {
+    const forward = clue("rev-collision-a", "same", [op("artifact::code", "A"), op("time", "1")]);
+    const reversed = clue("rev-collision-b", "same", [op("time", "1"), op("artifact::code", "A")]);
+    expect(evaluateLogicGridClueAgainstSolution(COLLISION_CATEGORIES, COLLISION_SOLUTION, forward)).toBe(
+      evaluateLogicGridClueAgainstSolution(COLLISION_CATEGORIES, COLLISION_SOLUTION, reversed)
+    );
+  });
+});
+
+describe("analyzeLogicGridUniqueness — entity-identity collision safety", () => {
+  const COLLISION_DIRECT_CLUES = [
+    clue("cc1", "same", [op("person", "Maya"), op("artifact::code", "A")]),
+    clue("cc2", "same", [op("person", "Maya"), op("artifact", "code::B")]),
+    clue("cc3", "same", [op("person", "Maya"), op("time", "1")]),
+    clue("cc4", "same", [op("person", "Jordan"), op("artifact::code", "B")]),
+    clue("cc5", "same", [op("person", "Jordan"), op("artifact", "code::A")]),
+    clue("cc6", "same", [op("person", "Jordan"), op("time", "2")]),
+    clue("cc7", "same", [op("person", "Lena"), op("artifact::code", "C")]),
+    clue("cc8", "same", [op("person", "Lena"), op("artifact", "code::C")]),
+    clue("cc9", "same", [op("person", "Lena"), op("time", "3")]),
+    clue("cc10", "same", [op("person", "Theo"), op("artifact::code", "D")]),
+    clue("cc11", "same", [op("person", "Theo"), op("artifact", "code::D")]),
+    clue("cc12", "same", [op("person", "Theo"), op("time", "4")]),
+  ];
+
+  it("a fully structured collision-prone puzzle still resolves to a correct unique witness", () => {
+    const result = analyzeLogicGridUniqueness(
+      baseData({ categories: COLLISION_CATEGORIES, clues: COLLISION_DIRECT_CLUES })
+    );
+    expect(result.status).toBe("unique");
+    expect(result.solutionsFound).toBe(1);
+    expect(result.searchExhausted).toBe(true);
+    expect(result.firstSolution).toEqual(COLLISION_SOLUTION);
+  });
+
+  it("a weak collision-prone puzzle is correctly ambiguous", () => {
+    const result = analyzeLogicGridUniqueness(
+      baseData({
+        categories: COLLISION_CATEGORIES,
+        clues: [clue("weak-collision", "notSame", [op("person", "Maya"), op("artifact::code", "A")])],
+      })
+    );
+    expect(result.status).toBe("ambiguous");
+    expect(result.solutionsFound).toBe(2);
+    expect(result.searchExhausted).toBe(false);
+    expect(result.firstSolution).toBeTruthy();
+    expect(result.secondSolution).toBeTruthy();
+    expect(result.firstSolution).not.toEqual(result.secondSolution);
+  });
+});
+
+// ── Pass 26C1 correction — malformed-category runtime safety ───────────────
+
+describe("evaluateLogicGridClueAgainstSolution — malformed categories always return exactly null", () => {
+  const validClueForCategoryTests = clue("x", "same", [op("room", "Observatory"), op("time", "8:00")]);
+
+  function cloneCategories(): Array<{ id: string; name: string; entries: unknown }> {
+    return JSON.parse(JSON.stringify(CATEGORIES));
+  }
+
+  const simpleMalformedCases: Array<[string, unknown]> = [
+    ["null", null],
+    ["empty object", {}],
+    ["empty array", []],
+    ["array containing null", [null]],
+    ["array containing an array", [[]]],
+    ["array containing an empty object", [{}]],
+  ];
+
+  for (const [label, value] of simpleMalformedCases) {
+    it(`returns exactly null for ${label}`, () => {
+      expect(
+        evaluateLogicGridClueAgainstSolution(
+          value as unknown as LogicGridCategoryNormalized[],
+          EXPECTED_SOLUTION,
+          validClueForCategoryTests
+        )
+      ).toBe(null);
+    });
+  }
+
+  it("returns exactly null when entries is not an array (padded to a valid category count)", () => {
+    const categories = [
+      { id: "person", name: "People", entries: null },
+      { id: "room", name: "Rooms", entries: ["A", "B", "C", "D"] },
+      { id: "time", name: "Times", entries: ["1", "2", "3", "4"] },
+    ];
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for a blank category id", () => {
+    const categories = cloneCategories();
+    categories[0].id = "  ";
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for duplicate category IDs", () => {
+    const categories = cloneCategories();
+    categories[1].id = categories[0].id;
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for duplicate entries within a category", () => {
+    const categories = cloneCategories();
+    (categories[1].entries as string[])[1] = (categories[1].entries as string[])[0];
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for case-insensitive duplicate entries", () => {
+    const categories = cloneCategories();
+    const entries = categories[1].entries as string[];
+    entries[1] = entries[0].toUpperCase();
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for unequal category lengths", () => {
+    const categories = cloneCategories();
+    (categories[1].entries as string[]).push("Extra");
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for a blank category name", () => {
+    const categories = cloneCategories();
+    categories[0].name = "   ";
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for a blank entry", () => {
+    const categories = cloneCategories();
+    (categories[0].entries as string[])[0] = "   ";
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+
+  it("returns exactly null for a non-string entry", () => {
+    const categories = cloneCategories();
+    (categories[0].entries as unknown[])[0] = 123;
+    expect(
+      evaluateLogicGridClueAgainstSolution(
+        categories as unknown as LogicGridCategoryNormalized[],
+        EXPECTED_SOLUTION,
+        validClueForCategoryTests
+      )
+    ).toBe(null);
+  });
+});
+
+describe("evaluateLogicGridClueAgainstSolution — category immutability", () => {
+  it("leaves valid runtime categories byte-identical after evaluation", () => {
+    const categories = JSON.parse(JSON.stringify(CATEGORIES)) as LogicGridCategoryNormalized[];
+    const snapshot = JSON.parse(JSON.stringify(categories));
+    const c = clue("x", "same", [op("room", "Observatory"), op("time", "8:00")]);
+
+    evaluateLogicGridClueAgainstSolution(categories, EXPECTED_SOLUTION, c);
+
+    expect(categories).toEqual(snapshot);
+    expect(Object.keys(categories[0]).sort()).toEqual(["entries", "id", "name"]);
+    expect(categories[0].entries).toEqual(snapshot[0].entries);
+  });
+});
+
+// ── Pass 26C1 correction — malformed-clue runtime safety ───────────────────
+
+describe("evaluateLogicGridClueAgainstSolution — malformed clues always return exactly null", () => {
+  const validOperands = [op("room", "Observatory"), op("time", "8:00")];
+
+  const malformedClueCases: Array<[string, unknown]> = [
+    ["null clue", null],
+    ["array clue", []],
+    ["missing id", { text: "x", type: "same", operands: validOperands }],
+    ["blank id", { id: "   ", text: "x", type: "same", operands: validOperands }],
+    ["non-string id", { id: 123, text: "x", type: "same", operands: validOperands }],
+    ["missing text", { id: "c1", type: "same", operands: validOperands }],
+    ["non-string text", { id: "c1", text: 123, type: "same", operands: validOperands }],
+    ["missing type", { id: "c1", text: "x", operands: validOperands }],
+    ["unknown type", { id: "c1", text: "x", type: "madeUp", operands: validOperands }],
+    ["missing operands", { id: "c1", text: "x", type: "same" }],
+    ["non-array operands", { id: "c1", text: "x", type: "same", operands: "nope" }],
+    ["null operand", { id: "c1", text: "x", type: "same", operands: [null, op("time", "8:00")] }],
+    ["array operand", { id: "c1", text: "x", type: "same", operands: [[], op("time", "8:00")] }],
+    [
+      "missing operand category ID",
+      { id: "c1", text: "x", type: "same", operands: [{ entry: "Observatory" }, op("time", "8:00")] },
+    ],
+    [
+      "blank operand category ID",
+      {
+        id: "c1",
+        text: "x",
+        type: "same",
+        operands: [{ categoryId: "  ", entry: "Observatory" }, op("time", "8:00")],
+      },
+    ],
+    [
+      "missing operand entry",
+      { id: "c1", text: "x", type: "same", operands: [{ categoryId: "room" }, op("time", "8:00")] },
+    ],
+    [
+      "blank operand entry",
+      {
+        id: "c1",
+        text: "x",
+        type: "same",
+        operands: [{ categoryId: "room", entry: "   " }, op("time", "8:00")],
+      },
+    ],
+    [
+      "non-string ordered category ID",
+      {
+        id: "c1",
+        text: "x",
+        type: "before",
+        orderedCategoryId: 123,
+        operands: [op("person", "Maya"), op("person", "Jordan")],
+      },
+    ],
+  ];
+
+  for (const [label, value] of malformedClueCases) {
+    it(`returns exactly null for ${label}`, () => {
+      expect(
+        evaluateLogicGridClueAgainstSolution(
+          CATEGORIES,
+          EXPECTED_SOLUTION,
+          value as unknown as LogicGridClueNormalized
+        )
+      ).toBe(null);
+    });
+  }
+});
+
+describe("evaluateLogicGridClueAgainstSolution — clue text independence", () => {
+  it("two otherwise identical clues with drastically different text evaluate identically", () => {
+    const clueA = clue("t1", "same", [op("room", "Library"), op("time", "8:30")]);
+    const clueB: LogicGridClueNormalized = {
+      ...clueA,
+      text: "A completely unrelated sentence that must never be inspected.",
+    };
+    expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, clueA)).toBe(
+      evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, clueB)
+    );
+  });
+});
