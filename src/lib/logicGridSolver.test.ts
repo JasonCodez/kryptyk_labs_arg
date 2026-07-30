@@ -1047,3 +1047,255 @@ describe("evaluateLogicGridClueAgainstSolution — clue text independence", () =
     );
   });
 });
+
+// ── Pass 26C1 final correction — ordered metadata must match clue type ─────
+
+describe("evaluateLogicGridClueAgainstSolution — non-ordered clues reject orderedCategoryId", () => {
+  const nonOrderedFixtures: Array<[LogicGridClueNormalized["type"], LogicGridClueNormalized]> = [
+    ["same", clue("no-same", "same", [op("room", "Library"), op("time", "8:30")])],
+    ["notSame", clue("no-notsame", "notSame", [op("person", "Maya"), op("room", "Vault")])],
+    [
+      "eitherOr",
+      clue("no-either", "eitherOr", [op("person", "Maya"), op("room", "Observatory"), op("room", "Library")]),
+    ],
+  ];
+
+  for (const [type, baseClue] of nonOrderedFixtures) {
+    it(`${type}: a nonblank orderedCategoryId invalidates the clue`, () => {
+      const withMetadata: LogicGridClueNormalized = { ...baseClue, orderedCategoryId: "object" };
+      expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, withMetadata)).toBeNull();
+    });
+
+    it(`${type}: a blank orderedCategoryId is treated as absent and does not change the result`, () => {
+      const withoutMetadata = evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, baseClue);
+      const withBlankMetadata: LogicGridClueNormalized = { ...baseClue, orderedCategoryId: "   " };
+      expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, withBlankMetadata)).toBe(
+        withoutMetadata
+      );
+    });
+  }
+
+  it("textOnly continues returning null regardless of orderedCategoryId, without parsing text", () => {
+    const withMetadata: LogicGridClueNormalized = {
+      id: "no-textonly",
+      text: "Jordan arrived immediately before the guest carrying the Red Journal.",
+      type: "textOnly",
+      operands: [],
+      orderedCategoryId: "time",
+    };
+    expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, withMetadata)).toBeNull();
+  });
+});
+
+describe("evaluateLogicGridClueAgainstSolution — ordered clues require valid orderedCategoryId", () => {
+  for (const type of ["before", "after", "immediatelyBefore", "immediatelyAfter"] as const) {
+    describe(type, () => {
+      const operands = [op("person", "Maya"), op("person", "Jordan")];
+
+      it("missing orderedCategoryId returns null", () => {
+        const c: LogicGridClueNormalized = { id: `${type}-missing`, text: type, type, operands };
+        expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, c)).toBeNull();
+      });
+
+      it("blank orderedCategoryId returns null", () => {
+        const c = clue(`${type}-blank`, type, operands, "   ");
+        expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, c)).toBeNull();
+      });
+
+      it("non-string orderedCategoryId returns null", () => {
+        const c: LogicGridClueNormalized = {
+          id: `${type}-nonstring`,
+          text: type,
+          type,
+          operands,
+          orderedCategoryId: 123 as unknown as string,
+        };
+        expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, c)).toBeNull();
+      });
+
+      it("a valid nonblank orderedCategoryId preserves existing behavior", () => {
+        const c = clue(`${type}-valid`, type, operands, "time");
+        expect(evaluateLogicGridClueAgainstSolution(CATEGORIES, EXPECTED_SOLUTION, c)).not.toBeNull();
+      });
+    });
+  }
+});
+
+// ── Pass 26C1 final correction — __proto__-safe solution records ───────────
+
+function safeRecord<T>(entries: Array<[string, T]>): Record<string, T> {
+  const record = Object.create(null) as Record<string, T>;
+  for (const [key, value] of entries) record[key] = value;
+  return record;
+}
+
+const PROTOTYPE_CATEGORIES: LogicGridCategoryNormalized[] = [
+  { id: "person", name: "People", entries: ["__proto__", "Jordan", "Lena", "Theo"] },
+  { id: "__proto__", name: "Codes", entries: ["Alpha", "Beta", "Gamma", "Delta"] },
+  { id: "room", name: "Rooms", entries: ["Observatory", "Library", "Vault", "Gallery"] },
+  { id: "time", name: "Times", entries: ["1", "2", "3", "4"] },
+];
+
+const PROTOTYPE_SOLUTION: LogicGridSolution = safeRecord<Record<string, string>>([
+  ["__proto__", safeRecord([["__proto__", "Alpha"], ["room", "Observatory"], ["time", "1"]])],
+  ["Jordan", safeRecord([["__proto__", "Beta"], ["room", "Library"], ["time", "2"]])],
+  ["Lena", safeRecord([["__proto__", "Gamma"], ["room", "Vault"], ["time", "3"]])],
+  ["Theo", safeRecord([["__proto__", "Delta"], ["room", "Gallery"], ["time", "4"]])],
+]);
+
+describe("evaluateLogicGridClueAgainstSolution — __proto__-safe operand resolution", () => {
+  it("an operand using primary entry __proto__ resolves correctly", () => {
+    const c = clue("proto-primary", "same", [op("person", "__proto__"), op("room", "Observatory")]);
+    expect(evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c)).toBe(true);
+  });
+
+  it("an operand using category ID __proto__ resolves correctly", () => {
+    const c = clue("proto-category", "same", [op("__proto__", "Alpha"), op("room", "Observatory")]);
+    expect(evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c)).toBe(true);
+  });
+
+  it("a true same clue returns true", () => {
+    const c = clue("proto-true", "same", [op("person", "__proto__"), op("time", "1")]);
+    expect(evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c)).toBe(true);
+  });
+
+  it("a false same clue returns false", () => {
+    const c = clue("proto-false", "same", [op("person", "__proto__"), op("room", "Library")]);
+    expect(evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c)).toBe(false);
+  });
+
+  it("notSame remains correct", () => {
+    const c = clue("proto-notsame", "notSame", [op("person", "__proto__"), op("room", "Library")]);
+    expect(evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c)).toBe(true);
+  });
+
+  it("ordered evaluation remains correct", () => {
+    const c = clue(
+      "proto-before",
+      "before",
+      [op("person", "__proto__"), op("person", "Jordan")],
+      "time"
+    );
+    expect(evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c)).toBe(true);
+  });
+
+  it("leaves the candidate input unchanged", () => {
+    const snapshot = JSON.stringify(PROTOTYPE_SOLUTION);
+    const c = clue("proto-snapshot", "same", [op("person", "__proto__"), op("time", "1")]);
+    evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c);
+    expect(JSON.stringify(PROTOTYPE_SOLUTION)).toBe(snapshot);
+  });
+
+  it("Object.prototype receives no new properties", () => {
+    const before = Object.getOwnPropertyNames(Object.prototype).sort();
+    const c = clue("proto-pollution", "same", [op("person", "__proto__"), op("time", "1")]);
+    evaluateLogicGridClueAgainstSolution(PROTOTYPE_CATEGORIES, PROTOTYPE_SOLUTION, c);
+    const after = Object.getOwnPropertyNames(Object.prototype).sort();
+    expect(after).toEqual(before);
+    expect(({} as Record<string, unknown>).__proto__).toBe(Object.prototype);
+  });
+});
+
+describe("analyzeLogicGridUniqueness — __proto__-safe uniqueness analysis", () => {
+  const PROTOTYPE_DIRECT_CLUES = [
+    clue("pp1", "same", [op("person", "__proto__"), op("__proto__", "Alpha")]),
+    clue("pp2", "same", [op("person", "__proto__"), op("room", "Observatory")]),
+    clue("pp3", "same", [op("person", "__proto__"), op("time", "1")]),
+    clue("pp4", "same", [op("person", "Jordan"), op("__proto__", "Beta")]),
+    clue("pp5", "same", [op("person", "Jordan"), op("room", "Library")]),
+    clue("pp6", "same", [op("person", "Jordan"), op("time", "2")]),
+    clue("pp7", "same", [op("person", "Lena"), op("__proto__", "Gamma")]),
+    clue("pp8", "same", [op("person", "Lena"), op("room", "Vault")]),
+    clue("pp9", "same", [op("person", "Lena"), op("time", "3")]),
+    clue("pp10", "same", [op("person", "Theo"), op("__proto__", "Delta")]),
+    clue("pp11", "same", [op("person", "Theo"), op("room", "Gallery")]),
+    clue("pp12", "same", [op("person", "Theo"), op("time", "4")]),
+  ];
+
+  it("a fully structured __proto__-sensitive puzzle resolves to a correct unique witness", () => {
+    const result = analyzeLogicGridUniqueness(
+      baseData({ categories: PROTOTYPE_CATEGORIES, clues: PROTOTYPE_DIRECT_CLUES })
+    );
+    expect(result.status).toBe("unique");
+    expect(result.solutionsFound).toBe(1);
+    expect(result.searchExhausted).toBe(true);
+
+    const solution = result.firstSolution!;
+    expect(Object.prototype.hasOwnProperty.call(solution, "__proto__")).toBe(true);
+    const protoRow = solution["__proto__"];
+    expect(Object.prototype.hasOwnProperty.call(protoRow, "__proto__")).toBe(true);
+    expect(protoRow["__proto__"]).toBe("Alpha");
+    expect(protoRow.room).toBe("Observatory");
+    expect(protoRow.time).toBe("1");
+
+    const json = JSON.stringify(solution);
+    expect((json.match(/"__proto__"/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(json).toContain('"Alpha"');
+  });
+});
+
+describe("analyzeLogicGridUniqueness — __proto__-safe ambiguous analysis", () => {
+  it("a weak __proto__-sensitive puzzle is correctly ambiguous with valid witnesses", () => {
+    const result = analyzeLogicGridUniqueness(
+      baseData({
+        categories: PROTOTYPE_CATEGORIES,
+        clues: [clue("weak-proto", "notSame", [op("person", "__proto__"), op("room", "Library")])],
+      })
+    );
+    expect(result.status).toBe("ambiguous");
+    expect(result.solutionsFound).toBe(2);
+    expect(result.searchExhausted).toBe(false);
+
+    for (const solution of [result.firstSolution!, result.secondSolution!]) {
+      expect(Object.prototype.hasOwnProperty.call(solution, "__proto__")).toBe(true);
+      expect(Object.prototype.hasOwnProperty.call(solution["__proto__"], "__proto__")).toBe(true);
+      expect(Object.keys(solution).sort()).toEqual(PROTOTYPE_CATEGORIES[0].entries.slice().sort());
+      for (const other of PROTOTYPE_CATEGORIES.slice(1)) {
+        const assigned = PROTOTYPE_CATEGORIES[0].entries.map((entry) => solution[entry][other.id]);
+        expect(new Set(assigned).size).toBe(other.entries.length);
+      }
+    }
+    expect(result.firstSolution).not.toEqual(result.secondSolution);
+  });
+});
+
+describe("evaluateLogicGridClueAgainstSolution — inherited-property rejection", () => {
+  it("rejects a candidate whose primary row exists only via the prototype chain", () => {
+    const inheritedRowSource = { Maya: { room: "Observatory", time: "8:00", object: "Brass Compass" } };
+    const solution = Object.create(inheritedRowSource) as Record<string, unknown>;
+    solution.Jordan = { room: "Library", time: "8:30", object: "Silver Key" };
+    solution.Lena = { room: "Vault", time: "9:00", object: "Red Journal" };
+    solution.Theo = { room: "Gallery", time: "9:30", object: "Glass Eye" };
+
+    // Confirm the setup: Maya is genuinely only reachable through the prototype.
+    expect(Object.prototype.hasOwnProperty.call(solution, "Maya")).toBe(false);
+    expect((solution as Record<string, unknown>).Maya).toBeTruthy();
+
+    const c = clue("inherited-row", "same", [op("room", "Observatory"), op("time", "8:00")]);
+    expect(
+      evaluateLogicGridClueAgainstSolution(CATEGORIES, solution as unknown as LogicGridSolution, c)
+    ).toBeNull();
+  });
+
+  it("rejects a candidate whose category assignment exists only via a row's prototype", () => {
+    const rowPrototype = { room: "Observatory" };
+    const mayaRow = Object.create(rowPrototype) as Record<string, unknown>;
+    mayaRow.time = "8:00";
+    mayaRow.object = "Brass Compass";
+
+    expect(Object.prototype.hasOwnProperty.call(mayaRow, "room")).toBe(false);
+    expect(mayaRow.room).toBe("Observatory");
+
+    const solution = {
+      Maya: mayaRow,
+      Jordan: { room: "Library", time: "8:30", object: "Silver Key" },
+      Lena: { room: "Vault", time: "9:00", object: "Red Journal" },
+      Theo: { room: "Gallery", time: "9:30", object: "Glass Eye" },
+    };
+
+    const c = clue("inherited-assignment", "same", [op("room", "Observatory"), op("time", "8:00")]);
+    expect(
+      evaluateLogicGridClueAgainstSolution(CATEGORIES, solution as unknown as LogicGridSolution, c)
+    ).toBeNull();
+  });
+});

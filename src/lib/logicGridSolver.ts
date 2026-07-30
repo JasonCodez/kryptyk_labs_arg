@@ -36,6 +36,20 @@ const NORMALIZED_CLUE_TYPES = new Set<string>([
   "eitherOr",
 ]);
 
+const ORDERED_CLUE_TYPES = new Set<LogicGridClueType>([
+  "before",
+  "after",
+  "immediatelyBefore",
+  "immediatelyAfter",
+]);
+
+/** Creates a record safe to key with arbitrary authored strings (including `__proto__`,
+ * `constructor`, `prototype`, etc) — a plain `{}` would route an assignment to `__proto__`
+ * through the prototype setter instead of creating a normal own property. */
+function createSafeRecord<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
 function isNonBlankString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -125,18 +139,25 @@ function validateRuntimeClue(clue: unknown): LogicGridClueNormalized | null {
     validOperands.push({ categoryId, entry });
   }
 
+  const normalizedType = type as LogicGridClueType;
   const result: LogicGridClueNormalized = {
     id,
     text,
-    type: type as LogicGridClueType,
+    type: normalizedType,
     operands: validOperands,
   };
 
-  if (orderedCategoryId !== undefined) {
+  if (ORDERED_CLUE_TYPES.has(normalizedType)) {
+    // Ordered types require a nonblank orderedCategoryId — missing, null, non-string, and blank
+    // all invalidate the clue.
+    if (typeof orderedCategoryId !== "string" || orderedCategoryId.trim().length === 0) return null;
+    result.orderedCategoryId = orderedCategoryId;
+  } else if (orderedCategoryId !== undefined) {
+    // Non-ordered types (textOnly/same/notSame/eitherOr) must never carry ordered metadata — a
+    // blank string is normalized away as absent, but any nonblank or non-string value present
+    // invalidates the clue rather than being silently ignored by later evaluators.
     if (typeof orderedCategoryId !== "string") return null;
-    if (orderedCategoryId.trim().length > 0) {
-      result.orderedCategoryId = orderedCategoryId;
-    }
+    if (orderedCategoryId.trim().length > 0) return null;
   }
 
   return result;
@@ -174,13 +195,17 @@ function validateCandidateSolution(
   const primary = categories[0];
   const others = categories.slice(1);
   const solutionRaw = solution as Record<string, unknown>;
-  const result: LogicGridSolution = {};
+  const result: LogicGridSolution = createSafeRecord();
 
   for (const primaryEntry of primary.entries) {
+    // Authored primary entries / category IDs (e.g. "__proto__", "constructor") must never be
+    // read through the prototype chain — only a real own property counts as an authored value.
+    if (!Object.prototype.hasOwnProperty.call(solutionRaw, primaryEntry)) return null;
     const rowRaw = solutionRaw[primaryEntry];
     if (!rowRaw || typeof rowRaw !== "object" || Array.isArray(rowRaw)) return null;
-    const row: Record<string, string> = {};
+    const row: Record<string, string> = createSafeRecord();
     for (const other of others) {
+      if (!Object.prototype.hasOwnProperty.call(rowRaw, other.id)) return null;
       const value = (rowRaw as Record<string, unknown>)[other.id];
       if (typeof value !== "string" || !other.entries.includes(value)) return null;
       row[other.id] = value;
@@ -434,9 +459,9 @@ function* generateCandidateSolutions(
   const permutationsPerCategory = others.map((category) => [...permute(category.entries)]);
 
   for (const combination of cartesianProduct(permutationsPerCategory)) {
-    const candidate: LogicGridSolution = {};
+    const candidate: LogicGridSolution = createSafeRecord();
     for (let rowIndex = 0; rowIndex < primary.entries.length; rowIndex++) {
-      const row: Record<string, string> = {};
+      const row: Record<string, string> = createSafeRecord();
       for (let categoryIndex = 0; categoryIndex < others.length; categoryIndex++) {
         row[others[categoryIndex].id] = combination[categoryIndex][rowIndex];
       }
@@ -447,9 +472,13 @@ function* generateCandidateSolutions(
 }
 
 function cloneSolution(solution: LogicGridSolution): LogicGridSolution {
-  const copy: LogicGridSolution = {};
+  const copy: LogicGridSolution = createSafeRecord();
   for (const [primaryEntry, row] of Object.entries(solution)) {
-    copy[primaryEntry] = { ...row };
+    const rowCopy: Record<string, string> = createSafeRecord();
+    for (const [categoryId, value] of Object.entries(row)) {
+      rowCopy[categoryId] = value;
+    }
+    copy[primaryEntry] = rowCopy;
   }
   return copy;
 }
