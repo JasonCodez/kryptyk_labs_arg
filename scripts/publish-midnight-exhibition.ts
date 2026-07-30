@@ -82,36 +82,63 @@ function parseArgs(argv: string[]): { mode: Mode; allowRemote: boolean } {
   return { mode, allowRemote };
 }
 
+type DatabaseTargetClassification =
+  | { kind: "missing" }
+  | { kind: "malformed" }
+  | { kind: "local" }
+  | { kind: "remote" };
+
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const SUPPORTED_NETWORK_PROTOCOLS = new Set(["postgres:", "postgresql:"]);
+
 /**
- * Determines whether `DATABASE_URL` clearly targets local development infrastructure, without
- * ever printing the URL itself (which may contain credentials).
+ * Classifies `DATABASE_URL` as missing, malformed, local, or remote, without ever printing the
+ * URL itself (which may contain credentials). `--allow-remote` is only ever permitted to
+ * override a syntactically valid remote classification — never a missing or malformed one.
  */
-function isLocalDatabaseUrl(databaseUrl: string | undefined): boolean {
-  if (!databaseUrl || databaseUrl.trim().length === 0) return false;
-  const url = databaseUrl.trim();
-  if (url.startsWith("file:")) return true;
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase();
-    return host === "localhost" || host === "127.0.0.1" || host === "::1";
-  } catch {
-    // Malformed URLs are treated as unsafe/non-local rather than silently allowed.
-    return false;
+function classifyDatabaseTarget(databaseUrl: string | undefined): DatabaseTargetClassification {
+  if (databaseUrl === undefined || databaseUrl.trim().length === 0) {
+    return { kind: "missing" };
   }
+  const url = databaseUrl.trim();
+  if (url.startsWith("file:")) return { kind: "local" };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { kind: "malformed" };
+  }
+
+  if (!SUPPORTED_NETWORK_PROTOCOLS.has(parsed.protocol)) return { kind: "malformed" };
+  const host = parsed.hostname.toLowerCase();
+  if (!host) return { kind: "malformed" };
+
+  return LOCAL_HOSTNAMES.has(host) ? { kind: "local" } : { kind: "remote" };
 }
 
 function assertPermittedDatabase(allowRemote: boolean): void {
-  const databaseUrl = process.env.DATABASE_URL;
-  const local = isLocalDatabaseUrl(databaseUrl);
-  if (local) return;
-  if (allowRemote) {
-    console.log("--allow-remote supplied: proceeding against a non-local database target.");
-    return;
+  const classification = classifyDatabaseTarget(process.env.DATABASE_URL);
+
+  switch (classification.kind) {
+    case "missing":
+      printUsageAndExit("DATABASE_URL is missing.");
+      break;
+    case "malformed":
+      printUsageAndExit("DATABASE_URL is malformed or unsupported.");
+      break;
+    case "local":
+      return;
+    case "remote":
+      if (allowRemote) {
+        console.log("--allow-remote supplied: proceeding against a remote database target.");
+        return;
+      }
+      printUsageAndExit(
+        "DATABASE_URL targets a remote database. Re-run with --allow-remote only if that write is intentional."
+      );
+      break;
   }
-  printUsageAndExit(
-    "DATABASE_URL does not clearly target local development infrastructure (localhost/127.0.0.1/file:). " +
-      "Re-run with --allow-remote only if you intend to write to that database."
-  );
 }
 
 function runOfflineValidation(): ReturnType<typeof validateLogicGridForPublication> & {
@@ -205,10 +232,22 @@ async function runStage(allowRemote: boolean): Promise<void> {
       solution: validation.normalized.solution,
     };
 
-    const puzzleId = await prisma.$transaction(async (tx) => {
+    let puzzleId: string;
+    try {
+      puzzleId = await prisma.$transaction(async (tx) => {
       let category = await tx.puzzleCategory.findFirst({ where: { name: PUBLICATION_CATEGORY_NAME } });
       if (!category) {
         category = await tx.puzzleCategory.create({ data: { name: PUBLICATION_CATEGORY_NAME } });
+      }
+
+      // Re-check daily-slot state inside the transaction (not just in the earlier preflight
+      // check above) — the publisher must never delete scheduling data, so if a slot appeared
+      // between the preflight check and now, abort and roll back rather than overwrite it.
+      if (existing) {
+        const recheckSlots = await tx.dailyPuzzleSlot.count({ where: { puzzleId: existing.id } });
+        if (recheckSlots > 0) {
+          throw new Error("STAGE_ABORTED_DAILY_SLOT_PRESENT");
+        }
       }
 
       const puzzle = existing
@@ -248,34 +287,50 @@ async function runStage(allowRemote: boolean): Promise<void> {
             },
           });
 
-      const existingSolutions = await tx.puzzleSolution.findMany({ where: { puzzleId: puzzle.id } });
-      const placeholder = existingSolutions.find((s) => s.answer === LOGIC_GRID_PLACEHOLDER_ANSWER);
-      const stray = existingSolutions.filter((s) => s.answer !== LOGIC_GRID_PLACEHOLDER_ANSWER);
-      for (const s of stray) {
-        await tx.puzzleSolution.delete({ where: { id: s.id } });
-      }
-      if (placeholder) {
-        await tx.puzzleSolution.update({
-          where: { id: placeholder.id },
-          data: { points: PUBLICATION_POINTS, isCorrect: true, ignoreCase: true, ignoreWhitespace: false },
-        });
-      } else {
-        await tx.puzzleSolution.create({
-          data: {
-            puzzleId: puzzle.id,
-            answer: LOGIC_GRID_PLACEHOLDER_ANSWER,
-            isCorrect: true,
-            points: PUBLICATION_POINTS,
-            ignoreCase: true,
-            ignoreWhitespace: false,
-          },
-        });
-      }
+      // This is an intentionally controlled publisher for one known, identified puzzle record —
+      // unconditionally clearing and recreating its own solution rows (never another puzzle's)
+      // is the simplest way to guarantee the final state is exactly one correct placeholder,
+      // with no stale text-answer row or leftover duplicate left behind.
+      await tx.puzzleSolution.deleteMany({ where: { puzzleId: puzzle.id } });
+      await tx.puzzleSolution.create({
+        data: {
+          puzzleId: puzzle.id,
+          answer: LOGIC_GRID_PLACEHOLDER_ANSWER,
+          isCorrect: true,
+          points: PUBLICATION_POINTS,
+          ignoreCase: true,
+          ignoreWhitespace: false,
+        },
+      });
 
-      await tx.dailyPuzzleSlot.deleteMany({ where: { puzzleId: puzzle.id } });
+      const finalSolutions = await tx.puzzleSolution.findMany({ where: { puzzleId: puzzle.id } });
+      const finalDailySlots = await tx.dailyPuzzleSlot.count({ where: { puzzleId: puzzle.id } });
+      const finalPlaceholderCount = finalSolutions.filter(
+        (s) => s.answer === LOGIC_GRID_PLACEHOLDER_ANSWER
+      ).length;
+
+      if (finalSolutions.length !== 1 || finalPlaceholderCount !== 1 || finalDailySlots !== 0) {
+        throw new Error(
+          `STAGE_ABORTED_INVARIANT_VIOLATION solutions=${finalSolutions.length} placeholders=${finalPlaceholderCount} dailySlots=${finalDailySlots}`
+        );
+      }
 
       return puzzle.id;
-    });
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith("STAGE_ABORTED_DAILY_SLOT_PRESENT")) {
+        console.error(
+          "A daily-slot assignment appeared on the matching record during staging — refusing to overwrite scheduling data."
+        );
+      } else if (message.startsWith("STAGE_ABORTED_INVARIANT_VIOLATION")) {
+        console.error("Staged record failed its post-write invariant check (solution/daily-slot count). Rolled back.");
+      } else {
+        console.error(`Staging transaction failed: ${message}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
 
     console.log(`Puzzle ID: ${puzzleId}`);
     console.log("Active: false");
@@ -319,19 +374,20 @@ async function runActivate(allowRemote: boolean): Promise<void> {
 
     const record = matches[0];
 
+    if (record.isActive) {
+      console.error(
+        "Matching record is already active. Run --stage and complete staged verification before activating."
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     const storedValidation = validateLogicGridForPublication(record.data);
     if (!storedValidation.valid) {
       console.error(`Stored data failed publication validation: ${storedValidation.error}`);
       process.exitCode = 1;
       return;
     }
-
-    const storedData = record.data as {
-      intro?: unknown;
-      categories?: unknown;
-      clues?: unknown;
-      solution?: unknown;
-    } | null;
 
     const draftJson = JSON.stringify({
       intro: (MIDNIGHT_EXHIBITION_DRAFT_DATA as { intro: unknown }).intro,
@@ -362,15 +418,26 @@ async function runActivate(allowRemote: boolean): Promise<void> {
       return;
     }
 
-    if (record.difficulty !== PUBLICATION_DIFFICULTY) {
-      console.error(`Expected difficulty "${PUBLICATION_DIFFICULTY}", found "${record.difficulty}". Refusing to activate.`);
-      process.exitCode = 1;
-      return;
-    }
-    if (record.xpReward !== PUBLICATION_XP_REWARD) {
-      console.error(`Expected xpReward ${PUBLICATION_XP_REWARD}, found ${record.xpReward}. Refusing to activate.`);
-      process.exitCode = 1;
-      return;
+    const fixedFieldChecks: Array<[string, unknown, unknown]> = [
+      ["title", record.title, MIDNIGHT_EXHIBITION_TITLE],
+      ["description", record.description, PUBLICATION_DESCRIPTION],
+      ["content", record.content, PUBLICATION_CONTENT],
+      ["puzzleType", record.puzzleType, PUBLICATION_PUZZLE_TYPE],
+      ["difficulty", record.difficulty, PUBLICATION_DIFFICULTY],
+      ["xpReward", record.xpReward, PUBLICATION_XP_REWARD],
+      ["isWarzExclusive", record.isWarzExclusive, false],
+      ["order", record.order, 0],
+      ["isBossPuzzle", record.isBossPuzzle, false],
+      ["riddleAnswer", record.riddleAnswer, null],
+    ];
+    for (const [field, actual, expected] of fixedFieldChecks) {
+      if (actual !== expected) {
+        console.error(
+          `Expected ${field} ${JSON.stringify(expected)}, found ${JSON.stringify(actual)}. Refusing to activate.`
+        );
+        process.exitCode = 1;
+        return;
+      }
     }
 
     const category = await prisma.puzzleCategory.findUnique({ where: { id: record.categoryId } });
@@ -380,16 +447,29 @@ async function runActivate(allowRemote: boolean): Promise<void> {
       return;
     }
 
-    const placeholder = record.solutions.find((s) => s.answer === LOGIC_GRID_PLACEHOLDER_ANSWER);
-    if (!placeholder) {
-      console.error(`No "${LOGIC_GRID_PLACEHOLDER_ANSWER}" placeholder solution row found. Refusing to activate.`);
+    if (record.solutions.length !== 1) {
+      console.error(
+        `Expected exactly one solution row, found ${record.solutions.length}. Refusing to activate.`
+      );
       process.exitCode = 1;
       return;
     }
-    if (placeholder.points !== PUBLICATION_POINTS) {
-      console.error(`Expected placeholder points ${PUBLICATION_POINTS}, found ${placeholder.points}. Refusing to activate.`);
-      process.exitCode = 1;
-      return;
+    const [solution] = record.solutions;
+    const solutionChecks: Array<[string, unknown, unknown]> = [
+      ["answer", solution.answer, LOGIC_GRID_PLACEHOLDER_ANSWER],
+      ["points", solution.points, PUBLICATION_POINTS],
+      ["isCorrect", solution.isCorrect, true],
+      ["ignoreCase", solution.ignoreCase, true],
+      ["ignoreWhitespace", solution.ignoreWhitespace, false],
+    ];
+    for (const [field, actual, expected] of solutionChecks) {
+      if (actual !== expected) {
+        console.error(
+          `Expected placeholder solution ${field} ${JSON.stringify(expected)}, found ${JSON.stringify(actual)}. Refusing to activate.`
+        );
+        process.exitCode = 1;
+        return;
+      }
     }
 
     if (record.dailySlots.length > 0) {

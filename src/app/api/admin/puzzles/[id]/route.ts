@@ -141,6 +141,17 @@ export async function PUT(
   // Reassigned below, so kept separate from the const destructure above.
   let { puzzleData } = body;
 
+  // Re-validate before any database write — including category resolution — so an invalid
+  // Logic Grid edit never creates a category record or partially updates the puzzle. The
+  // record must never end up with an edited, unproven clue set.
+  if (puzzleType === 'logic_grid') {
+    const publication = validateLogicGridForPublication(puzzleData);
+    if (!publication.valid) {
+      return NextResponse.json({ error: publication.error }, { status: 400 });
+    }
+    puzzleData = publication.normalized;
+  }
+
   // Normalise snake_case category values coming from the admin dropdown to display names
   const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
     word_crack:     'Hidden Word',
@@ -266,17 +277,6 @@ export async function PUT(
       { error: 'Vault puzzles require puzzleData.vault with a valid 3x3 configuration.' },
       { status: 400 }
     );
-  }
-
-  // Re-validate on every edit — the record must never end up with an edited, unproven clue
-  // set. Validation runs (and can fail) before the transaction starts, so a bad edit never
-  // partially updates the record.
-  if (puzzleType === 'logic_grid') {
-    const publication = validateLogicGridForPublication(puzzleData);
-    if (!publication.valid) {
-      return NextResponse.json({ error: publication.error }, { status: 400 });
-    }
-    puzzleData = publication.normalized;
   }
 
   // Jigsaw grids must be square, from a fixed set of supported sizes — this update path had
@@ -458,7 +458,24 @@ export async function PUT(
     if (puzzleType === 'detective_case') await syncPlaceholderSolution('__DETECTIVE_CASE__');
     if (puzzleType === 'jim_wyze_case') await syncPlaceholderSolution('__JIM_WYZE_CASE__');
     if (puzzleType === 'crack_safe') await syncPlaceholderSolution('__CRACK_SAFE__');
-    if (puzzleType === 'logic_grid') await syncPlaceholderSolution(LOGIC_GRID_PLACEHOLDER_ANSWER);
+    // Logic Grid gets its own exact replacement rather than the shared helper above, which
+    // only updates the first solution row it finds — that can leave duplicate placeholders or
+    // a stale generic text-answer row behind. Delete-then-create inside this same transaction
+    // guarantees exactly one correct placeholder row, and rolls back with everything else if
+    // any later step in this transaction fails.
+    if (puzzleType === 'logic_grid') {
+      await tx.puzzleSolution.deleteMany({ where: { puzzleId } });
+      await tx.puzzleSolution.create({
+        data: {
+          puzzleId,
+          answer: LOGIC_GRID_PLACEHOLDER_ANSWER,
+          isCorrect: true,
+          points: pointsReward || 100,
+          ignoreCase: true,
+          ignoreWhitespace: false,
+        },
+      });
+    }
 
     // 4. Update sudoku record if applicable
     if (puzzleType === "sudoku" && sudokuGrid && sudokuSolution) {
