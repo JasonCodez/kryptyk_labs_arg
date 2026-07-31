@@ -2182,10 +2182,10 @@ describe("LogicGridPuzzle — late solved-progress synchronization (Pass 26D1)",
 
   it("Test C: the timer stops immediately on a late solved confirmation and no longer advances", async () => {
     jest.useFakeTimers();
+    buildFetchMock();
     const { rerender } = render(
       <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
     );
-    buildFetchMock();
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -2287,6 +2287,7 @@ describe("LogicGridPuzzle — late solved-progress synchronization (Pass 26D1)",
   });
 
   it("Test F: solved state does not cross puzzle IDs — p1 solved does not leak into a freshly transitioned p2", async () => {
+    jest.useFakeTimers();
     const { calls, resolveGet } = buildDeferredFetchMock();
     const { rerender } = render(
       <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={jest.fn()} />
@@ -2316,6 +2317,13 @@ describe("LogicGridPuzzle — late solved-progress synchronization (Pass 26D1)",
     expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toBe("Maya and Observatory: unknown");
     expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
     expect(calls.filter((c) => c.method === "PATCH" && c.url.includes("/p2/"))).toHaveLength(0);
+
+    const p2TimeBefore = screen.getByText(/^Time /).textContent;
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+    });
+    const p2TimeAfter = screen.getByText(/^Time /).textContent;
+    expect(p2TimeAfter).not.toBe(p2TimeBefore);
   });
 
   it("Test G: transitioning to another already-solved puzzle immediately shows its own solved banner", async () => {
