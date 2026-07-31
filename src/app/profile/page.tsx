@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Rarity, rarityColors } from '@/lib/rarity';
 import { THEME_CONFIGS, FRAME_CONFIGS, type ThemeConfig } from '@/lib/profileThemes';
@@ -12,6 +12,7 @@ import FollowListModal from '@/components/FollowListModal';
 import PressableCard from '@/components/ui/PressableCard';
 import Pressable from '@/components/juice/Pressable';
 import { FEATURE_SEASONS_ENABLED } from '@/lib/featureFlags';
+import ProfileIdentityProgress from '@/components/profile/ProfileIdentityProgress';
 
 const MAX_BIO_LENGTH = 280;
 
@@ -199,6 +200,15 @@ export default function ProfilePage() {
   const [drawerTab, setDrawerTab] = useState<'theme' | 'frame' | 'skin' | 'flair' | 'name_color' | 'exclusive' | 'title'>('theme');
   const [drawerEquipping, setDrawerEquipping] = useState<string | null>(null);
   const [drawerToast, setDrawerToast] = useState<string | null>(null);
+
+  // Account Information card is always rendered (only its inner form vs. summary view is
+  // conditional on `editing`), so this ref target already exists by the time Edit Profile is
+  // clicked in the hero — no need to wait for a re-render before scrolling to it.
+  const accountInfoRef = useRef<HTMLDivElement | null>(null);
+  const handleEditProfileClick = () => {
+    setEditing(true);
+    accountInfoRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -397,10 +407,6 @@ export default function ProfilePage() {
 
   const t = THEME_CONFIGS[profile?.activeTheme ?? 'default'] ?? THEME_CONFIGS.default;
   const frame = FRAME_CONFIGS[profile?.activeFrame ?? 'none'] ?? FRAME_CONFIGS.none;
-  const flair = profile?.activeFlair && profile.activeFlair !== 'none' ? <span style={{ display: 'inline-block', transform: 'translateY(-4px)' }}> {profile.activeFlair}</span> : null;
-  const btnStyle = t.btnPrimary.startsWith('linear')
-    ? { background: t.btnPrimary, color: t.btnPrimaryText }
-    : { backgroundColor: t.btnPrimary, color: t.btnPrimaryText };
 
   return (
     <main style={{ backgroundColor: t.pageBg, transition: 'background-color 0.4s ease' }} className="min-h-screen">
@@ -408,67 +414,24 @@ export default function ProfilePage() {
       {/* Theme accent bar - immediately visible color indicator at the very top */}
       <div className="fixed top-0 left-0 right-0 h-[3px] z-50" style={{ background: t.btnPrimary.startsWith('linear') ? t.btnPrimary : `linear-gradient(90deg, ${t.primary}, ${t.secondary})`, boxShadow: `0 0 12px ${t.avatarGlow}` }} />
 
-      {/* Animated header */}
-      <div className="pt-24 pb-20 px-4 relative overflow-hidden" style={{ background: t.headerGradient }}>
-        {/* Decorative orbs */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full pointer-events-none" style={{ background: t.headerParticle1, filter: 'blur(70px)', transform: 'translateY(-30%)' }} />
-        <div className="absolute bottom-0 right-1/4 w-64 h-64 rounded-full pointer-events-none" style={{ background: t.headerParticle2, filter: 'blur(55px)', transform: 'translateY(30%)' }} />
-        {/* Bottom border glow */}
-        <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ background: t.btnPrimary.startsWith('linear') ? t.btnPrimary : `linear-gradient(90deg, transparent, ${t.primary}, transparent)`, opacity: 0.7 }} />
-        <div className="max-w-4xl mx-auto relative">
-          <div className="flex items-center gap-5">
-            {/* Avatar with frame */}
-            <div className="relative shrink-0">
-              {frame.colorA ? (
-                <AvatarFrame frame={frame as FrameConfig} size={80} pageBg={t.pageBg}>
-                  {profile?.image
-                    ? <img src={profile.image} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                    : <div className="w-full h-full flex items-center justify-center text-3xl" style={{ background: t.primaryMuted }}>👤</div>}
-                </AvatarFrame>
-              ) : (
-                <div className="w-20 h-20 rounded-full overflow-hidden border-[3px]" style={{ borderColor: t.primary, boxShadow: `0 0 18px ${t.avatarGlow}, 0 0 40px ${t.avatarGlow}` }}>
-                  {profile?.image
-                    ? <img src={profile.image} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.onerror = null; img.src = '/images/default-avatar.svg'; }} />
-                    : <div className="w-full h-full flex items-center justify-center text-3xl" style={{ background: t.primaryMuted }}>👤</div>}
-                </div>
-              )}
-            </div>
-            <div className="flex-1 flex items-start justify-between gap-3">
-              <div>
-                <h1
-                  className={`text-4xl font-extrabold mb-1 text-white${profile?.activeNameColor === 'rainbow' ? ' rainbow-name' : ''}`}
-                  style={profile?.activeNameColor && profile.activeNameColor !== 'none' && profile.activeNameColor !== 'rainbow' ? { color: profile.activeNameColor } : undefined}
-                >{profile?.name || 'Player'}{flair}</h1>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm font-semibold px-3 py-1 rounded-full" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primary}`, boxShadow: `0 0 8px ${t.avatarGlow}` }}>
-                    LVL {profile?.level ?? 1} &middot; {profile?.xpTitle ?? 'Newcomer'}
-                  </span>
-                  {profile?.activeTitle === 'founder' && (
-                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(255,201,60,0.12)', color: '#FFC93C', border: '1px solid rgba(255,201,60,0.4)', boxShadow: '0 0 8px rgba(255,201,60,0.25)' }}>
-                      ⚜️ Founder
-                    </span>
-                  )}
-                  {profile?.role === 'admin' && (
-                    <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ backgroundColor: 'rgba(171,159,157,0.2)', color: '#c9b9b7' }}>Admin</span>
-                  )}
-                </div>
-                <p className="text-sm mt-1" style={{ color: t.subtleText }}>Member since {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-GB', { year: 'numeric', month: 'long' }) : '...'}</p>
-              </div>
-              <button
-                onClick={openCosmeticsDrawer}
-                title="My Cosmetics"
-                className="mt-1 w-9 h-9 flex items-center justify-center rounded-full text-base transition-all hover:scale-110 shrink-0"
-                style={{ backgroundColor: t.primaryMuted, border: `1px solid ${t.primaryBorder}`, color: t.primary }}
-              >
-                ⚙️
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Player identity / progression hero */}
+      <div className="pt-10 pb-8 px-4">
+        {profile && (
+          <ProfileIdentityProgress
+            profile={profile}
+            theme={t}
+            frame={frame}
+            onEditProfile={handleEditProfileClick}
+            onCustomize={openCosmeticsDrawer}
+            onOpenFollowers={() => setFollowModal('followers')}
+            onOpenFollowing={() => setFollowModal('following')}
+          />
+        )}
       </div>
 
       {/* Content */}
-      <div className="px-4 py-10 max-w-4xl mx-auto">
+      {/* pb-24 clears AppBottomNav's fixed mobile tab bar (hidden again at the "nav:" 1032px breakpoint) */}
+      <div className="px-4 pb-24 max-w-5xl mx-auto">
         {error && (
           <div className="mb-6 p-4 rounded-lg text-white border" style={{ backgroundColor: 'rgba(171,159,157,0.15)', borderColor: '#AB9F9D' }}>
             {error}
@@ -482,7 +445,7 @@ export default function ProfilePage() {
         )}
 
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {/* Avatar Card */}
+          {/* Avatar upload — subordinate to the hero avatar, kept for the upload/replace flow */}
           <div className="border rounded-xl p-6" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
             <h3 className="text-lg font-bold text-white mb-6">Avatar</h3>
             <div className="flex flex-col items-center space-y-4">
@@ -533,175 +496,99 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Profile Card */}
-          <div className="md:col-span-2 md:row-span-2 flex flex-col gap-6">
-            {/* Social Stats */}
-            <div className="grid grid-cols-2 gap-4">
+          {/* Account Information */}
+          <div ref={accountInfoRef} className="md:col-span-2 border rounded-xl p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+            <div className="flex items-start justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Account Information</h2>
               <button
-                type="button"
-                onClick={() => setFollowModal("followers")}
-                className="border rounded-xl p-4 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.primary; e.currentTarget.style.background = t.primaryMuted; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.cardBorder; e.currentTarget.style.background = t.cardBg; }}
+                onClick={() => setEditing(!editing)}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
+                style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm mb-1" style={{ color: t.subtleText }}>Followers</p>
-                    <p className="text-2xl font-bold text-white">{profile?.social?.followers ?? 0}</p>
-                  </div>
-                  <span className="text-3xl">❤️</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setFollowModal("following")}
-                className="border rounded-xl p-4 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.primary; e.currentTarget.style.background = t.primaryMuted; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.cardBorder; e.currentTarget.style.background = t.cardBg; }}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm mb-1" style={{ color: t.subtleText }}>Following</p>
-                    <p className="text-2xl font-bold text-white">{profile?.social?.following ?? 0}</p>
-                  </div>
-                  <span className="text-3xl">👥</span>
-                </div>
+                {editing ? 'Cancel' : 'Edit'}
               </button>
             </div>
 
-            <div className="flex-1 border rounded-xl p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
-              <div className="flex items-start justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Account Information</h2>
+            {editing ? (
+              <form onSubmit={handleUpdate} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-4 py-2 rounded-lg border text-white"
+                    style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
+                    placeholder="Your name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    disabled
+                    className="w-full px-4 py-2 rounded-lg border text-white opacity-50 cursor-not-allowed"
+                    style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: t.subtleText }}>Email cannot be changed</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
+                    About Me <span className="font-normal" style={{ color: t.subtleText }}>(optional)</span>
+                  </label>
+                  <textarea
+                    value={formData.bio}
+                    onChange={(e) => setFormData({ ...formData, bio: e.target.value.slice(0, MAX_BIO_LENGTH) })}
+                    rows={4}
+                    className="w-full px-4 py-2 rounded-lg border text-white resize-y"
+                    style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
+                    placeholder="Tell other players a little about yourself..."
+                    maxLength={MAX_BIO_LENGTH}
+                  />
+                  <p className="text-xs mt-1 text-right" style={{ color: t.subtleText }}>{formData.bio.length}/{MAX_BIO_LENGTH}</p>
+                </div>
+
                 <button
-                  onClick={() => setEditing(!editing)}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
+                  type="submit"
+                  className="w-full px-4 py-3 rounded-lg font-semibold transition hover:opacity-90"
                   style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
                 >
-                  {editing ? 'Cancel' : 'Edit'}
+                  Save Changes
                 </button>
-              </div>
-
-              {editing ? (
-                <form onSubmit={handleUpdate} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2 rounded-lg border text-white"
-                      style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
-                      placeholder="Your name"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      disabled
-                      className="w-full px-4 py-2 rounded-lg border text-white opacity-50 cursor-not-allowed"
-                      style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
-                    />
-                    <p className="text-xs mt-1" style={{ color: t.subtleText }}>Email cannot be changed</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold mb-2" style={{ color: t.accentText }}>
-                      About Me <span className="font-normal" style={{ color: t.subtleText }}>(optional)</span>
-                    </label>
-                    <textarea
-                      value={formData.bio}
-                      onChange={(e) => setFormData({ ...formData, bio: e.target.value.slice(0, MAX_BIO_LENGTH) })}
-                      rows={4}
-                      className="w-full px-4 py-2 rounded-lg border text-white resize-y"
-                      style={{ backgroundColor: t.inputBg, borderColor: t.inputBorder }}
-                      placeholder="Tell other players a little about yourself..."
-                      maxLength={MAX_BIO_LENGTH}
-                    />
-                    <p className="text-xs mt-1 text-right" style={{ color: t.subtleText }}>{formData.bio.length}/{MAX_BIO_LENGTH}</p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full px-4 py-3 rounded-lg font-semibold transition hover:opacity-90"
-                    style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
-                  >
-                    Save Changes
-                  </button>
-                </form>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Name</p>
-                    <p className="text-lg font-semibold text-white">{profile?.name || 'Not set'}</p>
-                  </div>
-                  <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
-                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Email</p>
-                    <p className="text-lg font-semibold text-white">{profile?.email}</p>
-                  </div>
-                  <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
-                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Role</p>
-                    <span className="inline-block px-3 py-1 rounded text-sm font-semibold" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primaryBorder}` }}>
-                      {profile?.role === 'admin' ? '🛡️ Administrator' : '🎮 Player'}
-                    </span>
-                  </div>
-                  <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
-                    <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>About Me</p>
-                    {profile?.bio ? (
-                      <p className="text-white whitespace-pre-wrap break-words">{profile.bio}</p>
-                    ) : (
-                      <p className="text-sm italic" style={{ color: t.subtleText }}>No bio yet — click Edit to add one.</p>
-                    )}
-                  </div>
+              </form>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Name</p>
+                  <p className="text-lg font-semibold text-white">{profile?.name || 'Not set'}</p>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Stats Card */}
-          <div className="border rounded-xl p-6 space-y-5" style={{ backgroundColor: t.statCardBg, borderColor: t.statCardBorder, boxShadow: t.cardGlow }}>
-            <h3 className="text-lg font-bold text-white">Your Stats</h3>
-
-            {/* Level badge */}
-            <div className="flex flex-col items-center gap-1 py-4 rounded-xl" style={{ background: t.primaryMuted, border: `1px solid ${t.primaryBorder}` }}>
-              <div className="text-5xl font-black" style={{ color: t.primary, textShadow: `0 0 20px ${t.primary}66` }}>
-                {profile?.level ?? 1}
+                <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
+                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Email</p>
+                  <p className="text-lg font-semibold text-white">{profile?.email}</p>
+                </div>
+                <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
+                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>Role</p>
+                  <span className="inline-block px-3 py-1 rounded text-sm font-semibold" style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primaryBorder}` }}>
+                    {profile?.role === 'admin' ? '🛡️ Administrator' : '🎮 Player'}
+                  </span>
+                </div>
+                <div style={{ borderTopColor: `${t.primaryBorder}40`, borderTopWidth: 1, paddingTop: 16 }}>
+                  <p className="text-sm mb-0.5" style={{ color: t.subtleText }}>About Me</p>
+                  {profile?.bio ? (
+                    <p className="text-white whitespace-pre-wrap break-words">{profile.bio}</p>
+                  ) : (
+                    <p className="text-sm italic" style={{ color: t.subtleText }}>No bio yet — click Edit to add one.</p>
+                  )}
+                </div>
               </div>
-              <div className="text-xs font-bold tracking-widest uppercase" style={{ color: t.secondary }}>
-                {profile?.xpTitle ?? 'Newcomer'}
-              </div>
-            </div>
-
-            {/* XP bar */}
-            <div>
-              <div className="flex justify-between text-xs mb-1.5" style={{ color: t.subtleText }}>
-                <span>{profile?.xp ?? 0} XP</span>
-                <span>+{profile?.xpToNextLevel ?? 100} to next</span>
-              </div>
-              <div className="w-full rounded-full overflow-hidden" style={{ height: 7, background: 'rgba(255,255,255,0.07)' }}>
-                <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${Math.min(100, profile?.xpProgress ?? 0)}%`, background: t.xpBarGradient }} />
-              </div>
-            </div>
-
-            {[
-              { label: 'Puzzles Solved', value: profile?.totalPuzzlesSolved ?? 0 },
-              { label: 'Total Points',   value: (profile?.totalPoints ?? 0).toLocaleString() },
-              { label: 'Global Rank',    value: profile?.rank ? `#${profile.rank}` : 'Unranked' },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ borderTopColor: `${t.primaryBorder}33`, borderTopWidth: 1, paddingTop: 12 }}>
-                <p className="text-xs mb-0.5" style={{ color: t.subtleText }}>{label}</p>
-                <p className="text-3xl font-extrabold" style={{ color: t.primary }}>{value}</p>
-              </div>
-            ))}
+            )}
           </div>
         </div>
 
