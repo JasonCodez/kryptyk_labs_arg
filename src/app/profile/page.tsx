@@ -446,7 +446,7 @@ export default function ProfilePage() {
 
         <div className="grid md:grid-cols-3 gap-6 mb-12">
           {/* Avatar upload — subordinate to the hero avatar, kept for the upload/replace flow */}
-          <div className="border rounded-xl p-6" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+          <div className="border rounded-xl p-4 min-[360px]:p-6" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
             <h3 className="text-lg font-bold text-white mb-6">Avatar</h3>
             <div className="flex flex-col items-center space-y-4">
               {/* Current Avatar with active frame */}
@@ -497,12 +497,12 @@ export default function ProfilePage() {
           </div>
 
           {/* Account Information */}
-          <div ref={accountInfoRef} className="md:col-span-2 border rounded-xl p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
-            <div className="flex items-start justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white">Account Information</h2>
+          <div ref={accountInfoRef} className="md:col-span-2 border rounded-xl p-4 min-[360px]:p-6 sm:p-8" style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}>
+            <div className="flex flex-col gap-3 min-[360px]:flex-row min-[360px]:items-start min-[360px]:justify-between mb-6">
+              <h2 className="text-xl min-[360px]:text-2xl font-bold text-white min-w-0 break-words">Account Information</h2>
               <button
                 onClick={() => setEditing(!editing)}
-                className="px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
+                className="w-full min-[360px]:w-auto shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
                 style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
               >
                 {editing ? 'Cancel' : 'Edit'}
@@ -594,9 +594,9 @@ export default function ProfilePage() {
 
         {/* My Puzzles */}
         <div className="mb-8">
-          <div className="border rounded-xl p-6" style={{ backgroundColor: t.statCardBg, borderColor: t.statCardBorder, boxShadow: t.cardGlow }}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">My Puzzles (Archive)</h3>
+          <div className="border rounded-xl p-4 min-[360px]:p-6" style={{ backgroundColor: t.statCardBg, borderColor: t.statCardBorder, boxShadow: t.cardGlow }}>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+              <h3 className="text-lg font-bold text-white min-w-0 break-words">My Puzzles (Archive)</h3>
               <button
                 onClick={async () => {
                   setShowMyPuzzles(!showMyPuzzles);
@@ -624,12 +624,12 @@ export default function ProfilePage() {
                 <div className="space-y-3">
                   {myPuzzles.map((p) => (
                     <div key={p.id} className="border rounded-lg p-3" style={{ borderColor: t.cardBorder, backgroundColor: t.primaryMuted }}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-white text-sm">{p.title}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-white text-sm break-words">{p.title}</p>
                           <p className="text-xs" style={{ color: t.subtleText }}>{p.category?.name || 'General'} &middot; {p.difficulty}</p>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right shrink-0">
                           <span className="text-xs px-2 py-1 rounded font-semibold" style={{ backgroundColor: p.solved ? 'rgba(62,217,122,0.12)' : 'rgba(255,90,90,0.08)', color: p.solved ? '#3ED97A' : '#FF5A5A' }}>
                             {p.solved ? '✔ Solved' : '✘ Failed'}
                           </span>

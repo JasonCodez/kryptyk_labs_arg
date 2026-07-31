@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { THEME_CONFIGS, FRAME_CONFIGS } from "@/lib/profileThemes";
 import ProfileIdentityProgress, {
   type ProfileIdentityProgressProfile,
@@ -188,5 +188,77 @@ describe("ProfileIdentityProgress — rank and fallback presentation (Test F)", 
         />
       )
     ).not.toThrow();
+  });
+});
+
+// ── Pass 27A1 — 320px narrow-layout hardening ───────────────────────────────
+
+const STRESS_PROFILE_OVERRIDES: Partial<ProfileIdentityProgressProfile> = {
+  name: "MaximumNameWidth",
+  activeFlair: "✨",
+  xp: 12_345_678,
+  xpToNextLevel: 9_999_999,
+  totalPuzzlesSolved: 999_999,
+  totalPoints: 12_345_678,
+  rank: null,
+  social: {
+    followers: 999_999,
+    following: 999_999,
+  },
+};
+
+describe("ProfileIdentityProgress — long and large values remain rendered (Test G)", () => {
+  it("keeps the long name, flair, large social counts, XP values, and large stats accessible", () => {
+    renderComponent(STRESS_PROFILE_OVERRIDES);
+
+    expect(screen.getByRole("heading", { name: /MaximumNameWidth/ })).toBeTruthy();
+    expect(screen.getByText(/✨/)).toBeTruthy();
+    expect(screen.getAllByText("999,999").length).toBeGreaterThanOrEqual(2); // followers + following
+    expect(screen.getByText("12,345,678 XP")).toBeTruthy();
+    expect(screen.getByText("+9,999,999 to next level")).toBeTruthy();
+    expect(screen.getByText("Unranked")).toBeTruthy();
+
+    const statsGroup = screen.getByRole("group", { name: "Profile stats" });
+    expect(within(statsGroup).getByText("999,999")).toBeTruthy(); // puzzles solved
+    expect(within(statsGroup).getByText("12,345,678")).toBeTruthy(); // earned points
+  });
+});
+
+describe("ProfileIdentityProgress — narrow layout hooks remain present (Test H)", () => {
+  it("exposes stable, accessible groups for actions, social, and stats", () => {
+    renderComponent();
+
+    const actionsGroup = screen.getByRole("group", { name: "Profile actions" });
+    expect(actionsGroup.getAttribute("data-testid")).toBe("profile-actions");
+    expect(within(actionsGroup).getByRole("button", { name: "Edit Profile" })).toBeTruthy();
+    expect(within(actionsGroup).getByRole("button", { name: "Customize" })).toBeTruthy();
+
+    const socialGroup = screen.getByRole("group", { name: "Profile social" });
+    expect(socialGroup.getAttribute("data-testid")).toBe("profile-social");
+    expect(within(socialGroup).getByRole("button", { name: /Followers/ })).toBeTruthy();
+    expect(within(socialGroup).getByRole("button", { name: /Following/ })).toBeTruthy();
+
+    const statsGroup = screen.getByRole("group", { name: "Profile stats" });
+    expect(statsGroup.getAttribute("data-testid")).toBe("profile-stats");
+    expect(within(statsGroup).getByText("Global Rank")).toBeTruthy();
+    expect(within(statsGroup).getByText("Puzzles Solved")).toBeTruthy();
+    expect(within(statsGroup).getByText("Earned Points")).toBeTruthy();
+  });
+});
+
+describe("ProfileIdentityProgress — Founder, Admin, long name, and flair coexist (Test I)", () => {
+  it("renders every identity label together without any of them disappearing", () => {
+    renderComponent({
+      ...STRESS_PROFILE_OVERRIDES,
+      activeTitle: "founder",
+      role: "admin",
+    });
+
+    expect(screen.getByRole("heading", { name: /MaximumNameWidth/ })).toBeTruthy();
+    expect(screen.getByText(/Founder/)).toBeTruthy();
+    expect(screen.getByText("Admin")).toBeTruthy();
+    expect(screen.getByText(/✨/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit Profile" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Customize" })).toBeTruthy();
   });
 });

@@ -151,7 +151,7 @@ export default function ProfileIdentityProgress({
   return (
     <section
       aria-label="Player profile"
-      className="max-w-5xl mx-auto rounded-3xl border px-5 py-8 sm:px-8 sm:py-10"
+      className="max-w-5xl mx-auto rounded-3xl border px-3 py-6 min-[360px]:px-5 min-[360px]:py-8 sm:px-8 sm:py-10"
       style={{ backgroundColor: t.cardBg, borderColor: t.cardBorder, boxShadow: t.cardGlow }}
     >
       <div className="flex flex-col items-center text-center md:flex-row md:items-center md:text-left md:gap-8">
@@ -177,13 +177,13 @@ export default function ProfileIdentityProgress({
         </div>
 
         {/* Identity */}
-        <div className="mt-5 md:mt-0 flex-1 min-w-0 flex flex-col items-center md:items-start">
+        <div className="mt-5 md:mt-0 w-full min-w-0 flex-1 flex flex-col items-center md:items-start">
           <h1
-            className={`text-3xl sm:text-4xl font-extrabold text-white break-words${isRainbowName ? " rainbow-name" : ""}`}
+            className={`w-full min-w-0 flex flex-wrap items-center justify-center md:justify-start gap-x-1 text-2xl min-[360px]:text-3xl sm:text-4xl font-extrabold text-white${isRainbowName ? " rainbow-name" : ""}`}
             style={nameStyle}
           >
-            {displayName}
-            {flair}
+            <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{displayName}</span>
+            {flair && <span className="shrink-0">{flair}</span>}
           </h1>
 
           <div className="flex items-center justify-center md:justify-start gap-2 flex-wrap mt-2">
@@ -225,12 +225,17 @@ export default function ProfileIdentityProgress({
             Member since {formatMemberSince(profile.createdAt)}
           </p>
 
-          {/* Primary actions */}
-          <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap mt-4">
+          {/* Primary actions — stacked full-width below 360px, side-by-side from 360px up */}
+          <div
+            role="group"
+            aria-label="Profile actions"
+            data-testid="profile-actions"
+            className="flex flex-col min-[360px]:flex-row items-stretch min-[360px]:items-center justify-center md:justify-start gap-3 min-[360px]:flex-wrap w-full min-[360px]:w-auto mt-4"
+          >
             <button
               type="button"
               onClick={onEditProfile}
-              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="min-h-[44px] w-full min-[360px]:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ background: t.btnPrimary, color: t.btnPrimaryText } as React.CSSProperties}
             >
               <Pencil size={16} aria-hidden="true" />
@@ -239,7 +244,7 @@ export default function ProfileIdentityProgress({
             <button
               type="button"
               onClick={onCustomize}
-              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="min-h-[44px] w-full min-[360px]:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ backgroundColor: t.primaryMuted, color: t.primary, border: `1px solid ${t.primaryBorder}` }}
             >
               <Sparkles size={16} aria-hidden="true" />
@@ -247,37 +252,42 @@ export default function ProfileIdentityProgress({
             </button>
           </div>
 
-          {/* Social counts */}
-          <div className="flex items-center justify-center md:justify-start gap-3 mt-4">
+          {/* Social counts — stacked full-width below 360px, equal-width side-by-side from 360px up */}
+          <div
+            role="group"
+            aria-label="Profile social"
+            data-testid="profile-social"
+            className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3 w-full mt-4"
+          >
             <button
               type="button"
               onClick={onOpenFollowers}
-              className="min-h-[44px] inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="min-h-[44px] w-full min-w-0 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ backgroundColor: t.primaryMuted, border: `1px solid ${t.primaryBorder}` }}
             >
               <Users size={16} style={{ color: t.primary }} aria-hidden="true" />
-              <span className="font-bold text-white">{profile.social.followers}</span>
+              <span className="font-bold text-white">{profile.social.followers.toLocaleString()}</span>
               <span style={{ color: t.subtleText }}>Followers</span>
             </button>
             <button
               type="button"
               onClick={onOpenFollowing}
-              className="min-h-[44px] inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="min-h-[44px] w-full min-w-0 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ backgroundColor: t.primaryMuted, border: `1px solid ${t.primaryBorder}` }}
             >
               <UserPlus size={16} style={{ color: t.primary }} aria-hidden="true" />
-              <span className="font-bold text-white">{profile.social.following}</span>
+              <span className="font-bold text-white">{profile.social.following.toLocaleString()}</span>
               <span style={{ color: t.subtleText }}>Following</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* XP progress */}
+      {/* XP progress — labels stack below 360px, sit on one row from 360px up */}
       <div className="mt-8">
-        <div className="flex justify-between text-xs mb-1.5" style={{ color: t.subtleText }}>
-          <span>{profile.xp.toLocaleString()} XP</span>
-          <span>+{profile.xpToNextLevel.toLocaleString()} to next level</span>
+        <div className="flex flex-col min-[360px]:flex-row min-[360px]:justify-between gap-1 min-[360px]:gap-0 text-xs mb-1.5" style={{ color: t.subtleText }}>
+          <span className="min-w-0 break-words">{profile.xp.toLocaleString()} XP</span>
+          <span className="min-w-0 break-words">+{profile.xpToNextLevel.toLocaleString()} to next level</span>
         </div>
         <div
           role="progressbar"
@@ -295,17 +305,22 @@ export default function ProfileIdentityProgress({
         </div>
       </div>
 
-      {/* Stat tiles */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 mt-8">
+      {/* Stat tiles — single column below 360px so large values never get squeezed into a third of the card */}
+      <div
+        role="group"
+        aria-label="Profile stats"
+        data-testid="profile-stats"
+        className="grid grid-cols-1 min-[360px]:grid-cols-3 gap-2 sm:gap-4 mt-8"
+      >
         {statTiles.map(({ key, label, value, Icon }) => (
           <div
             key={key}
-            className="rounded-2xl border px-3 py-4 sm:px-4 sm:py-5 flex flex-col items-center text-center gap-1"
+            className="min-w-0 rounded-2xl border px-1 min-[360px]:px-2 py-3 min-[360px]:py-4 sm:px-4 sm:py-5 flex flex-row min-[360px]:flex-col items-center justify-center text-center gap-2 min-[360px]:gap-1"
             style={{ backgroundColor: t.statCardBg, borderColor: t.statCardBorder }}
           >
             <Icon size={20} style={{ color: t.primary }} aria-hidden="true" />
-            <p className="text-lg sm:text-2xl font-extrabold text-white break-words">{value}</p>
-            <p className="text-xs" style={{ color: t.subtleText }}>
+            <p className="min-w-0 max-w-full [overflow-wrap:anywhere] text-sm min-[400px]:text-base sm:text-2xl font-extrabold text-white">{value}</p>
+            <p className="min-w-0 max-w-full [overflow-wrap:anywhere] text-xs" style={{ color: t.subtleText }}>
               {label}
             </p>
           </div>
