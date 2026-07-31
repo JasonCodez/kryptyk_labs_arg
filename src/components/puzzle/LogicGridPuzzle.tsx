@@ -119,7 +119,18 @@ export default function LogicGridPuzzle({
   // server, never part of Undo/Redo. Reset whenever puzzleId changes.
   const [focusedClueId, setFocusedClueId] = useState<string | null>(null);
   const [expandedGuideId, setExpandedGuideId] = useState<string | null>(null);
-  const [solved, setSolved] = useState(alreadySolved);
+  // Solved state is latched per puzzleId rather than mirrored directly from `alreadySolved`.
+  // The parent's progress fetch can resolve after this component's first paint, so a naive
+  // `useState(alreadySolved)` (never updated) or a naive `setSolved(alreadySolved)` effect
+  // (which would let a stale `false` re-open an already-solved puzzle) are both wrong. Once
+  // `solvedPuzzleId` matches the current `puzzleId` — whether latched from a late `true` prop
+  // or set directly by a real local submission below — this puzzle instance stays solved for
+  // its lifetime; the comparison against `puzzleId` is what prevents solved state leaking
+  // across a puzzleId transition, with no separate reset needed.
+  const [solvedPuzzleId, setSolvedPuzzleId] = useState<string | null>(
+    alreadySolved ? puzzleId : null
+  );
+  const solved = alreadySolved || solvedPuzzleId === puzzleId;
   const [submitting, setSubmitting] = useState(false);
   const [mismatchedCategories, setMismatchedCategories] = useState<string[] | null>(null);
   const [requestFailed, setRequestFailed] = useState(false);
@@ -188,6 +199,34 @@ export default function LogicGridPuzzle({
   useEffect(() => {
     setFocusedClueId(null);
     setExpandedGuideId(null);
+  }, [puzzleId]);
+
+  // Latches a late-arriving "already solved" confirmation for this exact puzzleId. This is
+  // the only effect allowed to react to `alreadySolved` — it must never fire completion
+  // effects (juice, confetti, the CASE SOLVED overlay, onSolved) since a late confirmation is
+  // not a new completion, only synchronization of state that was already true on the server.
+  useEffect(() => {
+    if (alreadySolved) {
+      setSolvedPuzzleId(puzzleId);
+    }
+  }, [alreadySolved, puzzleId]);
+
+  // Timer follows derived solved state. Deliberately kept separate from the puzzleId reset
+  // effect below and from the latch effect above — this only ever starts/stops the interval,
+  // it never touches elapsedSeconds itself (a real submission sets that explicitly so the
+  // completion overlay shows the exact moment of solving, not a value nudged by this effect).
+  useEffect(() => {
+    setTimerRunning(!solved);
+  }, [solved]);
+
+  // Reset puzzle-specific transient UI state whenever the puzzle identity itself changes.
+  // Deliberately excludes solved state, which is owned entirely by the latch effect above.
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    setElapsedSeconds(0);
+    setShowCompletion(false);
+    setMismatchedCategories(null);
+    setRequestFailed(false);
   }, [puzzleId]);
 
   // Reveal the focused cell on mobile/tablet only: after a supported clue is focused (and the
@@ -481,7 +520,7 @@ export default function LogicGridPuzzle({
         const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
         setTimerRunning(false);
         setElapsedSeconds(elapsed);
-        setSolved(true);
+        setSolvedPuzzleId(puzzleId);
         juice.reward();
         confettiBurstAt(submitButtonRef.current);
         setShowCompletion(true);

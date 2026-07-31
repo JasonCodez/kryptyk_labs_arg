@@ -2113,3 +2113,269 @@ describe("LogicGridPuzzle — focus scrolling is mobile/tablet-only", () => {
     delete (window.HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
   });
 });
+
+// ── Pass 26D1 — synchronize late-arriving solved progress ──────────────────
+
+describe("LogicGridPuzzle — late solved-progress synchronization (Pass 26D1)", () => {
+  it("Test A: a late false-to-true alreadySolved transition immediately locks the puzzle without firing a fresh completion", async () => {
+    const marks = buildCompleteMarks();
+    const onSolved = jest.fn();
+    const { calls } = buildFetchMock({ getBody: { cellMarks: marks } });
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={onSolved} />
+    );
+    await flush();
+
+    expect(screen.getByRole("button", { name: "Submit Solution" })).toBeTruthy();
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(false);
+
+    const callsBefore = calls.length;
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={onSolved} />
+    );
+    await flush();
+
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Submit Solution" })).toBeNull();
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Redo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/confirmed/);
+
+    expect(onSolved).not.toHaveBeenCalled();
+    expect(juiceMock.reward).not.toHaveBeenCalled();
+    expect(confettiBurstAtMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("CASE SOLVED")).toBeNull();
+    expect(calls.slice(callsBefore).some((c) => c.method === "POST")).toBe(false);
+    expect(calls.slice(callsBefore).some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("Test B: a solved confirmation that arrives before hydration finishes still locks the puzzle, and later-hydrated marks display without autosaving", async () => {
+    const { calls, resolveGet } = buildDeferredFetchMock();
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={jest.fn()} />
+    );
+    await flush();
+
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+
+    const key = keyFor("person", "Maya", "room", "Observatory");
+    await act(async () => {
+      resolveGet("p1", { cellMarks: { [key]: "check" } });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toMatch(/confirmed/);
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("Test C: the timer stops immediately on a late solved confirmation and no longer advances", async () => {
+    jest.useFakeTimers();
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    buildFetchMock();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const initial = screen.getByText(/^Time /).textContent;
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+    });
+    const afterRunning = screen.getByText(/^Time /).textContent;
+    expect(afterRunning).not.toBe(initial);
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const atConfirmation = screen.getByText(/^Time /).textContent;
+
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    const afterStopped = screen.getByText(/^Time /).textContent;
+    expect(afterStopped).toBe(atConfirmation);
+  });
+
+  it("Test D (mandatory): a stale false alreadySolved prop cannot reopen a puzzle solved by a real local submission", async () => {
+    jest.useFakeTimers();
+    const marks = buildCompleteMarks();
+    const onSolved = jest.fn();
+    const { calls } = buildFetchMock({
+      getBody: { cellMarks: marks },
+      postImpl: () => jsonResponse({ correct: true }),
+    });
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={onSolved} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit Solution" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+    const postCallsAfterSubmit = calls.filter((c) => c.method === "POST").length;
+    expect(postCallsAfterSubmit).toBe(1);
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={onSolved} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Submit Solution" })).toBeNull();
+
+    const labelBefore = cellButton("Maya", "Observatory").getAttribute("aria-label");
+    fireEvent.click(cellButton("Maya", "Observatory"));
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toBe(labelBefore);
+
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1900);
+    });
+
+    expect(onSolved).toHaveBeenCalledTimes(1);
+  });
+
+  it("Test E: parent confirmation true then a stale false rerender remains solved and locked", async () => {
+    buildFetchMock();
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await flush();
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={jest.fn()} />
+    );
+    await flush();
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await flush();
+
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("Test F: solved state does not cross puzzle IDs — p1 solved does not leak into a freshly transitioned p2", async () => {
+    const { calls, resolveGet } = buildDeferredFetchMock();
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p2" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(/You already solved this case!/)).toBeNull();
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+
+    await act(async () => {
+      resolveGet("p2", { cellMarks: {} });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(false);
+    expect(cellButton("Maya", "Observatory").getAttribute("aria-label")).toBe("Maya and Observatory: unknown");
+    expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls.filter((c) => c.method === "PATCH" && c.url.includes("/p2/"))).toHaveLength(0);
+  });
+
+  it("Test G: transitioning to another already-solved puzzle immediately shows its own solved banner", async () => {
+    const { resolveGet } = buildDeferredFetchMock();
+    const { rerender } = render(
+      <LogicGridPuzzle puzzleId="p1" logicGridData={LOGIC_CASE_DATA} alreadySolved={false} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender(
+      <LogicGridPuzzle puzzleId="p2" logicGridData={LOGIC_CASE_DATA} alreadySolved={true} onSolved={jest.fn()} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/You already solved this case!/)).toBeTruthy();
+
+    await act(async () => {
+      resolveGet("p2", { cellMarks: {} });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cellButton("Maya", "Observatory").hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Submit Solution" })).toBeNull();
+  });
+
+  it("Test H: instructional controls (Focus, Explain, reviewed checkbox) remain usable on an already-solved puzzle without any network write", async () => {
+    const { calls } = buildFetchMock();
+    render(
+      <LogicGridPuzzle
+        puzzleId="p1"
+        logicGridData={INSTRUCTIONAL_LOGIC_CASE_DATA}
+        alreadySolved
+        onSolved={jest.fn()}
+      />
+    );
+    await flush();
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    fireEvent.click(focusButtonFor(2)!);
+    expect(getFocusBanner()).toBeTruthy();
+    expect(focusDataAttr("Library", "8:00")).toBe("primary");
+
+    // Focusing a clue switches the mobile tab back to Grid — return to Clues before
+    // interacting with clue-panel controls.
+    fireEvent.click(screen.getByRole("tab", { name: "Clues" }));
+
+    fireEvent.click(explainButtonFor(2)!);
+    expect(explainButtonFor(2)!.getAttribute("aria-expanded")).toBe("true");
+
+    const checkbox = screen.getAllByRole("checkbox")[0] as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    expect(cellButton("Library", "8:00", true).getAttribute("aria-label")).toContain("unknown");
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+});
