@@ -10,6 +10,7 @@ import { juice } from "@/lib/juice";
 import GameButton from "@/components/game-ui/GameButton";
 import StorefrontHero, { StoreCategoryRail } from "@/components/store/StorefrontHero";
 import StoreProductCard, { getStoreItemDisplayName, type StoreProductItem } from "@/components/store/StoreProductCard";
+import StorePurchaseSuccessModal from "@/components/store/StorePurchaseSuccessModal";
 import { ShoppingBag } from "lucide-react";
 
 type StoreItem = StoreProductItem;
@@ -260,6 +261,13 @@ function StorePageInner() {
     } finally {
       setSendingGift(false);
     }
+  };
+
+  const handleClosePurchaseSuccess = () => {
+    setBalancePoints(user?.totalPoints ?? 0);
+    setShowGlow(true);
+    setTimeout(() => setShowGlow(false), 1500);
+    setPurchaseSuccess(null);
   };
 
   const filtered = activeCategory === "all"
@@ -542,155 +550,9 @@ function StorePageInner() {
       </AnimatePresence>
 
       {/* Purchase success celebration overlay */}
-      <AnimatePresence>
-        {purchaseSuccess && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
-            style={{ backgroundColor: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)" }}
-            onClick={() => {
-              setBalancePoints(user?.totalPoints ?? 0);
-              setShowGlow(true);
-              setTimeout(() => setShowGlow(false), 1500);
-              setPurchaseSuccess(null);
-            }}
-          >
-            {/* Particle burst — purely CSS rings */}
-            {[...Array(12)].map((_, i) => (
-              <motion.div
-                key={i}
-                className="absolute rounded-full pointer-events-none"
-                initial={{ scale: 0, opacity: 1 }}
-                animate={{ scale: 4 + i * 0.6, opacity: 0 }}
-                transition={{ duration: 1.2 + i * 0.08, ease: "easeOut", delay: i * 0.04 }}
-                style={{
-                  width: 12, height: 12,
-                  background: i % 3 === 0 ? "#FFC93C" : i % 3 === 1 ? "#FF4FA3" : "#2FE6E0",
-                  rotate: `${i * 30}deg`,
-                  originX: "50%", originY: "50%",
-                  left: "calc(50% - 6px)", top: "calc(50% - 6px)",
-                }}
-              />
-            ))}
-
-            {/* Floating coins */}
-            {[...Array(16)].map((_, i) => (
-              <motion.div
-                key={`coin-${i}`}
-                className="absolute text-2xl pointer-events-none select-none"
-                initial={{ opacity: 1, y: 0, x: 0, scale: 0.5 }}
-                animate={{
-                  opacity: 0,
-                  y: -180 - Math.random() * 120,
-                  x: (Math.random() - 0.5) * 300,
-                  scale: 1.2,
-                  rotate: (Math.random() - 0.5) * 360,
-                }}
-                transition={{ duration: 1.4 + Math.random() * 0.6, ease: "easeOut", delay: 0.1 + i * 0.06 }}
-                style={{ left: `${30 + Math.random() * 40}%`, top: "55%" }}
-              >
-                {i % 4 === 0 ? "💰" : i % 4 === 1 ? "⭐" : i % 4 === 2 ? "✨" : "💎"}
-              </motion.div>
-            ))}
-
-            {/* Main card */}
-            <motion.div
-              initial={{ scale: 0.4, opacity: 0, y: 40 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 320, damping: 22 }}
-              className="relative text-center px-10 py-10 rounded-3xl max-w-sm w-full mx-4 overflow-hidden shadow-skeu-panel"
-              style={{
-                background: "linear-gradient(145deg, rgba(36,22,64,0.98) 0%, rgba(50,32,90,0.98) 100%)",
-                border: "2px solid rgba(255,201,60,0.6)",
-                boxShadow: "0 0 60px rgba(255,201,60,0.25), 0 0 120px rgba(255,201,60,0.1)",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.4 }} />
-              {/* Glow ring */}
-              <motion.div
-                className="absolute inset-0 rounded-3xl pointer-events-none"
-                animate={{ boxShadow: ["0 0 30px rgba(255,201,60,0.3)", "0 0 60px rgba(255,201,60,0.6)", "0 0 30px rgba(255,201,60,0.3)"] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-              />
-
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: [0, 1.3, 1] }}
-                transition={{ delay: 0.15, duration: 0.5, times: [0, 0.6, 1] }}
-                className="text-6xl mb-3"
-              >
-                🎉
-              </motion.div>
-
-              <motion.p
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-                className="text-sm font-semibold mb-1"
-                style={{ color: "#2FE6E0" }}
-              >
-                Thank you for your purchase!
-              </motion.p>
-
-              <motion.p
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 }}
-                className="text-lg font-bold mb-1"
-                style={{ color: "#AB9F9D" }}
-              >
-                Points Added!
-              </motion.p>
-
-              <motion.p
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4, type: "spring", stiffness: 280 }}
-                className="text-6xl font-black mb-1"
-                style={{ color: "#FFC93C", textShadow: "0 0 30px rgba(255,201,60,0.6)" }}
-              >
-                +{purchaseSuccess.points.toLocaleString()}
-              </motion.p>
-
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.55 }}
-                className="text-sm font-semibold mb-6"
-                style={{ color: "#E0960B" }}
-              >
-                points added to your balance
-              </motion.p>
-
-              <motion.button
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.65 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => {
-                  setBalancePoints(user?.totalPoints ?? 0);
-                  setShowGlow(true);
-                  setTimeout(() => setShowGlow(false), 1500);
-                  setPurchaseSuccess(null);
-                }}
-                className="px-8 py-3 rounded-xl font-extrabold text-sm"
-                style={{
-                  background: "linear-gradient(135deg, #FFE58A, #FFC93C)",
-                  color: "#1a1400",
-                  boxShadow: "0 4px 20px rgba(255,201,60,0.35)",
-                }}
-              >
-                Awesome! 🚀
-              </motion.button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {purchaseSuccess && (
+        <StorePurchaseSuccessModal points={purchaseSuccess.points} onClose={handleClosePurchaseSuccess} />
+      )}
     </div>
   );
 }
