@@ -550,9 +550,11 @@ function StorePageInner() {
       </AnimatePresence>
 
       {/* Purchase success celebration overlay */}
-      {purchaseSuccess && (
-        <StorePurchaseSuccessModal points={purchaseSuccess.points} onClose={handleClosePurchaseSuccess} />
-      )}
+      <AnimatePresence>
+        {purchaseSuccess && (
+          <StorePurchaseSuccessModal points={purchaseSuccess.points} onClose={handleClosePurchaseSuccess} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

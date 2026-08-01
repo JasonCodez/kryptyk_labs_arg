@@ -13,8 +13,18 @@ jest.mock("framer-motion", () => {
       { children, initial, animate, exit, transition, variants, whileTap, whileHover, ...props },
       ref,
     ) {
-      void initial; void animate; void exit; void variants; void whileTap; void whileHover;
-      return createElement(Tag, { ...props, ref }, children as ReactNode);
+      void animate; void variants; void whileTap; void whileHover;
+      return createElement(
+        Tag,
+        {
+          ...props,
+          ref,
+          "data-motion-initial": JSON.stringify(initial ?? null),
+          "data-motion-exit": JSON.stringify(exit ?? null),
+          "data-motion-transition": JSON.stringify(transition ?? null),
+        },
+        children as ReactNode,
+      );
     });
   return {
     motion: {
@@ -138,5 +148,33 @@ describe("StorePurchaseSuccessModal reduced motion", () => {
     const { container } = render(<StorePurchaseSuccessModal points={500} onClose={jest.fn()} />);
     expect(container.querySelectorAll(".pointer-events-none.select-none").length).toBeGreaterThan(0);
     expect(container.querySelectorAll(".rounded-full.pointer-events-none").length).toBeGreaterThan(0);
+  });
+
+  it("hides decorative coins and particles from assistive technology", () => {
+    mockReducedMotion = false;
+    const { container } = render(<StorePurchaseSuccessModal points={500} onClose={jest.fn()} />);
+    const coins = container.querySelectorAll(".pointer-events-none.select-none");
+    const particles = container.querySelectorAll(".rounded-full.pointer-events-none");
+    expect(coins.length).toBeGreaterThan(0);
+    expect(particles.length).toBeGreaterThan(0);
+    coins.forEach((coin) => expect(coin.getAttribute("aria-hidden")).toBe("true"));
+    particles.forEach((particle) => expect(particle.getAttribute("aria-hidden")).toBe("true"));
+  });
+
+  it("gives the outer backdrop no entrance or exit transition in reduced-motion mode", () => {
+    mockReducedMotion = true;
+    render(<StorePurchaseSuccessModal points={500} onClose={jest.fn()} />);
+    const backdrop = screen.getByRole("dialog").parentElement!;
+    expect(backdrop.getAttribute("data-motion-initial")).toBe("false");
+    expect(backdrop.getAttribute("data-motion-exit")).toBe("null");
+    expect(JSON.parse(backdrop.getAttribute("data-motion-transition")!)).toEqual({ duration: 0 });
+  });
+
+  it("gives the outer backdrop a fade transition in normal-motion mode", () => {
+    mockReducedMotion = false;
+    render(<StorePurchaseSuccessModal points={500} onClose={jest.fn()} />);
+    const backdrop = screen.getByRole("dialog").parentElement!;
+    expect(JSON.parse(backdrop.getAttribute("data-motion-initial")!)).toEqual({ opacity: 0 });
+    expect(JSON.parse(backdrop.getAttribute("data-motion-exit")!)).toEqual({ opacity: 0 });
   });
 });
