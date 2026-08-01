@@ -365,18 +365,18 @@ function StorePageInner() {
 
         {/* Buy Points section */}
         <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-lg font-bold text-white">💳 Buy Points</h2>
-            <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+          <div className="flex flex-col items-start gap-2 mb-4 min-[480px]:flex-row min-[480px]:items-center">
+            <h2 className="text-lg font-bold text-white whitespace-nowrap">💳 Buy Points</h2>
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold self-start min-[480px]:self-auto"
               style={{ backgroundColor: "rgba(47,230,224,0.15)", color: "#2FE6E0" }}>
               Real money → in-game points
             </span>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-4 gap-3">
             {POINT_BUNDLES.map((bundle) => (
               <div
                 key={bundle.key}
-                className="relative overflow-hidden rounded-2xl p-4 flex flex-col gap-2 shadow-skeu-panel"
+                className="relative overflow-hidden rounded-2xl p-3 min-[390px]:p-4 h-full min-w-0 flex flex-col gap-2 shadow-skeu-panel"
                 style={{
                   backgroundColor: bundle.popular ? "rgba(47,230,224,0.12)" : "rgba(36,22,64,0.95)",
                   border: `1px solid ${bundle.popular ? "rgba(47,230,224,0.5)" : "rgba(255,255,255,0.1)"}`,
@@ -385,19 +385,21 @@ function StorePageInner() {
               >
                 <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
                 {bundle.popular && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap z-10"
+                  <span className="absolute top-2 left-1/2 -translate-x-1/2 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap z-10"
                     style={{ backgroundColor: "#2FE6E0", color: "#0B2E2C" }}>
                     Most Popular
                   </span>
                 )}
-                <div className="relative flex items-center gap-2">
-                  <span className="text-2xl">{bundle.emoji}</span>
-                  <div>
-                    <p className="font-bold text-white text-sm">{bundle.name}</p>
-                    {bundle.bonus && (
-                      <p className="text-xs font-semibold" style={{ color: "#3ED97A" }}>{bundle.bonus}</p>
-                    )}
-                  </div>
+                <div className={`relative flex items-center gap-2 min-w-0 ${bundle.popular ? "mt-4" : ""}`}>
+                  <span className="text-2xl shrink-0">{bundle.emoji}</span>
+                  <p className="font-bold text-white text-sm leading-tight break-words min-w-0">{bundle.name}</p>
+                </div>
+                <div className="relative min-h-[1rem]">
+                  {bundle.bonus ? (
+                    <p className="text-xs font-semibold" style={{ color: "#3ED97A" }}>{bundle.bonus}</p>
+                  ) : (
+                    <span aria-hidden="true" className="block h-4" />
+                  )}
                 </div>
                 <p className="relative text-xl font-extrabold" style={{ color: "#FFC93C" }}>
                   {bundle.points.toLocaleString()} <span className="text-sm font-semibold">pts</span>
@@ -409,7 +411,7 @@ function StorePageInner() {
                   pulse={bundle.popular}
                   disabled={buyingBundle === bundle.key}
                   onClick={() => handleBuyBundle(bundle.key)}
-                  className="relative mt-1"
+                  className="relative mt-auto"
                 >
                   {buyingBundle === bundle.key ? "Redirecting…" : bundle.price}
                 </GameButton>
