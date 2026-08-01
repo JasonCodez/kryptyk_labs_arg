@@ -452,7 +452,7 @@ function StorePageInner() {
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="rounded-2xl p-4 min-[390px]:p-5 flex flex-col gap-3 shadow-skeu-panel animate-pulse"
+                className="rounded-2xl p-4 min-[390px]:p-5 flex flex-col gap-3 shadow-skeu-panel motion-safe:animate-pulse motion-reduce:animate-none"
                 style={{ backgroundColor: "rgba(36,22,64,0.97)", border: "1px solid rgba(255,255,255,0.08)" }}
               >
                 <div className="h-28 md:h-32 rounded-xl" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
