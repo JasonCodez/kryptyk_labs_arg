@@ -466,16 +466,16 @@ function StorePageInner() {
       {/* Layered vault backdrop */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, #1c0f30 0%, #170B26 45%, #0d0714 100%)" }}
+        />
+        <div
           className="absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full"
           style={{ background: "radial-gradient(circle, rgba(139,61,255,0.16) 0%, rgba(139,61,255,0) 70%)" }}
         />
         <div
           className="absolute -top-16 -right-24 w-[420px] h-[420px] rounded-full"
           style={{ background: "radial-gradient(circle, rgba(255,201,60,0.12) 0%, rgba(255,201,60,0) 70%)" }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{ background: "linear-gradient(180deg, #1c0f30 0%, #170B26 45%, #0d0714 100%)" }}
         />
       </div>
 

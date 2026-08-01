@@ -168,3 +168,22 @@ describe("StorefrontHero — empty optional statuses (Test H)", () => {
     expect(screen.getByText("5")).toBeTruthy();
   });
 });
+
+describe("StorefrontHero — expired XP boost is inactive (Test I)", () => {
+  it("hides the active label when xpBoostExpiresAt is in the past, while the wallet remains present", () => {
+    renderHero({
+      user: { ...BASE_USER, xpBoostExpiresAt: "2000-01-01T00:00:00.000Z" },
+    });
+
+    expect(screen.queryByText(/2× XP Boost Active/)).toBeNull();
+    expect(screen.getByText("Hint Tokens")).toBeTruthy();
+  });
+
+  it("hides the active label when xpBoostExpiresAt is an invalid date string", () => {
+    renderHero({
+      user: { ...BASE_USER, xpBoostExpiresAt: "not-a-date" },
+    });
+
+    expect(screen.queryByText(/2× XP Boost Active/)).toBeNull();
+  });
+});

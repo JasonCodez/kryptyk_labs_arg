@@ -116,7 +116,9 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
     { key: "tripleOrNothingTokens", label: "Triple Tokens", value: user?.tripleOrNothingTokens ?? 0, icon: Dices },
   ];
 
-  const xpBoostActive = !!user?.xpBoostExpiresAt;
+  const xpBoostActive =
+    !!user?.xpBoostExpiresAt &&
+    new Date(user.xpBoostExpiresAt).getTime() > Date.now();
   const tripleActive = !!user?.tripleOrNothingActive;
 
   const entranceInitial = prefersReducedMotion ? false : { opacity: 0, y: 16 };
