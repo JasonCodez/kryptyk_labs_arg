@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import JuicyText from "@/components/game-ui/JuicyText";
 import {
   Gem,
   Gift,
@@ -134,13 +135,17 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
     >
       {/* Identity */}
       <div className="lg:flex-1">
-        <p className="text-xs font-bold tracking-[0.2em] uppercase mb-2" style={{ color: "#2FE6E0" }}>
+        <p className="text-xs font-bold tracking-[0.2em] uppercase mb-2" style={{ color: "var(--pw-brand-primary-light)" }}>
           PuzzleWarz Point Store
         </p>
-        <h1 className="font-black text-white mb-3 text-3xl min-[390px]:text-4xl lg:text-5xl xl:text-6xl leading-tight">
+        <JuicyText
+          as="h1"
+          variant="brand"
+          className="mb-3 text-3xl min-[390px]:text-4xl lg:text-5xl xl:text-6xl leading-tight"
+        >
           THE VAULT
-        </h1>
-        <p className="text-sm min-[390px]:text-base max-w-md" style={{ color: "#AB9F9D" }}>
+        </JuicyText>
+        <p className="text-sm min-[390px]:text-base max-w-md" style={{ color: "var(--pw-text-secondary)" }}>
           Power up your play. Collect rare cosmetics. Spend what you earned.
         </p>
       </div>
@@ -151,14 +156,22 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
         <motion.div
           className="relative overflow-hidden rounded-2xl px-4 min-[390px]:px-5 py-4 shadow-skeu-panel"
           style={{
-            background: "linear-gradient(145deg, rgba(36,22,64,0.97) 0%, rgba(50,32,90,0.97) 100%)",
-            border: "1px solid rgba(255,201,60,0.25)",
+            background: "linear-gradient(145deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
+            border: "1px solid color-mix(in srgb, var(--pw-brand-secondary) 25%, transparent)",
           }}
           animate={
             showGlow && !prefersReducedMotion
               ? {
-                  boxShadow: ["0 0 0px rgba(255,201,60,0)", "0 0 40px rgba(255,201,60,0.5)", "0 0 16px rgba(255,201,60,0.15)"],
-                  borderColor: ["rgba(255,201,60,0.25)", "rgba(255,201,60,0.9)", "rgba(255,201,60,0.35)"],
+                  boxShadow: [
+                    "0 0 0px color-mix(in srgb, var(--pw-brand-secondary) 0%, transparent)",
+                    "0 0 40px color-mix(in srgb, var(--pw-brand-secondary) 50%, transparent)",
+                    "0 0 16px color-mix(in srgb, var(--pw-brand-secondary) 15%, transparent)",
+                  ],
+                  borderColor: [
+                    "color-mix(in srgb, var(--pw-brand-secondary) 25%, transparent)",
+                    "color-mix(in srgb, var(--pw-brand-secondary) 90%, transparent)",
+                    "color-mix(in srgb, var(--pw-brand-secondary) 35%, transparent)",
+                  ],
                 }
               : {}
           }
@@ -166,20 +179,20 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
         >
           <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
           <div className="relative flex items-center gap-2 mb-1">
-            <Gem size={16} aria-hidden="true" style={{ color: "#FFC93C" }} />
-            <p className="text-sm font-semibold" style={{ color: "#AB9F9D" }}>
+            <Gem size={16} aria-hidden="true" style={{ color: "var(--pw-brand-secondary)" }} />
+            <p className="text-sm font-semibold" style={{ color: "var(--pw-text-secondary)" }}>
               Available Balance
             </p>
           </div>
           {loading ? (
             <div className="relative h-10 w-40 rounded-lg animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />
           ) : (
-            <p className="relative text-3xl min-[390px]:text-4xl font-extrabold break-all" style={{ color: "#FFC93C" }}>
+            <p className="relative text-3xl min-[390px]:text-4xl font-extrabold break-all" style={{ color: "var(--pw-brand-secondary)" }}>
               <AnimatedBalance value={balance} prefersReducedMotion={prefersReducedMotion} />{" "}
               <span className="text-base font-semibold">pts</span>
             </p>
           )}
-          <p className="relative text-xs mt-1.5" style={{ color: "#6b7280" }}>
+          <p className="relative text-xs mt-1.5" style={{ color: "var(--pw-text-muted)" }}>
             Earned and spendable rewards
           </p>
 
@@ -188,7 +201,7 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
               {tripleActive && (
                 <span
                   className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
-                  style={{ backgroundColor: "rgba(255,201,60,0.15)", color: "#FFC93C" }}
+                  style={{ backgroundColor: "color-mix(in srgb, var(--pw-brand-secondary) 15%, transparent)", color: "var(--pw-brand-secondary)" }}
                 >
                   <Dices size={12} aria-hidden="true" /> Triple-or-Nothing Active
                 </span>
@@ -196,7 +209,11 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
               {xpBoostActive && (
                 <span
                   className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
-                  style={{ backgroundColor: "rgba(139,61,255,0.18)", color: "#B98CFF" }}
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--pw-brand-accent) 18%, transparent)",
+                    color: "var(--pw-brand-accent-light)",
+                    border: "1px solid color-mix(in srgb, var(--pw-brand-accent) 45%, transparent)",
+                  }}
                 >
                   <Zap size={12} aria-hidden="true" /> 2× XP Boost Active
                 </span>
@@ -208,7 +225,7 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
         {/* Inventory summary */}
         <div
           className="grid grid-cols-2 min-[380px]:grid-cols-3 gap-2 rounded-2xl p-3 shadow-skeu-panel"
-          style={{ backgroundColor: "rgba(36,22,64,0.9)", border: "1px solid rgba(255,255,255,0.08)" }}
+          style={{ backgroundColor: "var(--pw-bg-elevated)", border: "1px solid var(--pw-border-subtle)" }}
         >
           {walletCells.map((cell) => {
             const Icon = cell.icon;
@@ -216,16 +233,16 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
               <div
                 key={cell.key}
                 className="rounded-xl px-2 py-2 flex flex-col items-start gap-1 min-w-0"
-                style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                style={{ backgroundColor: "var(--pw-surface-2)", border: "1px solid var(--pw-border-subtle)" }}
               >
-                <Icon size={14} aria-hidden="true" style={{ color: "#2FE6E0" }} />
-                <span className="text-[11px] leading-tight font-semibold break-words" style={{ color: "#9ca3af" }}>
+                <Icon size={14} aria-hidden="true" style={{ color: "var(--pw-brand-primary)" }} />
+                <span className="text-[11px] leading-tight font-semibold break-words" style={{ color: "var(--pw-text-secondary)" }}>
                   {cell.label}
                 </span>
                 {loading ? (
                   <span className="h-4 w-10 rounded animate-pulse block" style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />
                 ) : (
-                  <span className="text-sm font-extrabold break-all text-white">{cell.value.toLocaleString()}</span>
+                  <span className="text-sm font-extrabold break-all" style={{ color: "var(--pw-text-primary)" }}>{cell.value.toLocaleString()}</span>
                 )}
               </div>
             );
@@ -237,9 +254,9 @@ export default function StorefrontHero({ balance, user, loading, showGlow, onGif
           onClick={onGiftPoints}
           className="w-full flex items-center justify-center gap-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{
-            backgroundColor: "rgba(255,201,60,0.12)",
-            color: "#FFC93C",
-            border: "1px solid rgba(255,201,60,0.3)",
+            backgroundColor: "color-mix(in srgb, var(--pw-brand-secondary) 12%, transparent)",
+            color: "var(--pw-brand-secondary)",
+            border: "1px solid color-mix(in srgb, var(--pw-brand-secondary) 30%, transparent)",
             minHeight: 44,
           }}
         >
@@ -271,9 +288,9 @@ export function StoreCategoryRail({ categories, activeCategory, onCategoryChange
             className="shrink-0 flex items-center gap-1.5 whitespace-nowrap px-4 rounded-xl text-sm font-semibold transition-all"
             style={{
               minHeight: 44,
-              backgroundColor: active ? "rgba(255,201,60,0.18)" : "rgba(255,255,255,0.05)",
-              border: `1px solid ${active ? "rgba(255,201,60,0.5)" : "rgba(255,255,255,0.1)"}`,
-              color: active ? "#FFC93C" : "#9ca3af",
+              backgroundColor: active ? "color-mix(in srgb, var(--pw-brand-primary) 18%, transparent)" : "var(--pw-surface-2)",
+              border: `1px solid ${active ? "color-mix(in srgb, var(--pw-brand-primary) 55%, transparent)" : "var(--pw-border-subtle)"}`,
+              color: active ? "var(--pw-brand-primary-light)" : "var(--pw-text-secondary)",
               boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.15)" : undefined,
             }}
           >

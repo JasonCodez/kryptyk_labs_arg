@@ -288,20 +288,24 @@ function StorePageInner() {
   if (status === "unauthenticated") return null;
 
   return (
-    <div className="min-h-screen px-4 pt-28 pb-12 relative overflow-x-hidden" style={{ backgroundColor: "#170B26" }}>
+    <div className="min-h-screen px-4 pt-28 pb-12 relative overflow-x-hidden" style={{ backgroundColor: "var(--pw-bg-base)" }}>
       {/* Layered vault backdrop */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div
           className="absolute inset-0"
-          style={{ background: "linear-gradient(180deg, #1c0f30 0%, #170B26 45%, #0d0714 100%)" }}
+          style={{ background: "linear-gradient(180deg, var(--pw-bg-elevated) 0%, var(--pw-bg-base) 45%, var(--pw-bg-base) 100%)" }}
         />
         <div
           className="absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(139,61,255,0.16) 0%, rgba(139,61,255,0) 70%)" }}
+          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--pw-brand-primary) 18%, transparent) 0%, transparent 70%)" }}
         />
         <div
           className="absolute -top-16 -right-24 w-[420px] h-[420px] rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(255,201,60,0.12) 0%, rgba(255,201,60,0) 70%)" }}
+          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--pw-brand-accent) 14%, transparent) 0%, transparent 70%)" }}
+        />
+        <div
+          className="absolute bottom-0 left-1/3 w-[380px] h-[380px] rounded-full"
+          style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent) 0%, transparent 70%)" }}
         />
       </div>
 
@@ -318,26 +322,26 @@ function StorePageInner() {
         {/* Gift Points Modal */}
         {showGiftModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowGiftModal(false)}>
-            <div className="rounded-2xl border p-6 w-full max-w-sm mx-4" style={{ borderColor: "rgba(255,201,60,0.3)", backgroundColor: "rgba(23,11,38,0.98)" }} onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl border p-6 w-full max-w-sm mx-4" style={{ borderColor: "color-mix(in srgb, var(--pw-brand-secondary) 35%, transparent)", backgroundColor: "var(--pw-bg-elevated)" }} onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-white">🎁 Gift Points</h3>
+                <h3 className="text-lg font-bold" style={{ color: "var(--pw-text-primary)" }}>🎁 Gift Points</h3>
                 <button onClick={() => setShowGiftModal(false)} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
               </div>
-              <p className="text-sm mb-4" style={{ color: "#AB9F9D" }}>Send points to any player. Minimum 10 pts, maximum 5,000 pts.</p>
+              <p className="text-sm mb-4" style={{ color: "var(--pw-text-secondary)" }}>Send points to any player. Minimum 10 pts, maximum 5,000 pts.</p>
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-semibold mb-1 block" style={{ color: "#6b7280" }}>Username</label>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: "var(--pw-text-secondary)" }}>Username</label>
                   <input
                     type="text"
                     value={giftUsername}
                     onChange={e => setGiftUsername(e.target.value)}
                     placeholder="Player username..."
                     className="w-full px-3 py-2 rounded-lg text-sm text-white focus:outline-none"
-                    style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}
+                    style={{ backgroundColor: "var(--pw-surface-2)", border: "1px solid var(--pw-border-default)" }}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold mb-1 block" style={{ color: "#6b7280" }}>Amount (pts)</label>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: "var(--pw-text-secondary)" }}>Amount (pts)</label>
                   <input
                     type="number"
                     value={giftAmount}
@@ -346,7 +350,7 @@ function StorePageInner() {
                     min={10}
                     max={5000}
                     className="w-full px-3 py-2 rounded-lg text-sm text-white focus:outline-none"
-                    style={{ backgroundColor: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}
+                    style={{ backgroundColor: "var(--pw-surface-2)", border: "1px solid var(--pw-border-default)" }}
                   />
                 </div>
                 <GameButton
@@ -368,7 +372,7 @@ function StorePageInner() {
           <div className="flex flex-col items-start gap-2 mb-4 min-[480px]:flex-row min-[480px]:items-center">
             <h2 className="text-lg font-bold text-white whitespace-nowrap">💳 Buy Points</h2>
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold self-start min-[480px]:self-auto"
-              style={{ backgroundColor: "rgba(47,230,224,0.15)", color: "#2FE6E0" }}>
+              style={{ backgroundColor: "color-mix(in srgb, var(--pw-brand-primary) 15%, transparent)", color: "var(--pw-brand-primary-light)" }}>
               Real money → in-game points
             </span>
           </div>
@@ -378,15 +382,17 @@ function StorePageInner() {
                 key={bundle.key}
                 className="relative overflow-hidden rounded-2xl p-3 min-[390px]:p-4 h-full min-w-0 flex flex-col gap-2 shadow-skeu-panel"
                 style={{
-                  backgroundColor: bundle.popular ? "rgba(47,230,224,0.12)" : "rgba(36,22,64,0.95)",
-                  border: `1px solid ${bundle.popular ? "rgba(47,230,224,0.5)" : "rgba(255,255,255,0.1)"}`,
-                  boxShadow: bundle.popular ? "0 0 16px rgba(47,230,224,0.1)" : undefined,
+                  background: bundle.popular
+                    ? "color-mix(in srgb, var(--pw-brand-primary) 12%, var(--pw-surface-1))"
+                    : "var(--pw-surface-1)",
+                  border: `1px solid ${bundle.popular ? "color-mix(in srgb, var(--pw-brand-primary) 55%, transparent)" : "var(--pw-border-default)"}`,
+                  boxShadow: bundle.popular ? "0 0 16px color-mix(in srgb, var(--pw-brand-primary) 10%, transparent)" : undefined,
                 }}
               >
                 <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
                 {bundle.popular && (
                   <span className="absolute top-2 left-1/2 -translate-x-1/2 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap z-10"
-                    style={{ backgroundColor: "#2FE6E0", color: "#0B2E2C" }}>
+                    style={{ backgroundColor: "var(--pw-brand-primary)", color: "var(--pw-text-on-primary)" }}>
                     Most Popular
                   </span>
                 )}
@@ -396,12 +402,12 @@ function StorePageInner() {
                 </div>
                 <div className="relative min-h-[1rem]">
                   {bundle.bonus ? (
-                    <p className="text-xs font-semibold" style={{ color: "#3ED97A" }}>{bundle.bonus}</p>
+                    <p className="text-xs font-semibold" style={{ color: "var(--pw-success)" }}>{bundle.bonus}</p>
                   ) : (
                     <span aria-hidden="true" className="block h-4" />
                   )}
                 </div>
-                <p className="relative text-xl font-extrabold" style={{ color: "#FFC93C" }}>
+                <p className="relative text-xl font-extrabold" style={{ color: "var(--pw-brand-secondary)" }}>
                   {bundle.points.toLocaleString()} <span className="text-sm font-semibold">pts</span>
                 </p>
                 <GameButton
@@ -422,13 +428,13 @@ function StorePageInner() {
           {/* Fair play disclaimer */}
           <div
             className="mt-4 flex items-start gap-3 rounded-xl px-4 py-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+            style={{ backgroundColor: "var(--pw-surface-1)", border: "1px solid color-mix(in srgb, var(--pw-brand-primary) 20%, transparent)" }}
           >
             <span className="text-lg mt-0.5">⚖️</span>
             <div>
-              <p className="text-sm font-semibold text-white">Fair Play Guarantee</p>
-              <p className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
-                Points acquired through purchases are <span className="font-semibold" style={{ color: "#FFC93C" }}>never counted on the leaderboards</span>. Only points earned through solving puzzles and gameplay contribute to your rank — keeping competition fair for everyone.
+              <p className="text-sm font-semibold" style={{ color: "var(--pw-text-primary)" }}>Fair Play Guarantee</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--pw-text-secondary)" }}>
+                Points acquired through purchases are <span className="font-semibold" style={{ color: "var(--pw-brand-secondary)" }}>never counted on the leaderboards</span>. Only points earned through solving puzzles and gameplay contribute to your rank — keeping competition fair for everyone.
               </p>
             </div>
           </div>
@@ -444,12 +450,12 @@ function StorePageInner() {
         <div className="mb-4 flex flex-col min-[480px]:flex-row min-[480px]:items-end min-[480px]:justify-between gap-1">
           <div>
             <h2 className="text-xl font-extrabold text-white">Vault Collection</h2>
-            <p className="text-xs mt-0.5" style={{ color: "#AB9F9D" }}>
+            <p className="text-xs mt-0.5" style={{ color: "var(--pw-text-secondary)" }}>
               Choose power-ups, upgrades, and cosmetics worthy of your collection.
             </p>
           </div>
           {!loading && (
-            <p className="text-xs font-semibold shrink-0" style={{ color: "#6b7280" }}>
+            <p className="text-xs font-semibold shrink-0" style={{ color: "var(--pw-text-muted)" }}>
               {CATEGORIES.find((c) => c.key === activeCategory)?.label ?? "All Items"} · {filtered.length} {filtered.length === 1 ? "item" : "items"}
             </p>
           )}
@@ -463,7 +469,7 @@ function StorePageInner() {
               <div
                 key={i}
                 className="rounded-2xl p-4 min-[390px]:p-5 flex flex-col gap-3 shadow-skeu-panel motion-safe:animate-pulse motion-reduce:animate-none"
-                style={{ backgroundColor: "rgba(36,22,64,0.97)", border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{ backgroundColor: "var(--pw-surface-1)", border: "1px solid var(--pw-border-subtle)" }}
               >
                 <div className="h-28 md:h-32 rounded-xl" style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />
                 <div className="h-3.5 w-2/3 rounded" style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />
@@ -507,9 +513,9 @@ function StorePageInner() {
 
             {filtered.length === 0 && (
               <div className="col-span-1 sm:col-span-2 lg:col-span-3 py-20 text-center flex flex-col items-center gap-2">
-                <ShoppingBag size={28} aria-hidden="true" style={{ color: "#6b7280" }} />
+                <ShoppingBag size={28} aria-hidden="true" style={{ color: "var(--pw-text-muted)" }} />
                 <p className="text-white font-bold">Nothing in this vault yet</p>
-                <p className="text-sm max-w-xs" style={{ color: "#AB9F9D" }}>
+                <p className="text-sm max-w-xs" style={{ color: "var(--pw-text-secondary)" }}>
                   The {CATEGORIES.find((c) => c.key === activeCategory)?.label ?? "All Items"} category is empty right now — check back soon or browse another category.
                 </p>
               </div>
@@ -541,9 +547,9 @@ function StorePageInner() {
             className="fixed left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl text-sm font-semibold shadow-xl z-50"
             style={{
               bottom: "max(2rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))",
-              backgroundColor: toast.type === "success" ? "rgba(36,22,64,0.98)" : "rgba(50,10,10,0.95)",
-              border: `1px solid ${toast.type === "success" ? "rgba(255,201,60,0.4)" : "rgba(255,90,90,0.4)"}`,
-              color: toast.type === "success" ? "#FFC93C" : "#FF8F8F",
+              backgroundColor: toast.type === "success" ? "var(--pw-bg-elevated)" : "var(--pw-error-surface)",
+              border: `1px solid ${toast.type === "success" ? "color-mix(in srgb, var(--pw-brand-secondary) 40%, transparent)" : "var(--pw-error-border)"}`,
+              color: toast.type === "success" ? "var(--pw-brand-secondary)" : "var(--pw-error-text)",
             }}
           >
             {toast.msg}
@@ -564,7 +570,7 @@ function StorePageInner() {
 export default function StorePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#170B26" }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "var(--pw-bg-base)" }}>
         <div className="text-white text-xl">Loading store...</div>
       </div>
     }>

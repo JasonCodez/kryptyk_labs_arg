@@ -59,19 +59,24 @@ const SUBCATEGORY_LABELS: Record<string, string> = {
 const COSMETIC_SUBCATEGORIES = ["theme", "frame", "skin", "flair", "banner", "team_theme", "name_color", "anim"];
 const PREVIEWABLE_SUBCATEGORIES = ["theme", "frame", "skin", "name_color"];
 
+// Category accent colors are interpolated with a hand-appended hex alpha suffix
+// below (e.g. `${accent.a}22`), so these must stay literal hex — CSS custom
+// properties can't have an alpha suffix concatenated onto them like this.
 const CATEGORY_ACCENT: Record<string, { a: string; b: string; icon: typeof Flame }> = {
-  streak: { a: "#3ED97A", b: "#0f2e1c", icon: Flame },
-  puzzle: { a: "#2FE6E0", b: "#3a2c06", icon: PuzzleIcon },
-  warz: { a: "#FF5A5A", b: "#3a0d0d", icon: Swords },
-  social: { a: "#B98CFF", b: "#101a3a", icon: Users },
+  streak: { a: "#3BC46A", b: "#0f2e1c", icon: Flame },   // success green
+  puzzle: { a: "#03ACF4", b: "#3a2c06", icon: PuzzleIcon }, // brand blue
+  warz: { a: "#FF5A5A", b: "#3a0d0d", icon: Swords },       // semantic danger red (allowed for Warz)
+  social: { a: "#FED007", b: "#101a3a", icon: Users },   // trophy gold
 };
 
+// Rarity colors are also literal hex for the same alpha-suffix reason above.
+// Epic stays purple — the conventional item-rarity signal, not store chrome.
 function getRarity(price: number): { label: string; color: string; glow: string } | null {
   // Thresholds scale with the 5x store price increase -- keep these in sync
   // with that multiplier so the rarity mix doesn't drift again next time.
-  if (price >= 3500) return { label: "Legendary", color: "#FFC93C", glow: "rgba(255,201,60,0.3)" };
+  if (price >= 3500) return { label: "Legendary", color: "#FED007", glow: "rgba(254,208,7,0.3)" };
   if (price >= 2500) return { label: "Epic", color: "#8B3DFF", glow: "rgba(139,61,255,0.25)" };
-  if (price >= 1750) return { label: "Rare", color: "#2FE6E0", glow: "rgba(47,230,224,0.2)" };
+  if (price >= 1750) return { label: "Rare", color: "#03ACF4", glow: "rgba(3,172,244,0.2)" };
   return null;
 }
 
@@ -221,11 +226,12 @@ function CosmeticPreviewStage({ item }: { item: StoreProductItem }) {
     );
   }
 
-  // "anim" (completion animation) and any other cosmetic subcategory
+  // "anim" (completion animation) and any other cosmetic subcategory — generic
+  // fallback stage (not a specific product color), so it uses store brand tones.
   const emoji = item.iconEmoji || "✨";
   return (
     <div className="h-28 md:h-32 flex items-center justify-center rounded-xl relative overflow-hidden"
-      style={{ background: "linear-gradient(135deg, rgba(139,61,255,0.12), rgba(47,230,224,0.08))", border: "1px solid rgba(255,255,255,0.07)" }}>
+      style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--pw-brand-primary) 12%, transparent), color-mix(in srgb, var(--pw-brand-secondary) 8%, transparent))", border: "1px solid rgba(255,255,255,0.07)" }}>
       <span className="text-3xl" aria-hidden="true">{emoji}</span>
     </div>
   );
@@ -284,15 +290,15 @@ export default function StoreProductCard({
   const hoverAnimate = prefersReducedMotion ? undefined : { y: -3 };
 
   const borderColor = equipped
-    ? "rgba(255,201,60,0.6)"
+    ? "color-mix(in srgb, var(--pw-brand-secondary) 60%, transparent)"
     : rarity
       ? `${rarity.color}55`
       : owned
-        ? "rgba(62,217,122,0.25)"
-        : "rgba(255,255,255,0.1)";
+        ? "color-mix(in srgb, var(--pw-success) 25%, transparent)"
+        : "var(--pw-border-default)";
 
   const glowColor = equipped
-    ? "0 0 20px rgba(255,201,60,0.18)"
+    ? "0 0 20px color-mix(in srgb, var(--pw-brand-secondary) 18%, transparent)"
     : rarity && owned
       ? `0 0 20px ${rarity.glow}`
       : undefined;
@@ -306,7 +312,7 @@ export default function StoreProductCard({
       transition={{ type: "spring", stiffness: 300, damping: 24 }}
       className="rounded-2xl p-4 min-[390px]:p-5 flex flex-col gap-3 relative overflow-hidden shadow-skeu-panel min-w-0"
       style={{
-        backgroundColor: "rgba(36,22,64,0.97)",
+        background: "linear-gradient(160deg, var(--pw-surface-2) 0%, var(--pw-surface-1) 70%)",
         border: `1px solid ${borderColor}`,
         boxShadow: glowColor,
       }}
@@ -338,17 +344,17 @@ export default function StoreProductCard({
       {(equipped || (owned && !item.isConsumable) || (item.isConsumable && owned)) && (
         <div className="relative flex items-center gap-1.5 text-xs font-bold" style={{ minHeight: 18 }}>
           {equipped && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(255,201,60,0.2)", color: "#FFC93C" }}>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: "color-mix(in srgb, var(--pw-brand-secondary) 20%, transparent)", color: "var(--pw-brand-secondary)" }}>
               <CheckCircle2 size={12} aria-hidden="true" /> Equipped
             </span>
           )}
           {!equipped && owned && !item.isConsumable && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(62,217,122,0.14)", color: "#3ED97A" }}>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: "color-mix(in srgb, var(--pw-success) 14%, transparent)", color: "var(--pw-success)" }}>
               <CheckCircle2 size={12} aria-hidden="true" /> Owned
             </span>
           )}
           {item.isConsumable && owned && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(139,61,255,0.15)", color: "#B98CFF" }}>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ backgroundColor: "color-mix(in srgb, var(--pw-brand-primary) 15%, transparent)", color: "var(--pw-brand-primary-light)" }}>
               Owned ×{item.owned.toLocaleString()}
             </span>
           )}
@@ -358,18 +364,18 @@ export default function StoreProductCard({
       {/* Identity */}
       <div className="relative min-w-0">
         <h3 className="font-bold text-white text-sm leading-tight break-words">{displayName}</h3>
-        <p className="text-xs mt-0.5 break-words" style={{ color: accent ?? "#6b7280" }}>
+        <p className="text-xs mt-0.5 break-words" style={{ color: accent ?? "var(--pw-text-muted)" }}>
           {SUBCATEGORY_LABELS[item.subcategory] ?? item.subcategory}
           {item.isConsumable && " · Consumable"}
         </p>
       </div>
 
-      <p className="relative text-xs leading-relaxed flex-1 break-words" style={{ color: "#DDDBF1" }}>
+      <p className="relative text-xs leading-relaxed flex-1 break-words" style={{ color: "var(--pw-text-secondary)" }}>
         {item.description}
       </p>
 
       {/* Price */}
-      <p className="relative font-extrabold text-sm break-all" style={{ color: canAfford ? "#FFC93C" : "#9ca3af" }}>
+      <p className="relative font-extrabold text-sm break-all" style={{ color: canAfford ? "var(--pw-brand-secondary)" : "var(--pw-text-muted)" }}>
         {item.price.toLocaleString()} pts
       </p>
 
@@ -379,7 +385,7 @@ export default function StoreProductCard({
           <button
             onClick={onPreview}
             className="flex-1 min-[360px]:flex-none flex items-center justify-center gap-1.5 px-3 rounded-lg text-xs font-semibold transition-all"
-            style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.1)", minHeight: 44 }}
+            style={{ backgroundColor: "var(--pw-surface-2)", color: "var(--pw-text-secondary)", border: "1px solid var(--pw-border-default)", minHeight: 44 }}
           >
             <Eye size={14} aria-hidden="true" /> Preview
           </button>
@@ -391,8 +397,8 @@ export default function StoreProductCard({
             disabled={!canAfford || isBuying}
             className="flex-1 min-[360px]:flex-none flex items-center justify-center px-3 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
-              background: "linear-gradient(135deg, #FFE58A, #FFC93C)",
-              color: "#1a1400",
+              background: "linear-gradient(135deg, var(--pw-brand-secondary-light), var(--pw-brand-secondary))",
+              color: "var(--pw-text-on-secondary)",
               minHeight: 44,
             }}
           >
@@ -405,7 +411,7 @@ export default function StoreProductCard({
             onClick={onEquip}
             disabled={isEquipping}
             className="flex-1 min-[360px]:flex-none flex items-center justify-center px-3 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: "linear-gradient(135deg, #FFE58A, #FFC93C)", color: "#1a1400", minHeight: 44 }}
+            style={{ background: "linear-gradient(135deg, var(--pw-brand-secondary-light), var(--pw-brand-secondary))", color: "var(--pw-text-on-secondary)", minHeight: 44 }}
           >
             {isEquipping ? "…" : "Equip"}
           </button>
@@ -416,7 +422,7 @@ export default function StoreProductCard({
             onClick={onUnequip}
             disabled={isEquipping}
             className="flex-1 min-[360px]:flex-none flex items-center justify-center px-3 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: "rgba(255,255,255,0.07)", color: "#9ca3af", minHeight: 44 }}
+            style={{ backgroundColor: "var(--pw-surface-2)", color: "var(--pw-text-secondary)", minHeight: 44 }}
           >
             {isEquipping ? "…" : "Unequip"}
           </button>
@@ -428,7 +434,7 @@ export default function StoreProductCard({
               onClick={onDeactivateTriple}
               disabled={activatingTriple}
               className="flex-1 min-[360px]:flex-none flex items-center justify-center gap-1.5 px-3 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: "rgba(255,90,90,0.15)", color: "#FF5A5A", border: "1px solid rgba(255,90,90,0.3)", minHeight: 44 }}
+              style={{ backgroundColor: "var(--pw-error-surface)", color: "var(--pw-error-text)", border: "1px solid var(--pw-error-border)", minHeight: 44 }}
             >
               <Dices size={14} aria-hidden="true" /> Active — Cancel
             </button>
@@ -437,7 +443,7 @@ export default function StoreProductCard({
               onClick={onActivateTriple}
               disabled={activatingTriple}
               className="flex-1 min-[360px]:flex-none flex items-center justify-center gap-1.5 px-3 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: "rgba(255,201,60,0.12)", color: "#FFC93C", border: "1px solid rgba(255,201,60,0.25)", minHeight: 44 }}
+              style={{ backgroundColor: "color-mix(in srgb, var(--pw-brand-secondary) 12%, transparent)", color: "var(--pw-brand-secondary)", border: "1px solid color-mix(in srgb, var(--pw-brand-secondary) 25%, transparent)", minHeight: 44 }}
             >
               {activatingTriple ? "…" : <><Dices size={14} aria-hidden="true" /> Activate</>}
             </button>

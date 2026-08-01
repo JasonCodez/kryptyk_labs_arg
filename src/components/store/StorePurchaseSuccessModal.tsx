@@ -10,9 +10,10 @@ export interface StorePurchaseSuccessModalProps {
 
 // Deterministic particle/coin configuration — replaces the previous per-render
 // Math.random() calls so server/client and repeated test renders match exactly.
+const PARTICLE_COLORS = ["var(--pw-brand-secondary)", "var(--pw-brand-primary)", "var(--pw-brand-accent)", "var(--pw-success)"];
 const PARTICLES = Array.from({ length: 12 }, (_, i) => ({
   key: i,
-  color: i % 3 === 0 ? "#FFC93C" : i % 3 === 1 ? "#FF4FA3" : "#2FE6E0",
+  color: PARTICLE_COLORS[i % PARTICLE_COLORS.length],
   rotate: i * 30,
   scale: 4 + i * 0.6,
   duration: 1.2 + i * 0.08,
@@ -103,9 +104,9 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
         transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 22 }}
         className="relative text-center px-6 py-10 min-[390px]:px-10 rounded-3xl max-w-sm w-full overflow-hidden shadow-skeu-panel"
         style={{
-          background: "linear-gradient(145deg, rgba(36,22,64,0.98) 0%, rgba(50,32,90,0.98) 100%)",
-          border: "2px solid rgba(255,201,60,0.6)",
-          boxShadow: "0 0 60px rgba(255,201,60,0.25), 0 0 120px rgba(255,201,60,0.1)",
+          background: "linear-gradient(145deg, var(--pw-surface-2) 0%, var(--pw-bg-elevated) 100%)",
+          border: "2px solid color-mix(in srgb, var(--pw-brand-secondary) 60%, transparent)",
+          boxShadow: "0 0 60px color-mix(in srgb, var(--pw-brand-secondary) 25%, transparent), 0 0 120px color-mix(in srgb, var(--pw-brand-secondary) 10%, transparent)",
           paddingBottom: "max(2.5rem, env(safe-area-inset-bottom))",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -115,7 +116,13 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
         {!reduceMotion && (
           <motion.div
             className="absolute inset-0 rounded-3xl pointer-events-none"
-            animate={{ boxShadow: ["0 0 30px rgba(255,201,60,0.3)", "0 0 60px rgba(255,201,60,0.6)", "0 0 30px rgba(255,201,60,0.3)"] }}
+            animate={{
+              boxShadow: [
+                "0 0 30px color-mix(in srgb, var(--pw-brand-secondary) 30%, transparent)",
+                "0 0 60px color-mix(in srgb, var(--pw-brand-secondary) 60%, transparent)",
+                "0 0 30px color-mix(in srgb, var(--pw-brand-secondary) 30%, transparent)",
+              ],
+            }}
             transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
           />
         )}
@@ -135,7 +142,7 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
           animate={{ opacity: 1, y: 0 }}
           transition={reduceMotion ? { duration: 0 } : { delay: 0.25 }}
           className="text-sm font-semibold mb-1"
-          style={{ color: "#2FE6E0" }}
+          style={{ color: "var(--pw-brand-primary-light)" }}
         >
           Thank you for your purchase!
         </motion.p>
@@ -146,7 +153,7 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
           animate={{ opacity: 1, y: 0 }}
           transition={reduceMotion ? { duration: 0 } : { delay: 0.35 }}
           className="text-lg font-bold mb-1"
-          style={{ color: "#AB9F9D" }}
+          style={{ color: "var(--pw-text-secondary)" }}
         >
           Points Added!
         </motion.p>
@@ -156,7 +163,7 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
           animate={{ opacity: 1, scale: 1 }}
           transition={reduceMotion ? { duration: 0 } : { delay: 0.4, type: "spring", stiffness: 280 }}
           className="text-6xl font-black mb-1 break-words"
-          style={{ color: "#FFC93C", textShadow: "0 0 30px rgba(255,201,60,0.6)" }}
+          style={{ color: "var(--pw-brand-secondary)", textShadow: "0 0 30px color-mix(in srgb, var(--pw-brand-secondary) 60%, transparent)" }}
         >
           +{points.toLocaleString()}
         </motion.p>
@@ -166,7 +173,7 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
           animate={{ opacity: 1 }}
           transition={reduceMotion ? { duration: 0 } : { delay: 0.55 }}
           className="text-sm font-semibold mb-6"
-          style={{ color: "#E0960B" }}
+          style={{ color: "var(--pw-brand-secondary-dark)" }}
         >
           points added to your balance
         </motion.p>
@@ -182,9 +189,9 @@ export default function StorePurchaseSuccessModal({ points, onClose }: StorePurc
           onClick={onClose}
           className="px-8 py-3 min-h-[44px] rounded-xl font-extrabold text-sm"
           style={{
-            background: "linear-gradient(135deg, #FFE58A, #FFC93C)",
-            color: "#1a1400",
-            boxShadow: "0 4px 20px rgba(255,201,60,0.35)",
+            background: "linear-gradient(135deg, var(--pw-brand-secondary-light), var(--pw-brand-secondary))",
+            color: "var(--pw-text-on-secondary)",
+            boxShadow: "0 4px 20px color-mix(in srgb, var(--pw-brand-secondary) 35%, transparent)",
           }}
         >
           Awesome! 🚀
