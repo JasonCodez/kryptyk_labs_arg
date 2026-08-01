@@ -1,43 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, Suspense } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import Tooltip from "@/components/Tooltip";
 import CosmeticPreviewModal from "@/components/CosmeticPreviewModal";
 import { FEATURE_STORE_ENABLED } from "@/lib/featureFlags";
 import { juice } from "@/lib/juice";
 import GameButton from "@/components/game-ui/GameButton";
-
-/** Smoothly counts from one number to another over `duration` ms */
-function useAnimatedCounter(target: number, duration = 1200) {
-  const [display, setDisplay] = useState(target);
-  const prevRef = useRef(target);
-
-  useEffect(() => {
-    const from = prevRef.current;
-    if (from === target) return;
-    prevRef.current = target;
-
-    const startTime = performance.now();
-    let raf: number;
-
-    const tick = (now: number) => {
-      const elapsed = now - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      // ease-out cubic
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplay(Math.round(from + (target - from) * eased));
-      if (progress < 1) raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
-
-  return display;
-}
+import StorefrontHero, { StoreCategoryRail } from "@/components/store/StorefrontHero";
 
 interface StoreItem {
   id: string;
@@ -121,11 +92,6 @@ function isEquipped(item: StoreItem, user: StoreUser): boolean {
     : (meta?.value ?? item.key);
   const active = getActiveValue(item, user);
   return active !== null && active === value;
-}
-
-function AnimatedBalance({ value }: { value: number }) {
-  const display = useAnimatedCounter(value);
-  return <span>{display.toLocaleString()}</span>;
 }
 
 function getRarity(price: number): { label: string; color: string; glow: string } | null {
@@ -496,14 +462,32 @@ function StorePageInner() {
   if (status === "unauthenticated") return null;
 
   return (
-    <div className="min-h-screen px-4 pt-28 pb-12" style={{ backgroundColor: "#170B26" }}>
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen px-4 pt-28 pb-12 relative overflow-x-hidden" style={{ backgroundColor: "#170B26" }}>
+      {/* Layered vault backdrop */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div
+          className="absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(139,61,255,0.16) 0%, rgba(139,61,255,0) 70%)" }}
+        />
+        <div
+          className="absolute -top-16 -right-24 w-[420px] h-[420px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(255,201,60,0.12) 0%, rgba(255,201,60,0) 70%)" }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: "linear-gradient(180deg, #1c0f30 0%, #170B26 45%, #0d0714 100%)" }}
+        />
+      </div>
 
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-extrabold text-white mb-1">🛍️ Point Store</h1>
-          <p style={{ color: "#AB9F9D" }}>Spend your hard-earned points on upgrades, cosmetics, and power-ups.</p>
-        </div>
+      <div className="max-w-5xl mx-auto relative">
+
+        <StorefrontHero
+          balance={balancePoints}
+          user={user}
+          loading={loading}
+          showGlow={showGlow}
+          onGiftPoints={() => setShowGiftModal(true)}
+        />
 
         {/* Gift Points Modal */}
         {showGiftModal && (
@@ -552,91 +536,6 @@ function StorePageInner() {
             </div>
           </div>
         )}
-
-        {/* Balance bar */}
-        <motion.div
-          className="flex flex-wrap items-center gap-4 rounded-xl px-4 sm:px-6 py-4 mb-8 relative overflow-hidden shadow-skeu-panel"
-          style={{ backgroundColor: "rgba(36,22,64,0.95)", border: "1px solid rgba(255,201,60,0.25)" }}
-          animate={showGlow ? {
-            boxShadow: ["0 0 0px rgba(255,201,60,0)", "0 0 40px rgba(255,201,60,0.5)", "0 0 16px rgba(255,201,60,0.15)"],
-            borderColor: ["rgba(255,201,60,0.25)", "rgba(255,201,60,0.9)", "rgba(255,201,60,0.35)"],
-          } : {}}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        >
-          <span className="game-gloss-overlay" aria-hidden style={{ opacity: 0.5 }} />
-          <div className="relative">
-            <p className="text-sm font-semibold" style={{ color: "#AB9F9D" }}>Your Balance</p>
-            <p className="text-3xl font-extrabold" style={{ color: "#FFC93C" }}>
-              <AnimatedBalance value={balancePoints} /> <span className="text-lg font-semibold">pts</span>
-            </p>
-          </div>
-          {user && (
-            <div className="relative flex flex-wrap gap-3 text-sm">
-              {user.streakShields > 0 && (
-                <Tooltip content={
-                  <><strong style={{ color: "#3ED97A" }}>🛡️ Streak Shield</strong><br />Protects your daily streak if you miss a day. Consumed automatically.</>
-                }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(62,217,122,0.12)", color: "#3ED97A" }}>
-                    🛡️ {user.streakShields} streak shield{user.streakShields !== 1 ? 's' : ''}
-                  </span>
-                </Tooltip>
-              )}
-              {user.hintTokens > 0 && (
-                <Tooltip content={
-                  <><strong style={{ color: "#FFC93C" }}>💡 Hint Token</strong><br />Reveals a hint on any puzzle without a point penalty.</>
-                }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(255,201,60,0.1)", color: "#FFC93C" }}>
-                    💡 {user.hintTokens} hint token{user.hintTokens !== 1 ? 's' : ''}
-                  </span>
-                </Tooltip>
-              )}
-              {user.skipTokens > 0 && (
-                <Tooltip content={
-                  <><strong style={{ color: "#B98CFF" }}>⏭️ Skip Token</strong><br />Skip a puzzle entirely and still earn a small point reward.</>
-                }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(139,61,255,0.12)", color: "#B98CFF" }}>
-                    ⏭️ {user.skipTokens} skip token{user.skipTokens !== 1 ? 's' : ''}
-                  </span>
-                </Tooltip>
-              )}
-              {user.warzChallengeSlots > 3 && (
-                <Tooltip content={
-                  <><strong style={{ color: "#FF8F8F" }}>⚔️ Warz Slots</strong><br />Extra simultaneous challenge slots beyond the default 3.</>
-                }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(255,90,90,0.1)", color: "#FF8F8F" }}>
-                    ⚔️ {user.warzChallengeSlots} warz slots
-                  </span>
-                </Tooltip>
-              )}
-              {user.xpBoostExpiresAt && new Date(user.xpBoostExpiresAt).getTime() > Date.now() && (
-                <Tooltip content={
-                  <><strong style={{ color: "#B98CFF" }}>⚡ XP Boost Active</strong><br />All XP earned is doubled! Expires {new Date(user.xpBoostExpiresAt).toLocaleTimeString()}.</>
-                }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(139,61,255,0.15)", color: "#B98CFF" }}>
-                    ⚡ 2× XP Boost active
-                  </span>
-                </Tooltip>
-              )}
-              {user.tripleOrNothingTokens > 0 && (
-                <Tooltip content={
-                  <><strong style={{ color: "#FFC93C" }}>🎲 Triple-or-Nothing</strong><br />Solve a puzzle on your first attempt for 3× rewards!{user.tripleOrNothingActive ? " 🔥 ACTIVE" : ""}</>
-                }>
-                  <span className="px-3 py-1 rounded-full font-semibold cursor-default" style={{ backgroundColor: "rgba(255,201,60,0.12)", color: "#FFC93C" }}>
-                    🎲 {user.tripleOrNothingTokens} triple-or-nothing{user.tripleOrNothingActive ? " (active)" : ""}
-                  </span>
-                </Tooltip>
-              )}
-            </div>
-          )}
-          {/* Gift Points button */}
-          <button
-            onClick={() => setShowGiftModal(true)}
-            className="relative ml-auto px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-            style={{ backgroundColor: "rgba(255,201,60,0.1)", color: "#FFC93C", border: "1px solid rgba(255,201,60,0.25)" }}
-          >
-            🎁 Gift Points
-          </button>
-        </motion.div>
 
         {/* Buy Points section */}
         <div className="mb-8">
@@ -707,23 +606,11 @@ function StorePageInner() {
           </div>
         </div>
 
-        {/* Category tabs */}
-        <div className="flex gap-2 flex-wrap mb-8">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.key}
-              onClick={() => setActiveCategory(cat.key)}
-              className="px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                backgroundColor: activeCategory === cat.key ? "rgba(255,201,60,0.18)" : "rgba(255,255,255,0.05)",
-                border: `1px solid ${activeCategory === cat.key ? "rgba(255,201,60,0.5)" : "rgba(255,255,255,0.1)"}`,
-                color: activeCategory === cat.key ? "#FFC93C" : "#9ca3af",
-              }}
-            >
-              {cat.emoji} {cat.label}
-            </button>
-          ))}
-        </div>
+        <StoreCategoryRail
+          categories={CATEGORIES}
+          activeCategory={activeCategory}
+          onCategoryChange={setActiveCategory}
+        />
 
         {/* Items grid */}
         {loading ? (
